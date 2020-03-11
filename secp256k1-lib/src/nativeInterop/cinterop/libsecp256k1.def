@@ -1,0 +1,6 @@
+headers = secp256k1.h
+headerFilter = secp256k1/** secp256k1.h
+package = secp256k1
+staticLibraries = libsecp256k1.a
+libraryPaths = /home/fabrice/code/secp256k1/.libs
+linkerOpts.linux = -L/usr/lib64 -L/usr/lib/x86_64-linux-gnu -lgmp
