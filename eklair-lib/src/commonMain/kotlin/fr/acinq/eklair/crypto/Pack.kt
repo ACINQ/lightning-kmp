@@ -18,4 +18,11 @@ object Pack {
         bs[++off] = (n ushr 24).toByte()
     }
 
+    fun intToBigEndian(n: Int, bs: ByteArray, off: Int) {
+        var off = off
+        bs[off] = (n ushr 24).toByte()
+        bs[++off] = (n ushr 16).toByte()
+        bs[++off] = (n ushr 8).toByte()
+        bs[++off] = n.toByte()
+    }
 }

@@ -2,8 +2,6 @@ package fr.acinq.eklair.crypto
 
 import fr.acinq.eklair.crypto.Pack.intToLittleEndian
 import fr.acinq.eklair.crypto.Pack.littleEndianToInt
-import kotlin.experimental.and
-import kotlin.experimental.or
 import kotlin.experimental.xor
 
 /*

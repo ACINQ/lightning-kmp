@@ -9,7 +9,7 @@ class Poly1305TestsJvm {
     @Test
     fun `poly1305`() {
         val random = Random
-        for(length in 0 until 1000) {
+        for (length in 0 until 1000) {
             val key = random.nextBytes(32)
             val data = random.nextBytes(length)
             val result = Poly1305.mac(key, data)
@@ -18,7 +18,7 @@ class Poly1305TestsJvm {
         }
     }
 
-    fun poly1305check(key: ByteArray, data: ByteArray) :ByteArray {
+    fun poly1305check(key: ByteArray, data: ByteArray): ByteArray {
         val mac = org.bouncycastle.crypto.macs.Poly1305()
         mac.init(KeyParameter(key))
         val out = ByteArray(16)

@@ -38,8 +38,19 @@ kotlin {
                 implementation(kotlin("test-annotations-common"))
             }
         }
+        val jvmMain by getting {
+            dependencies {
+                implementation(kotlin("stdlib-jdk8"))
+                implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
+            }
+        }
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test-junit"))
+                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+            }
+        }
     }
-
 
     sourceSets.all {
         languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
