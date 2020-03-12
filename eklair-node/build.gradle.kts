@@ -34,6 +34,8 @@ kotlin {
                 implementation(kotlin("stdlib-common"))
                 implementation("io.ktor:ktor-client-core:1.3.1")
                 implementation("io.ktor:ktor-network:1.3.1")
+
+                implementation(project(":secp256k1-lib"))
                 implementation(project(":eklair-lib"))
             }
         }
@@ -43,19 +45,19 @@ kotlin {
                 implementation(kotlin("test-annotations-common"))
             }
         }
-    }
+        val jvmMain by getting {
+            dependencies {
+                implementation(kotlin("stdlib-jdk8"))
+                implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
+                implementation("io.ktor:ktor-client-okhttp:1.3.1")
+            }
+        }
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test-junit"))
+                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+            }
+        }
 
-    // Default source set for JVM-specific sources and dependencies:
-    jvm().compilations["main"].defaultSourceSet {
-        dependencies {
-            implementation(kotlin("stdlib-jdk8"))
-            implementation("io.ktor:ktor-client-okhttp:1.3.1")
-        }
-    }
-    // JVM-specific tests and their dependencies:
-    jvm().compilations["test"].defaultSourceSet {
-        dependencies {
-            implementation(kotlin("test-junit"))
-        }
     }
 }

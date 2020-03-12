@@ -30,19 +30,17 @@ kotlin {
                 implementation(kotlin("test-annotations-common"))
             }
         }
-    }
-
-    // Default source set for JVM-specific sources and dependencies:
-    jvm().compilations["main"].defaultSourceSet {
-        dependencies {
-            implementation(kotlin("stdlib-jdk8"))
+        val jvmMain by getting {
+            dependencies {
+                implementation(kotlin("stdlib-jdk8"))
+                implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
+            }
         }
-    }
-    // JVM-specific tests and their dependencies:
-    jvm().compilations["test"].defaultSourceSet {
-        dependencies {
-            implementation(kotlin("test-junit"))
-            implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test-junit"))
+                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+            }
         }
     }
 }
