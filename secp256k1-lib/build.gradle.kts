@@ -10,12 +10,12 @@ repositories {
 }
 
 kotlin {
-    /* Targets configuration omitted. 
+    /* Targets configuration omitted.
     *  To find out how to configure the targets, please follow the link:
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
 
     jvm()
-    linuxX64("linux") {
+/*    linuxX64("linux") {
         compilations["main"].apply {
             cinterops {
                 val libsecp256k1 by creating {
@@ -23,6 +23,18 @@ kotlin {
                 }
             }
             //kotlinOptions.freeCompilerArgs = listOf("-include-binary", "/home/fabrice/code/secp256k1/.libs/libsecp256k1.a")
+        }
+    }*/
+    iosX64("ios") {
+        binaries {
+            framework()
+        }
+        compilations["main"].apply {
+            cinterops {
+                val libsecp256k1 by creating {
+                    includeDirs(project.file(".."), "/usr/local/lib")
+                }
+            }
         }
     }
 
@@ -48,6 +60,16 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-junit"))
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+            }
+        }
+        val iosMain by getting {
+            dependencies {
+                implementation(kotlin("stdlib"))
+            }
+        }
+
+        val iosTest by getting {
+            dependencies {
             }
         }
     }

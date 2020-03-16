@@ -10,12 +10,13 @@ repositories {
 }
 
 kotlin {
-    /* Targets configuration omitted. 
+    /* Targets configuration omitted.
     *  To find out how to configure the targets, please follow the link:
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
 
     jvm()
-    linuxX64("linux")
+    //linuxX64("linux")
+    iosX64("ios")
 
     sourceSets {
         val commonMain by getting {
@@ -40,6 +41,11 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-junit"))
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+            }
+        }
+        val iosMain by getting {
+            dependencies {
+                implementation(kotlin("stdlib"))
             }
         }
     }

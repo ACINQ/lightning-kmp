@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+
 plugins {
     application
     kotlin("multiplatform") version "1.3.70"
@@ -11,6 +13,9 @@ application {
 }
 
 repositories {
+    mavenLocal()
+    google()
+    jcenter()
     mavenCentral()
 }
 
@@ -22,9 +27,15 @@ kotlin {
     jvm() {
 
     }
-    linuxX64("linux") {
-        binaries {
-            executable()
+    /* linuxX64("linux") {
+         binaries {
+             executable()
+         }
+     }*/
+
+    iosX64("ios"){
+        binaries{
+            framework()
         }
     }
 
@@ -34,7 +45,6 @@ kotlin {
                 implementation(kotlin("stdlib-common"))
                 implementation("io.ktor:ktor-client-core:1.3.1")
                 implementation("io.ktor:ktor-network:1.3.1")
-
                 implementation(project(":secp256k1-lib"))
                 implementation(project(":eklair-lib"))
             }
@@ -58,6 +68,41 @@ kotlin {
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             }
         }
+        val iosMain by getting {
+            dependencies {
+                implementation(kotlin("stdlib"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
+                implementation("io.ktor:ktor-network:1.3.1")
+            }
+        }
 
     }
 }
+
+
+// This task attaches native framework built from ios module to Xcode project
+// (see iosApp directory). Don't run this task directly,
+// Xcode runs this task itself during its build process.
+// Before opening the project from iosApp directory in Xcode,
+// make sure all Gradle infrastructure exists (gradle.wrapper, gradlew).
+task("copyFramework") {
+    val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
+    val target: String = project.findProperty("kotlin.target")?.toString() ?: "ios"
+    val kotlinNativeTarget = kotlin.targets.findByName(target) as KotlinNativeTarget
+    val linkTask: Task = kotlinNativeTarget.binaries.getFramework(buildType).linkTask
+    dependsOn(linkTask)
+
+    doLast {
+        val srcFile: File = kotlinNativeTarget.binaries.getFramework(buildType).outputFile
+        val targetDir = System.getProperty("configuration.build.dir") ?: project.buildDir.path
+        println("\uD83C\uDF4E Copying ${srcFile} to ${targetDir}")
+        copy {
+            from(srcFile.parent)
+            into(targetDir)
+            include("*.framework/**")
+            include("*.framework.dSYM/**")
+        }
+    }
+}
+
