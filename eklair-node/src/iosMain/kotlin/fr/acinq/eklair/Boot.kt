@@ -13,7 +13,7 @@ actual object Boot {
         val pub = Secp256k1.computePublicKey(priv)
         val keyPair = Pair(pub, priv)
         //val nodeId = Hex.decode("032ddfc80ee130a8f10823649fcc2fdeb88281acf89f568a41cbdde96530b9f9f7")
-        val nodeId = Hex.decode("032ddfc80ee130a8f43823649fcc2fdeb88281acf89f568a41cbdde96530b9f9f7")
+        val nodeId = Hex.decode("02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c")
 
         val prefix: Byte = 0x00
         val prologue = "lightning".encodeToByteArray()
@@ -94,85 +94,29 @@ actual object Boot {
             val (enc, dec, ck) = foo!!
             nativeSocket.suspendSend(prefixByteArray)
             nativeSocket.suspendSend(message1)
-            //assert(packet.remaining == 0L)
-            //packet.close()
             return Triple(enc, dec, ck)
         }
 
-//        val address = NetworkAddress("localhost", 48000)
 
-        runBlocking{
-            println("===> Doing an HTTP call")
-            withTimeoutOrNull(5000){
-                openTCPSocket(
-                        "www.code-troopers.com",
-                        80,
-                        "GET / \r\n\r\n"
-                )
-            }
-        }
-
-        runBlocking {
-            println("===> localhost pong Connecting....")
-            withTimeoutOrNull(5000) {
-                try {
-                    val connect = NativeSocket.connect("192.168.0.74", 1885)
-                    println("connect = ${connect}")
-                    val (enc, dec, ck) = handshake(keyPair, nodeId, connect)
-                    println("enc = ${enc}")
-                    println("dec = ${dec}")
-                    println("ck = ${ck}")
-                    val session = LightningSession(connect, enc, dec, ck)
-                    val ping = Hex.decode("0012000a0004deadbeef")
-                    while (true) {
-                        session.send(ping)
-                        val received = session.receive()
-                        println(Hex.encode(received))
-                    }
-                } catch (e: Throwable) {
-                    e.printStackTrace()
-                    println("Something bad occurred : ${e}")
-                }
-            }
-        }
         runBlocking {
             println("===> Acinq Connecting....")
-            withTimeoutOrNull(5000) {
+            withTimeoutOrNull(60000) {
                 val connect = NativeSocket.connect("51.77.223.203", 19735)
                 println("connect = ${connect}")
                 val (enc, dec, ck) = handshake(keyPair, nodeId, connect)
                 println("enc = ${enc}")
                 println("dec = ${dec}")
-                println("ck = ${ck}")
+                println("ck = ${Hex.encode(ck)}")
                 val session = LightningSession(connect, enc, dec, ck)
+                println("session = ${session}")
                 val ping = Hex.decode("0012000a0004deadbeef")
+                println("encoded ping = ${Hex.encode(ping)}")
                 while (true) {
                     session.send(ping)
                     val received = session.receive()
-                    println(Hex.encode(received))
+                    println("Received ping ${Hex.encode(received)}")
                 }
             }
         }
     }
-}
-
-
-private fun openTCPSocket(host: String, port: Int, message: String): String? {
-    println("Opening TCP connection")
-    var answer: String? = null
-    runBlocking {
-        withTimeoutOrNull(5000) {
-            val connect = NativeSocket.connect(host, port)
-            println("Socket connected : ${connect.connected}")
-            val command = message.encodeToByteArray()
-            println("Send command")
-            connect.send(command)
-            println("Socket connected : ${connect.connected}")
-            val recv = connect.suspendRecvUpTo(2000)
-            answer = recv.decodeToString()
-            println("Response ${recv.decodeToString()}")
-        }
-    }
-    println("End of TCP connection")
-    return answer
 }
