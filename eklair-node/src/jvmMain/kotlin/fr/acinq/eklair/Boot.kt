@@ -17,9 +17,9 @@ import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 
 @ExperimentalStdlibApi
-object Boot {
+actual object Boot {
     @JvmStatic
-    fun main(args: Array<String>) {
+    actual fun main(args: Array<String>) {
         val priv = ByteArray(32) { 0x01.toByte() }
         val pub = Secp256k1.computePublicKey(priv)
         val keyPair = Pair(pub, priv)
