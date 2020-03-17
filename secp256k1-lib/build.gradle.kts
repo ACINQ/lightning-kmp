@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCompilation
 
 plugins {
     kotlin("multiplatform") version "1.3.70"
+    `maven-publish`
 }
 
 group = "fr.acinq.eklair"
