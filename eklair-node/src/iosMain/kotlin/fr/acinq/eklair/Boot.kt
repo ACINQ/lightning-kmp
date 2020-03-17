@@ -100,7 +100,7 @@ actual object Boot {
 
         runBlocking {
             println("===> Acinq Connecting....")
-            withTimeoutOrNull(60000) {
+
                 val connect = NativeSocket.connect("51.77.223.203", 19735)
                 println("connect = ${connect}")
                 val (enc, dec, ck) = handshake(keyPair, nodeId, connect)
@@ -111,12 +111,15 @@ actual object Boot {
                 println("session = ${session}")
                 val ping = Hex.decode("0012000a0004deadbeef")
                 println("encoded ping = ${Hex.encode(ping)}")
+                val init = Hex.decode("001000000002a8a0")
+                println("encoded init = ${Hex.encode(init)}")
+                session.send(init)
                 while (true) {
                     session.send(ping)
                     val received = session.receive()
                     println("Received ping ${Hex.encode(received)}")
+                    delay(2000)
                 }
-            }
         }
     }
 }
