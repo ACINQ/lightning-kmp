@@ -23,7 +23,7 @@ object Boot {
         val priv = ByteArray(32) { 0x01.toByte() }
         val pub = Secp256k1.computePublicKey(priv)
         val keyPair = Pair(pub, priv)
-        val nodeId = Hex.decode("032ddfc80ee130a8f10823649fcc2fdeb88281acf89f568a41cbdde96530b9f9f7")
+        val nodeId = Hex.decode("02482166dd3fe12bc884c74da85ff168743165144a327a63f3674f4bd5dfa66bea")
 
         val prefix: Byte = 0x00
         val prologue = "lightning".encodeToByteArray()
@@ -104,7 +104,7 @@ object Boot {
         }
 
 
-        val address = InetSocketAddress("localhost", 48000)
+        val address = InetSocketAddress("localhost", 9735)
 
         runBlocking {
             val socket = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(address)
@@ -113,10 +113,13 @@ object Boot {
             val (enc, dec, ck) = handshake(keyPair, nodeId, r, w)
             val session = LightningSession(r, w, enc, dec, ck)
             val ping = Hex.decode("0012000a0004deadbeef")
+            val init = Hex.decode("001000000002a8a0")
+            session.send(init)
             while(true) {
-                session.send(ping)
                 val received = session.receive()
                 println(Hex.encode(received))
+                delay(2000)
+                session.send(ping)
             }
         }
     }
