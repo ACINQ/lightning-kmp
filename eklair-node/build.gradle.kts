@@ -27,11 +27,11 @@ kotlin {
     jvm() {
 
     }
-    /* linuxX64("linux") {
+    linuxX64("linux") {
          binaries {
              executable()
          }
-     }*/
+    }
 
     iosX64("ios"){
         binaries{

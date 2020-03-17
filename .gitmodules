@@ -1,0 +1,3 @@
+[submodule "c/secp256k1"]
+	path = c/secp256k1
+	url = https://github.com/araspitzu/secp256k1

@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCompilation
+
 plugins {
     kotlin("multiplatform") version "1.3.70"
 }
@@ -13,26 +15,21 @@ kotlin {
     /* Targets configuration omitted.
     *  To find out how to configure the targets, please follow the link:
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
+    val cinterop_libsecp256k_location: String by project
 
     jvm()
-/*    linuxX64("linux") {
-        compilations["main"].apply {
-            cinterops {
-                val libsecp256k1 by creating {
-                    includeDirs.headerFilterOnly("/home/fabrice/code/secp256k1/include")
-                }
-            }
-            //kotlinOptions.freeCompilerArgs = listOf("-include-binary", "/home/fabrice/code/secp256k1/.libs/libsecp256k1.a")
-        }
-    }*/
+    linuxX64("linux")
     iosX64("ios") {
         binaries {
             framework()
         }
-        compilations["main"].apply {
+    }
+    targets.configureEach {
+        (compilations["main"] as? KotlinNativeCompilation)?.apply {
             cinterops {
                 val libsecp256k1 by creating {
-                    includeDirs(project.file(".."), "/usr/local/lib")
+                    includeDirs.headerFilterOnly(project.file("${cinterop_libsecp256k_location}/secp256k1/include/"))
+                    includeDirs(project.file("$cinterop_libsecp256k_location/secp256k1/.libs"), "/usr/local/lib")
                 }
             }
         }

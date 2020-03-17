@@ -1,11 +1,11 @@
-headers.linux = secp256k1.h secp256k1_ecdh.h secp256k1_recovery.h
-headerFilter.linux = secp256k1/** secp256k1_ecdh.h secp256k1_recovery.h secp256k1.h
 package = secp256k1
-staticLibraries.linux = libsecp256k1.a
-libraryPaths.linux = /home/fabrice/code/secp256k1/.libs
-linkerOpts.linux = -L/usr/lib64 -L/usr/lib/x86_64-linux-gnu -lgmp
 
-headers.ios = c/secp256k1/include/secp256k1_ecdh.h
+headers = secp256k1.h secp256k1_ecdh.h secp256k1_recovery.h
+headerFilter = secp256k1/** secp256k1_ecdh.h secp256k1_recovery.h secp256k1.h
+staticLibraries.linux = libsecp256k1.a
+libraryPaths.linux = c/secp256k1/.libs
+linkerOpts.linux = -L/usr/lib64 -L/usr/lib/x86_64-linux-gnu -L/usr/local/lib -lgmp
+
 staticLibraries.ios = libsecp256k1.a libgmp.a
 libraryPaths.ios = c/secp256k1/.libs /usr/local/lib
 linkerOpts.ios = -framework Security -framework Foundation
