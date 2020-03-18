@@ -19,7 +19,7 @@ kotlin {
     val cinterop_libsecp256k_location: String by project
 
     jvm()
-    //linuxX64("linux")
+    linuxX64("linux")
     ios()
     targets.configureEach {
         (compilations["main"] as? KotlinNativeCompilation)?.apply {

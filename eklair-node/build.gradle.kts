@@ -28,11 +28,11 @@ kotlin {
     jvm() {
 
     }
-    /*linuxX64("linux") {
+    linuxX64("linux") {
          binaries {
              executable()
          }
-    }*/
+    }
 
     val ios = ios("ios"){
         binaries{
@@ -72,8 +72,8 @@ kotlin {
         val iosMain by getting {
             dependencies {
                 implementation(kotlin("stdlib"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.3")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
                 implementation("io.ktor:ktor-network:1.3.1")
             }
         }

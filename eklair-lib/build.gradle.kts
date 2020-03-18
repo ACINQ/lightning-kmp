@@ -16,7 +16,7 @@ kotlin {
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
 
     jvm()
-    //linuxX64("linux")
+    linuxX64("linux")
     ios()
 
     sourceSets {
