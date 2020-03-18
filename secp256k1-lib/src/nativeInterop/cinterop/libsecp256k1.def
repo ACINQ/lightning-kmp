@@ -3,9 +3,9 @@ package = secp256k1
 headers = secp256k1.h secp256k1_ecdh.h secp256k1_recovery.h
 headerFilter = secp256k1/** secp256k1_ecdh.h secp256k1_recovery.h secp256k1.h
 staticLibraries.linux = libsecp256k1.a
-libraryPaths.linux = c/secp256k1/.libs
+libraryPaths.linux = c/secp256k1/build/linux/
 linkerOpts.linux = -L/usr/lib64 -L/usr/lib/x86_64-linux-gnu -L/usr/local/lib -lgmp
 
 staticLibraries.ios = libsecp256k1.a libgmp.a
-libraryPaths.ios = c/secp256k1/.libs /usr/local/lib
+libraryPaths.ios = c/secp256k1/build/ios/ /usr/local/lib
 linkerOpts.ios = -framework Security -framework Foundation

@@ -1,8 +1,9 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.tasks.FatFrameworkTask
 
 plugins {
     application
-    kotlin("multiplatform") version "1.3.70"
+    kotlin("multiplatform")
 }
 
 group = "fr.acinq.eklair"
@@ -27,13 +28,13 @@ kotlin {
     jvm() {
 
     }
-    linuxX64("linux") {
+    /*linuxX64("linux") {
          binaries {
              executable()
          }
-    }
+    }*/
 
-    iosX64("ios"){
+    val ios = ios("ios"){
         binaries{
             framework()
         }
@@ -71,12 +72,27 @@ kotlin {
         val iosMain by getting {
             dependencies {
                 implementation(kotlin("stdlib"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.3")
                 implementation("io.ktor:ktor-network:1.3.1")
             }
         }
 
+    }
+
+    // Create a task building a fat framework.
+    tasks.create("debugFatFramework", FatFrameworkTask::class) {
+        // The fat framework must have the same base name as the initial frameworks.
+        baseName = "eklair_node"
+
+        // The default destination directory is '<build directory>/fat-framework'.
+        destinationDir = buildDir.resolve("eklair_node/debug")
+
+        // Specify the frameworks to be merged.
+        from(
+            (targets.findByName("iosArm64") as KotlinNativeTarget).binaries.getFramework("DEBUG"),
+            (targets.findByName("iosX64") as KotlinNativeTarget).binaries.getFramework("DEBUG")
+        )
     }
 }
 
@@ -88,7 +104,7 @@ kotlin {
 // make sure all Gradle infrastructure exists (gradle.wrapper, gradlew).
 task("copyFramework") {
     val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
-    val target: String = project.findProperty("kotlin.target")?.toString() ?: "ios"
+    val target: String = project.findProperty("kotlin.target")?.toString() ?: "iosX64"
     val kotlinNativeTarget = kotlin.targets.findByName(target) as KotlinNativeTarget
     val linkTask: Task = kotlinNativeTarget.binaries.getFramework(buildType).linkTask
     dependsOn(linkTask)

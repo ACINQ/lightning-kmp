@@ -1,7 +1,7 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCompilation
 
 plugins {
-    kotlin("multiplatform") version "1.3.70"
+    kotlin("multiplatform")
     `maven-publish`
 }
 
@@ -19,12 +19,8 @@ kotlin {
     val cinterop_libsecp256k_location: String by project
 
     jvm()
-    linuxX64("linux")
-    iosX64("ios") {
-        binaries {
-            framework()
-        }
-    }
+    //linuxX64("linux")
+    ios()
     targets.configureEach {
         (compilations["main"] as? KotlinNativeCompilation)?.apply {
             cinterops {

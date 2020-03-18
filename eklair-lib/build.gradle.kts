@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform") version "1.3.70"
+    kotlin("multiplatform")
     `maven-publish`
 }
 
@@ -16,8 +16,8 @@ kotlin {
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
 
     jvm()
-    linuxX64("linux")
-    iosX64("ios")
+    //linuxX64("linux")
+    ios()
 
     sourceSets {
         val commonMain by getting {
