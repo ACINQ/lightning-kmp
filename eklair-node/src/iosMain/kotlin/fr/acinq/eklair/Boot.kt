@@ -99,7 +99,7 @@ actual object Boot {
 
 
         runBlocking {
-            println("===> Acinq Connecting....")
+            println("===> Acinq Connecting.... <===")
 
                 val connect = NativeSocket.connect("51.77.223.203", 19735)
                 println("connect = ${connect}")

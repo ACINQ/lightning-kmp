@@ -81,43 +81,37 @@ kotlin {
     }
 
     // Create a task building a fat framework.
-    tasks.create("debugFatFramework", FatFrameworkTask::class) {
+    tasks.create("createFatFramework", FatFrameworkTask::class) {
+        val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
+
         // The fat framework must have the same base name as the initial frameworks.
         baseName = "eklair_node"
 
         // The default destination directory is '<build directory>/fat-framework'.
-        destinationDir = buildDir.resolve("eklair_node/debug")
+        destinationDir = buildDir.resolve("eklair_node/${buildType.toLowerCase()}")
 
-        // Specify the frameworks to be merged.
-        from(
-            (targets.findByName("iosArm64") as KotlinNativeTarget).binaries.getFramework("DEBUG"),
-            (targets.findByName("iosX64") as KotlinNativeTarget).binaries.getFramework("DEBUG")
+        val iosTargets = listOf(
+                (targets.findByName("iosArm64") as KotlinNativeTarget),
+                (targets.findByName("iosX64") as KotlinNativeTarget)
         )
-    }
-}
+        // Specify the frameworks to be merged.
+        val frameworksBinaries = iosTargets.map { it.binaries.getFramework(buildType) }
+        from( frameworksBinaries )
+        dependsOn(frameworksBinaries.map { it.linkTask })
 
+        // disable gradle's up to date checking
+        outputs.upToDateWhen { false }
 
-// This task attaches native framework built from ios module to Xcode project
-// (see iosApp directory). Don't run this task directly,
-// Xcode runs this task itself during its build process.
-// Before opening the project from iosApp directory in Xcode,
-// make sure all Gradle infrastructure exists (gradle.wrapper, gradlew).
-task("copyFramework") {
-    val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
-    val target: String = project.findProperty("kotlin.target")?.toString() ?: "iosX64"
-    val kotlinNativeTarget = kotlin.targets.findByName(target) as KotlinNativeTarget
-    val linkTask: Task = kotlinNativeTarget.binaries.getFramework(buildType).linkTask
-    dependsOn(linkTask)
-
-    doLast {
-        val srcFile: File = kotlinNativeTarget.binaries.getFramework(buildType).outputFile
-        val targetDir = System.getProperty("configuration.build.dir") ?: project.buildDir.path
-        println("\uD83C\uDF4E Copying ${srcFile} to ${targetDir}")
-        copy {
-            from(srcFile.parent)
-            into(targetDir)
-            include("*.framework/**")
-            include("*.framework.dSYM/**")
+        doLast {
+            val srcFile: File = destinationDir
+            val targetDir = System.getProperty("configuration.build.dir") ?: project.buildDir.path
+            println("\uD83C\uDF4E Copying ${srcFile} to ${targetDir}")
+            copy {
+                from(srcFile)
+                into(targetDir)
+                include("*.framework/**")
+                include("*.framework.dSYM/**")
+            }
         }
     }
 }
