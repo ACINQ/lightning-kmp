@@ -34,7 +34,7 @@ kotlin {
          }
     }
 
-    val ios = ios("ios"){
+    val ios = ios(){
         binaries{
             framework()
         }
@@ -44,10 +44,10 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(kotlin("stdlib-common"))
-                implementation("io.ktor:ktor-client-core:1.3.1")
-                implementation("io.ktor:ktor-network:1.3.1")
                 implementation(project(":secp256k1-lib"))
                 implementation(project(":eklair-lib"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
+
             }
         }
         val commonTest by getting {
@@ -61,6 +61,8 @@ kotlin {
                 implementation(kotlin("stdlib-jdk8"))
                 implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
                 implementation("io.ktor:ktor-client-okhttp:1.3.1")
+                implementation("io.ktor:ktor-client-core:1.3.1")
+                implementation("io.ktor:ktor-network:1.3.1")
             }
         }
         val jvmTest by getting {
@@ -74,10 +76,8 @@ kotlin {
                 implementation(kotlin("stdlib"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
-                implementation("io.ktor:ktor-network:1.3.1")
             }
         }
-
     }
 
     // Create a task building a fat framework.
