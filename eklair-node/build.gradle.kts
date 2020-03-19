@@ -47,7 +47,7 @@ kotlin {
                 implementation(project(":secp256k1-lib"))
                 implementation(project(":eklair-lib"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
-
+                implementation("com.benasher44:uuid:0.1.0")
             }
         }
         val commonTest by getting {
@@ -78,6 +78,10 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
             }
         }
+    }
+
+    sourceSets.all {
+        languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
     }
 
     // Create a task building a fat framework.
@@ -114,5 +118,6 @@ kotlin {
             }
         }
     }
+
 }
 

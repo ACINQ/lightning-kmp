@@ -1,5 +1,6 @@
 package fr.acinq.eklair.crypto.noise
 
+import kotlin.native.concurrent.SharedImmutable
 import kotlin.random.Random
 
 interface DHFunctions {
@@ -235,7 +236,9 @@ data class HandshakePattern(val name: String, val initiatorPreMessages: List<Mes
  * standard handshake patterns
  */
 
+@SharedImmutable
 val handshakePatternNN = HandshakePattern("NN", initiatorPreMessages = listOf<MessagePattern>(), responderPreMessages = listOf<MessagePattern>(), messages = listOf(listOf(MessagePattern.E), listOf(MessagePattern.E, MessagePattern.EE)))
+@SharedImmutable
 val handshakePatternXK = HandshakePattern("XK", initiatorPreMessages = listOf<MessagePattern>(), responderPreMessages = listOf(MessagePattern.S), messages = listOf(listOf(MessagePattern.E, MessagePattern.ES), listOf(MessagePattern.E, MessagePattern.EE), listOf(MessagePattern.S, MessagePattern.SE)))
 
 interface ByteStream {
