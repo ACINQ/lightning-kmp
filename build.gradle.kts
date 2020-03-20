@@ -16,7 +16,8 @@ allprojects {
             force("org.jetbrains.kotlin:kotlin-stdlib-common:1.3.70",
             "org.jetbrains.kotlin:kotlin-stdlib:1.3.70",
             "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.3.70",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4"
+            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-core-common:1.3.4"
             )
         }
     }

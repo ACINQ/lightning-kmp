@@ -24,13 +24,12 @@ kotlin {
     /* Targets configuration omitted.
     *  To find out how to configure the targets, please follow the link:
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
-
     jvm() {
 
     }
     linuxX64("linux") {
          binaries {
-             executable()
+             sharedLib()
          }
     }
 
@@ -47,7 +46,7 @@ kotlin {
                 implementation(project(":secp256k1-lib"))
                 implementation(project(":eklair-lib"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
-                implementation("com.benasher44:uuid:0.1.0")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-common:1.3.4")
             }
         }
         val commonTest by getting {
@@ -63,6 +62,11 @@ kotlin {
                 implementation("io.ktor:ktor-client-okhttp:1.3.1")
                 implementation("io.ktor:ktor-client-core:1.3.1")
                 implementation("io.ktor:ktor-network:1.3.1")
+            }
+        }
+        val linuxMain by getting {
+            dependencies {
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
             }
         }
         val jvmTest by getting {
