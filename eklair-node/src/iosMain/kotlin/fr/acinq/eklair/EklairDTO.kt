@@ -24,32 +24,18 @@ object MessageLogger{
     @InternalCoroutinesApi
     fun test(){
         runBlocking<Unit> {
-            val counter = counterActor() // create the actor
+            val pinger = pingPongActor()
             withContext(Dispatchers.Default) {
-                massiveRun {
-                    counter.send(IncCounter)
-                }
-            }
-            // send a message to get a counter value from an actor
-            val response = CompletableDeferred<Int>()
-            counter.send(GetCounter(response))
-            println("Counter = ${response.await()}")
-            counter.close() // shutdown the actor
-        }
-    }
-
-    suspend fun massiveRun(action: suspend () -> Unit) {
-        val n = 100  // number of coroutines to launch
-        val k = 1000 // times an action is repeated by each coroutine
-        val time = measureTimeMillis {
-            coroutineScope { // scope for coroutines
-                repeat(n) {
-                    launch {
-                        repeat(k) { action() }
+                try {
+                    while(true) {
+                        pinger.send(Ping)
+                        pinger.send(Pong)
                     }
+                } catch (e: Exception) {
+                    println("\uD83C\uDFD3 Ended")
                 }
             }
+
         }
-        println("Completed ${n * k} actions in $time ms")
     }
 }
