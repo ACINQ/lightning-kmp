@@ -34,6 +34,7 @@ kotlin {
     }
 
     val ios = ios(){
+    //val ios = iosArm64("ios"){
         binaries{
             framework()
         }
@@ -99,11 +100,11 @@ kotlin {
         destinationDir = buildDir.resolve("eklair_node/${buildType.toLowerCase()}")
 
         val iosTargets = listOf(
-                (targets.findByName("iosArm64") as KotlinNativeTarget),
-                (targets.findByName("iosX64") as KotlinNativeTarget)
+                targets.findByName("iosArm64") as? KotlinNativeTarget,
+                targets.findByName("iosX64") as? KotlinNativeTarget
         )
         // Specify the frameworks to be merged.
-        val frameworksBinaries = iosTargets.map { it.binaries.getFramework(buildType) }
+        val frameworksBinaries = iosTargets.mapNotNull { it?.binaries?.getFramework(buildType) }
         from( frameworksBinaries )
         dependsOn(frameworksBinaries.map { it.linkTask })
 
