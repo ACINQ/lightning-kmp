@@ -162,7 +162,7 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
 
         memScoped {
             val result = send(sockfd, data.refTo(offset), count.convert(), 0)
-            println("Send result ${result}")
+            //println("Send result ${result}")
             if (result < count) {
                 _connected = false
                 error("Socket write error")
@@ -206,12 +206,12 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
         }
     }
 
-    fun getRemoveEndpoint() = endpoint
+    fun getRemoteEndpoint() = endpoint
 
     private fun swapBytes(v: UShort): UShort =
             (((v.toInt() and 0xFF) shl 8) or ((v.toInt() ushr 8) and 0xFF)).toUShort()
 
-    override fun toString(): String = "NativeSocket(local=${getLocalEndpoint()}, remote=${getRemoveEndpoint()})"
+    override fun toString(): String = "NativeSocket(local=${getLocalEndpoint()}, remote=${getRemoteEndpoint()})"
 }
 
 suspend fun NativeSocket.suspendRecvUpTo(data: ByteArray, offset: Int = 0, count: Int = data.size - offset): Int {

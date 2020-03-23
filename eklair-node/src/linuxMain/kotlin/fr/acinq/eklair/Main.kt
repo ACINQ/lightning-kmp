@@ -20,6 +20,10 @@ class LinuxSocketHandler: SocketHandler{
         TODO("Not yet implemented")
     }
 
+    override fun getHost(): String {
+        TODO("Not yet implemented")
+    }
+
     override suspend fun readFully(dst: ByteArray, offset: Int, length: Int) {
         TODO("Not yet implemented")
     }

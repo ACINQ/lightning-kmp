@@ -9,6 +9,9 @@ class NativeSocketWrapperHandler(private val socket: NativeSocket): SocketHandle
         socket.suspendSend(src, offset, length)
     }
 
+    override fun getHost(): String = socket.getRemoteEndpoint().toString()
+
+
     override suspend fun readUpTo(length: Int): ByteArray {
         return socket.suspendRecvUpTo(length)
     }

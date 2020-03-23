@@ -6,10 +6,14 @@ import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.core.readBytes
+import java.net.SocketAddress
 
 class KtorSocketWrapperHandler(socket: Socket) : SocketHandler {
+    private val remote: SocketAddress = socket.remoteAddress
     private val r: ByteReadChannel = socket.openReadChannel()
     private val w: ByteWriteChannel = socket.openWriteChannel(false)
+
+    override fun getHost(): String = remote.toString()
 
     override suspend fun readUpTo(length: Int): ByteArray {
         val packet = r.readPacket(length, 0)

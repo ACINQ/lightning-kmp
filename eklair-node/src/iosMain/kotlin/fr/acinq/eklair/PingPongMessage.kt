@@ -3,8 +3,8 @@ package fr.acinq.eklair
 import kotlinx.coroutines.*
 
 sealed class PingPongMessage
-object Ping: PingPongMessage()
-object Pong : PingPongMessage()
+object PingMessage: PingPongMessage()
+object PongMessage : PingPongMessage()
 
 class PingPongActor(var pingCount: Int = 0, var pongCount: Int = 0)
 
@@ -13,12 +13,12 @@ fun CoroutineScope.pingPongActor() = actor<PingPongMessage>(capacity = 5){
     var state = PingPongActor()
     for (msg in channel){
         when (msg){
-            is Ping -> {
+            is PingMessage -> {
                 println("\uD83C\uDFD3 Received ping ! ${state.pingCount}")
                 state.pingCount++
                 delay(100)
             }
-            is Pong -> {
+            is PongMessage -> {
                 println("\uD83C\uDFD3 Received pong ! ${state.pongCount}")
                 state.pongCount++
                 delay(2000)
