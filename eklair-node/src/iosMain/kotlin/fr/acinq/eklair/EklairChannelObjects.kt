@@ -2,10 +2,7 @@ package fr.acinq.eklair
 
 import fr.acinq.eklair.EklairClient.nodeId
 import fr.acinq.secp256k1.Secp256k1
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 
@@ -14,8 +11,23 @@ object ConnectMsg : EklairActorMessage()
 object HandshakeMsg : EklairActorMessage()
 object InitMsg : EklairActorMessage()
 object PingMsg : EklairActorMessage()
-class GetHostMessage(val response: CompletableDeferred<String>) : EklairActorMessage()
+object HostMsg: EklairActorMessage()
+object Disconnect: EklairActorMessage()
+object EmptyMsg: EklairActorMessage()
 
+class HostResponseMessage(val response: String): EklairActorMessage()
+
+internal class GetHostMessage(val response: CompletableDeferred<String>) : EklairActorMessage()
+
+object EklairObjects{
+    val connect = ConnectMsg
+    val handshake = HandshakeMsg
+    val init = InitMsg
+    val ping = PingMsg
+    val disconnect = Disconnect
+    val hostMsg = HostMsg
+    val none = EmptyMsg
+}
 
 object EklairClient {
     val priv = ByteArray(32) { 0x01.toByte() }
@@ -35,6 +47,7 @@ class EklairActor() {
 fun CoroutineScope.eklairActor() = actor<EklairActorMessage> {
     var state = EklairActor()
     for (msg in channel) {
+        println("⚡ Got $msg in channel...")
         when (msg) {
             is ConnectMsg -> {
                 state.socketHandler = SocketBuilder.buildSocketHandler()
@@ -60,6 +73,7 @@ fun CoroutineScope.eklairActor() = actor<EklairActorMessage> {
                 state.session?.let { session ->
                     val ping = Hex.decode("0012000a0004deadbeef")
                     session.send(ping)
+                    delay(5000)
                     val received = session.receive()
                     println("⚡\uD83C\uDFD3 ${Hex.encode(received)}")
                 }
