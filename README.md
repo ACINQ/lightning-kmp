@@ -18,7 +18,27 @@ There is a git submodule in the `c/secp256k1` folder, one need to checkout it pr
 
 You need `ios-autotools` and then you can build the static lib using the following (change the first arg to arm64 for a real device):
 
-```sh
-iconfigure x86_64 --enable-experimental --enable-module_ecdh
-make
-```
+	sh iconfigure x86_64 --enable-experimental --enable-module_ecdh
+	make
+
+- Install command line tools:
+
+	```sh
+	xcode-select --install
+	```
+
+- Install libtool:
+
+	```sh
+	brew install libtool
+	```
+
+	> `brew` will detect the already available Apple version and thus will rename the new one into `glibtool` as expected by the other parts of the toolchain.
+	
+- Install GMP
+
+	```sh
+	ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)" < /dev/null 2> /dev/null
+	
+	brew install gmp
+	```

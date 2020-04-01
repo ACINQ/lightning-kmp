@@ -1,6 +1,8 @@
 .gradle
 build/
 
+# Ignore specific Mac files
+.DS_Store
 # Ignore Gradle GUI config
 gradle-app.setting
 
