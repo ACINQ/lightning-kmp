@@ -1,5 +1,6 @@
 .gradle
 build/
+.cxx
 
 # Ignore specific Mac files
 .DS_Store

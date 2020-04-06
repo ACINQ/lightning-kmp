@@ -22,6 +22,7 @@ kotlin {
     *  To find out how to configure the targets, please follow the link:
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
     val cinteropLibsecp256kLocation: String by project
+    val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
 
     val buildNativeLib = tasks.register<Exec>("build-native-lib") {
         //warning are issued at the end of command by cross-compilation to iOS, but they are only warnings ;-)
@@ -39,18 +40,21 @@ kotlin {
     })
 
     jvm()
-    linuxX64("linux")
     ios()
-    targets.configureEach {
-        (compilations["main"] as? KotlinNativeCompilation)?.apply {
-            cinterops {
-                val libsecp256k1 by creating {
-                    includeDirs.headerFilterOnly(project.file("${cinteropLibsecp256kLocation}/secp256k1/include/"))
-                    includeDirs(project.file("$cinteropLibsecp256kLocation/secp256k1/.libs"), "/usr/local/lib")
-                    //ensure task is run after building native lib and only run if native build result has changed
-                    val task = tasks[interopProcessingTaskName] as? DefaultTask
-                    task?.dependsOn(buildNativeLib)
-                    task?.outputs?.upToDateWhen { !buildNativeLib.get().didWork }
+
+    if (!isWinHost) {
+        linuxX64("linux")
+        targets.configureEach {
+            (compilations["main"] as? KotlinNativeCompilation)?.apply {
+                cinterops {
+                    val libsecp256k1 by creating {
+                        includeDirs.headerFilterOnly(project.file("${cinteropLibsecp256kLocation}/secp256k1/include/"))
+                        includeDirs(project.file("$cinteropLibsecp256kLocation/secp256k1/.libs"), "/usr/local/lib")
+                        //ensure task is run after building native lib and only run if native build result has changed
+                        val task = tasks[interopProcessingTaskName] as? DefaultTask
+                        task?.dependsOn(buildNativeLib)
+                        task?.outputs?.upToDateWhen { !buildNativeLib.get().didWork }
+                    }
                 }
             }
         }

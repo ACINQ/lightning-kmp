@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-
 if [[ $(uname -s) == "Darwin" ]];
 then
   HOST="mac";
