@@ -21,6 +21,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.lifecycle.*
 import fr.acinq.eklair.EklairAPI
 import fr.acinq.eklair.Hex
@@ -58,8 +59,18 @@ class MainFragment : BaseFragment() {
   @ExperimentalStdlibApi
   override fun onStart() {
     super.onStart()
+//    mBinding.socketInput.setText("13.248.222.197:9735")
+    mBinding.socketInput.setText("51.77.223.203:19735")
     mBinding.encodeButton.setOnClickListener { encodeSomething() }
-    mBinding.socketButton.setOnClickListener { model.startSocket() }
+    mBinding.socketButton.setOnClickListener {
+      try {
+        val (host, port) = mBinding.socketInput.text.toString().split(":")
+        model.startSocket(host, port.toInt())
+      } catch (e: Exception) {
+        log.error("failed to read for input: ${mBinding.socketInput.text.toString()}: ", e)
+        Toast.makeText(context, "could not read address: ${e.message}", Toast.LENGTH_SHORT).show()
+      }
+    }
   }
 
   private fun encodeSomething() {
@@ -93,21 +104,19 @@ class MainViewModel : ViewModel() {
   }
 
   @ExperimentalStdlibApi
-  fun startSocket() {
+  fun startSocket(host: String, port: Int) {
     viewModelScope.launch {
       withContext(Dispatchers.IO) {
         val id = "02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c"
         val priv = ByteArray(32) { 0x01.toByte() }
         val pub = Secp256k1.computePublicKey(priv)
         val keyPair: Pair<ByteArray, ByteArray> = Pair(pub, priv)
-        val nodeId =
-          Hex.decode("02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c")
+        val nodeId = Hex.decode(id)
         logSocket("using node_id=$id")
 
-        SocketBuilder.runBlockingCoroutine {
           log.info("running socket coroutine")
           logSocket("building socket...")
-          val socketHandler = SocketBuilder.buildSocketHandler()
+          val socketHandler = SocketBuilder.buildSocketHandler(host, port)
           logSocket("connected to peer")
           log.info("got socket handler")
           val (enc, dec, ck) = EklairAPI.handshake(keyPair, nodeId, socketHandler)
@@ -130,7 +139,6 @@ class MainViewModel : ViewModel() {
             logSocket("-> ping: $ping ->")
             session.send(ping)
           }
-        }
       }
     }
   }

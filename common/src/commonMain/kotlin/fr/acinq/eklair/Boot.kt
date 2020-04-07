@@ -7,17 +7,18 @@ import fr.acinq.eklair.crypto.Pack.uint16
 import fr.acinq.eklair.crypto.Pack.write16
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.secp256k1.Secp256k1
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 
 
 @ExperimentalStdlibApi
-class EklairApp{
-    fun run(){
+class EklairApp {
+    fun run() {
         Boot.main(emptyArray())
     }
 }
 
-interface SocketHandler{
+interface SocketHandler {
     fun getHost(): String
     suspend fun readUpTo(length: Int): ByteArray
     suspend fun readFully(dst: ByteArray, offset: Int, length: Int)
@@ -27,23 +28,23 @@ interface SocketHandler{
 }
 
 
-
 @ExperimentalStdlibApi
 object Boot {
     fun main(args: Array<String>) {
         val priv = ByteArray(32) { 0x01.toByte() }
         val pub = Secp256k1.computePublicKey(priv)
         val keyPair = Pair(pub, priv)
-        val nodeId = Hex.decode("02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c")
+        val nodeId =
+            Hex.decode("02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c")
 
         runBlockingCoroutine {
-            val socketHandler = buildSocketHandler()
+            val socketHandler = buildSocketHandler("51.77.223.203", 19735)
             val (enc, dec, ck) = handshake(keyPair, nodeId, socketHandler)
             val session = LightningSession(socketHandler, enc, dec, ck)
             val ping = Hex.decode("0012000a0004deadbeef")
             val init = Hex.decode("001000000002a8a0")
             session.send(init)
-            while(true) {
+            while (true) {
                 val received = session.receive()
                 println(Hex.encode(received))
                 delay(2000)
@@ -54,13 +55,18 @@ object Boot {
 
 }
 
-class LightningSession(val socketHandler: SocketHandler, val enc: CipherState, val dec: CipherState, val ck: ByteArray) {
+class LightningSession(
+    val socketHandler: SocketHandler,
+    val enc: CipherState,
+    val dec: CipherState,
+    val ck: ByteArray
+) {
     var encryptor: CipherState = ExtendedCipherState(enc, ck)
     var decryptor: CipherState = ExtendedCipherState(dec, ck)
 
-    suspend fun receive() : ByteArray {
+    suspend fun receive(): ByteArray {
         val cipherlen = ByteArray(18)
-        socketHandler.readFully(cipherlen, 0,18)
+        socketHandler.readFully(cipherlen, 0, 18)
         val (tmp, plainlen) = decryptor.decryptWithAd(ByteArray(0), cipherlen)
         decryptor = tmp
         val length = uint16(plainlen, 0)
@@ -91,17 +97,24 @@ object EklairAPI {
     val prologue = "lightning".encodeToByteArray()
 
 
-    fun makeWriter(localStatic: Pair<ByteArray, ByteArray>, remoteStatic: ByteArray) = HandshakeState.initializeWriter(
+    fun makeWriter(localStatic: Pair<ByteArray, ByteArray>, remoteStatic: ByteArray) =
+        HandshakeState.initializeWriter(
             handshakePatternXK, prologue,
             localStatic, Pair(ByteArray(0), ByteArray(0)), remoteStatic, ByteArray(0),
-            Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions)
+            Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
+        )
 
     fun makeReader(localStatic: Pair<ByteArray, ByteArray>) = HandshakeState.initializeReader(
-            handshakePatternXK, prologue,
-            localStatic, Pair(ByteArray(0), ByteArray(0)), ByteArray(0), ByteArray(0),
-            Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions)
+        handshakePatternXK, prologue,
+        localStatic, Pair(ByteArray(0), ByteArray(0)), ByteArray(0), ByteArray(0),
+        Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
+    )
 
-    suspend fun handshake(ourKeys: Pair<ByteArray, ByteArray>, theirPubkey: ByteArray, socketHandler: SocketHandler) : EklairHandshake {
+    suspend fun handshake(
+        ourKeys: Pair<ByteArray, ByteArray>,
+        theirPubkey: ByteArray,
+        socketHandler: SocketHandler
+    ): EklairHandshake {
 
         /**
          * See BOLT #8: during the handshake phase we are expecting 3 messages of 50, 50 and 66 bytes (including the prefix)
@@ -131,10 +144,10 @@ object EklairAPI {
         socketHandler.flush()
         return Triple(enc, dec, ck)
     }
-
 }
+
 expect object SocketBuilder {
-    suspend fun buildSocketHandler(): SocketHandler
+    suspend fun buildSocketHandler(host: String, port: Int): SocketHandler
 
     fun runBlockingCoroutine(closure: suspend (CoroutineScope) -> Unit)
 

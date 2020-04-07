@@ -50,7 +50,7 @@ fun CoroutineScope.eklairActor() = actor<EklairActorMessage> {
         println("⚡ Got $msg in channel...")
         when (msg) {
             is ConnectMsg -> {
-                state.socketHandler = SocketBuilder.buildSocketHandler()
+                state.socketHandler = SocketBuilder.buildSocketHandler("51.77.223.203", 19735)
             }
             is HandshakeMsg -> {
                 state.socketHandler?.let {
@@ -96,7 +96,7 @@ class Ping(val data: ByteArray) : EklairMessage()
 
 @ExperimentalCoroutinesApi
 fun CoroutineScope.doConnect() = produce {
-    val handler = SocketBuilder.buildSocketHandler()
+    val handler = SocketBuilder.buildSocketHandler("51.77.223.203", 19735)
     send(Connect(handler))
 }
 

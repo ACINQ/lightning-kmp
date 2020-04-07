@@ -12,10 +12,10 @@ import java.net.InetSocketAddress
 actual object SocketBuilder {
 
   @KtorExperimentalAPI
-  actual suspend fun buildSocketHandler(): SocketHandler {
+  actual suspend fun buildSocketHandler(host: String, port: Int): SocketHandler {
     log(LogLevel.INFO, "SocketBuilder", "building ktor socket")
     val socketBuilder = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp()
-    val address = InetSocketAddress("51.77.223.203", 9735)
+    val address = InetSocketAddress(host, port)
     log(LogLevel.INFO, "SocketBuilder", "connecting to $address")
     val connect = socketBuilder.connect(address)
     log(LogLevel.INFO, "SocketBuilder", "connected to $address!")
