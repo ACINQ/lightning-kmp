@@ -27,15 +27,13 @@ interface SocketHandler {
     fun flush()
 }
 
-
 @ExperimentalStdlibApi
 object Boot {
     fun main(args: Array<String>) {
         val priv = ByteArray(32) { 0x01.toByte() }
         val pub = Secp256k1.computePublicKey(priv)
         val keyPair = Pair(pub, priv)
-        val nodeId =
-            Hex.decode("02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c")
+        val nodeId = Hex.decode("02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c")
 
         runBlockingCoroutine {
             val socketHandler = buildSocketHandler("51.77.223.203", 19735)
@@ -55,12 +53,7 @@ object Boot {
 
 }
 
-class LightningSession(
-    val socketHandler: SocketHandler,
-    val enc: CipherState,
-    val dec: CipherState,
-    val ck: ByteArray
-) {
+class LightningSession(val socketHandler: SocketHandler, val enc: CipherState, val dec: CipherState, val ck: ByteArray) {
     var encryptor: CipherState = ExtendedCipherState(enc, ck)
     var decryptor: CipherState = ExtendedCipherState(dec, ck)
 
@@ -97,24 +90,11 @@ object EklairAPI {
     val prologue = "lightning".encodeToByteArray()
 
 
-    fun makeWriter(localStatic: Pair<ByteArray, ByteArray>, remoteStatic: ByteArray) =
-        HandshakeState.initializeWriter(
-            handshakePatternXK, prologue,
-            localStatic, Pair(ByteArray(0), ByteArray(0)), remoteStatic, ByteArray(0),
-            Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
-        )
+    fun makeWriter(localStatic: Pair<ByteArray, ByteArray>, remoteStatic: ByteArray) = HandshakeState.initializeWriter(handshakePatternXK, prologue, localStatic, Pair(ByteArray(0), ByteArray(0)), remoteStatic, ByteArray(0), Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions)
 
-    fun makeReader(localStatic: Pair<ByteArray, ByteArray>) = HandshakeState.initializeReader(
-        handshakePatternXK, prologue,
-        localStatic, Pair(ByteArray(0), ByteArray(0)), ByteArray(0), ByteArray(0),
-        Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
-    )
+    fun makeReader(localStatic: Pair<ByteArray, ByteArray>) = HandshakeState.initializeReader(handshakePatternXK, prologue, localStatic, Pair(ByteArray(0), ByteArray(0)), ByteArray(0), ByteArray(0), Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions)
 
-    suspend fun handshake(
-        ourKeys: Pair<ByteArray, ByteArray>,
-        theirPubkey: ByteArray,
-        socketHandler: SocketHandler
-    ): EklairHandshake {
+    suspend fun handshake(ourKeys: Pair<ByteArray, ByteArray>, theirPubkey: ByteArray, socketHandler: SocketHandler): EklairHandshake {
 
         /**
          * See BOLT #8: during the handshake phase we are expecting 3 messages of 50, 50 and 66 bytes (including the prefix)

@@ -8,13 +8,13 @@ import fr.acinq.phoenix.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
 
-  private lateinit var mBinding: ActivityMainBinding
-  private lateinit var app: AppViewModel
+    private lateinit var mBinding: ActivityMainBinding
+    private lateinit var app: AppViewModel
 
-  override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
-    mBinding = DataBindingUtil.setContentView(this, R.layout.activity_main)
-    app = ViewModelProvider(this).get(AppViewModel::class.java)
-  }
-
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        mBinding = DataBindingUtil.setContentView(this, R.layout.activity_main)
+        app = ViewModelProvider(this).get(AppViewModel::class.java)
+    }
+  
 }

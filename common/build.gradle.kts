@@ -30,14 +30,14 @@ kotlin {
     val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     if (!isWinHost) {
         linuxX64("linux") {
-             binaries {
-                 sharedLib()
-             }
+            binaries {
+                sharedLib()
+            }
         }
     }
 
     ios {
-        binaries{
+        binaries {
             framework()
         }
     }
@@ -103,13 +103,10 @@ kotlin {
         // The default destination directory is '<build directory>/fat-framework'.
         destinationDir = buildDir.resolve("common/${buildType.toLowerCase()}")
 
-        val iosTargets = listOf(
-                targets.findByName("iosArm64") as? KotlinNativeTarget,
-                targets.findByName("iosX64") as? KotlinNativeTarget
-        )
+        val iosTargets = listOf(targets.findByName("iosArm64") as? KotlinNativeTarget, targets.findByName("iosX64") as? KotlinNativeTarget)
         // Specify the frameworks to be merged.
         val frameworksBinaries = iosTargets.mapNotNull { it?.binaries?.getFramework(buildType) }
-        from( frameworksBinaries )
+        from(frameworksBinaries)
         dependsOn(frameworksBinaries.map { it.linkTask })
 
         // disable gradle's up to date checking

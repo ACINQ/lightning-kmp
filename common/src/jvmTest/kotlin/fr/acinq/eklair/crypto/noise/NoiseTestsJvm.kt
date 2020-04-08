@@ -25,23 +25,9 @@ class NoiseTestsJvm {
         val key3 = Hex.decode("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
         val key4 = Hex.decode("4142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60")
 
-        val initiator = HandshakeState.initializeWriter(
-                handshakePattern = handshakePatternNN,
-                prologue = Hex.decode("6e6f74736563726574"),
-                s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0),
-                dh = Curve25519DHFunctions,
-                cipher = Chacha20Poly1305CipherFunctions,
-                hash = SHA256HashFunctions,
-                byteStream = NoiseTestsCommon.Companion.FixedStream(key3))
+        val initiator = HandshakeState.initializeWriter(handshakePattern = handshakePatternNN, prologue = Hex.decode("6e6f74736563726574"), s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0), dh = Curve25519DHFunctions, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions, byteStream = NoiseTestsCommon.Companion.FixedStream(key3))
 
-        val responder = HandshakeState.initializeReader(
-                handshakePattern = handshakePatternNN,
-                prologue = Hex.decode("6e6f74736563726574"),
-                s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0),
-                dh = Curve25519DHFunctions,
-                cipher = Chacha20Poly1305CipherFunctions,
-                hash = SHA256HashFunctions,
-                byteStream = NoiseTestsCommon.Companion.FixedStream(key4))
+        val responder = HandshakeState.initializeReader(handshakePattern = handshakePatternNN, prologue = Hex.decode("6e6f74736563726574"), s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0), dh = Curve25519DHFunctions, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions, byteStream = NoiseTestsCommon.Companion.FixedStream(key4))
 
         val (outputs, foo) = NoiseTestsCommon.handshake(initiator, responder, listOf(ByteArray(0), ByteArray(0)))
         val (enc, dec) = foo
@@ -99,23 +85,9 @@ class NoiseTestsJvm {
         */
         // @formatter:on
 
-        val initiator = HandshakeState.initializeWriter(
-                handshakePattern = handshakePatternNN,
-                prologue = Hex.decode("4a6f686e2047616c74"),
-                s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0),
-                dh = Curve25519DHFunctions,
-                cipher = Chacha20Poly1305CipherFunctions,
-                hash = SHA256HashFunctions,
-                byteStream = NoiseTestsCommon.Companion.FixedStream(Hex.decode("893e28b9dc6ca8d611ab664754b8ceb7bac5117349a4439a6b0569da977c464a")))
+        val initiator = HandshakeState.initializeWriter(handshakePattern = handshakePatternNN, prologue = Hex.decode("4a6f686e2047616c74"), s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0), dh = Curve25519DHFunctions, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions, byteStream = NoiseTestsCommon.Companion.FixedStream(Hex.decode("893e28b9dc6ca8d611ab664754b8ceb7bac5117349a4439a6b0569da977c464a")))
 
-        val responder = HandshakeState.initializeReader(
-                handshakePattern = handshakePatternNN,
-                prologue = Hex.decode("4a6f686e2047616c74"),
-                s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0),
-                dh = Curve25519DHFunctions,
-                cipher = Chacha20Poly1305CipherFunctions,
-                hash = SHA256HashFunctions,
-                byteStream = NoiseTestsCommon.Companion.FixedStream(Hex.decode("bbdb4cdbd309f1a1f2e1456967fe288cadd6f712d65dc7b7793d5e63da6b375b")))
+        val responder = HandshakeState.initializeReader(handshakePattern = handshakePatternNN, prologue = Hex.decode("4a6f686e2047616c74"), s = Pair(ByteArray(0), ByteArray(0)), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0), dh = Curve25519DHFunctions, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions, byteStream = NoiseTestsCommon.Companion.FixedStream(Hex.decode("bbdb4cdbd309f1a1f2e1456967fe288cadd6f712d65dc7b7793d5e63da6b375b")))
 
         val (outputs, foo) = NoiseTestsCommon.handshake(initiator, responder, listOf(Hex.decode("4c756477696720766f6e204d69736573"), Hex.decode("4d757272617920526f746862617264")))
         val (enc, dec) = foo
@@ -159,25 +131,9 @@ class NoiseTestsJvm {
         val key3 = Hex.decode("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
         val key4 = Hex.decode("4142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60")
 
-        val initiator = HandshakeState.initializeWriter(
-                handshakePattern = handshakePatternXK,
-                prologue = ByteArray(0),
-                s = Curve25519DHFunctions.generateKeyPair(key0), e = Pair(ByteArray(0), ByteArray(0)),
-                rs = Curve25519DHFunctions.generateKeyPair(key1).first, re = ByteArray(0),
-                dh = Curve25519DHFunctions,
-                cipher = Chacha20Poly1305CipherFunctions,
-                hash = SHA256HashFunctions,
-                byteStream = NoiseTestsCommon.Companion.FixedStream(key3))
+        val initiator = HandshakeState.initializeWriter(handshakePattern = handshakePatternXK, prologue = ByteArray(0), s = Curve25519DHFunctions.generateKeyPair(key0), e = Pair(ByteArray(0), ByteArray(0)), rs = Curve25519DHFunctions.generateKeyPair(key1).first, re = ByteArray(0), dh = Curve25519DHFunctions, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions, byteStream = NoiseTestsCommon.Companion.FixedStream(key3))
 
-        val responder = HandshakeState.initializeReader(
-                handshakePattern = handshakePatternXK,
-                prologue = ByteArray(0),
-                s = Curve25519DHFunctions.generateKeyPair(key1), e = Pair(ByteArray(0), ByteArray(0)),
-                rs = ByteArray(0), re = ByteArray(0),
-                dh = Curve25519DHFunctions,
-                cipher = Chacha20Poly1305CipherFunctions,
-                hash = SHA256HashFunctions,
-                byteStream = NoiseTestsCommon.Companion.FixedStream(key4))
+        val responder = HandshakeState.initializeReader(handshakePattern = handshakePatternXK, prologue = ByteArray(0), s = Curve25519DHFunctions.generateKeyPair(key1), e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0), dh = Curve25519DHFunctions, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions, byteStream = NoiseTestsCommon.Companion.FixedStream(key4))
 
         val (outputs, foo) = NoiseTestsCommon.handshake(initiator, responder, listOf(ByteArray(0), ByteArray(0), ByteArray(0)))
         val (enc, dec) = foo

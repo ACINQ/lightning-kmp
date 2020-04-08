@@ -7,29 +7,24 @@ import kotlinx.coroutines.channels.SendChannel
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
+/* TODO: Maybe Channel.DEFAULT here */
 @InternalCoroutinesApi
-public fun <E> CoroutineScope.actor(
-        context: CoroutineContext = EmptyCoroutineContext,
-        capacity: Int = 0, // todo: Maybe Channel.DEFAULT here?
-        start: CoroutineStart = CoroutineStart.DEFAULT,
-        onCompletion: CompletionHandler? = null,
-        block: suspend ActorScope<E>.() -> Unit
-): SendChannel<E> {
+public fun <E> CoroutineScope.actor(context: CoroutineContext = EmptyCoroutineContext, capacity: Int = 0, start: CoroutineStart = CoroutineStart.DEFAULT, onCompletion: CompletionHandler? = null, block: suspend ActorScope<E>.() -> Unit): SendChannel<E> {
     val newContext = newCoroutineContext(context)
     val channel = Channel<E>(capacity)
-    val coroutine =  ActorCoroutine(newContext, channel)
+    val coroutine = ActorCoroutine(newContext, channel)
     //if (onCompletion != null) coroutine.invokeOnCompletion(handler = onCompletion)
     coroutine.start(start, coroutine, block)
     return coroutine
 }
 
 
-interface ActorScope<E>: CoroutineScope, ReceiveChannel<E> {
+interface ActorScope<E> : CoroutineScope, ReceiveChannel<E> {
     val channel: Channel<E>
 }
 
 @InternalCoroutinesApi
-class ActorCoroutine<E>(parentContext: CoroutineContext, protected  val _channel: Channel<E>) : AbstractCoroutine<Unit>(parentContext), ActorScope<E>, Channel<E> by _channel {
+class ActorCoroutine<E>(parentContext: CoroutineContext, protected val _channel: Channel<E>) : AbstractCoroutine<Unit>(parentContext), ActorScope<E>, Channel<E> by _channel {
     override val channel: Channel<E> get() = this
 
     override fun cancel() {

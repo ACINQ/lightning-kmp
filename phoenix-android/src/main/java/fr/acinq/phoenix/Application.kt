@@ -22,15 +22,15 @@ import org.slf4j.LoggerFactory
 
 class Application : Application() {
 
-  val log = LoggerFactory.getLogger(Application::class.java)
+    val log = LoggerFactory.getLogger(Application::class.java)
 
-  override fun onCreate() {
-    super.onCreate()
-    init()
-    log.info("app started")
-  }
+    override fun onCreate() {
+        super.onCreate()
+        init()
+        log.info("app started")
+    }
 
-  private fun init() {
-    Logging.setupLogger(applicationContext)
-  }
+    private fun init() {
+        Logging.setupLogger(applicationContext)
+    }
 }

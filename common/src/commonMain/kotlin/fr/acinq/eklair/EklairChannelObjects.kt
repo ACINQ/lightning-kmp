@@ -11,15 +11,15 @@ object ConnectMsg : EklairActorMessage()
 object HandshakeMsg : EklairActorMessage()
 object InitMsg : EklairActorMessage()
 object PingMsg : EklairActorMessage()
-object HostMsg: EklairActorMessage()
-object Disconnect: EklairActorMessage()
-object EmptyMsg: EklairActorMessage()
+object HostMsg : EklairActorMessage()
+object Disconnect : EklairActorMessage()
+object EmptyMsg : EklairActorMessage()
 
-class HostResponseMessage(val response: String): EklairActorMessage()
+class HostResponseMessage(val response: String) : EklairActorMessage()
 
 internal class GetHostMessage(val response: CompletableDeferred<String>) : EklairActorMessage()
 
-object EklairObjects{
+object EklairObjects {
     val connect = ConnectMsg
     val handshake = HandshakeMsg
     val init = InitMsg

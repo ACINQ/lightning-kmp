@@ -40,11 +40,7 @@ class MainFragment : BaseFragment() {
     private lateinit var mBinding: FragmentMainBinding
     private lateinit var model: MainViewModel
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         mBinding = FragmentMainBinding.inflate(inflater, container, false)
         mBinding.lifecycleOwner = this
         return mBinding.root
@@ -69,8 +65,7 @@ class MainFragment : BaseFragment() {
                 model.startSocket(nodeId, host, port.toInt())
             } catch (e: Exception) {
                 log.error("failed to read for input: $uri: ", e)
-                Toast.makeText(context, "could not read address: ${e.message}", Toast.LENGTH_SHORT)
-                    .show()
+                Toast.makeText(context, "could not read address: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -23,38 +23,38 @@ import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 
 class AppViewModel : ViewModel() {
-  private val log = LoggerFactory.getLogger(AppViewModel::class.java)
+    private val log = LoggerFactory.getLogger(AppViewModel::class.java)
 
-  init {
-    log.info("app model init...")
-  }
-
-  override fun onCleared() {
-    shutdown()
-    super.onCleared()
-    log.debug("appkit has been cleared")
-  }
-
-  suspend fun fireAndWait(): String {
-    return coroutineScope {
-      async(Dispatchers.Default) {
-        log.info("do something suspended in default")
-        delay(1000)
-        "the result!"
-      }
-    }.await()
-  }
-
-  @UiThread
-  fun fireAndForget() {
-    viewModelScope.launch {
-      withContext(Dispatchers.IO) {
-        log.info("not awaiting for result")
-      }
+    init {
+        log.info("app model init...")
     }
-  }
 
-  private fun shutdown() {
-    log.info("shutting down node!")
-  }
+    override fun onCleared() {
+        shutdown()
+        super.onCleared()
+        log.debug("appkit has been cleared")
+    }
+
+    suspend fun fireAndWait(): String {
+        return coroutineScope {
+            async(Dispatchers.Default) {
+                log.info("do something suspended in default")
+                delay(1000)
+                "the result!"
+            }
+        }.await()
+    }
+
+    @UiThread
+    fun fireAndForget() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                log.info("not awaiting for result")
+            }
+        }
+    }
+
+    private fun shutdown() {
+        log.info("shutting down node!")
+    }
 }

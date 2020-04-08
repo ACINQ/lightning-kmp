@@ -24,11 +24,11 @@ import org.slf4j.LoggerFactory
 
 abstract class BaseFragment : Fragment() {
 
-  open val log: Logger = LoggerFactory.getLogger(BaseFragment::class.java)
-  protected lateinit var app: AppViewModel
+    open val log: Logger = LoggerFactory.getLogger(BaseFragment::class.java)
+    protected lateinit var app: AppViewModel
 
-  override fun onActivityCreated(savedInstanceState: Bundle?) {
-    super.onActivityCreated(savedInstanceState)
-    app = ViewModelProvider(activity!!).get(AppViewModel::class.java)
-  }
+    override fun onActivityCreated(savedInstanceState: Bundle?) {
+        super.onActivityCreated(savedInstanceState)
+        app = ViewModelProvider(activity!!).get(AppViewModel::class.java)
+    }
 }
