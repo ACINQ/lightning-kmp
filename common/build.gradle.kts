@@ -98,10 +98,10 @@ kotlin {
         val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
 
         // The fat framework must have the same base name as the initial frameworks.
-        baseName = "eklair_node"
+        baseName = "common"
 
         // The default destination directory is '<build directory>/fat-framework'.
-        destinationDir = buildDir.resolve("eklair_node/${buildType.toLowerCase()}")
+        destinationDir = buildDir.resolve("common/${buildType.toLowerCase()}")
 
         val iosTargets = listOf(
                 targets.findByName("iosArm64") as? KotlinNativeTarget,
