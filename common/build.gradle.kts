@@ -98,10 +98,10 @@ kotlin {
         val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
 
         // The fat framework must have the same base name as the initial frameworks.
-        baseName = "common"
+        baseName = "eklair"
 
         // The default destination directory is '<build directory>/fat-framework'.
-        destinationDir = buildDir.resolve("common/${buildType.toLowerCase()}")
+        destinationDir = buildDir.resolve("eklair/${buildType.toLowerCase()}")
 
         val iosTargets = listOf(targets.findByName("iosArm64") as? KotlinNativeTarget, targets.findByName("iosX64") as? KotlinNativeTarget)
         // Specify the frameworks to be merged.

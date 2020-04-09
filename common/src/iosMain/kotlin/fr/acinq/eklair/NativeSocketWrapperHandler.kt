@@ -1,6 +1,7 @@
 package fr.acinq.eklair
 
 class NativeSocketWrapperHandler(private val socket: NativeSocket): SocketHandler {
+
     override suspend fun writeByte(b: Byte) {
         writeFully(ByteArray(1) { b }, 0, 1)
     }

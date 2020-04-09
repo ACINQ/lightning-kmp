@@ -1,14 +1,16 @@
 package fr.acinq.eklair
+
 /**
  * extracted and adapted from
  * https://raw.githubusercontent.com/korlibs/korio/master/korio/src/macosX64Main/kotlin/Demo.kt
  */
 
-import kotlinx.cinterop.*
 import platform.Foundation.*
 import platform.darwin.*
-import kotlinx.coroutines.*
 import platform.posix.*
+
+import kotlinx.cinterop.*
+import kotlinx.coroutines.*
 
 class NativeSocket private constructor(internal val sockfd: Int, private var endpoint: Endpoint) {
     companion object {
@@ -260,4 +262,3 @@ suspend fun NativeSocket.accept(): NativeSocket {
         delay(10L)
     }
 }
-
