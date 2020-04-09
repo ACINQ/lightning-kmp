@@ -9,30 +9,19 @@ private val dateFormatter = NSDateFormatter().apply {
     dateFormat = "yyyy-MM-dd HH:mm:ss.SSSSSSZ" // ~ 2020-04-09 07:15:12.255002+0200
 }
 
-private fun log(message: String) {
-    println("${getCurrentTime()} ${message}")
+private fun log(level: String, message: String) {
+    println("${getCurrentTime()} [${level}]: ${message}")
 }
 
 actual fun log(level: LogLevel, tag: String, message: String, error: Throwable) {
-//    val logger = LoggerFactory.getLogger(tag)
-//    when (level) {
-//        is LogLevel.DEBUG -> logger.debug("$message: ", error)
-//        is LogLevel.INFO -> logger.info("$message: ", error)
-//        is LogLevel.WARN -> logger.warn("$message: ", error)
-//        is LogLevel.ERROR -> logger.error("$message: ", error)
-//    }
-
-    log(message)
+    log(level, tag, message)
 }
 
 actual fun log(level: LogLevel, tag: String, message: String) {
-//    val logger = LoggerFactory.getLogger(tag)
-//    when (level) {
-//        is LogLevel.DEBUG -> logger.debug(message)
-//        is LogLevel.INFO -> logger.info(message)
-//        is LogLevel.WARN -> logger.warn(message)
-//        is LogLevel.ERROR -> logger.error(message)
-//    }
-
-    log(message)
+    when (level) {
+        is LogLevel.DEBUG -> log("DEBUG", message)
+        is LogLevel.INFO -> log("INFO", message)
+        is LogLevel.WARN -> log("WARN", message)
+        is LogLevel.ERROR -> log("ERROR", message)
+    }
 }
