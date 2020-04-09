@@ -1,11 +1,15 @@
 .gradle
 build/
 .cxx
+
 # this file is local to the dev environment and must not be pushed!
 local.properties
 
 # Ignore specific Mac files
 .DS_Store
+# Non relevant Xcode files
+xcuserdata/
+
 # Ignore Gradle GUI config
 gradle-app.setting
 
