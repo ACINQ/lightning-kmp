@@ -184,6 +184,7 @@
 				7B4B9343241FAB1E00182199 /* Frameworks */,
 				7B4B9344241FAB1E00182199 /* Resources */,
 				E2AF1451243E2D1900800C12 /* Embed Frameworks */,
+				E2760CF124401B48007794BB /* Fix @rpath */,
 			);
 			buildRules = (
 			);
@@ -264,6 +265,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "cd \"$SRCROOT/../../\"\n\n./gradlew :common:createFatFramework \\\n    -Dconfiguration.build.dir=\"$CONFIGURATION_BUILD_DIR\"  \\\n    -Pkotlin.build.type=\"$KOTLIN_BUILD_TYPE\"\n";
+		};
+		E2760CF124401B48007794BB /* Fix @rpath */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Fix @rpath";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# change the @rpath settings for the framework (common -> eklair)\ninstall_name_tool -change @rpath/common.framework/common @rpath/eklair.framework/eklair \"$BUILT_PRODUCTS_DIR/Playground.app/Playground\"\n";
+			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -34,6 +34,8 @@ public class NodeManager {
     }
 
     func connect(_ completion: @escaping (() -> Void)) {
+        LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Connect()")
+
         self.host = self.user.id
 
         queue.async {
@@ -60,6 +62,11 @@ public class NodeManager {
 //                return response
 //            }
         }
+    }
+
+    // "02413957815d05abb7fc6d885622d5cdc5b7714db1478cb05813a8474179b83c5c@51.77.223.203:19735"
+    func startSocket(nodeId: String, host: String, port: String) {
+
     }
 }
 
