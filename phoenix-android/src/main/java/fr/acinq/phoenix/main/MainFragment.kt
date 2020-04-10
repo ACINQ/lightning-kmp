@@ -102,43 +102,37 @@ class MainViewModel : ViewModel() {
 
     @ExperimentalStdlibApi
     fun startSocket(nodeId: String, host: String, port: Int) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val priv = ByteArray(32) { 0x01.toByte() }
-                val pub = Secp256k1.computePublicKey(priv)
-                val keyPair: Pair<ByteArray, ByteArray> = Pair(pub, priv)
+        viewModelScope.launch(Dispatchers.IO) {
+            val priv = ByteArray(32) { 0x01.toByte() }
+            val pub = Secp256k1.computePublicKey(priv)
+            val keyPair: Pair<ByteArray, ByteArray> = Pair(pub, priv)
 
-                log.info("running socket coroutine")
-                logSocket("building socket...")
-                val socketHandler = SocketBuilder.buildSocketHandler(host, port)
-                logSocket("connected to peer")
-                log.info("got socket handler")
-                logSocket("handshake with $nodeId")
-                val (enc, dec, ck) = EklairAPI.handshake(keyPair, Hex.decode(nodeId), socketHandler)
-                logSocket("handshake ok")
-                val session = LightningSession(socketHandler, enc, dec, ck)
-                val ping = Hex.decode("0012000a0004deadbeef")
-                val init = Hex.decode("001000000002a8a0")
-                session.send(init)
-                log.info("init socket $init")
-                logSocket("init socket $init")
-                while (true) {
-                    val received = session.receive()
-                    val pong = Hex.encode(received)
-                    log.info("received pong=$pong from socket peer")
-                    logSocket("<- pong: $pong")
-
-                    delay(2000)
-
-                    log.info("sending ping=$ping")
-                    logSocket("-> ping: $ping")
-                    session.send(ping)
-                }
+            logSocket("building socket...")
+            val socketHandler = SocketBuilder.buildSocketHandler(host, port)
+            logSocket("connected to peer")
+            val (enc, dec, ck) = EklairAPI.handshake(keyPair, Hex.decode(nodeId), socketHandler)
+            logSocket("successful handshake with $nodeId")
+            val session = LightningSession(socketHandler, enc, dec, ck)
+            val ping = Hex.decode("0012000a0004deadbeef")
+            val pingEnc = Hex.encode(ping)
+            val init = Hex.decode("001000000002a8a0")
+            val initEnc = Hex.encode(init)
+            logSocket("-> init socket: $initEnc")
+            session.send(init)
+            while (true) {
+                val received = session.receive()
+                val pong = Hex.encode(received)
+                log.info("received pong=$pong from socket peer")
+                logSocket("<- pong: $pong")
+                delay(2000)
+                logSocket("-> ping: $pingEnc")
+                session.send(ping)
             }
         }
     }
 
-    private fun logSocket(line: String) {
-        socketLogs.postValue(socketLogs.value?.run { "$this\n$line" } ?: line)
+    private fun logSocket(message: String) {
+        log.info(message)
+        socketLogs.postValue(socketLogs.value?.run { "$this\n$message" } ?: message)
     }
 }
