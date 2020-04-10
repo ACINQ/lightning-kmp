@@ -9,16 +9,16 @@ import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 
 @ExperimentalStdlibApi
-actual object SocketBuilder {
+actual object SocketBuilder: Logging() {
 
     @KtorExperimentalAPI
     actual suspend fun buildSocketHandler(host: String, port: Int): SocketHandler {
-        log(LogLevel.INFO, "SocketBuilder", "building ktor socket")
+        logger.info { "building ktor socket handler" }
         val socketBuilder = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp()
         val address = InetSocketAddress(host, port)
-        log(LogLevel.INFO, "SocketBuilder", "connecting to $address")
+        logger.info { "connecting to $address" }
         val connect = socketBuilder.connect(address)
-        log(LogLevel.INFO, "SocketBuilder", "connected to $address!")
+        logger.info { "connected to $address!" }
         return KtorSocketWrapperHandler(connect)
     }
 

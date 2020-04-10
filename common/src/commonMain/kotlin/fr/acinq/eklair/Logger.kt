@@ -1,12 +1,15 @@
 package fr.acinq.eklair
 
-sealed class LogLevel {
-    object DEBUG : LogLevel()
-    object INFO : LogLevel()
-    object WARN : LogLevel()
-    object ERROR : LogLevel()
+
+abstract class Logging {
+    val logger by lazy {
+        Logger(this::class.simpleName ?: "noname")
+    }
 }
 
-expect fun log(level: LogLevel, tag: String, message: String)
-
-expect fun log(level: LogLevel, tag: String, message: String, error: Throwable)
+expect class Logger(tag: String) {
+    fun debug(message: () -> String)
+    fun info(message: () -> String)
+    fun warn(message: () -> String)
+    fun error(message: () -> String, t: Throwable? = null)
+}

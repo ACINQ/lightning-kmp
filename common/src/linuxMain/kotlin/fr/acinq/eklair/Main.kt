@@ -10,7 +10,7 @@ object BootOld {
 }
 
 actual object SocketBuilder {
-    actual suspend fun buildSocketHandler(): SocketHandler = LinuxSocketHandler()
+    actual suspend fun buildSocketHandler(host: String, port: Int): SocketHandler = LinuxSocketHandler()
     actual fun runBlockingCoroutine(closure: suspend (CoroutineScope) -> Unit) {
         runBlocking { closure(this) }
     }

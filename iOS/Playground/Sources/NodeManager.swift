@@ -28,13 +28,13 @@ public class NodeManager {
 
     func hash(message: String) -> String {
         let hash = CommonKt.hash(value: message)
-        LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Hash '\(message)' > \(hash)")
+        // LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Hash '\(message)' > \(hash)")
 
         return hash
     }
 
     func connect(_ completion: @escaping (() -> Void)) {
-        LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Connect()")
+        // LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Connect()")
 
         self.host = self.user.id
 
