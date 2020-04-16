@@ -2,22 +2,26 @@ package fr.acinq.eklair
 
 import org.slf4j.LoggerFactory
 
-actual fun log(level: LogLevel, tag: String, message: String, error: Throwable) {
-    val logger = LoggerFactory.getLogger(tag)
-    when (level) {
-        is LogLevel.DEBUG -> logger.debug("$message: ", error)
-        is LogLevel.INFO -> logger.info("$message: ", error)
-        is LogLevel.WARN -> logger.warn("$message: ", error)
-        is LogLevel.ERROR -> logger.error("$message: ", error)
-    }
-}
+actual class Logger actual constructor(tag: String) {
+    private val logger: org.slf4j.Logger = LoggerFactory.getLogger(tag)
 
-actual fun log(level: LogLevel, tag: String, message: String) {
-    val logger = LoggerFactory.getLogger(tag)
-    when (level) {
-        is LogLevel.DEBUG -> logger.debug(message)
-        is LogLevel.INFO -> logger.info(message)
-        is LogLevel.WARN -> logger.warn(message)
-        is LogLevel.ERROR -> logger.error(message)
+    actual fun debug(message: () -> String) {
+        if (logger.isDebugEnabled) logger.debug(message.invoke())
+    }
+
+    actual fun info(message: () -> String) {
+        if (logger.isInfoEnabled) logger.info(message.invoke())
+    }
+
+    actual fun warn(message: () -> String) {
+        if (logger.isWarnEnabled) logger.warn(message.invoke())
+    }
+
+    actual fun error(message: () -> String, t: Throwable?) {
+        if (t == null) {
+            logger.error(message.invoke())
+        } else {
+            logger.error(message.invoke(), t)
+        }
     }
 }
