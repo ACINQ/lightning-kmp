@@ -12,6 +12,10 @@ Modules are organized as follows:
 
 There is a git submodule in the `c/secp256k1` folder, one need to checkout it properly with `git clone --recursive` or `git submodule update`
 
+## General
+
+Copy the file `local.properties.example` into `local.properties` and change its values to match where your SDKs are installed.
+
 ## Android
 
 Use Android Studio and make sure you are using the Android Studio JRE provided with the Android Studio distribution to build the project.
