@@ -10,7 +10,7 @@ import Foundation
 import eklair
 
 public class NodeManager {
-
+    let logger: Logger
     let queue = DispatchQueue(label: "actorQueue", qos: .userInitiated)
 
     var host: String = ""
@@ -21,6 +21,7 @@ public class NodeManager {
     // MARK: - Life cycle
 
     init() {
+        self.logger = Logger.init(tag: "Playground")
         self.user = EklairUser(id: UUID().uuidString)
     }
 
@@ -28,9 +29,13 @@ public class NodeManager {
 
     func hash(message: String) -> String {
         let hash = CommonKt.hash(value: message)
-        // LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Hash '\(message)' > \(hash)")
+        logger.info { "Hash '\(message)' > \(hash)." }
 
         return hash
+    }
+
+    func testLog() {
+        logger.info { "This log has been triggered by iOS but is coming from Kotlin using `println`." }
     }
 
     func connect(_ completion: @escaping (() -> Void)) {
