@@ -11,7 +11,11 @@ import eklair
 
 public class NodeManager {
     let logger: Logger
-    let queue = DispatchQueue(label: "actorQueue", qos: .userInitiated)
+
+    let eklairQueue = DispatchQueue(label: "eklairQueue", qos: .background)
+    var item: DispatchWorkItem?
+
+    let actorQueue = DispatchQueue(label: "actorQueue", qos: .userInitiated)
 
     var host: String = ""
     let user: EklairUser
@@ -38,12 +42,49 @@ public class NodeManager {
         logger.info { "This log has been triggered by iOS but is coming from Kotlin using `println`." }
     }
 
+    func startInOut(closure: @escaping () -> Void) {
+//        eklairQueue.async {
+//            while (true) {
+//                print("toto")
+//                sleep(2)
+//            }
+//        }
+//
+//            guard let textBlocks = self?.textBlocks else { return }
+//            for textBlock in textBlocks where self?.item?.isCancelled == false {
+//                let semaphore = DispatchSemaphore(value: 0)
+//                self?.startTalking(string: textBlock) {
+//                    semaphore.signal()
+//                }
+//                semaphore.wait()
+//            }
+//            self?.item = nil
+
+        item = DispatchWorkItem { [weak self] in
+            var counter = 0
+            while self?.item?.isCancelled == false {
+                print(counter)
+                counter += 1
+
+                closure()
+                sleep(1)
+            }
+        }
+
+        eklairQueue.async(execute: item!)
+    }
+
+    func stopInOut() {
+//        eklairQueue.stop
+        item?.cancel()
+    }
+
     func connect(_ completion: @escaping (() -> Void)) {
         // LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Connect()")
 
         self.host = self.user.id
 
-        queue.async {
+        actorQueue.async {
 
             DispatchQueue.main.async {
 
