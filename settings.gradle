@@ -1,5 +1,0 @@
-rootProject.name='eklair'
-include ':common'
-include ':secp256k1-lib'
-include ':phoenix-android'
-enableFeaturePreview("GRADLE_METADATA")

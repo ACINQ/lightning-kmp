@@ -264,7 +264,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/../../\"\n\n./gradlew :common:createFatFramework \\\n    -Dconfiguration.build.dir=\"$CONFIGURATION_BUILD_DIR\"  \\\n    -Pkotlin.build.type=\"$KOTLIN_BUILD_TYPE\"\n";
+			shellScript = "cd \"$SRCROOT/../../\"\n\n./gradlew :common:createFatFramework \\\n    -Dconfiguration.build.dir=\"$CONFIGURATION_BUILD_DIR\"  \\\n    -Pkotlin.build.type=\"$KOTLIN_BUILD_TYPE\" \\\n    -Pinclude_android=false\n";
 		};
 		E2760CF124401B48007794BB /* Fix @rpath */ = {
 			isa = PBXShellScriptBuildPhase;

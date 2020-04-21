@@ -51,3 +51,11 @@ ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/
 
 brew install gmp
 ```
+
+Use the following command in order to build the "**eklair**" framework:
+`./gradlew :common:createFatFramework`
+
+You can also prevent the Android counterpart to be built in case the environment is not set:
+`./gradlew :common:createFatFramework -Pinclude_android=false`
+
+The Xcode project has a build phase dedicated to build the framework.
