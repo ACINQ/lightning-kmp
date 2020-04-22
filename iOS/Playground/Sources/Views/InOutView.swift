@@ -57,10 +57,10 @@ struct InOutView: View {
 
                     Button(action: { self.didPressStop() }) {
                         VStack {
-                        Image(systemName: "nosign")
-                            .font(.system(size: 70))
-                            .padding(.bottom, 7)
-                        Text("Stop")
+                            Image(systemName: "nosign")
+                                .font(.system(size: 70))
+                                .padding(.bottom, 7)
+                            Text("Stop")
                         }
                         .foregroundColor(!self.startStopMode ? .gray : .red)
 
@@ -95,7 +95,9 @@ extension InOutView {
         print("Stop!")
         self.startStopMode = false
 
-        nodeManager.stopInOut()
+        DispatchQueue.main.async {
+            self.nodeManager.stopInOut()
+        }
     }
 }
 

@@ -72,6 +72,8 @@ public class NodeManager {
         }
 
         eklairQueue.async(execute: item!)
+
+        DispatchersKt.runCoroutineStepping()
     }
 
     func stopInOut() {
