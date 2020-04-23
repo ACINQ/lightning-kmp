@@ -68,7 +68,8 @@ internal suspend fun coroutineStep() {
     println("Coroutines step!")
 //    Thread.sleep(1500)
 //    platform.posix.sleep(2)
-    delayOnPlatform(1000)
+//    delayOnPlatform(1000)
+    delay(1000)
 }
 
 //fun runCoroutine(closure: suspend (CoroutineScope) -> Unit){
