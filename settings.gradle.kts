@@ -19,5 +19,5 @@ include(":secp256k1-lib")
 
 if (include_android == "true") {
     println("Include Android")
-    include(":phoenix-android")
+ //   include(":phoenix-android")
 }

@@ -42,7 +42,7 @@ public class NodeManager {
         logger.info { "This log has been triggered by iOS but is coming from Kotlin using `println`." }
     }
 
-    func startInOut(closure: @escaping () -> Void) {
+    func startInOut(closure: @escaping () -> Void, closureOut: @escaping (Int) -> Void) {
 //        eklairQueue.async {
 //            while (true) {
 //                print("toto")
@@ -72,10 +72,67 @@ public class NodeManager {
         }
 
         eklairQueue.async(execute: item!)
-
-        DispatchersKt.runCoroutineStepping()
+        
+        let queueIn = DispatchQueue(label: "queueIn", qos: .background, attributes: .concurrent)
+        let queueOut = DispatchQueue(label: "queueOut", qos: .background, attributes: .concurrent)
+        let queue = DispatchQueue(label: "app", qos: .background, attributes: .concurrent)
+        /*queue.async {
+            DispatchersKt.runCoroutineStepping(
+                closureStop: { inStr in
+                    var result = "AZEAZE"
+                    queueIn.sync {
+                        result = self.closureToStopCount(in: inStr)
+                    }
+                    return result
+                },
+                
+               closureOut: { outStr in
+                    var result = ""
+                    queueOut.sync {
+                        result = self.closureOut(out: outStr)
+                        closureOut(Int(result)!)
+                    }
+                    return result
+                }
+            )
+        }*/
+        queue.async {
+            queueIn.async {
+                let group = DispatchGroup()
+                group.enter()
+                queueIn.async {
+                    let response = self.closureToStopCount(in: "aze")
+                    group.leave()
+                    if response == "STOP"{
+                        fatalError("STOPPING")
+                    }
+                }
+                group.wait()
+            }
+            
+            while true {
+                print(">>> queue principale ")
+                sleep(5)
+                queueOut.async {
+                    while true{
+                        print(">>>> queue async")
+                        sleep(1)
+                        print(">>>> queue async 2")
+                        sleep(1)
+                    }
+                }
+            }
+        }
     }
 
+    func closureToStopCount(in _: String) -> String{
+        sleep(20)
+        return "STOP"
+    }
+    
+    func closureOut(out: String) -> String{
+     return out
+    }
     func stopInOut() {
 //        eklairQueue.stop
         item?.cancel()
@@ -234,3 +291,8 @@ public class NodeManager {
 //        }
 //    }
 //}
+
+
+class Toto: KotlinSuspendFunction1{
+    
+}

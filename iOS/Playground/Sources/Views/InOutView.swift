@@ -88,7 +88,11 @@ extension InOutView {
             DispatchQueue.main.async {
                 self.inCount += 1
             }
-        })
+        }){ cnt in
+            DispatchQueue.main.async {
+                self.outCount += cnt
+            }
+        }
     }
 
     func didPressStop() {
