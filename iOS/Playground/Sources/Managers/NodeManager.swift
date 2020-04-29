@@ -21,6 +21,10 @@ public class NodeManager {
     let user: EklairUser
 
     var counter = 0
+    private var pause = 1000
+    
+    let workQueue = DispatchQueue(label: "workQueue", qos: .background, attributes: .concurrent)
+    let workGroup = DispatchGroup()
 
     // MARK: - Life cycle
 
@@ -40,6 +44,13 @@ public class NodeManager {
 
     func testLog() {
         logger.info { "This log has been triggered by iOS but is coming from Kotlin using `println`." }
+    }
+    
+    func updatePause(_ pause: Float){
+        self.pause = Int(pause * 1000)
+
+//        if workGroup
+        workGroup.leave()
     }
 
     func startInOut(closure: @escaping () -> Void, closureOut: @escaping (Int) -> Void) {
@@ -75,59 +86,53 @@ public class NodeManager {
         
         let queueIn = DispatchQueue(label: "queueIn", qos: .background, attributes: .concurrent)
         let queueOut = DispatchQueue(label: "queueOut", qos: .background, attributes: .concurrent)
-        let queue = DispatchQueue(label: "app", qos: .background, attributes: .concurrent)
-        /*queue.async {
+        let queue = DispatchQueue(label: "app")//, qos: .background, attributes: .concurrent)
+
+        let eklairGroup = DispatchGroup()
+        eklairGroup.enter()
+        queue.async {
             DispatchersKt.runCoroutineStepping(
                 closureStop: { inStr in
                     var result = "AZEAZE"
-                    queueIn.sync {
+                    let group = DispatchGroup()
+                    group.enter()
+                    queueIn.async {
                         result = self.closureToStopCount(in: inStr)
+                        group.leave()
                     }
+                    group.wait()
                     return result
                 },
                 
                closureOut: { outStr in
                     var result = ""
-                    queueOut.sync {
-                        result = self.closureOut(out: outStr)
-                        closureOut(Int(result)!)
-                    }
+                    let group = DispatchGroup()
+                    group.enter()
+                        queueOut.async {
+                            result = self.closureOut(out: outStr)
+                            closureOut(Int(result)!)
+                            group.leave()
+                        }
+                    group.wait()
                     return result
                 }
             )
-        }*/
-        queue.async {
-            queueIn.async {
-                let group = DispatchGroup()
-                group.enter()
-                queueIn.async {
-                    let response = self.closureToStopCount(in: "aze")
-                    group.leave()
-                    if response == "STOP"{
-                        fatalError("STOPPING")
-                    }
-                }
-                group.wait()
-            }
-            
-            while true {
-                print(">>> queue principale ")
-                sleep(5)
-                queueOut.async {
-                    while true{
-                        print(">>>> queue async")
-                        sleep(1)
-                        print(">>>> queue async 2")
-                        sleep(1)
-                    }
-                }
-            }
+            eklairGroup.leave()
+        }
+        eklairGroup.notify(queue: .main) {
+            self.stopInOut()
         }
     }
 
     func closureToStopCount(in _: String) -> String{
-        sleep(20)
-        return "STOP"
+        workGroup.enter()
+        workGroup.wait()
+
+        if pause == -1 {
+            return "STOP"
+        }
+
+        return String(pause)
     }
     
     func closureOut(out: String) -> String{
@@ -135,6 +140,9 @@ public class NodeManager {
     }
     func stopInOut() {
 //        eklairQueue.stop
+        pause = -1 // magic count to stop the world for the POC
+
+        workGroup.leave()
         item?.cancel()
     }
 

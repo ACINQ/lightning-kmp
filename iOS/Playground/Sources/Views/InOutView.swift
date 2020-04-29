@@ -11,8 +11,9 @@ import SwiftUI
 struct InOutView: View {
     @State var nodeManager: NodeManager = NodeManager()
 
-    @State private var inCount = 0
-    @State private var outCount = 0
+    @State private var platformCount = 0
+    @State private var sharedCount = 0
+    @State private var pauseDuration: Float = 1
 
     @State private var startStopMode = false
 
@@ -21,26 +22,35 @@ struct InOutView: View {
         NavigationView {
             VStack(alignment: .center) {
                 HStack(alignment: .center) {
-                    Text("Common #: ")
+                    Text("iOS #: ")
                         .font(.largeTitle)
                         .foregroundColor(.gray)
                     Spacer()
-                    Text(String(inCount))
+                    Text(String(platformCount))
                         .font(.largeTitle)
                 }
                 .frame(width: 280, alignment: .center)
 
                 HStack(alignment: .center) {
-                    Text("Platform #: ")
+                    Text("KN #: ")
                         .font(.largeTitle)
                         .foregroundColor(.gray)
                     Spacer()
-                    Text(String(outCount))
+                    Text(String(sharedCount))
                         .font(.largeTitle)
                 }
                 .frame(width: 280, alignment: .center)
 
-                Spacer(minLength: 220)
+                HStack(alignment: .center){
+                    VStack {
+                        Text("Pause (\(pauseDuration, specifier: "%.2f")s)")
+                        Slider(value: $pauseDuration,
+                               in: 0.1...10,
+                               onEditingChanged: self.onPauseChanged
+                        ).padding(16)
+                    }
+                }
+                .frame(width: 200, height: 250, alignment: .center)
 
                 HStack(alignment: .top) {
                     Button(action: { self.didPressStart() }) {
@@ -68,9 +78,11 @@ struct InOutView: View {
                     .padding()
                     .disabled(!startStopMode)
                 }
-                .frame(width: 200, height: 90, alignment: .center)
+                .frame(width: 200, height: 50, alignment: .center)
+                
+                Spacer()
             }
-            .frame(height: 300, alignment: .bottom)
+            .frame(height: 600, alignment: .top)
         }
         .navigationBarTitle("In Out", displayMode: .inline)
     }
@@ -85,11 +97,11 @@ extension InOutView {
 
         nodeManager.startInOut(closure: {
             DispatchQueue.main.async {
-                self.inCount += 1
+                self.platformCount += 1
             }
         }){ cnt in
             DispatchQueue.main.async {
-                self.outCount += cnt
+                self.sharedCount = cnt
             }
         }
     }
@@ -100,6 +112,13 @@ extension InOutView {
 
         DispatchQueue.main.async {
             self.nodeManager.stopInOut()
+        }
+    }
+    
+    func onPauseChanged(_: Bool){
+        print(">>> \(self.pauseDuration)")
+        DispatchQueue.main.async {
+            self.nodeManager.updatePause(self.pauseDuration)
         }
     }
 }
