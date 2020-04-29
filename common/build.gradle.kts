@@ -47,8 +47,8 @@ kotlin {
             dependencies {
                 implementation(kotlin("stdlib-common"))
                 implementation(project(":secp256k1-lib"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-common:1.3.4")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.5-native-mt")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-common:1.3.5-native-mt")
             }
         }
         val commonTest by getting {
@@ -76,15 +76,16 @@ kotlin {
         if (!isWinHost) {
             val linuxMain by getting {
                 dependencies {
-                    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
+                    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.5-native-mt")
                 }
             }
         }
         val iosMain by getting {
             dependencies {
                 implementation(kotlin("stdlib"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.4")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.4")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.5-native-mt")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.5-native-mt")
+                implementation("org.jetbrains.kotlinx:atomicfu-native:0.14.3")
             }
         }
     }

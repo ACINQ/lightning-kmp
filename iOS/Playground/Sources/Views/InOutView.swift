@@ -13,6 +13,7 @@ struct InOutView: View {
 
     @State private var inCount = 0
     @State private var outCount = 0
+    @State private var pauseDuration: Float = 1
 
     @State private var startStopMode = false
 
@@ -69,8 +70,22 @@ struct InOutView: View {
                     .disabled(!startStopMode)
                 }
                 .frame(width: 200, height: 50, alignment: .center)
+                
+                Spacer()
+                
+                HStack(alignment: .center){
+                    VStack {
+                        Text("Pause (\(pauseDuration, specifier: "%.2f")s)")
+                        Slider(value: $pauseDuration,
+                               in: 0.1...10,
+                               onEditingChanged: self.onPauseChanged
+                        ).padding(16)
+                    }
+                }
+                .frame(width: 200, height: 50, alignment: .center)
+                
             }
-            .frame(height: 200, alignment: .top)
+            .frame(height: 400, alignment: .top)
             .frame(height: 500, alignment: .top)
         }
         .navigationBarTitle("In Out", displayMode: .inline)
@@ -90,7 +105,7 @@ extension InOutView {
             }
         }){ cnt in
             DispatchQueue.main.async {
-                self.outCount += cnt
+                self.outCount = cnt
             }
         }
     }
@@ -101,6 +116,13 @@ extension InOutView {
 
         DispatchQueue.main.async {
             self.nodeManager.stopInOut()
+        }
+    }
+    
+    func onPauseChanged(_: Bool){
+        print(">>> \(self.pauseDuration)")
+        DispatchQueue.main.async {
+            self.nodeManager.updatePause(self.pauseDuration)
         }
     }
 }
