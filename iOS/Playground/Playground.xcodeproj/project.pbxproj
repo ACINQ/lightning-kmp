@@ -15,10 +15,10 @@
 		7B4B9356241FAB2100182199 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 7B4B9354241FAB2100182199 /* LaunchScreen.storyboard */; };
 		E23F13FA243ECAF40028C950 /* InOutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23F13F9243ECA690028C950 /* InOutView.swift */; };
 		E23F13FB243ECAF70028C950 /* SocketView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23F13F8243ECA690028C950 /* SocketView.swift */; };
+		E25702E32459AEC100B05D66 /* NodeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25702E22459AD3000B05D66 /* NodeManager.swift */; };
 		E28B9723243D1C00000CAC98 /* HashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28B9722243D1C00000CAC98 /* HashView.swift */; };
 		E2AF144D243E2D1900800C12 /* eklair.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7B22E21124225006003B22EC /* eklair.framework */; };
 		E2AF144E243E2D1900800C12 /* eklair.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 7B22E21124225006003B22EC /* eklair.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		E2BA3DD824513E370056D14B /* NodeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2BA3DD724513DF50056D14B /* NodeManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,9 +56,9 @@
 		7B4B9355241FAB2100182199 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		E23F13F8243ECA690028C950 /* SocketView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SocketView.swift; sourceTree = "<group>"; };
 		E23F13F9243ECA690028C950 /* InOutView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InOutView.swift; sourceTree = "<group>"; };
+		E25702E22459AD3000B05D66 /* NodeManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeManager.swift; sourceTree = "<group>"; };
 		E28B9722243D1C00000CAC98 /* HashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashView.swift; sourceTree = "<group>"; };
 		E28B9726243DF3E8000CAC98 /* PlaygroundInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = PlaygroundInfo.plist; sourceTree = "<group>"; };
-		E2BA3DD724513DF50056D14B /* NodeManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = NodeManager.swift; path = Sources/NodeManager.swift; sourceTree = SOURCE_ROOT; };
 		E2FB6EB5243E033C002F36E2 /* eklairFramework.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = eklairFramework.plist; path = ../eklairFramework.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -153,7 +153,7 @@
 		E2AF1453243E76D400800C12 /* Managers */ = {
 			isa = PBXGroup;
 			children = (
-				E2BA3DD724513DF50056D14B /* NodeManager.swift */,
+				E25702E22459AD3000B05D66 /* NodeManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -299,7 +299,7 @@
 				7B4B934C241FAB1E00182199 /* SceneDelegate.swift in Sources */,
 				7B4B934E241FAB1E00182199 /* ContentView.swift in Sources */,
 				E28B9723243D1C00000CAC98 /* HashView.swift in Sources */,
-				E2BA3DD824513E370056D14B /* NodeManager.swift in Sources */,
+				E25702E32459AEC100B05D66 /* NodeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
