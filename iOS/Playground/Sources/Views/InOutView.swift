@@ -9,11 +9,9 @@ import Foundation
 import SwiftUI
 
 struct InOutView: View {
-    @State var nodeManager: NodeManager = NodeManager()
 
     @State private var inCount = 0
     @State private var outCount = 0
-    @State private var pauseDuration: Float = 1
 
     @State private var startStopMode = false
 
@@ -44,7 +42,10 @@ struct InOutView: View {
                 Spacer()
 
                 HStack(alignment: .top) {
-                    Button(action: { self.didPressStart() }) {
+                    Button(action: {
+                        print("Start!")
+                        self.startStopMode = true
+                    }) {
                         VStack {
                             Image(systemName: "timer")
                                 .font(.system(size: 70))
@@ -56,12 +57,15 @@ struct InOutView: View {
                     .padding()
                     .disabled(startStopMode)
 
-                    Button(action: { self.didPressStop() }) {
+                    Button(action: {
+                        print("Stop!")
+                        self.startStopMode = false
+                    }) {
                         VStack {
-                            Image(systemName: "nosign")
-                                .font(.system(size: 70))
-                                .padding(.bottom, 7)
-                            Text("Stop")
+                        Image(systemName: "nosign")
+                            .font(.system(size: 70))
+                            .padding(.bottom, 7)
+                        Text("Stop")
                         }
                         .foregroundColor(!self.startStopMode ? .gray : .red)
 
@@ -70,60 +74,11 @@ struct InOutView: View {
                     .disabled(!startStopMode)
                 }
                 .frame(width: 200, height: 50, alignment: .center)
-                
-                Spacer()
-                
-                HStack(alignment: .center){
-                    VStack {
-                        Text("Pause (\(pauseDuration, specifier: "%.2f")s)")
-                        Slider(value: $pauseDuration,
-                               in: 0.1...10,
-                               onEditingChanged: self.onPauseChanged
-                        ).padding(16)
-                    }
-                }
-                .frame(width: 200, height: 50, alignment: .center)
-                
             }
-            .frame(height: 400, alignment: .top)
+            .frame(height: 200, alignment: .top)
             .frame(height: 500, alignment: .top)
         }
         .navigationBarTitle("In Out", displayMode: .inline)
-    }
-}
-
-// MARK: - Actions
-
-extension InOutView {
-    func didPressStart() {
-        print("Start!")
-        self.startStopMode = true
-
-        nodeManager.startInOut(closure: {
-            DispatchQueue.main.async {
-                self.inCount += 1
-            }
-        }){ cnt in
-            DispatchQueue.main.async {
-                self.outCount = cnt
-            }
-        }
-    }
-
-    func didPressStop() {
-        print("Stop!")
-        self.startStopMode = false
-
-        DispatchQueue.main.async {
-            self.nodeManager.stopInOut()
-        }
-    }
-    
-    func onPauseChanged(_: Bool){
-        print(">>> \(self.pauseDuration)")
-        DispatchQueue.main.async {
-            self.nodeManager.updatePause(self.pauseDuration)
-        }
     }
 }
 

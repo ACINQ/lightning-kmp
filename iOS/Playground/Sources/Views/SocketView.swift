@@ -20,11 +20,11 @@ struct SocketView: View {
             VStack(alignment: .center) {
                 Text("\(status)").lineLimit(nil).padding(.all)
 
-                Button(action: { self.didPressConnect() }){
-                    Text("Connect")
+                Button(action: { self.didPressConnectChannel() }){
+                    Text("Connect with Channel")
                         .bold()
                         .foregroundColor(.white)
-                        .frame(width: 102, height: 42)
+                        .frame(width: 280, height: 42)
                         .background(Color.gray)
                 }
                 .cornerRadius(8)
@@ -40,11 +40,9 @@ struct SocketView: View {
 
 extension SocketView {
 
-    func didPressConnect() {
-
-        self.nodeManager.connect {
-            self.status = "Connected to \n\(self.nodeManager.host)"
-        }
+    func didPressConnectChannel() {
+        self.nodeManager.connectWithChannel()
+//        self.status = "Connected to \n\(self.nodeManager.host)"
     }
 }
 

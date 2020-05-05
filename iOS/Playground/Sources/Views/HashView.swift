@@ -34,23 +34,13 @@ struct HashView: View {
                 .cornerRadius(8)
 
                 Text("Hashed value:")
-                    .frame(width: 300, height: 50)
+                    .frame(width: 300, height: 30)
                     .padding(.top)
                 Text("\(hashedMessage)")
-                    .frame(width: 280, height: 90)
+                    .frame(width: 310, height: 60)
                     .multilineTextAlignment(.leading)
 
                 Spacer()
-                Button(action: { self.didPressLog() }){
-                    Text("Log")
-                        .bold()
-                        .foregroundColor(.white)
-                        .frame(width: 312, height: 42)
-                        .background(Color.gray)
-                }
-                .cornerRadius(8)
-
-                Spacer(minLength: 40)
             }
             .padding(.top, 40)
             .navigationBarTitle("Hash", displayMode: .inline)
@@ -65,10 +55,6 @@ extension HashView {
 
         let keyWindow = UIApplication.shared.windows.first { $0.isKeyWindow }
         keyWindow?.endEditing(true)
-    }
-
-    func didPressLog() {
-        nodeManager.testLog()
     }
 }
 
