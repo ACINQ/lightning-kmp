@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 
 struct InOutView: View {
+    @State var nodeManager: NodeManager = NodeManager()
 
     @State private var inCount = 0
     @State private var outCount = 0
@@ -42,10 +43,7 @@ struct InOutView: View {
                 Spacer(minLength: 220)
 
                 HStack(alignment: .top) {
-                    Button(action: {
-                        print("Start!")
-                        self.startStopMode = true
-                    }) {
+                    Button(action: { self.didPressStart() }) {
                         VStack {
                             Image(systemName: "timer")
                                 .font(.system(size: 70))
@@ -57,15 +55,12 @@ struct InOutView: View {
                     .padding()
                     .disabled(startStopMode)
 
-                    Button(action: {
-                        print("Stop!")
-                        self.startStopMode = false
-                    }) {
+                    Button(action: { self.didPressStop() }) {
                         VStack {
-                        Image(systemName: "nosign")
-                            .font(.system(size: 70))
-                            .padding(.bottom, 7)
-                        Text("Stop")
+                            Image(systemName: "nosign")
+                                .font(.system(size: 70))
+                                .padding(.bottom, 7)
+                            Text("Stop")
                         }
                         .foregroundColor(!self.startStopMode ? .gray : .red)
 
@@ -78,6 +73,34 @@ struct InOutView: View {
             .frame(height: 300, alignment: .bottom)
         }
         .navigationBarTitle("In Out", displayMode: .inline)
+    }
+}
+
+// MARK: - Actions
+
+extension InOutView {
+    func didPressStart() {
+        print("Start!")
+        self.startStopMode = true
+
+        nodeManager.startInOut(closure: {
+            DispatchQueue.main.async {
+                self.inCount += 1
+            }
+        }){ cnt in
+            DispatchQueue.main.async {
+                self.outCount += cnt
+            }
+        }
+    }
+
+    func didPressStop() {
+        print("Stop!")
+        self.startStopMode = false
+
+        DispatchQueue.main.async {
+            self.nodeManager.stopInOut()
+        }
     }
 }
 
