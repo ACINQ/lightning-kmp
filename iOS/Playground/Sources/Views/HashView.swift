@@ -41,6 +41,16 @@ struct HashView: View {
                     .multilineTextAlignment(.leading)
 
                 Spacer()
+                Button(action: { self.didPressLog() }){
+                    Text("Log")
+                        .bold()
+                        .foregroundColor(.white)
+                        .frame(width: 312, height: 42)
+                        .background(Color.gray)
+                }
+                .cornerRadius(8)
+
+                Spacer(minLength: 40)
             }
             .padding(.top, 40)
             .navigationBarTitle("Hash", displayMode: .inline)
@@ -55,6 +65,10 @@ extension HashView {
 
         let keyWindow = UIApplication.shared.windows.first { $0.isKeyWindow }
         keyWindow?.endEditing(true)
+    }
+
+    func didPressLog() {
+        nodeManager.testLog()
     }
 }
 
