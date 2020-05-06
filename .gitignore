@@ -9,6 +9,8 @@ local.properties
 .DS_Store
 # Non relevant Xcode files
 xcuserdata/
+# HPROF
+*.hprof
 
 # Ignore Gradle GUI config
 gradle-app.setting
@@ -37,7 +39,7 @@ project/plugins/project/
 .scala_dependencies
 .worksheet
 
-/.idea
+.idea
 *.iml
 target/
 project/target

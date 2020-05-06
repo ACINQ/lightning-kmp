@@ -1,8 +1,8 @@
 //
 //  HashView.swift
-//  Eklair
+//  Playground
 //
-//  Copyright © 2020 Acibq. All rights reserved.
+//  Copyright © 2020 Acinq. All rights reserved.
 //
 
 import Foundation

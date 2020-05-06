@@ -2,7 +2,7 @@
 //  NodeManager.swift
 //  Eklair
 //
-//  Created by Thomas CARTON on 03/04/2020.
+//  Copyright © 2020 Acinq. All rights reserved.
 //
 
 import Foundation

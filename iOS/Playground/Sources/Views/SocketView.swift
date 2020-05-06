@@ -1,6 +1,6 @@
 //
 //  SocketView.swift
-//  Eklair
+//  Playground
 //
 //  Copyright © 2020 Acinq. All rights reserved.
 //

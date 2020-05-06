@@ -1,6 +1,6 @@
 //
 //  InOutView.swift
-//  Eklair
+//  Playground
 //
 //  Copyright © 2020 Acinq. All rights reserved.
 //
@@ -20,26 +20,26 @@ struct InOutView: View {
         NavigationView {
             VStack(alignment: .center) {
                 HStack(alignment: .center) {
-                    Text("#IN: ")
+                    Text("Common #: ")
                         .font(.largeTitle)
                         .foregroundColor(.gray)
                     Spacer()
                     Text(String(inCount))
                         .font(.largeTitle)
                 }
-                .frame(width: 200, alignment: .center)
+                .frame(width: 280, alignment: .center)
 
                 HStack(alignment: .center) {
-                    Text("#OUT: ")
+                    Text("Platform #: ")
                         .font(.largeTitle)
                         .foregroundColor(.gray)
                     Spacer()
                     Text(String(outCount))
                         .font(.largeTitle)
                 }
-                .frame(width: 200, alignment: .center)
+                .frame(width: 280, alignment: .center)
 
-                Spacer()
+                Spacer(minLength: 220)
 
                 HStack(alignment: .top) {
                     Button(action: {
@@ -73,10 +73,9 @@ struct InOutView: View {
                     .padding()
                     .disabled(!startStopMode)
                 }
-                .frame(width: 200, height: 50, alignment: .center)
+                .frame(width: 200, height: 90, alignment: .center)
             }
-            .frame(height: 200, alignment: .top)
-            .frame(height: 500, alignment: .top)
+            .frame(height: 300, alignment: .bottom)
         }
         .navigationBarTitle("In Out", displayMode: .inline)
     }
