@@ -1,12 +1,16 @@
 package fr.acinq.eklair
 
 import fr.acinq.eklair.SocketBuilder.runBlockingCoroutine
+
 import kotlinx.atomicfu.AtomicRef
 import kotlinx.atomicfu.atomic
-import kotlin.coroutines.CoroutineContext
+import kotlinx.cinterop.*
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.Main
+import kotlin.coroutines.CoroutineContext
 
+import kotlin.native.concurrent.*
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_queue_t
@@ -15,9 +19,6 @@ import platform.darwin.*
 import platform.Foundation.*
 import platform.posix.*
 
-import kotlinx.cinterop.*
-import kotlin.native.concurrent.*
-import kotlinx.coroutines.sync.Mutex
 
 fun runCoroutineStepping(
     closureStop: (String) -> String,
@@ -54,10 +55,8 @@ fun runCoroutineStepping(
 
 }
 
-
 expect suspend fun delayOnPlatform(timeMillis: Long)
 actual suspend fun delayOnPlatform(timeMillis: Long) {
-//suspend fun delayOnPlatform(timeMillis: Long) {
     memScoped {
         val timespec = alloc<timespec>()
         timespec.tv_sec = timeMillis / 1000
@@ -75,12 +74,5 @@ internal suspend fun coroutineStep(
     //on fait quelque chose cote serveur
     val resultOut = closureOut("${compteur++}")
     println(">>> ${resultOut}")
-//    Thread.sleep(1500)
-//    platform.posix.sleep(2)
-//    delayOnPlatform(1000)
     delay(pauseDuration.toLong())
 }
-
-//fun runCoroutine(closure: suspend (CoroutineScope) -> Unit){
-//    runBlocking { closure(this) }
-//}
