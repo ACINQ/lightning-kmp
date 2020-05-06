@@ -21,10 +21,11 @@ public class NodeManager {
     let user: EklairUser
 
     var counter = 0
-    private var pause = 1000
+    private var pause = 5
     
     let workQueue = DispatchQueue(label: "workQueue", qos: .background, attributes: .concurrent)
     let workGroup = DispatchGroup()
+    var isGroupActive = false
 
     // MARK: - Life cycle
 
@@ -48,9 +49,9 @@ public class NodeManager {
     
     func updatePause(_ pause: Float){
         self.pause = Int(pause * 1000)
-
-//        if workGroup
-        workGroup.leave()
+        if isGroupActive {
+            workGroup.leave()
+        }
     }
 
     func startInOut(closure: @escaping () -> Void, closureOut: @escaping (Int) -> Void) {
@@ -126,6 +127,7 @@ public class NodeManager {
 
     func closureToStopCount(in _: String) -> String{
         workGroup.enter()
+        isGroupActive = true
         workGroup.wait()
 
         if pause == -1 {
@@ -135,9 +137,10 @@ public class NodeManager {
         return String(pause)
     }
     
-    func closureOut(out: String) -> String{
-     return out
+    func closureOut(out: String) -> String {
+        return out
     }
+
     func stopInOut() {
 //        eklairQueue.stop
         pause = -1 // magic count to stop the world for the POC

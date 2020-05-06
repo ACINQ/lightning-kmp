@@ -13,7 +13,7 @@ struct InOutView: View {
 
     @State private var platformCount = 0
     @State private var sharedCount = 0
-    @State private var pauseDuration: Float = 1
+    @State private var pauseDuration: Float = 5
 
     @State private var startStopMode = false
 
@@ -94,6 +94,9 @@ extension InOutView {
     func didPressStart() {
         print("Start!")
         self.startStopMode = true
+
+        print(">>> \(self.pauseDuration)")
+        nodeManager.updatePause(self.pauseDuration)
 
         nodeManager.startInOut(closure: {
             DispatchQueue.main.async {
