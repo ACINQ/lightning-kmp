@@ -1,6 +1,6 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.secp256k1.Secp256k1
+import fr.acinq.bitcoin.crypto.Secp256k1
 
 object Secp256k1DHFunctions : DHFunctions {
     override fun name() = "secp256k1"

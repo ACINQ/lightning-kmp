@@ -1,12 +1,12 @@
 package fr.acinq.eklair
 
+import fr.acinq.bitcoin.crypto.Secp256k1
 import fr.acinq.eklair.EklairAPI.handshake
 import fr.acinq.eklair.SocketBuilder.buildSocketHandler
 import fr.acinq.eklair.SocketBuilder.runBlockingCoroutine
 import fr.acinq.eklair.crypto.Pack.uint16
 import fr.acinq.eklair.crypto.Pack.write16
 import fr.acinq.eklair.crypto.noise.*
-import fr.acinq.secp256k1.Secp256k1
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 

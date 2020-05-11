@@ -1,7 +1,7 @@
 package fr.acinq.eklair
 
+import fr.acinq.bitcoin.crypto.Secp256k1
 import fr.acinq.eklair.EklairClient.nodeId
-import fr.acinq.secp256k1.Secp256k1
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce

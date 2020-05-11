@@ -31,7 +31,6 @@ kotlin {
     if (!isWinHost) {
         linuxX64("linux") {
             binaries {
-                sharedLib()
             }
         }
     }
@@ -46,7 +45,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(kotlin("stdlib-common"))
-                implementation(project(":secp256k1-lib"))
+                implementation("fr.acinq:bitcoink:1.0-SNAPSHOT")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.5-native-mt")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-common:1.3.5-native-mt")
             }
@@ -61,6 +60,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("stdlib-jdk8"))
                 implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
+                implementation("fr.acinq:bitcoink-jvm:1.0-SNAPSHOT")
                 implementation("io.ktor:ktor-client-okhttp:1.3.1")
                 implementation("io.ktor:ktor-client-core:1.3.1")
                 implementation("io.ktor:ktor-network:1.3.1")
