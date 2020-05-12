@@ -2,12 +2,11 @@ package fr.acinq.eklair
 
 import fr.acinq.bitcoin.crypto.Secp256k1
 import fr.acinq.eklair.EklairAPI.handshake
-import fr.acinq.eklair.SocketBuilder.buildSocketHandler
-import fr.acinq.eklair.SocketBuilder.runBlockingCoroutine
-import fr.acinq.eklair.crypto.Pack.uint16
-import fr.acinq.eklair.crypto.Pack.write16
 import fr.acinq.eklair.crypto.noise.*
-import kotlinx.coroutines.CoroutineScope
+import fr.acinq.eklair.io.LightningSession
+import fr.acinq.eklair.io.SocketBuilder.buildSocketHandler
+import fr.acinq.eklair.io.SocketBuilder.runBlockingCoroutine
+import fr.acinq.eklair.io.SocketHandler
 import kotlinx.coroutines.delay
 
 
@@ -16,15 +15,6 @@ class EklairApp {
     fun run() {
         Boot.main(emptyArray())
     }
-}
-
-interface SocketHandler {
-    fun getHost(): String
-    suspend fun readUpTo(length: Int): ByteArray
-    suspend fun readFully(dst: ByteArray, offset: Int, length: Int)
-    suspend fun writeByte(b: Byte)
-    suspend fun writeFully(src: ByteArray, offset: Int, length: Int)
-    fun flush()
 }
 
 @ExperimentalStdlibApi
@@ -52,36 +42,6 @@ object Boot {
     }
 
 }
-
-class LightningSession(val socketHandler: SocketHandler, val enc: CipherState, val dec: CipherState, val ck: ByteArray) {
-    var encryptor: CipherState = ExtendedCipherState(enc, ck)
-    var decryptor: CipherState = ExtendedCipherState(dec, ck)
-
-    suspend fun receive(): ByteArray {
-        val cipherlen = ByteArray(18)
-        socketHandler.readFully(cipherlen, 0, 18)
-        val (tmp, plainlen) = decryptor.decryptWithAd(ByteArray(0), cipherlen)
-        decryptor = tmp
-        val length = uint16(plainlen, 0)
-        val cipherbytes = ByteArray(length + 16)
-        socketHandler.readFully(cipherbytes, 0, cipherbytes.size)
-        val (tmp1, plainbytes) = decryptor.decryptWithAd(ByteArray(0), cipherbytes)
-        decryptor = tmp1
-        return plainbytes
-    }
-
-    suspend fun send(data: ByteArray): Unit {
-        val plainlen = write16(data.size)
-        val (tmp, cipherlen) = encryptor.encryptWithAd(ByteArray(0), plainlen)
-        encryptor = tmp
-        socketHandler.writeFully(cipherlen, 0, cipherlen.size)
-        val (tmp1, cipherbytes) = encryptor.encryptWithAd(ByteArray(0), data)
-        encryptor = tmp1
-        socketHandler.writeFully(cipherbytes, 0, cipherbytes.size)
-        socketHandler.flush()
-    }
-}
-
 
 typealias EklairHandshake = Triple<CipherState, CipherState, ByteArray>
 
@@ -126,9 +86,3 @@ object EklairAPI {
     }
 }
 
-expect object SocketBuilder {
-    suspend fun buildSocketHandler(host: String, port: Int): SocketHandler
-
-    fun runBlockingCoroutine(closure: suspend (CoroutineScope) -> Unit)
-
-}

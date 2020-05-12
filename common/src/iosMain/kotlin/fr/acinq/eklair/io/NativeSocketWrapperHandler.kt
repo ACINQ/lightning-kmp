@@ -1,4 +1,10 @@
-package fr.acinq.eklair
+package fr.acinq.eklair.io
+
+import fr.acinq.eklair.io.NativeSocket
+import fr.acinq.eklair.io.suspendRecvExact
+import fr.acinq.eklair.io.suspendRecvUpTo
+import fr.acinq.eklair.io.suspendSend
+import kotlinx.coroutines.CoroutineScope
 
 class NativeSocketWrapperHandler(private val socket: NativeSocket): SocketHandler {
 
@@ -23,5 +29,15 @@ class NativeSocketWrapperHandler(private val socket: NativeSocket): SocketHandle
 
     override fun flush() {
         // no-op
+    }
+}
+
+@ExperimentalStdlibApi
+actual object SocketBuilder{
+    actual suspend fun buildSocketHandler(host: String, port: Int): SocketHandler =
+        NativeSocketWrapperHandler(NativeSocket.connect(host, port))
+
+    actual fun runBlockingCoroutine(closure: suspend (CoroutineScope) -> Unit){
+        runBlocking { closure(this) }
     }
 }

@@ -1,12 +1,10 @@
-package fr.acinq.eklair
+package fr.acinq.eklair.io
 
 /**
  * extracted and adapted from
  * https://raw.githubusercontent.com/korlibs/korio/master/korio/src/macosX64Main/kotlin/Demo.kt
  */
 
-import platform.Foundation.*
-import platform.darwin.*
 import platform.posix.*
 
 import kotlinx.cinterop.*
@@ -18,9 +16,16 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
             init_sockets()
         }
 
-        operator fun invoke() = NativeSocket(socket(AF_INET, SOCK_STREAM, 0), Endpoint(IP(0, 0, 0, 0), 0))
-        suspend fun connect(host: String, port: Int) = NativeSocket().apply { connect(host, port) }
-        suspend fun bound(host: String, port: Int) = NativeSocket().apply { bind(host, port) }
+        operator fun invoke() = NativeSocket(
+            socket(AF_INET, SOCK_STREAM, 0),
+            Endpoint(IP(0, 0, 0, 0), 0)
+        )
+
+        suspend fun connect(host: String, port: Int) = NativeSocket()
+            .apply { connect(host, port) }
+
+        suspend fun bound(host: String, port: Int) = NativeSocket()
+            .apply { bind(host, port) }
     }
 
     data class Endpoint(val ip: IP, val port: Int) {
@@ -29,12 +34,12 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
 
     class IP(val data: UByteArray) {
         constructor(v0: Int, v1: Int, v2: Int, v3: Int) : this(
-                ubyteArrayOf(
-                        v0.toUByte(),
-                        v1.toUByte(),
-                        v2.toUByte(),
-                        v3.toUByte()
-                )
+            ubyteArrayOf(
+                v0.toUByte(),
+                v1.toUByte(),
+                v2.toUByte(),
+                v3.toUByte()
+            )
         )
 
         val v0 get() = data[0]
@@ -43,6 +48,7 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
         val v3 get() = data[3]
         val str get() = "$v0.$v1.$v2.$v3"
         val value: Int get() = (v0.toInt() shl 0) or (v1.toInt() shl 8) or (v2.toInt() shl 16) or (v3.toInt() shl 24)
+
         //val value: Int get() = (v0.toInt() shl 24) or (v1.toInt() shl 16) or (v2.toInt() shl 8) or (v3.toInt() shl 0)
         override fun toString(): String = str
 
@@ -51,12 +57,12 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
                 val hname = gethostbyname(host)
                 val inetaddr = hname!!.pointed.h_addr_list!![0]!!
                 return IP(
-                        ubyteArrayOf(
-                                inetaddr[0].toUByte(),
-                                inetaddr[1].toUByte(),
-                                inetaddr[2].toUByte(),
-                                inetaddr[3].toUByte()
-                        )
+                    ubyteArrayOf(
+                        inetaddr[0].toUByte(),
+                        inetaddr[1].toUByte(),
+                        inetaddr[2].toUByte(),
+                        inetaddr[3].toUByte()
+                    )
                 )
             }
         }
@@ -100,8 +106,10 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
 
     fun CPointer<sockaddr_in>.toEndpoint(): Endpoint {
         return Endpoint(
-                IP(this.pointed.sin_addr.readValue().getBytes().toUByteArray()),
-                swapBytes(this.pointed.sin_port.toUShort()).toInt()
+            IP(
+                this.pointed.sin_addr.readValue().getBytes().toUByteArray()
+            ),
+            swapBytes(this.pointed.sin_port.toUShort()).toInt()
         )
     }
 
@@ -120,7 +128,10 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
                 }
             }
             //println("accept: fd=$fd")
-            return NativeSocket(fd, addr.ptr.reinterpret<sockaddr_in>().toEndpoint()).apply {
+            return NativeSocket(
+                fd,
+                addr.ptr.reinterpret<sockaddr_in>().toEndpoint()
+            ).apply {
                 setSocketBlockingEnabled(false)
             }
         }
@@ -204,14 +215,18 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
             //println("result: $result")
             //println("local address: " + inet_ntoa(localAddress.sin_addr.readValue())?.toKString())
             //println("local port: " + )
-            return Endpoint(IP(ip.getBytes().toUByteArray()), port.toInt())
+            return Endpoint(
+                IP(
+                    ip.getBytes().toUByteArray()
+                ), port.toInt()
+            )
         }
     }
 
     fun getRemoteEndpoint() = endpoint
 
     private fun swapBytes(v: UShort): UShort =
-            (((v.toInt() and 0xFF) shl 8) or ((v.toInt() ushr 8) and 0xFF)).toUShort()
+        (((v.toInt() and 0xFF) shl 8) or ((v.toInt() ushr 8) and 0xFF)).toUShort()
 
     override fun toString(): String = "NativeSocket(local=${getLocalEndpoint()}, remote=${getRemoteEndpoint()})"
 }

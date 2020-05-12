@@ -1,11 +1,19 @@
-package fr.acinq.eklair
+package fr.acinq.eklair.io
 
+import fr.acinq.eklair.Logging
+import io.ktor.network.selector.ActorSelectorManager
 import io.ktor.network.sockets.Socket
+import io.ktor.network.sockets.aSocket
 import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
+import io.ktor.util.KtorExperimentalAPI
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.core.readBytes
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import java.net.InetSocketAddress
 import java.net.SocketAddress
 
 class KtorSocketWrapperHandler(socket: Socket) : SocketHandler {
@@ -37,4 +45,24 @@ class KtorSocketWrapperHandler(socket: Socket) : SocketHandler {
     override fun flush() {
         w.flush()
     }
+}
+
+@ExperimentalStdlibApi
+actual object SocketBuilder: Logging() {
+
+    @KtorExperimentalAPI
+    actual suspend fun buildSocketHandler(host: String, port: Int): SocketHandler {
+        SocketBuilder.logger.info { "building ktor socket handler" }
+        val socketBuilder = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp()
+        val address = InetSocketAddress(host, port)
+        SocketBuilder.logger.info { "connecting to $address" }
+        val connect = socketBuilder.connect(address)
+        SocketBuilder.logger.info { "connected to $address!" }
+        return KtorSocketWrapperHandler(connect)
+    }
+
+    actual fun runBlockingCoroutine(closure: suspend (CoroutineScope) -> Unit) {
+        runBlocking { closure(this) }
+    }
+
 }
