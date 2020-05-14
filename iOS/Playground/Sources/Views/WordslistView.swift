@@ -12,13 +12,15 @@ import eklair
 
 struct WordslistView: View {
 
-    var nodeManager: NodeManager
+    var eklairManager: EklairManager
     @State var wordslist: [String]?
 
     var body: some View {
 
         NavigationView {
             VStack {
+                Spacer()
+
                 if wordslist != nil {
                     HStack {
                         VStack {
@@ -65,6 +67,9 @@ struct WordslistView: View {
                 .cornerRadius(8)
                 .padding()
             }
+            .navigationBarTitle("Wallet recovery phrase", displayMode: .inline)
+        }.onAppear {
+            self.wordslist = SeedKt.generateWordsList(entropy: nil)
         }
     }
 }
@@ -82,7 +87,7 @@ extension WordslistView {
 struct WordslistView_Previews: PreviewProvider {
     static var previews: some View {
         Group {
-            WordslistView(nodeManager: NodeManager())
+            WordslistView(eklairManager: EklairManager())
                 .previewDevice("iPhone SE")
         }
     }

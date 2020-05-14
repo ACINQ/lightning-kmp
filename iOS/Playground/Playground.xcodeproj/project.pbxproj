@@ -17,7 +17,7 @@
 		E23F13FA243ECAF40028C950 /* InOutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23F13F9243ECA690028C950 /* InOutView.swift */; };
 		E23F13FB243ECAF70028C950 /* SocketView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23F13F8243ECA690028C950 /* SocketView.swift */; };
 		E28B9723243D1C00000CAC98 /* HashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28B9722243D1C00000CAC98 /* HashView.swift */; };
-		E2A9274A2462A76500EEDCDF /* NodeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A927492462A76500EEDCDF /* NodeManager.swift */; };
+		E2A9274A2462A76500EEDCDF /* EklairManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A927492462A76500EEDCDF /* EklairManager.swift */; };
 		E2AF144D243E2D1900800C12 /* eklair.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7B22E21124225006003B22EC /* eklair.framework */; };
 		E2AF144E243E2D1900800C12 /* eklair.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 7B22E21124225006003B22EC /* eklair.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -60,7 +60,7 @@
 		E23F13F9243ECA690028C950 /* InOutView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InOutView.swift; sourceTree = "<group>"; };
 		E28B9722243D1C00000CAC98 /* HashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashView.swift; sourceTree = "<group>"; };
 		E28B9726243DF3E8000CAC98 /* PlaygroundInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = PlaygroundInfo.plist; sourceTree = "<group>"; };
-		E2A927492462A76500EEDCDF /* NodeManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NodeManager.swift; sourceTree = "<group>"; };
+		E2A927492462A76500EEDCDF /* EklairManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EklairManager.swift; sourceTree = "<group>"; };
 		E2FB6EB5243E033C002F36E2 /* eklairFramework.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = eklairFramework.plist; path = ../eklairFramework.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -156,7 +156,7 @@
 		E2AF1453243E76D400800C12 /* Managers */ = {
 			isa = PBXGroup;
 			children = (
-				E2A927492462A76500EEDCDF /* NodeManager.swift */,
+				E2A927492462A76500EEDCDF /* EklairManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -303,7 +303,7 @@
 				E23E3DBB246D2817006763BF /* WordslistView.swift in Sources */,
 				7B4B934E241FAB1E00182199 /* ContentView.swift in Sources */,
 				E28B9723243D1C00000CAC98 /* HashView.swift in Sources */,
-				E2A9274A2462A76500EEDCDF /* NodeManager.swift in Sources */,
+				E2A9274A2462A76500EEDCDF /* EklairManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

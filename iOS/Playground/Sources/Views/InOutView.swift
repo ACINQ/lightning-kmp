@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 struct InOutView: View {
-    @State var nodeManager: NodeManager = NodeManager()
+    @State var eklairManager: EklairManager = EklairManager()
 
     @State private var platformCount = 0
     @State private var sharedCount = 0
@@ -96,9 +96,9 @@ extension InOutView {
         self.startStopMode = true
 
         print(">>> \(self.pauseDuration)")
-        nodeManager.updatePause(self.pauseDuration)
+        eklairManager.updatePause(self.pauseDuration)
 
-        nodeManager.startInOut(closure: {
+        eklairManager.startInOut(closure: {
             DispatchQueue.main.async {
                 self.platformCount += 1
             }
@@ -114,14 +114,14 @@ extension InOutView {
         self.startStopMode = false
 
         DispatchQueue.main.async {
-            self.nodeManager.stopInOut()
+            self.eklairManager.stopInOut()
         }
     }
     
     func onPauseChanged(_: Bool){
         print(">>> \(self.pauseDuration)")
         DispatchQueue.main.async {
-            self.nodeManager.updatePause(self.pauseDuration)
+            self.eklairManager.updatePause(self.pauseDuration)
         }
     }
 }

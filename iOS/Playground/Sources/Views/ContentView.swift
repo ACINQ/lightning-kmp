@@ -8,11 +8,11 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State var nodeManager: NodeManager = NodeManager()
+    @State var eklairManager: EklairManager = EklairManager()
 
     var body: some View {
         TabView {
-            HashView(nodeManager: nodeManager)
+            HashView(eklairManager: eklairManager)
                 .tabItem {
                     VStack {
                         Image(systemName: "tag.circle")
@@ -28,7 +28,7 @@ struct ContentView: View {
                     }
             }.tag(2)
 
-            SocketView(nodeManager: nodeManager)
+            SocketView(eklairManager: eklairManager)
                 .tabItem {
                     VStack {
                         Image(systemName: "link.circle")
@@ -36,7 +36,7 @@ struct ContentView: View {
                     }
             }.tag(3)
 
-            WordslistView(nodeManager: nodeManager)
+            WordslistView(eklairManager: eklairManager)
                 .tabItem {
                     VStack {
                         Image(systemName: "link.circle")
@@ -49,6 +49,6 @@ struct ContentView: View {
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView(nodeManager: NodeManager())
+        ContentView(eklairManager: EklairManager())
     }
 }
