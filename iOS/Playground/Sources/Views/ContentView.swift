@@ -35,6 +35,14 @@ struct ContentView: View {
                         Text("Socket")
                     }
             }.tag(3)
+
+            WordslistView(nodeManager: nodeManager)
+                .tabItem {
+                    VStack {
+                        Image(systemName: "link.circle")
+                        Text("Wordslist")
+                    }
+            }.tag(3)
         }
     }
 }

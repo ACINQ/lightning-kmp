@@ -13,6 +13,7 @@
 		7B4B9350241FAB2100182199 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7B4B934F241FAB2100182199 /* Assets.xcassets */; };
 		7B4B9353241FAB2100182199 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7B4B9352241FAB2100182199 /* Preview Assets.xcassets */; };
 		7B4B9356241FAB2100182199 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 7B4B9354241FAB2100182199 /* LaunchScreen.storyboard */; };
+		E23E3DBB246D2817006763BF /* WordslistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23E3DBA246D2817006763BF /* WordslistView.swift */; };
 		E23F13FA243ECAF40028C950 /* InOutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23F13F9243ECA690028C950 /* InOutView.swift */; };
 		E23F13FB243ECAF70028C950 /* SocketView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23F13F8243ECA690028C950 /* SocketView.swift */; };
 		E28B9723243D1C00000CAC98 /* HashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28B9722243D1C00000CAC98 /* HashView.swift */; };
@@ -54,6 +55,7 @@
 		7B4B934F241FAB2100182199 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7B4B9352241FAB2100182199 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		7B4B9355241FAB2100182199 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		E23E3DBA246D2817006763BF /* WordslistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordslistView.swift; sourceTree = "<group>"; };
 		E23F13F8243ECA690028C950 /* SocketView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SocketView.swift; sourceTree = "<group>"; };
 		E23F13F9243ECA690028C950 /* InOutView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InOutView.swift; sourceTree = "<group>"; };
 		E28B9722243D1C00000CAC98 /* HashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashView.swift; sourceTree = "<group>"; };
@@ -142,10 +144,11 @@
 		E28B9721243D1BDD000CAC98 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				7B4B934D241FAB1E00182199 /* ContentView.swift */,
 				E28B9722243D1C00000CAC98 /* HashView.swift */,
 				E23F13F9243ECA690028C950 /* InOutView.swift */,
 				E23F13F8243ECA690028C950 /* SocketView.swift */,
-				7B4B934D241FAB1E00182199 /* ContentView.swift */,
+				E23E3DBA246D2817006763BF /* WordslistView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -297,6 +300,7 @@
 				7B4B934A241FAB1E00182199 /* AppDelegate.swift in Sources */,
 				E23F13FB243ECAF70028C950 /* SocketView.swift in Sources */,
 				7B4B934C241FAB1E00182199 /* SceneDelegate.swift in Sources */,
+				E23E3DBB246D2817006763BF /* WordslistView.swift in Sources */,
 				7B4B934E241FAB1E00182199 /* ContentView.swift in Sources */,
 				E28B9723243D1C00000CAC98 /* HashView.swift in Sources */,
 				E2A9274A2462A76500EEDCDF /* NodeManager.swift in Sources */,
