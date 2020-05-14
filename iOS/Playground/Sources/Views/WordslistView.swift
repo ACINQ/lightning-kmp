@@ -21,7 +21,7 @@ struct WordslistView: View {
             VStack {
                 Spacer()
 
-                if wordslist != nil {
+                if wordslist?.isEmpty == false {
                     HStack {
                         VStack {
                             ForEach(0..<6) { index in
@@ -69,7 +69,7 @@ struct WordslistView: View {
             }
             .navigationBarTitle("Wallet recovery phrase", displayMode: .inline)
         }.onAppear {
-            self.wordslist = SeedKt.generateWordsList(entropy: nil)
+            self.wordslist = self.eklairManager.getWordsList()
         }
     }
 }
@@ -77,7 +77,7 @@ struct WordslistView: View {
 extension WordslistView {
 
     func didPressRenew() {
-        wordslist = SeedKt.generateWordsList(entropy: nil)
+        self.wordslist = self.eklairManager.getWordsList(true)
     }
 
 }

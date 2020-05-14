@@ -15,4 +15,3 @@ fun generateWordsList(entropy: ByteArray? = null): List<String> {
 
     return wordslist
 }
-
