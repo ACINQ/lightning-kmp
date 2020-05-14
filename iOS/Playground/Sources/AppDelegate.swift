@@ -12,11 +12,7 @@ import eklair
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-         // Override point for customization after application launch.
-
-//        CommonKt.test()
-        let wordList = CommonKt.generateWordList()
-        
+        // Override point for customization after application launch.
         return true
     }
 
