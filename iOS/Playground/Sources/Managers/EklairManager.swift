@@ -169,17 +169,18 @@ public class EklairManager {
         defaults.set(wordsList, forKey: "wordsList")
     }
 
-    func getWordsList(_ renew: Bool = false) -> [String] {
+    func getWordsList(completion: @escaping ([String]) -> Void, _ renew: Bool = false) {
         var wordsList = loadWordsList()
         if renew {
             wordsList = [String]()
         }
 
         if wordsList?.isEmpty == true {
-            wordsList = SeedKt.generateWordsList(entropy: nil)
-            saveWordsList(wordsList: wordsList!)
-        }
+            SeedKt.runWordsListGeneration(entropy: nil) { (list) in
+                self.saveWordsList(wordsList: list)
 
-        return wordsList!
+                completion(list)
+            }
+        }
     }
 }

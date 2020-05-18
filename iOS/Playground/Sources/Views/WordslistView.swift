@@ -14,6 +14,7 @@ struct WordslistView: View {
 
     var eklairManager: EklairManager
     @State var wordslist: [String]?
+    @State var passphrase: String = ""
 
     var body: some View {
 
@@ -55,6 +56,13 @@ struct WordslistView: View {
                     Text("...")
                 }
 
+                TextField("Pass phrase", text: $passphrase)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 290)
+                    .padding(.all, 8.0)
+                    .cornerRadius(8)
+                    .border(Color.black, width: 1)
+
                 Spacer()
 
                 Button(action: { self.didPressRenew() }) {
@@ -65,21 +73,41 @@ struct WordslistView: View {
                         .background(Color.gray)
                 }
                 .cornerRadius(8)
-                .padding()
+                .padding(.bottom, 100)
             }
             .navigationBarTitle("Wallet recovery phrase", displayMode: .inline)
         }.onAppear {
-            self.wordslist = self.eklairManager.getWordsList()
+            self.updateWordsList(renew: false)
+        }.onTapGesture {
+            self.endEditing()
         }
     }
 }
 
+// MARK: - Actions
+
 extension WordslistView {
 
-    func didPressRenew() {
-        self.wordslist = self.eklairManager.getWordsList(true)
+    private func endEditing() {
+        let keyWindow = UIApplication.shared.windows.first { $0.isKeyWindow }
+        keyWindow?.endEditing(true)
     }
 
+    func didPressRenew() {
+        updateWordsList(renew: true)
+    }
+
+}
+
+// MARK: - Helper
+
+extension WordslistView {
+
+    func updateWordsList(renew: Bool = false) {
+        eklairManager.getWordsList(completion: { (list) in
+            self.wordslist = list
+        }, renew)
+    }
 }
 
 // MARK: - Previews
