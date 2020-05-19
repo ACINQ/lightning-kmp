@@ -10,7 +10,7 @@ import SwiftUI
 
 struct SocketView: View {
 
-    var nodeManager: NodeManager
+    var eklairManager: EklairManager
 
     @State var status: String = "Not connected"
 
@@ -41,7 +41,7 @@ struct SocketView: View {
 extension SocketView {
 
     func didPressConnectChannel() {
-        self.nodeManager.connectWithChannel()
+        self.eklairManager.connectWithChannel()
     }
 }
 
@@ -50,7 +50,7 @@ extension SocketView {
 struct SocketView_Previews: PreviewProvider {
     static var previews: some View {
         Group {
-            SocketView(nodeManager: NodeManager())
+            SocketView(eklairManager: EklairManager())
                 .previewDevice("iPhone SE")
         }
     }

@@ -1,5 +1,5 @@
 //
-//  NodeManager.swift
+//  EklairManager.swift
 //  Eklair
 //
 //  Copyright © 2020 Acinq. All rights reserved.
@@ -9,7 +9,7 @@ import Foundation
 
 import eklair
 
-public class NodeManager {
+public class EklairManager {
     let logger: Logger
 
     let eklairQueue = DispatchQueue(label: "eklairQueue", qos: .background)
@@ -136,7 +136,7 @@ public class NodeManager {
     }
 
     func connect(_ completion: @escaping (() -> Void)) {
-        // LoggerKt.log(level: .INFO(), tag: "NodeManager", message: "Connect()")
+        // LoggerKt.log(level: .INFO(), tag: "EklairManager", message: "Connect()")
 
         self.host = self.user.id
 
@@ -154,4 +154,33 @@ public class NodeManager {
         }
     }
 
+    // MARK: - Words List
+
+    func loadWordsList() -> [String]? {
+        let defaults = UserDefaults.standard
+
+        let wordsList = defaults.object(forKey: "wordsList") as? [String] ?? [String]()
+        return wordsList
+    }
+
+    func saveWordsList(wordsList: [String]) {
+        let defaults = UserDefaults.standard
+
+        defaults.set(wordsList, forKey: "wordsList")
+    }
+
+    func getWordsList(completion: @escaping ([String]) -> Void, _ renew: Bool = false) {
+        var wordsList = loadWordsList()
+        if renew {
+            wordsList = [String]()
+        }
+
+        if wordsList?.isEmpty == true {
+            SeedKt.runWordsListGeneration(entropy: nil) { (list) in
+                self.saveWordsList(wordsList: list)
+
+                completion(list)
+            }
+        }
+    }
 }

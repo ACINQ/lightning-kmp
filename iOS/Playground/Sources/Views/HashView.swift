@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 struct HashView: View {
-    @State var nodeManager: NodeManager = NodeManager()
+    @State var eklairManager: EklairManager = EklairManager()
 
     @State var message: String = ""
     @State var hashedMessage: String = "..."
@@ -61,14 +61,14 @@ struct HashView: View {
 extension HashView {
 
     func didPressHash() {
-        hashedMessage = nodeManager.hash(message: message)
+        hashedMessage = eklairManager.hash(message: message)
 
         let keyWindow = UIApplication.shared.windows.first { $0.isKeyWindow }
         keyWindow?.endEditing(true)
     }
 
     func didPressLog() {
-        nodeManager.testLog()
+        eklairManager.testLog()
     }
 }
 
