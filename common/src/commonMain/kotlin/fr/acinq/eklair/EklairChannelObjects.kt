@@ -2,6 +2,9 @@ package fr.acinq.eklair
 
 import fr.acinq.bitcoin.crypto.Secp256k1
 import fr.acinq.eklair.EklairClient.nodeId
+import fr.acinq.eklair.io.LightningSession
+import fr.acinq.eklair.io.SocketBuilder
+import fr.acinq.eklair.io.SocketHandler
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce

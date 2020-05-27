@@ -1,12 +1,10 @@
-package fr.acinq.eklair
+package fr.acinq.eklair.io
 
 /**
  * extracted and adapted from
  * https://raw.githubusercontent.com/korlibs/korio/master/korio/src/macosX64Main/kotlin/Demo.kt
  */
 
-import platform.Foundation.*
-import platform.darwin.*
 import platform.posix.*
 
 import kotlinx.cinterop.*
@@ -18,9 +16,13 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
             init_sockets()
         }
 
-        operator fun invoke() = NativeSocket(socket(AF_INET, SOCK_STREAM, 0), Endpoint(IP(0, 0, 0, 0), 0))
-        suspend fun connect(host: String, port: Int) = NativeSocket().apply { connect(host, port) }
-        suspend fun bound(host: String, port: Int) = NativeSocket().apply { bind(host, port) }
+        operator fun invoke() = NativeSocket(
+            socket(AF_INET, SOCK_STREAM, 0),
+            Endpoint(IP(0, 0, 0, 0), 0))
+        suspend fun connect(host: String, port: Int) = NativeSocket()
+            .apply { connect(host, port) }
+        suspend fun bound(host: String, port: Int) = NativeSocket()
+            .apply { bind(host, port) }
     }
 
     data class Endpoint(val ip: IP, val port: Int) {
@@ -51,12 +53,12 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
                 val hname = gethostbyname(host)
                 val inetaddr = hname!!.pointed.h_addr_list!![0]!!
                 return IP(
-                        ubyteArrayOf(
-                                inetaddr[0].toUByte(),
-                                inetaddr[1].toUByte(),
-                                inetaddr[2].toUByte(),
-                                inetaddr[3].toUByte()
-                        )
+                    ubyteArrayOf(
+                        inetaddr[0].toUByte(),
+                        inetaddr[1].toUByte(),
+                        inetaddr[2].toUByte(),
+                        inetaddr[3].toUByte()
+                    )
                 )
             }
         }
@@ -120,7 +122,10 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
                 }
             }
             //println("accept: fd=$fd")
-            return NativeSocket(fd, addr.ptr.reinterpret<sockaddr_in>().toEndpoint()).apply {
+            return NativeSocket(
+                fd,
+                addr.ptr.reinterpret<sockaddr_in>().toEndpoint()
+            ).apply {
                 setSocketBlockingEnabled(false)
             }
         }
@@ -204,7 +209,11 @@ class NativeSocket private constructor(internal val sockfd: Int, private var end
             //println("result: $result")
             //println("local address: " + inet_ntoa(localAddress.sin_addr.readValue())?.toKString())
             //println("local port: " + )
-            return Endpoint(IP(ip.getBytes().toUByteArray()), port.toInt())
+            return Endpoint(
+                IP(
+                    ip.getBytes().toUByteArray()
+                ), port.toInt()
+            )
         }
     }
 
