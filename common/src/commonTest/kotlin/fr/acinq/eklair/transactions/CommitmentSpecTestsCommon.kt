@@ -3,9 +3,9 @@ package fr.acinq.eklair.transactions
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eklair.CltvExpiry
+import fr.acinq.eklair.Eclair.randomBytes32
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.TestConstants
-import fr.acinq.eklair.Utils
 import fr.acinq.eklair.wire.UpdateAddHtlc
 import fr.acinq.eklair.wire.UpdateFailHtlc
 import fr.acinq.eklair.wire.UpdateFulfillHtlc
@@ -16,7 +16,7 @@ class CommitmentSpecTestsCommon {
     @Test
     fun `add, fulfill and fail htlcs from the sender side`() {
         val spec = CommitmentSpec(htlcs = setOf(), feeratePerKw = 1000, toLocal = MilliSatoshi(5000000), toRemote = MilliSatoshi(0))
-        val R = Utils.randomBytes32()
+        val R = randomBytes32()
         val H = ByteVector32(Crypto.sha256(R))
 
         val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000 * 1000), H, CltvExpiry(400), TestConstants.emptyOnionPacket)
@@ -39,7 +39,7 @@ class CommitmentSpecTestsCommon {
     @Test
     fun `add, fulfill and fail htlcs from the receiver side`() {
         val spec = CommitmentSpec(htlcs = setOf(), feeratePerKw = 1000, toLocal = MilliSatoshi(0), toRemote = MilliSatoshi(5000 * 1000))
-        val R = Utils.randomBytes32()
+        val R = randomBytes32()
         val H = ByteVector32(Crypto.sha256(R))
 
         val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliSatoshi(2000 * 1000), H, CltvExpiry(400), TestConstants.emptyOnionPacket)

@@ -37,6 +37,7 @@ data class CltvExpiryDelta(private val underlying: Int) : Comparable<CltvExpiryD
     operator fun minus(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(underlying - other.underlying)
     override fun compareTo(other: CltvExpiryDelta): Int = underlying.compareTo(other.underlying)
     fun toInt(): Int = underlying
+    fun toLong(): Long = underlying.toLong()
     // @formatter:on
 
 }

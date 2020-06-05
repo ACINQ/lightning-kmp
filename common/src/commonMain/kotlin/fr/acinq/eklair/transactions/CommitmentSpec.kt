@@ -4,15 +4,13 @@ import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.wire.*
 
 sealed class CommitmentOutput {
-    companion object {
-        object ToLocal : CommitmentOutput()
+    object ToLocal : CommitmentOutput()
 
-        object ToRemote : CommitmentOutput()
+    object ToRemote : CommitmentOutput()
 
-        data class InHtlc(val incomingHtlc: IncomingHtlc) : CommitmentOutput()
+    data class InHtlc(val incomingHtlc: IncomingHtlc) : CommitmentOutput()
 
-        data class OutHtlc(val outgoingHtlc: OutgoingHtlc) : CommitmentOutput()
-    }
+    data class OutHtlc(val outgoingHtlc: OutgoingHtlc) : CommitmentOutput()
 }
 
 sealed class DirectedHtlc {

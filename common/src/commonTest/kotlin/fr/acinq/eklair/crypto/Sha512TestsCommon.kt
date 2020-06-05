@@ -1,6 +1,7 @@
 package fr.acinq.eklair.crypto
 
 import fr.acinq.eklair.Hex
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -16,6 +17,7 @@ class Sha512TestsCommon {
     }
 
     @Test
+    @Ignore
     fun `very long input`() {
         val sha512 = Sha512()
         val input = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmno".encodeToByteArray()

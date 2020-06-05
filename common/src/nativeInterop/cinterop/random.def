@@ -1,0 +1,4 @@
+package = fr.acinq.eklair.utils.cinterop
+
+headers = sys/random.h
+headerFilter = sys/random.h

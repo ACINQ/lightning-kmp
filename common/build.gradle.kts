@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.FatFrameworkTask
 plugins {
     application
     kotlin("multiplatform")
+    kotlin("plugin.serialization") version "1.3.72"
 }
 
 group = "fr.acinq.eklair"
@@ -30,8 +31,7 @@ kotlin {
     val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     if (!isWinHost) {
         linuxX64("linux") {
-            binaries {
-            }
+            compilations["main"].cinterops.create("random")
         }
     }
 
@@ -48,6 +48,7 @@ kotlin {
                 implementation("fr.acinq:bitcoink:1.0-SNAPSHOT")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.5-native-mt")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-common:1.3.5-native-mt")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime-common:0.20.0")
             }
         }
         val commonTest by getting {
@@ -65,6 +66,7 @@ kotlin {
                 implementation("io.ktor:ktor-client-core:1.3.1")
                 implementation("io.ktor:ktor-network:1.3.1")
                 implementation("org.slf4j:slf4j-api:1.7.29")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0")
             }
         }
         val jvmTest by getting {
@@ -77,6 +79,7 @@ kotlin {
             val linuxMain by getting {
                 dependencies {
                     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.5-native-mt")
+                    implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime-native:0.20.0")
                 }
             }
         }

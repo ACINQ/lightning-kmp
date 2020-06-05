@@ -1,5 +1,7 @@
 package fr.acinq.eklair
 
+import fr.acinq.bitcoin.Satoshi
+
 /**
  * One MilliSatoshi is a thousand of a Satoshi, the smallest unit usable in bitcoin
  */
@@ -20,7 +22,7 @@ data class MilliSatoshi(private val underlying: Long) : Comparable<MilliSatoshi>
     fun max(other: MilliSatoshi): MilliSatoshi = if (this > other) this else other
     fun min(other: MilliSatoshi): MilliSatoshi = if (this < other) this else other
 
-    fun truncateToSatoshi(): Long = underlying / 1000
+    fun truncateToSatoshi() = Satoshi(underlying / 1000)
     fun toLong(): Long = underlying
     override fun toString() = "$underlying msat"
     // @formatter:on
