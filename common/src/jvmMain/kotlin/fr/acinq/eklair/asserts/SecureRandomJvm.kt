@@ -1,4 +1,4 @@
-package fr.acinq.eklair.utils
+package fr.acinq.eklair.asserts
 
 import java.security.SecureRandom
 import kotlin.random.Random

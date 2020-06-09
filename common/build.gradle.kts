@@ -30,9 +30,7 @@ kotlin {
     }
     val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     if (!isWinHost) {
-        linuxX64("linux") {
-            compilations["main"].cinterops.create("random")
-        }
+        linuxX64("linux")
     }
 
     ios {

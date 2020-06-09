@@ -1,4 +1,4 @@
-package fr.acinq.eklair.utils
+package fr.acinq.eklair.asserts
 
 import kotlinx.cinterop.*
 import platform.posix.O_RDONLY

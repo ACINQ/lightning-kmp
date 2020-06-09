@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.ScriptEltMapping.code2elt
 import fr.acinq.bitcoin.ScriptEltMapping.elt2code
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
-import fr.acinq.eklair.utils.sat
+import fr.acinq.eklair.asserts.sat
 import kotlinx.serialization.InternalSerializationApi
 
 /**

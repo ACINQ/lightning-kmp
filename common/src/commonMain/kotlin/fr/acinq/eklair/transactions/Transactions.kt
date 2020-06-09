@@ -22,10 +22,10 @@ import fr.acinq.eklair.Eclair
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.transactions.CommitmentOutput.InHtlc
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
-import fr.acinq.eklair.utils.compareTo
-import fr.acinq.eklair.utils.msat
-import fr.acinq.eklair.utils.sat
-import fr.acinq.eklair.utils.sum
+import fr.acinq.eklair.asserts.compareTo
+import fr.acinq.eklair.asserts.msat
+import fr.acinq.eklair.asserts.sat
+import fr.acinq.eklair.asserts.sum
 import fr.acinq.eklair.wire.UpdateAddHtlc
 import kotlinx.serialization.InternalSerializationApi
 
@@ -225,7 +225,7 @@ object Transactions {
             val htlcB = (other.commitmentOutput as? OutHtlc)?.outgoingHtlc?.add
             return when {
                 htlcA != null && htlcB != null && htlcA.paymentHash == htlcB.paymentHash && htlcA.amountMsat == htlcB.amountMsat -> htlcA.cltvExpiry.compareTo(htlcB.cltvExpiry)
-                else -> LexicographicalOrdering.compare(this.output, this.output)
+                else -> LexicographicalOrdering.compare(this.output, other.output)
             }
         }
     }
@@ -242,7 +242,6 @@ object Transactions {
         spec: CommitmentSpec
     ): TransactionsCommitmentOutputs {
         val commitFee = commitTxFee(localDustLimit, spec)
-
 
         val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) =
             if (localIsFunder) {
@@ -407,7 +406,7 @@ object Transactions {
         localHtlcPubkey: PublicKey,
         remoteHtlcPubkey: PublicKey,
         remoteRevocationPubkey: PublicKey,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         htlc: UpdateAddHtlc,
         feeratePerKw: Long
     ): TxResult<TransactionWithInputInfo.ClaimHtlcSuccessTx> {
@@ -442,7 +441,7 @@ object Transactions {
         localHtlcPubkey: PublicKey,
         remoteHtlcPubkey: PublicKey,
         remoteRevocationPubkey: PublicKey,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         htlc: UpdateAddHtlc,
         feeratePerKw: Long
     ): TxResult<TransactionWithInputInfo.ClaimHtlcTimeoutTx> {
@@ -475,7 +474,7 @@ object Transactions {
         delayedOutputTx: Transaction,
         localDustLimit: Satoshi,
         localPaymentPubkey: PublicKey,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         feeratePerKw: Long
     ): TxResult<TransactionWithInputInfo.ClaimP2WPKHOutputTx> {
         val redeemScript = Script.pay2pkh(localPaymentPubkey)
@@ -516,7 +515,7 @@ object Transactions {
         localRevocationPubkey: PublicKey,
         toLocalDelay: CltvExpiryDelta,
         localDelayedPaymentPubkey: PublicKey,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         feeratePerKw: Long
     ): TxResult<TransactionWithInputInfo.ClaimDelayedOutputTx> {
         val redeemScript = Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
@@ -553,7 +552,7 @@ object Transactions {
         localRevocationPubkey: PublicKey,
         toLocalDelay: CltvExpiryDelta,
         localDelayedPaymentPubkey: PublicKey,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         feeratePerKw: Long
     ): TxResult<TransactionWithInputInfo.ClaimDelayedOutputPenaltyTx> {
         val redeemScript = Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
@@ -588,7 +587,7 @@ object Transactions {
         commitTx: Transaction,
         localDustLimit: Satoshi,
         remoteRevocationPubkey: PublicKey,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         toRemoteDelay: CltvExpiryDelta,
         remoteDelayedPaymentPubkey: PublicKey,
         feeratePerKw: Long
@@ -627,12 +626,12 @@ object Transactions {
     fun makeHtlcPenaltyTx(
         commitTx: Transaction,
         htlcOutputIndex: Int,
-        redeemScript: ByteVector,
+        redeemScript: ByteArray,
         localDustLimit: Satoshi,
-        localFinalScriptPubKey: ByteVector,
+        localFinalScriptPubKey: ByteArray,
         feeratePerKw: Long
     ): TxResult<TransactionWithInputInfo.HtlcPenaltyTx> {
-        val input = InputInfo(OutPoint(commitTx, htlcOutputIndex.toLong()), commitTx.txOut[htlcOutputIndex], redeemScript)
+        val input = InputInfo(OutPoint(commitTx, htlcOutputIndex.toLong()), commitTx.txOut[htlcOutputIndex], ByteVector(redeemScript))
         // unsigned transaction
         val tx = Transaction(
             version = 2,
@@ -654,8 +653,8 @@ object Transactions {
 
     fun makeClosingTx(
         commitTxInput: InputInfo,
-        localScriptPubKey: ByteVector,
-        remoteScriptPubKey: ByteVector,
+        localScriptPubKey: ByteArray,
+        remoteScriptPubKey: ByteArray,
         localIsFunder: Boolean,
         dustLimit: Satoshi,
         closingFee: Satoshi,
@@ -702,16 +701,16 @@ object Transactions {
     * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
     */
     val PlaceHolderSig = ByteVector64(ByteArray(64) { 0xaa.toByte() })
-        .also { check(Scripts.der(it).size() == 72) }
+        .also { check(Scripts.der(it).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it).size()} bytes" } }
 
-    fun sign(tx: Transaction, inputIndex: Int, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey): ByteVector64 {
+    fun sign(tx: Transaction, inputIndex: Int, redeemScript: ByteArray, amount: Satoshi, key: PrivateKey): ByteVector64 {
         val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, SigHash.SIGHASH_ALL, amount, SigVersion.SIGVERSION_WITNESS_V0, key)
         return Crypto.der2compact(sigDER)
     }
 
     fun sign(txinfo: TransactionWithInputInfo, key: PrivateKey): ByteVector64 {
         require(txinfo.tx.txIn.size == 1) { "only one input allowed" }
-        return sign(txinfo.tx, 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
+        return sign(txinfo.tx, 0, txinfo.input.redeemScript.toByteArray(), txinfo.input.txOut.amount, key)
     }
 
     fun addSigs(
@@ -776,9 +775,9 @@ object Transactions {
     }
 
     //TODO: Maybe generify?
-    sealed class CheckSpendableResult {
-        object Success : CheckSpendableResult()
-        data class Failure(val error: Throwable) : CheckSpendableResult()
+    sealed class CheckSpendableResult(val isSuccess: Boolean) {
+        object Success : CheckSpendableResult(true)
+        data class Failure(val error: Throwable) : CheckSpendableResult(false)
     }
 
     fun checkSpendable(txinfo: TransactionWithInputInfo): CheckSpendableResult =
