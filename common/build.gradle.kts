@@ -40,6 +40,8 @@ kotlin {
     }
 
     sourceSets {
+        val ktor_version = "1.3.2"
+
         val commonMain by getting {
             dependencies {
                 implementation(kotlin("stdlib-common"))
@@ -53,6 +55,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
+                implementation("io.ktor:ktor-client-core:$ktor_version")
             }
         }
         val jvmMain by getting {
@@ -71,6 +74,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-junit"))
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+                implementation("io.ktor:ktor-client-okhttp:$ktor_version")
             }
         }
         if (!isWinHost) {
@@ -80,6 +84,11 @@ kotlin {
                     implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime-native:0.20.0")
                 }
             }
+            val linuxTest by getting {
+                dependencies {
+                    implementation("io.ktor:ktor-client-curl:$ktor_version")
+                }
+            }
         }
         val iosMain by getting {
             dependencies {
@@ -87,6 +96,11 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.5-native-mt")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:1.3.5-native-mt")
                 implementation("org.jetbrains.kotlinx:atomicfu-native:0.14.3")
+            }
+        }
+        val iosTest by getting {
+            dependencies {
+                implementation("io.ktor:ktor-client-ios:$ktor_version")
             }
         }
     }

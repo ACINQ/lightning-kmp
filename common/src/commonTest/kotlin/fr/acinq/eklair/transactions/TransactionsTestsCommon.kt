@@ -11,7 +11,6 @@ import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Eclair.MinimumFeeratePerKw
 import fr.acinq.eklair.Eclair.randomBytes32
 import fr.acinq.eklair.TestConstants
-import fr.acinq.eklair.assertIs
 import fr.acinq.eklair.channel.Helpers.Funding
 import fr.acinq.eklair.transactions.Scripts.htlcOffered
 import fr.acinq.eklair.transactions.Scripts.htlcReceived
@@ -48,7 +47,12 @@ import fr.acinq.eklair.transactions.Transactions.makeMainPenaltyTx
 import fr.acinq.eklair.transactions.Transactions.sign
 import fr.acinq.eklair.transactions.Transactions.weight2fee
 import fr.acinq.eklair.asserts.*
+import fr.acinq.eklair.io.SocketBuilder
+import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eklair.wire.UpdateAddHtlc
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.utils.io.core.use
 import kotlinx.serialization.InternalSerializationApi
 import kotlin.random.Random
 import kotlin.test.Test
@@ -72,8 +76,7 @@ class TransactionsTestsCommon {
     private val localDustLimit = 546.sat
     private val feeratePerKw = 22_000L
 
-    @Test
-    fun `encode and decode sequence and locktime (one example)`() {
+    @Test fun `encode and decode sequence and locktime (one example)`() {
         val txnumber = 0x11F71FB268DL
 
         val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -84,8 +87,7 @@ class TransactionsTestsCommon {
         assertEquals(txnumber, txnumber1)
     }
 
-    @Test
-    fun `reconstruct txnumber from sequence and locktime`() {
+    @Test fun `reconstruct txnumber from sequence and locktime`() {
         repeat (1_000) {
             val txnumber = Random.nextLong() and 0xffffffffffffL
             val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -94,8 +96,7 @@ class TransactionsTestsCommon {
         }
     }
 
-    @Test
-    fun `compute fees`() {
+    @Test fun `compute fees`() {
         // see BOLT #3 specs
         val htlcs = setOf(
             OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, ByteVector32.Zeroes, CltvExpiry(552), TestConstants.emptyOnionPacket)),
@@ -108,8 +109,7 @@ class TransactionsTestsCommon {
         assertEquals(5340.sat, fee)
     }
 
-    @Test
-    fun `check pre-computed transaction weights`() {
+    @Test fun `check pre-computed transaction weights`() {
         val finalPubKeyScript = write(pay2wpkh(PrivateKey(randomBytes32()).publicKey()))
         val localDustLimit = 546.sat
         val toLocalDelay = CltvExpiryDelta(144)
@@ -206,8 +206,7 @@ class TransactionsTestsCommon {
         }
     }
 
-    @Test
-    fun `generate valid commitment and htlc transactions`() {
+    @Test fun `generate valid commitment and htlc transactions`() {
         val finalPubKeyScript = write(pay2wpkh(PrivateKey(randomBytes32()).publicKey()))
         val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
 
@@ -340,7 +339,7 @@ class TransactionsTestsCommon {
             // remote spends offered HTLC output with revocation key
             val script = write(htlcOffered(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc1.paymentHash)))
             val htlcOutputIndex = outputs.indexOfFirst {
-                val outHtlc = (it.commitmentOutput as? CommitmentOutput.OutHtlc)?.outgoingHtlc?.add
+                val outHtlc = (it.commitmentOutput as? OutHtlc)?.outgoingHtlc?.add
                 outHtlc != null && outHtlc.id == htlc1.id
             }
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
@@ -365,6 +364,113 @@ class TransactionsTestsCommon {
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
         }
+    }
 
+    @Test fun `sort the htlc outputs using BIP69 and cltv expiry`() {
+        val localFundingPriv = PrivateKey.fromHex("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
+        val remoteFundingPriv = PrivateKey.fromHex("a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
+        val localRevocationPriv = PrivateKey.fromHex("a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3")
+        val localPaymentPriv = PrivateKey.fromHex("a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4")
+        val localDelayedPaymentPriv = PrivateKey.fromHex("a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5")
+        val remotePaymentPriv = PrivateKey.fromHex("a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
+        val localHtlcPriv = PrivateKey.fromHex("a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
+        val remoteHtlcPriv = PrivateKey.fromHex("a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
+        val commitInput = Funding.makeFundingInputInfo(ByteVector32.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
+
+        // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
+        // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
+        // htlc4 is identical to htlc3 and htlc5 has same payment_hash/amount but different CLTV
+        val paymentPreimage1 = ByteVector32.fromValidHex("1111111111111111111111111111111111111111111111111111111111111111")
+        val paymentPreimage2 = ByteVector32.fromValidHex("2222222222222222222222222222222222222222222222222222222222222222")
+        val paymentPreimage3 = ByteVector32.fromValidHex("3333333333333333333333333333333333333333333333333333333333333333")
+        val htlc1 = UpdateAddHtlc(randomBytes32(), 1, 100.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage1)), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc2 = UpdateAddHtlc(randomBytes32(), 2, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage2)), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc3 = UpdateAddHtlc(randomBytes32(), 3, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc4 = UpdateAddHtlc(randomBytes32(), 4, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc5 = UpdateAddHtlc(randomBytes32(), 5, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(301), TestConstants.emptyOnionPacket)
+
+        val spec = CommitmentSpec(
+            htlcs = setOf(
+                OutgoingHtlc(htlc1),
+                OutgoingHtlc(htlc2),
+                OutgoingHtlc(htlc3),
+                OutgoingHtlc(htlc4),
+                OutgoingHtlc(htlc5)
+            ),
+            feeratePerKw = feeratePerKw,
+            toLocal = 400.mbtc.toMilliSatoshi(),
+            toRemote = 300.mbtc.toMilliSatoshi()
+        )
+
+        val commitTxNumber = 0x404142434446L
+        val (commitTx, outputs) = run {
+            val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
+            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+            val localSig = Transactions.sign(txinfo, localPaymentPriv)
+            val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
+            Pair(addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig), outputs)
+        }
+
+        // htlc1 comes before htlc2 because of the smaller amount (BIP69)
+        // htlc2 and htlc3 have the same amount but htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
+        // htlc5 comes after htlc3 and htlc4 because of the higher CLTV
+        val (htlcOut1, htlcOut2, htlcOut3, htlcOut4, htlcOut5) = commitTx.tx.txOut
+        assertEquals(10_000_000.sat, htlcOut1.amount)
+        for (htlcOut in listOf(htlcOut2, htlcOut3, htlcOut4, htlcOut5)) {
+            assertEquals(20_000_000.sat, htlcOut.amount)
+        }
+
+        assertTrue(htlcOut2.publicKeyScript.toHex() < htlcOut3.publicKeyScript.toHex())
+        assertEquals(htlcOut2.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc2)) }?.output?.publicKeyScript)
+        assertEquals(htlcOut3.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc3)) }?.output?.publicKeyScript)
+        assertEquals(htlcOut4.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc4)) }?.output?.publicKeyScript)
+        assertEquals(htlcOut5.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc5)) }?.output?.publicKeyScript)
+    }
+
+    @Test fun `BOLT 2 fee tests`() {
+        SocketBuilder.runBlockingCoroutine {
+            val bolt3 = HttpClient().use { client ->
+                client.get<String>("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
+                    .replace("    name:", "$   name:")
+                // character '$' separates tests
+            }
+
+            // this regex extract params from a given test
+            val testRegex = Regex(
+                """name: (.*)\n""" +
+                        """.*to_local_msat: ([0-9]+)\n""" +
+                        """.*to_remote_msat: ([0-9]+)\n""" +
+                        """.*feerate_per_kw: ([0-9]+)\n""" +
+                        """.*base commitment transaction fee = ([0-9]+)\n""" +
+                        """[^$]+"""
+            )
+
+            // this regex extracts htlc direction and amounts
+            val htlcRegex = Regex(""".*HTLC ([a-z]+) amount ([0-9]+).*""")
+
+            val dustLimit = 546.sat
+            data class TestSetup(val name: String, val dustLimit: Satoshi, val spec: CommitmentSpec, val expectedFee: Satoshi)
+
+            val tests = testRegex.findAll(bolt3).map { s ->
+                val (name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s.destructured
+                val htlcs = htlcRegex.findAll(s.value).map { l ->
+                    val (direction, amount) = l.destructured
+                    when (direction) {
+                        "offered" -> OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toLong().sat.toMilliSatoshi(), ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+                        "received" -> IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toLong().sat.toMilliSatoshi(), ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+                        else -> error("Unknown direction $direction")
+                    }
+                } .toSet()
+                TestSetup(name, dustLimit, CommitmentSpec(htlcs, feerate_per_kw.toLong(), to_local_msat.toLong().msat, to_remote_msat.toLong().msat), fee.toLong().sat)
+            }.toList()
+
+            // simple non-reg test making sure we are not missing tests
+            assertEquals(15, tests.size, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
+
+            tests.forEach { test ->
+                val fee = commitTxFee(test.dustLimit, test.spec)
+                assertEquals(test.expectedFee, fee, "In '${test.name}'")
+            }
+        }
     }
 }
