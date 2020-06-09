@@ -406,8 +406,8 @@ class TransactionsTestsCommon {
         val (commitTx, outputs) = run {
             val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
             val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
-            val localSig = Transactions.sign(txinfo, localPaymentPriv)
-            val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
+            val localSig = sign(txinfo, localPaymentPriv)
+            val remoteSig = sign(txinfo, remotePaymentPriv)
             Pair(addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig), outputs)
         }
 

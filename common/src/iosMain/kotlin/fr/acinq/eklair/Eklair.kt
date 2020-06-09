@@ -5,7 +5,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.SendChannel
 import kotlin.native.concurrent.AtomicReference
 import kotlin.system.measureTimeMillis
-import kotlinx.atomicfu.*
 
 @InternalCoroutinesApi
 object Eklair {

@@ -2,8 +2,6 @@ package fr.acinq.eklair
 
 import fr.acinq.eklair.SocketBuilder.runBlockingCoroutine
 
-import kotlinx.atomicfu.AtomicRef
-import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.*
