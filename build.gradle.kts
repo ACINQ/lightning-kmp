@@ -4,6 +4,7 @@ buildscript {
 
     repositories {
         maven("https://kotlin.bintray.com/kotlinx")
+        maven("https://dl.bintray.com/kotlin/kotlin-eap")
 
         google()
         jcenter()
@@ -23,9 +24,7 @@ allprojects {
         mavenLocal()
         maven("https://dl.bintray.com/kotlin/kotlinx")
         maven("https://dl.bintray.com/kotlin/ktor")
-        maven("https://dl.bintray.com/sargunster/maven")
-        maven("https://dl.bintray.com/kotlin/squash")
-        maven("https://dl.bintray.com/kotlin/kotlin-dev")
+        maven("https://dl.bintray.com/kotlin/kotlin-eap")
         google()
         jcenter()
     }

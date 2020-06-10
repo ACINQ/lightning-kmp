@@ -2,6 +2,7 @@ package fr.acinq.eklair.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.MilliSatoshi
 
@@ -40,6 +41,12 @@ data class UpdateFailMalformedHtlc(
     val onionHash: ByteVector32,
     val failureCode: Int
 ) : HtlcMessage, UpdateMessage, HasChannelId
+
+data class CommitSig(
+    override val channelId: ByteVector32,
+    val signature: ByteVector64,
+    val htlcSignatures: List<ByteVector64>
+) : HtlcMessage, HasChannelId
 
 data class UpdateFee(
     override val channelId: ByteVector32,

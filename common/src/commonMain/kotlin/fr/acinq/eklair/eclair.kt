@@ -2,7 +2,7 @@ package fr.acinq.eklair
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.eklair.asserts.secure
+import fr.acinq.eklair.utils.secure
 import kotlin.random.Random
 
 

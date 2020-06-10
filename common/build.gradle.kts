@@ -14,24 +14,13 @@ application {
     mainClassName = "fr.acinq.eklair.Boot"
 }
 
-repositories {
-    mavenLocal()
-    google()
-    jcenter()
-    mavenCentral()
-}
+val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    /* Targets configuration omitted.
-    *  To find out how to configure the targets, please follow the link:
-    *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
-    jvm() {
+    jvm()
 
-    }
     val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
-    if (!isWinHost) {
-        linuxX64("linux")
-    }
+    linuxX64("linux")
 
     ios {
         binaries {
@@ -42,16 +31,16 @@ kotlin {
     sourceSets {
         val ktor_version: String by extra
         val coroutines_version: String by extra
-        val coroutines_mt_version = "$coroutines_version-native-mt"
+        // TODO: bring back native-mt when needed
+//        val coroutines_mt_version = "$coroutines_version-native-mt"
         val serialization_version: String by extra
 
         val commonMain by getting {
             dependencies {
                 implementation(kotlin("stdlib-common"))
                 implementation("fr.acinq:bitcoink:1.0-SNAPSHOT")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_mt_version")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-common:$coroutines_mt_version")
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime-common:$serialization_version")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:$serialization_version")
             }
         }
         val commonTest by getting {
@@ -69,7 +58,6 @@ kotlin {
                 implementation("io.ktor:ktor-client-okhttp:$ktor_version")
                 implementation("io.ktor:ktor-network:$ktor_version")
                 implementation("org.slf4j:slf4j-api:1.7.29")
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:$serialization_version")
             }
         }
         val jvmTest by getting {
@@ -78,29 +66,36 @@ kotlin {
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             }
         }
+        val nativeMain by creating {
+            dependsOn(commonMain)
+        }
+        val nativeTest by creating {
+            dependsOn(commonTest)
+        }
         if (!isWinHost) {
             val linuxMain by getting {
-                dependencies {
-                    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:$coroutines_mt_version")
-                    implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime-native:$serialization_version")
-                }
+                dependsOn(nativeMain)
             }
             val linuxTest by getting {
+                dependsOn(nativeTest)
                 dependencies {
                     implementation("io.ktor:ktor-client-curl:$ktor_version")
                 }
             }
         }
-        val iosMain by getting {
-            dependencies {
-                implementation(kotlin("stdlib"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_mt_version")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-native:$coroutines_mt_version")
+
+        if (currentOs.isMacOsX) {
+            val iosMain by getting {
+                dependsOn(nativeMain)
+                dependencies {
+                    implementation(kotlin("stdlib"))
+                }
             }
-        }
-        val iosTest by getting {
-            dependencies {
-                implementation("io.ktor:ktor-client-ios:$ktor_version")
+            val iosTest by getting {
+                dependsOn(nativeTest)
+                dependencies {
+                    implementation("io.ktor:ktor-client-ios:$ktor_version")
+                }
             }
         }
     }
@@ -138,6 +133,37 @@ kotlin {
                 include("*.framework/**")
                 include("*.framework.dSYM/**")
             }
+        }
+    }
+}
+
+
+// Disable cross compilation
+afterEvaluate {
+    val targets = when {
+        currentOs.isLinux -> listOf("mingwX64", "macosX64")
+        currentOs.isMacOsX -> listOf("mingwX64", "linuxX64")
+        currentOs.isWindows -> listOf("linuxX64", "macosX64")
+        else -> error("Unsupported os $currentOs")
+    }.mapNotNull { kotlin.targets.findByName(it) as? KotlinNativeTarget }
+
+    configure(targets) {
+        compilations.all {
+            cinterops.all { tasks[interopProcessingTaskName].enabled = false }
+            compileKotlinTask.enabled = false
+            tasks[processResourcesTaskName].enabled = false
+        }
+        binaries.all { linkTask.enabled = false }
+
+        mavenPublication {
+            val publicationToDisable = this
+            tasks.withType<AbstractPublishToMaven>().all {
+                onlyIf { publication != publicationToDisable }
+            }
+            tasks.withType<GenerateModuleMetadata>().all {
+                onlyIf { publication.get() != publicationToDisable }
+            }
+
         }
     }
 }

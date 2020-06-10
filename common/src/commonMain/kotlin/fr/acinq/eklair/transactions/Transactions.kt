@@ -22,10 +22,10 @@ import fr.acinq.eklair.Eclair
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.transactions.CommitmentOutput.InHtlc
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
-import fr.acinq.eklair.asserts.compareTo
-import fr.acinq.eklair.asserts.msat
-import fr.acinq.eklair.asserts.sat
-import fr.acinq.eklair.asserts.sum
+import fr.acinq.eklair.utils.compareTo
+import fr.acinq.eklair.utils.msat
+import fr.acinq.eklair.utils.sat
+import fr.acinq.eklair.utils.sum
 import fr.acinq.eklair.wire.UpdateAddHtlc
 import kotlinx.serialization.InternalSerializationApi
 

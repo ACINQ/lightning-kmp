@@ -46,9 +46,9 @@ import fr.acinq.eklair.transactions.Transactions.makeHtlcTxs
 import fr.acinq.eklair.transactions.Transactions.makeMainPenaltyTx
 import fr.acinq.eklair.transactions.Transactions.sign
 import fr.acinq.eklair.transactions.Transactions.weight2fee
-import fr.acinq.eklair.asserts.*
 import fr.acinq.eklair.io.SocketBuilder
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
+import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.UpdateAddHtlc
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
