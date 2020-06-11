@@ -446,7 +446,7 @@ class TransactionsTestsCommon {
             )
 
             // this regex extracts htlc direction and amounts
-            val htlcRegex = Regex(""".*HTLC ([a-z]+) amount ([0-9]+).*""")
+            val htlcRegex = Regex(""".*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""")
 
             val dustLimit = 546.sat
             data class TestSetup(val name: String, val dustLimit: Satoshi, val spec: CommitmentSpec, val expectedFee: Satoshi)

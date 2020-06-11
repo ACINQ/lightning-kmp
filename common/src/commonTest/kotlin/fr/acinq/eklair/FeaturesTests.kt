@@ -2,7 +2,7 @@ package fr.acinq.eklair
 
 import fr.acinq.eklair.Features.Companion.areSupported
 import fr.acinq.eklair.Features.Companion.validateFeatureGraph
-import fr.acinq.eklair.utils.BitSet
+import fr.acinq.eklair.utils.BitField
 import kotlin.test.*
 
 class FeaturesTests {
@@ -40,25 +40,25 @@ class FeaturesTests {
 
     @Test fun `features dependencies`() {
         val testCases = mapOf(
-            BitSet.fromBin("                        ") to true,
-            BitSet.fromBin("                00000000") to true,
-            BitSet.fromBin("                01011000") to true,
+            BitField.fromBin("                        ") to true,
+            BitField.fromBin("                00000000") to true,
+            BitField.fromBin("                01011000") to true,
             // gossip_queries_ex depend on gossip_queries
-            BitSet.fromBin("000000000000100000000000") to false,
-            BitSet.fromBin("000000000000010000000000") to false,
-            BitSet.fromBin("000000000000100010000000") to true,
-            BitSet.fromBin("000000000000100001000000") to true,
+            BitField.fromBin("000000000000100000000000") to false,
+            BitField.fromBin("000000000000010000000000") to false,
+            BitField.fromBin("000000000000100010000000") to true,
+            BitField.fromBin("000000000000100001000000") to true,
             // payment_secret depends on var_onion_optin, but we allow not setting it to be compatible with Phoenix
-            BitSet.fromBin("000000001000000000000000") to true,
-            BitSet.fromBin("000000000100000000000000") to true,
-            BitSet.fromBin("000000000100001000000000") to true,
+            BitField.fromBin("000000001000000000000000") to true,
+            BitField.fromBin("000000000100000000000000") to true,
+            BitField.fromBin("000000000100001000000000") to true,
             // basic_mpp depends on payment_secret
-            BitSet.fromBin("000000100000000000000000") to false,
-            BitSet.fromBin("000000010000000000000000") to false,
-            BitSet.fromBin("000000101000000000000000") to true, // we allow not setting var_onion_optin
-            BitSet.fromBin("000000011000000000000000") to true, // we allow not setting var_onion_optin
-            BitSet.fromBin("000000011000001000000000") to true,
-            BitSet.fromBin("000000100100000100000000") to true
+            BitField.fromBin("000000100000000000000000") to false,
+            BitField.fromBin("000000010000000000000000") to false,
+            BitField.fromBin("000000101000000000000000") to true, // we allow not setting var_onion_optin
+            BitField.fromBin("000000011000000000000000") to true, // we allow not setting var_onion_optin
+            BitField.fromBin("000000011000001000000000") to true,
+            BitField.fromBin("000000100100000100000000") to true
         )
 
         for ((testCase, valid) in testCases) {
@@ -90,25 +90,25 @@ class FeaturesTests {
         assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional)))))
 
         val testCases = mapOf(
-            BitSet.fromBin("            00000000000000001011") to true,
-            BitSet.fromBin("            00010000100001000000") to true,
-            BitSet.fromBin("            00100000100000100000") to true,
-            BitSet.fromBin("            00010100000000001000") to true,
-            BitSet.fromBin("            00011000001000000000") to true,
-            BitSet.fromBin("            00101000000000000000") to true,
-            BitSet.fromBin("            00000000010001000000") to true,
-            BitSet.fromBin("            01000000000000000000") to true,
-            BitSet.fromBin("            10000000000000000000") to true,
+            BitField.fromBin("            00000000000000001011") to true,
+            BitField.fromBin("            00010000100001000000") to true,
+            BitField.fromBin("            00100000100000100000") to true,
+            BitField.fromBin("            00010100000000001000") to true,
+            BitField.fromBin("            00011000001000000000") to true,
+            BitField.fromBin("            00101000000000000000") to true,
+            BitField.fromBin("            00000000010001000000") to true,
+            BitField.fromBin("            01000000000000000000") to true,
+            BitField.fromBin("            10000000000000000000") to true,
             // unknown optional feature bits
-            BitSet.fromBin("        001000000000000000000000") to true,
-            BitSet.fromBin("        100000000000000000000000") to true,
+            BitField.fromBin("        001000000000000000000000") to true,
+            BitField.fromBin("        100000000000000000000000") to true,
             // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-            BitSet.fromBin("        000100000000000000000000") to false,
-            BitSet.fromBin("        010000000000000000000000") to false,
-            BitSet.fromBin("    0001000000000000000000000000") to false,
-            BitSet.fromBin("    0100000000000000000000000000") to false,
-            BitSet.fromBin("00010000000000000000000000000000") to false,
-            BitSet.fromBin("01000000000000000000000000000000") to false
+            BitField.fromBin("        000100000000000000000000") to false,
+            BitField.fromBin("        010000000000000000000000") to false,
+            BitField.fromBin("    0001000000000000000000000000") to false,
+            BitField.fromBin("    0100000000000000000000000000") to false,
+            BitField.fromBin("00010000000000000000000000000000") to false,
+            BitField.fromBin("01000000000000000000000000000000") to false
         )
         for ((testCase, expected) in testCases) {
             assertEquals(expected, areSupported(Features(testCase)), testCase.toBinaryString())

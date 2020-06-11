@@ -1,6 +1,6 @@
 package fr.acinq.eklair
 
-import fr.acinq.eklair.utils.BitSet
+import fr.acinq.eklair.utils.BitField
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
 
@@ -97,9 +97,9 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
     private fun Set<Int>.indicesToByteArray(): ByteArray {
         if (isEmpty()) return ByteArray(0)
         // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
-        val buf = BitSet.forAtMost(max()!! + 1)
-        forEach { buf.set(it) }
-        return buf.reversed().bytes
+        val buf = BitField.forAtMost(max()!! + 1)
+        forEach { buf.setRight(it) }
+        return buf.bytes
     }
 
     /**
@@ -145,17 +145,17 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             Feature.Wumbo
         )
 
-        operator fun invoke(bytes: ByteArray): Features = invoke(BitSet.from(bytes))
+        operator fun invoke(bytes: ByteArray): Features = invoke(BitField.from(bytes))
 
-        operator fun invoke(bits: BitSet): Features {
-            val list = bits.asSequence().toList()
-            val all = list.reversed().withIndex()
+        operator fun invoke(bits: BitField): Features {
+            val all = bits.asRightSequence().withIndex()
                 .filter { it.value }
                 .map { (idx, _) ->
                     knownFeatures.find { it.optional == idx } ?.let { ActivatedFeature(it, FeatureSupport.Optional) }
                         ?: knownFeatures.find { it.mandatory == idx } ?.let { ActivatedFeature(it, FeatureSupport.Mandatory) }
                         ?: UnknownFeature(idx)
                 }
+                .toList()
 
             return Features(
                 activated = all.filterIsInstance<ActivatedFeature>().toSet(),

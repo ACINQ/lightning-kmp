@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Features
 import fr.acinq.eklair.MilliSatoshi
-import fr.acinq.eklair.utils.BitSet
+import fr.acinq.eklair.utils.BitField
 import kotlinx.serialization.InternalSerializationApi
 
 
@@ -23,7 +23,7 @@ data class LocalParams constructor(
     val features: Features
 )
 
-data class ChannelVersion(val bits: BitSet) {
+data class ChannelVersion(val bits: BitField) {
     init {
         require(bits.byteSize == SIZE_BYTE) { "channel version takes 4 bytes" }
     }
@@ -33,14 +33,14 @@ data class ChannelVersion(val bits: BitSet) {
     infix fun xor(other: ChannelVersion) = ChannelVersion(bits xor other.bits)
 
     // TODO: This is baaad performance! The copy needs to be optimized out.
-    fun isSet(bit: Int) = bits.reversed()[bit]
+    fun isSet(bit: Int) = bits.getRight(bit)
 
     companion object {
         val SIZE_BYTE = 4
-        val ZEROES = ChannelVersion(BitSet(SIZE_BYTE))
+        val ZEROES = ChannelVersion(BitField(SIZE_BYTE))
         val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
 
-        fun fromBit(bit: Int) = ChannelVersion(BitSet(SIZE_BYTE).apply { set(bit) }.reversed())
+        fun fromBit(bit: Int) = ChannelVersion(BitField(SIZE_BYTE).apply { setRight(bit) })
 
         val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
 
