@@ -4,13 +4,19 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.eklair.CltvExpiry
+import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.MilliSatoshi
+import fr.acinq.eklair.ShortChannelId
 
-interface HtlcMessage
-interface UpdateMessage
-interface HasChannelId {
-    val channelId: ByteVector32
-}
+
+interface LightningMessage
+interface HtlcMessage : LightningMessage
+interface RoutingMessage : LightningMessage
+interface AnnouncementMessage : RoutingMessage // <- not in the spec
+interface HasTimestamp : LightningMessage { val timestamp: Long }
+interface UpdateMessage : LightningMessage
+interface HasChannelId : LightningMessage { val channelId: ByteVector32 }
+interface HasChainHash : LightningMessage { val chainHash: ByteVector32 } // <- not in the spec
 
 interface ChannelMessage
 
@@ -53,4 +59,32 @@ data class UpdateFee(
     val feeratePerKw: Long
 ) : ChannelMessage, UpdateMessage, HasChannelId
 
+data class AnnouncementSignatures(
+    override val channelId: ByteVector32,
+    val shortChannelId: ShortChannelId,
+    val nodeSignature: ByteVector64,
+    val bitcoinSignature: ByteVector64
+) : RoutingMessage, HasChannelId
+
+
+data class ChannelUpdate(
+    val signature: ByteVector64,
+    override val chainHash: ByteVector32,
+    val shortChannelId: ShortChannelId,
+    override val timestamp: Long,
+    val messageFlags: Byte,
+    val channelFlags: Byte,
+    val cltvExpiryDelta: CltvExpiryDelta,
+    val htlcMinimumMsat: MilliSatoshi,
+    val feeBaseMsat: MilliSatoshi,
+    val feeProportionalMillionths: Long,
+    val htlcMaximumMsat: MilliSatoshi?,
+    val unknownFields: ByteVector = ByteVector.empty
+) : AnnouncementMessage, HasTimestamp, HasChainHash {
+    init {
+        require(((messageFlags.toInt() and 1) != 0) == (htlcMaximumMsat != null)) { "htlcMaximumMsat is not consistent with messageFlags" }
+    }
+
+    fun isNode1(): Boolean = (channelFlags.toInt() and 1) == 0
+}
 

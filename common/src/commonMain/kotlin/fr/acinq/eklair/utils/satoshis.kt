@@ -13,6 +13,14 @@ fun Iterable<Satoshi>.sum(): Satoshi {
     return Satoshi(sum)
 }
 
+fun Iterable<MilliSatoshi>.sum(): MilliSatoshi {
+    var sum: Long = 0
+    for (element in this) {
+        sum += element.msat
+    }
+    return MilliSatoshi(sum)
+}
+
 fun Satoshi.toMilliSatoshi() = MilliSatoshi(sat * 1_000L)
 
 operator fun MilliSatoshi.compareTo(other: Satoshi) = toLong().compareTo(other.toLong() * 1_000L)
