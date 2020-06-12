@@ -55,3 +55,7 @@ sealed class UnknownFailureMessage : AbstractFailureMessage() {
         return (other as? UnknownFailureMessage)?.code == code
     }
 }
+
+object FailureMessageCodecs {
+    val BADONION = 0x8000
+}

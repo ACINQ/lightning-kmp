@@ -25,6 +25,7 @@ allprojects {
         maven("https://dl.bintray.com/kotlin/kotlinx")
         maven("https://dl.bintray.com/kotlin/ktor")
         maven("https://dl.bintray.com/kotlin/kotlin-eap")
+        maven("https://dl.bintray.com/kodein-framework/kodein-dev")
         google()
         jcenter()
     }

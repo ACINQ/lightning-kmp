@@ -27,10 +27,12 @@ sealed class DirectedHtlc {
     }
 }
 
-
 data class IncomingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
-
 data class OutgoingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
+
+fun Iterable<DirectedHtlc>.incomings(): List<UpdateAddHtlc> = mapNotNull { (it as? IncomingHtlc)?.add }
+fun Iterable<DirectedHtlc>.outgoings(): List<UpdateAddHtlc> = mapNotNull { (it as? OutgoingHtlc)?.add }
+
 
 data class CommitmentSpec(
     val htlcs: Set<DirectedHtlc>,

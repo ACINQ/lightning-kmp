@@ -31,6 +31,7 @@ kotlin {
     sourceSets {
         val ktor_version: String by extra
         val coroutines_version: String by extra
+        val kodein_log_version: String by extra
         // TODO: bring back native-mt when needed
 //        val coroutines_mt_version = "$coroutines_version-native-mt"
         val serialization_version: String by extra
@@ -41,6 +42,7 @@ kotlin {
                 implementation("fr.acinq:bitcoink:1.0-SNAPSHOT")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:$serialization_version")
+                implementation("org.kodein.log:kodein-log:$kodein_log_version")
             }
         }
         val commonTest by getting {

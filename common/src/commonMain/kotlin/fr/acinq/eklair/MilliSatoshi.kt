@@ -20,6 +20,8 @@ data class MilliSatoshi(val msat: Long) : Comparable<MilliSatoshi> {
 
     fun truncateToSatoshi() = Satoshi(msat / 1000)
     fun toLong(): Long = msat
+    @ExperimentalUnsignedTypes
+    fun toULong(): ULong = msat.toULong()
     override fun toString() = "$msat msat"
     // @formatter:on
 }

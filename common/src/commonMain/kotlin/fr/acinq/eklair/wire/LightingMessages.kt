@@ -1,8 +1,6 @@
 package fr.acinq.eklair.wire
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.*
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.MilliSatoshi
@@ -19,6 +17,11 @@ interface HasChannelId : LightningMessage { val channelId: ByteVector32 }
 interface HasChainHash : LightningMessage { val chainHash: ByteVector32 } // <- not in the spec
 
 interface ChannelMessage
+
+data class FundingLocked(
+    override val channelId: ByteVector32,
+    val nextPerCommitmentPoint: PublicKey
+) : ChannelMessage, HasChannelId
 
 data class UpdateAddHtlc(
     override val channelId: ByteVector32,
@@ -52,6 +55,12 @@ data class CommitSig(
     override val channelId: ByteVector32,
     val signature: ByteVector64,
     val htlcSignatures: List<ByteVector64>
+) : HtlcMessage, HasChannelId
+
+data class RevokeAndAck(
+    override val channelId: ByteVector32,
+    val perCommitmentSecret: PrivateKey,
+    val nextPerCommitmentPoint: PublicKey
 ) : HtlcMessage, HasChannelId
 
 data class UpdateFee(

@@ -22,10 +22,7 @@ import fr.acinq.eklair.Eclair
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.transactions.CommitmentOutput.InHtlc
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
-import fr.acinq.eklair.utils.compareTo
-import fr.acinq.eklair.utils.msat
-import fr.acinq.eklair.utils.sat
-import fr.acinq.eklair.utils.sum
+import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.UpdateAddHtlc
 import kotlinx.serialization.InternalSerializationApi
 
@@ -774,19 +771,9 @@ object Transactions {
         return closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
     }
 
-    //TODO: Maybe generify?
-    sealed class CheckSpendableResult(val isSuccess: Boolean) {
-        object Success : CheckSpendableResult(true)
-        data class Failure(val error: Throwable) : CheckSpendableResult(false)
+    fun checkSpendable(txinfo: TransactionWithInputInfo): Try<Unit> = runTrying {
+        Transaction.correctlySpends(txinfo.tx, mapOf(txinfo.tx.txIn.first().outPoint to txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
-
-    fun checkSpendable(txinfo: TransactionWithInputInfo): CheckSpendableResult =
-        try {
-            Transaction.correctlySpends(txinfo.tx, mapOf(txinfo.tx.txIn.first().outPoint to txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            CheckSpendableResult.Success
-        } catch (ex: Throwable) {
-            CheckSpendableResult.Failure(ex)
-        }
 
     fun checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey): Boolean {
         val data = Transaction.hashForSigning(txinfo.tx, 0, txinfo.input.redeemScript.toByteArray(), SigHash.SIGHASH_ALL, txinfo.input.txOut.amount, SigVersion.SIGVERSION_WITNESS_V0)

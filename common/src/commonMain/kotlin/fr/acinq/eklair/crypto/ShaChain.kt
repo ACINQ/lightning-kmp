@@ -26,7 +26,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
         if (lastIndex == null) return emptySequence()
         return sequence {
             var pos: Long = lastIndex
-            while (pos >= lastIndex && pos <= Long.MAX_VALUE) {
+            while (pos >= lastIndex && pos <= 0xffffffffffffffL) {
                 yield(getHash(pos)!!)
                 ++pos
             }
@@ -47,7 +47,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
          * @return a binary representation of index as a sequence of 64 booleans. Each bool represents a move down the tree
          */
         fun moves(index: Long): List<Boolean> =
-            (63 downTo 0).map { (index and (1L shl it)) != 0L }
+            (47 downTo 0).map { (index and (1L shl it)) != 0L }
 
         /**
          *
@@ -56,7 +56,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
          * @return the child of our node in the specified direction
          */
         fun derive(node: Node, direction: Boolean) =
-            if (direction) Node(ByteVector32(sha256(flip(node.value, 63 - node.height))), node.height + 1, node)
+            if (direction) Node(ByteVector32(sha256(flip(node.value, 47 - node.height))), node.height + 1, node)
             else Node(node.value, node.height + 1, node)
 
         fun derive(node: Node, directions: List<Boolean>): Node = directions.fold(node) { n, d -> derive(n, d) }
