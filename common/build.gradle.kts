@@ -17,7 +17,13 @@ application {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    jvm()
+    jvm {
+        val main by compilations.getting {
+            kotlinOptions {
+                jvmTarget = "1.8"
+            }
+        }
+    }
 
     val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     linuxX64("linux")
