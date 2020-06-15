@@ -1,6 +1,5 @@
-package utils
+package fr.acinq.eklair.utils
 
-import fr.acinq.eklair.utils.leftPaddedCopyOf
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

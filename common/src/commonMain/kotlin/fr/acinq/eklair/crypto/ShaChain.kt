@@ -5,6 +5,8 @@ import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eklair.utils.startsWith
 import kotlin.experimental.xor
 
+
+// TODO: should replace 0xffffffffffffffffL (-1) by 0xffffffffffffffL and 63 by 47.
 data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastIndex: Long? = null) {
 
     fun addHash(hash: ByteVector32, index: Long): ShaChain {
@@ -26,7 +28,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
         if (lastIndex == null) return emptySequence()
         return sequence {
             var pos: Long = lastIndex
-            while (pos >= lastIndex && pos <= 0xffffffffffffffL) {
+            while (pos >= lastIndex && pos <= -1 /*0xffffffffffffffffL*/) {
                 yield(getHash(pos)!!)
                 ++pos
             }
@@ -39,7 +41,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
 
     companion object {
 
-        fun flip(input: ByteVector32, index: Int): ByteVector32 = ByteVector32(input.update(index / 8, (input[index / 8] xor (1 shr index % 8).toByte())))
+        fun flip(input: ByteVector32, index: Int): ByteVector32 = ByteVector32(input.update(index / 8, (input[index / 8] xor (1 shl (index % 8)).toByte())))
 
         /**
          *
@@ -47,7 +49,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
          * @return a binary representation of index as a sequence of 64 booleans. Each bool represents a move down the tree
          */
         fun moves(index: Long): List<Boolean> =
-            (47 downTo 0).map { (index and (1L shl it)) != 0L }
+            (63 downTo 0).map { (index and (1L shl it)) != 0L }
 
         /**
          *
@@ -56,7 +58,11 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
          * @return the child of our node in the specified direction
          */
         fun derive(node: Node, direction: Boolean) =
-            if (direction) Node(ByteVector32(sha256(flip(node.value, 47 - node.height))), node.height + 1, node)
+            if (direction) {
+                val flipped = flip(node.value, 63 - node.height)
+                val sha = ByteVector32(sha256(flipped))
+                Node(ByteVector32(sha256(flip(node.value, 63 - node.height))), node.height + 1, node)
+            }
             else Node(node.value, node.height + 1, node)
 
         fun derive(node: Node, directions: List<Boolean>): Node = directions.fold(node) { n, d -> derive(n, d) }

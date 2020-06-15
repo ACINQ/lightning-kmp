@@ -1,6 +1,5 @@
-package utils
+package fr.acinq.eklair.utils
 
-import fr.acinq.eklair.utils.BitField
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
