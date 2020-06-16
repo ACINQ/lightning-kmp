@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "fr.acinq.eklair"
-version = "1.0-SNAPSHOT"
+version = "1.0"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -28,9 +28,11 @@ kotlin {
     val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     linuxX64("linux")
 
-    ios {
-        binaries {
-            framework()
+    if (currentOs.isMacOsX) {
+        ios {
+            binaries {
+                framework()
+            }
         }
     }
 
@@ -45,7 +47,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(kotlin("stdlib-common"))
-                implementation("fr.acinq:bitcoink:1.0-SNAPSHOT")
+                implementation("fr.acinq:bitcoink:0.1-1.4-M2")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:$serialization_version")
                 implementation("org.kodein.log:kodein-log:$kodein_log_version")
@@ -62,7 +64,6 @@ kotlin {
             dependencies {
                 implementation(kotlin("stdlib-jdk8"))
                 implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
-                implementation("fr.acinq:bitcoink-jvm:1.0-SNAPSHOT")
                 implementation("io.ktor:ktor-client-okhttp:$ktor_version")
                 implementation("io.ktor:ktor-network:$ktor_version")
                 implementation("org.slf4j:slf4j-api:1.7.29")
