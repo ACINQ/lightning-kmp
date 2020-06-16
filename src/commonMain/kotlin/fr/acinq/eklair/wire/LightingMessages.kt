@@ -1,14 +1,20 @@
 package fr.acinq.eklair.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.io.Input
+import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.ShortChannelId
+import fr.acinq.eklair.utils.leftPaddedCopyOf
+import fr.acinq.eklair.utils.or
+import kotlin.math.max
 
 
 interface LightningMessage
 interface HtlcMessage : LightningMessage
+interface SetupMessage : LightningMessage
 interface RoutingMessage : LightningMessage
 interface AnnouncementMessage : RoutingMessage // <- not in the spec
 interface HasTimestamp : LightningMessage { val timestamp: Long }
@@ -17,6 +23,40 @@ interface HasChannelId : LightningMessage { val channelId: ByteVector32 }
 interface HasChainHash : LightningMessage { val chainHash: ByteVector32 } // <- not in the spec
 
 interface ChannelMessage
+
+@kotlin.ExperimentalUnsignedTypes
+data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage, LightningSerializable<Init> {
+    val networks = tlvs.get<InitTlv.Companion.Networks>()?.chainHashes ?: listOf()
+
+    override fun serializer(): LightningSerializer<Init>  = Init
+
+    companion object : LightningSerializer<Init>() {
+        override fun read(input: Input): Init {
+            val gflen = u16(input)
+            val globalFeatures = bytes(input, gflen)
+            val lflen = u16(input)
+            val localFeatures = bytes(input, lflen)
+            val len = max(gflen, lflen)
+            // merge features together
+            val features = ByteVector(globalFeatures.leftPaddedCopyOf(len).or(localFeatures.leftPaddedCopyOf(len)))
+            val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
+            serializers.put(1L, InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
+            val serializer = TlvStreamSerializer<InitTlv>(serializers)
+            val tlvs = serializer.read(input)
+            return Init(features, tlvs)
+        }
+
+        override fun write(message: Init, out: Output) {
+            writeU16(0, out)
+            writeU16(message.features.size(), out)
+            writeBytes(message.features, out)
+            val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
+            serializers.put(1L, InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
+            val serializer = TlvStreamSerializer<InitTlv>(serializers)
+            serializer.write(message.tlvs, out)
+        }
+    }
+}
 
 data class FundingLocked(
     override val channelId: ByteVector32,
