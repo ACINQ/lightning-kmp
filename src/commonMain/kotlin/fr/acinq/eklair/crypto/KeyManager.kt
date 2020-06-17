@@ -35,7 +35,7 @@ interface KeyManager {
     fun channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): KeyPath =
         if (channelVersion.isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)) {
             // deterministic mode: use the funding pubkey to compute the channel key path
-            KeyManager.channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
+            channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
         } else {
             // legacy mode:  we reuse the funding key path as our channel key path
             localParams.fundingKeyPath

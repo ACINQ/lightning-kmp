@@ -51,4 +51,21 @@ object Eclair {
         val channelId = ByteVector32(fundingTxHash.take(30).concat(x1).concat(x2))
         return channelId
     }
+
+    /**
+     * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
+     *
+     * @param feeratePerKB fee rate in satoshi-per-kilobytes
+     * @return fee rate in satoshi-per-kw
+     */
+    fun feerateKB2Kw(feeratePerKB: Long): Long = kotlin.math.max(feeratePerKB / 4, MinimumFeeratePerKw.toLong())
+
+    /**
+     * Converts fee rate in satoshi-per-kw to fee rate in satoshi-per-kilobyte
+     *
+     * @param feeratePerKw fee rate in satoshi-per-kw
+     * @return fee rate in satoshi-per-kilobyte
+     */
+    fun feerateKw2KB(feeratePerKw: Long): Long = feeratePerKw * 4
+
 }
