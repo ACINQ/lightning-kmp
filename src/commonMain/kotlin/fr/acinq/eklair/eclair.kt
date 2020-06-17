@@ -2,7 +2,9 @@ package fr.acinq.eklair
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eklair.utils.secure
+import kotlin.experimental.xor
 import kotlin.random.Random
 
 
@@ -40,4 +42,13 @@ object Eclair {
 
     fun randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
 
+    fun randomKey() : PrivateKey = PrivateKey(randomBytes32())
+
+    fun toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 {
+        require(fundingOutputIndex < 65536) { "fundingOutputIndex must not be greater than FFFF" }
+        val x1 = fundingTxHash[30] xor (fundingOutputIndex.shr(8)).toByte()
+        val x2 = fundingTxHash[31] xor fundingOutputIndex.toByte()
+        val channelId = ByteVector32(fundingTxHash.take(30).concat(x1).concat(x2))
+        return channelId
+    }
 }

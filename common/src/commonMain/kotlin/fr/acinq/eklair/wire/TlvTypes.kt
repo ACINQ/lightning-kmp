@@ -100,7 +100,7 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
 @kotlin.ExperimentalUnsignedTypes
-class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv>) {
+class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
     init {
         val tags = records.map { it.tag }
         require(tags.size == tags.toSet().size) { "tlvstream contains duplicate tags" }

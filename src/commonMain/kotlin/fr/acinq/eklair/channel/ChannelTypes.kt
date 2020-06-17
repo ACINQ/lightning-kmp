@@ -61,7 +61,7 @@ object CMD_GETSTATE : Command()
 object CMD_GETSTATEDATA : Command()
 
 
-@OptIn(ExperimentalUnsignedTypes::class, InternalSerializationApi::class)
+@OptIn(ExperimentalUnsignedTypes::class)
 data class LocalParams constructor(
     val nodeId: PublicKey,
     val fundingKeyPath: KeyPath,
@@ -73,6 +73,7 @@ data class LocalParams constructor(
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
     val defaultFinalScriptPubKey: ByteVector,
+    val localPaymentBasepoint: PublicKey?,
     val features: Features
 )
 
@@ -110,11 +111,16 @@ data class ChannelVersion(val bits: BitField) {
         val SIZE_BYTE = 4
         val ZEROES = ChannelVersion(BitField(SIZE_BYTE))
         val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+        val USE_STATIC_REMOTEKEY_BIT = 1
+        val ZERO_RESERVE_BIT = 3
 
         fun fromBit(bit: Int) = ChannelVersion(BitField(SIZE_BYTE).apply { setRight(bit) })
 
         val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+        val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
+        val ZERO_RESERVE = fromBit(ZERO_RESERVE_BIT)
 
         val STANDARD = ZEROES or USE_PUBKEY_KEYPATH
+        val STATIC_REMOTEKEY = STANDARD or USE_STATIC_REMOTEKEY // USE_PUBKEY_KEYPATH + USE_STATIC_REMOTEKEY
     }
 }
