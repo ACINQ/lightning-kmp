@@ -66,7 +66,9 @@ data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
  */
 sealed class State {
     abstract val staticParams: StaticParams
-    val keyManager = staticParams.nodeParams.keyManager
+    val keyManager: KeyManager
+        get() = staticParams.nodeParams.keyManager
+
     abstract fun process(event: Event): Pair<State, List<Action>>
     val logger = LoggerFactory.default.newLogger(Channel::class)
 }
@@ -145,15 +147,14 @@ data class WaitForOpenChannel(
                         if (Features.canUseFeature(
                                 localParams.features,
                                 Features.invoke(remoteInit.features),
-                                Feature.InitialRoutingSync
+                                Feature.StaticRemoteKey
                             )
                         ) {
                             channelVersion = channelVersion or ChannelVersion.STATIC_REMOTEKEY
                         }
                         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
                         // TODO: maybe also check uniqueness of temporary channel id
-                        val minimumDepth =
-                            Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
+                        val minimumDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
                         val paymentBasepoint = if (channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT)) {
                             localParams.localPaymentBasepoint!!
                         } else {
@@ -371,10 +372,9 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, val ini
                             initFunder.channelVersion,
                             lastSent
                         )
-
+                        Pair(nextState, listOf(makeFundingTx))
                     }
                 }
-                Pair(this, listOf())
             }
             else -> Pair(this, listOf())
         }
@@ -524,7 +524,7 @@ data class WaitForFundingConfirmed(
                         val result = fr.acinq.eklair.utils.runTrying {
                             Transaction.correctlySpends(
                                 commitments.localCommit.publishableTxs.commitTx.tx,
-                                listOf(fundingTx!!),
+                                listOf(event.watch.tx),
                                 ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
                             )
                         }
@@ -731,7 +731,7 @@ data class Normal(
                         when (result) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
-                                if (result.result.first.availableBalanceForSend != commitments.availableBalanceForSend) {
+                                if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
                                 }
                                 Pair(this.copy(commitments = result.result.first), listOf(SendMessage(result.result.second)))

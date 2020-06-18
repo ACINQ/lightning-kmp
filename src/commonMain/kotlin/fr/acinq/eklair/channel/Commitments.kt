@@ -110,7 +110,7 @@ data class Commitments(
 
     val announceChannel: Boolean = (channelFlags and 0x01).toInt() != 0
 
-    val availableBalanceForSend: MilliSatoshi by lazy {
+    fun availableBalanceForSend(): MilliSatoshi {
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
         val remoteCommit1 = when (remoteNextCommitInfo) {
             is Either.Left -> remoteNextCommitInfo.value.nextRemoteCommit
@@ -118,7 +118,7 @@ data class Commitments(
         }
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
         val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
-        if (localParams.isFunder) {
+        return if (localParams.isFunder) {
             // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
             val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
             // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
@@ -138,10 +138,10 @@ data class Commitments(
         }
     }
 
-    val availableBalanceForReceive: MilliSatoshi by lazy {
+    fun availableBalanceForReceive(): MilliSatoshi {
         val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
         val balanceNoFees = (reduced.toRemote - localParams.channelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
-        if (localParams.isFunder) {
+        return if (localParams.isFunder) {
             // The fundee doesn't pay on-chain fees so we don't take those into account when receiving.
             balanceNoFees
         } else {

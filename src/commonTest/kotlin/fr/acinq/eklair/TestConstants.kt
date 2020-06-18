@@ -38,7 +38,7 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  TestFeeEstimator(),
+                feeEstimator =  TestFeeEstimator().setFeerate(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
@@ -103,7 +103,7 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  TestFeeEstimator(),
+                feeEstimator =  TestFeeEstimator().setFeerate(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
@@ -146,6 +146,6 @@ object TestConstants {
             null,
             false,
             fundingSatoshis
-        ).copy(channelReserve = 10000.sat) // Alice will need to keep that much satoshis as direct payment
+        ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment
     }
 }
