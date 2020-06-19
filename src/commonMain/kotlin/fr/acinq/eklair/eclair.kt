@@ -68,4 +68,11 @@ object Eclair {
      */
     fun feerateKw2KB(feeratePerKw: Long): Long = feeratePerKw * 4
 
+    /**
+     * @param baseFee         fixed fee
+     * @param proportionalFee proportional fee (millionths)
+     * @param paymentAmount   payment amount in millisatoshi
+     * @return the fee that a node should be paid to forward an HTLC of 'paymentAmount' millisatoshis
+     */
+    fun nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
 }

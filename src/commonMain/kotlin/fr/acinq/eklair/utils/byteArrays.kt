@@ -1,5 +1,7 @@
 package fr.acinq.eklair.utils
 
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
 import kotlin.experimental.and
 import kotlin.experimental.or
 import kotlin.experimental.xor
@@ -32,3 +34,7 @@ infix fun ByteArray.xor(other: ByteArray): ByteArray {
     checkSizeEquals(other)
     return ByteArray(size) { this[it] xor other[it] }
 }
+
+fun ByteArray.toByteVector() = ByteVector(this)
+
+fun ByteArray.toByteVector32() = ByteVector32(this)
