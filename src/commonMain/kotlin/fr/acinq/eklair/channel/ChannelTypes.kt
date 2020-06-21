@@ -124,3 +124,8 @@ data class ChannelVersion(val bits: BitField) {
         val STATIC_REMOTEKEY = STANDARD or USE_STATIC_REMOTEKEY // USE_PUBKEY_KEYPATH + USE_STATIC_REMOTEKEY
     }
 }
+
+object ChannelFlags {
+    val AnnounceChannel = 0x01.toByte()
+    val Empty = 0x00.toByte()
+}
