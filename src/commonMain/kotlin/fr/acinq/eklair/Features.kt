@@ -1,5 +1,6 @@
 package fr.acinq.eklair
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.eklair.utils.BitField
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
@@ -20,7 +21,7 @@ sealed class Feature {
     abstract val mandatory: Int
     val optional: Int get() = mandatory + 1
 
-    fun supportBit(support: FeatureSupport): Int = when(support) {
+    fun supportBit(support: FeatureSupport): Int = when (support) {
         FeatureSupport.Mandatory -> mandatory
         FeatureSupport.Optional -> optional
     }
@@ -34,6 +35,7 @@ sealed class Feature {
 
     object InitialRoutingSync : Feature() {
         override val rfcName = "initial_routing_sync"
+
         // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
         override val mandatory = 2
     }
@@ -51,6 +53,11 @@ sealed class Feature {
     object ChannelRangeQueriesExtended : Feature() {
         override val rfcName = "gossip_queries_ex"
         override val mandatory = 10
+    }
+
+    object StaticRemoteKey : Feature() {
+        override val rfcName = "option_static_remotekey"
+        override val mandatory = 12
     }
 
     object PaymentSecret : Feature() {
@@ -88,8 +95,9 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
         else hasFeature(feature, FeatureSupport.Optional) || hasFeature(feature, FeatureSupport.Mandatory)
 
     fun toByteArray(): ByteArray {
-        val activatedFeatureBytes = activated.mapTo(HashSet()) { it.feature.supportBit(it.support) } .indicesToByteArray()
-        val unknownFeatureBytes = unknown.mapTo(HashSet()) { it.bitIndex } .indicesToByteArray()
+        val activatedFeatureBytes =
+            activated.mapTo(HashSet()) { it.feature.supportBit(it.support) }.indicesToByteArray()
+        val unknownFeatureBytes = unknown.mapTo(HashSet()) { it.bitIndex }.indicesToByteArray()
         val maxSize = activatedFeatureBytes.size.coerceAtLeast(unknownFeatureBytes.size)
         return activatedFeatureBytes.leftPaddedCopyOf(maxSize) or unknownFeatureBytes.leftPaddedCopyOf(maxSize)
     }
@@ -129,6 +137,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             Feature.ChannelRangeQueries,
             Feature.VariableLengthOnion,
             Feature.ChannelRangeQueriesExtended,
+            Feature.StaticRemoteKey,
             Feature.PaymentSecret,
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
@@ -145,14 +154,17 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             Feature.Wumbo
         )
 
+        operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
+
         operator fun invoke(bytes: ByteArray): Features = invoke(BitField.from(bytes))
 
         operator fun invoke(bits: BitField): Features {
             val all = bits.asRightSequence().withIndex()
                 .filter { it.value }
                 .map { (idx, _) ->
-                    knownFeatures.find { it.optional == idx } ?.let { ActivatedFeature(it, FeatureSupport.Optional) }
-                        ?: knownFeatures.find { it.mandatory == idx } ?.let { ActivatedFeature(it, FeatureSupport.Mandatory) }
+                    knownFeatures.find { it.optional == idx }?.let { ActivatedFeature(it, FeatureSupport.Optional) }
+                        ?: knownFeatures.find { it.mandatory == idx }
+                            ?.let { ActivatedFeature(it, FeatureSupport.Mandatory) }
                         ?: UnknownFeature(idx)
                 }
                 .toList()
@@ -221,6 +233,10 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
                     FeatureSupport.Mandatory -> supportedMandatoryFeatures.contains(it.feature)
                 }
             }
+
+        /** returns true if both have at least optional support */
+        fun canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean =
+            localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
 
     }
 

@@ -7,6 +7,8 @@ import fr.acinq.bitcoin.Satoshi
  */
 data class MilliSatoshi(val msat: Long) : Comparable<MilliSatoshi> {
 
+    constructor(sat : Satoshi) : this(sat.toLong() * 1000)
+
     // @formatter:off
     operator fun plus(other: MilliSatoshi) = MilliSatoshi(msat + other.msat)
     operator fun minus(other: MilliSatoshi) = MilliSatoshi(msat - other.msat)

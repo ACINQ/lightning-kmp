@@ -1,10 +1,7 @@
 package fr.acinq.eklair.channel
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
-import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Eclair
 import fr.acinq.eklair.MilliSatoshi
@@ -65,21 +62,14 @@ data class Commitments(
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
     val originChannels: Map<Long, Origin>, // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
-    val remoteNextCommitInfo: RemoteNextCommitInfo,
+    val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>,
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
-    val channelId: ByteVector32
+    val channelId: ByteVector32,
+    val remoteChannelData: ByteVector? = null
 ) {
 
-    sealed class RemoteNextCommitInfo {
-        data class WFR(val wfr: WaitingForRevocation) : RemoteNextCommitInfo()
-        data class PK(val pk: PublicKey) : RemoteNextCommitInfo()
-
-        fun waitingForRevocation(): WaitingForRevocation? = (this as WFR?)?.wfr
-        fun publicKey(): PublicKey? = (this as PK?)?.pk
-    }
-
-    fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo is RemoteNextCommitInfo.PK
+    fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo.isRight
 
     fun timedOutOutgoingHtlcs(blockheight: Long): Set<UpdateAddHtlc> {
         fun expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong()
@@ -87,9 +77,10 @@ data class Commitments(
         val thisCommitAdds = localCommit.spec.htlcs.outgoings().filter(::expired).toSet() +
                 remoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
 
-        val wfr = remoteNextCommitInfo.waitingForRevocation()
-        return if (wfr == null) thisCommitAdds
-        else thisCommitAdds + wfr.nextRemoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
+        return when(remoteNextCommitInfo) {
+            is Either.Left -> thisCommitAdds + remoteNextCommitInfo.value.nextRemoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
+            is Either.Right -> thisCommitAdds
+        }
     }
 
     /**
@@ -119,12 +110,15 @@ data class Commitments(
 
     val announceChannel: Boolean = (channelFlags and 0x01).toInt() != 0
 
-    val availableBalanceForSend: MilliSatoshi by lazy {
+    fun availableBalanceForSend(): MilliSatoshi {
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-        val remoteCommit1 = remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit ?: remoteCommit
+        val remoteCommit1 = when (remoteNextCommitInfo) {
+            is Either.Left -> remoteNextCommitInfo.value.nextRemoteCommit
+            is Either.Right -> remoteCommit
+        }
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
         val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
-        if (localParams.isFunder) {
+        return if (localParams.isFunder) {
             // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
             val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
             // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
@@ -144,10 +138,10 @@ data class Commitments(
         }
     }
 
-    val availableBalanceForReceive: MilliSatoshi by lazy {
+    fun availableBalanceForReceive(): MilliSatoshi {
         val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
         val balanceNoFees = (reduced.toRemote - localParams.channelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
-        if (localParams.isFunder) {
+        return if (localParams.isFunder) {
             // The fundee doesn't pay on-chain fees so we don't take those into account when receiving.
             balanceNoFees
         } else {
@@ -197,7 +191,10 @@ data class Commitments(
         // we increment the local htlc index and add an entry to the origins map
         val commitments1 = addLocalProposal(add).copy(localNextHtlcId = localNextHtlcId + 1, originChannels = originChannels + mapOf(add.id to origin))
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-        val remoteCommit1 = commitments1.remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit ?: commitments1.remoteCommit
+        val remoteCommit1 = when (remoteNextCommitInfo) {
+            is Either.Left -> remoteNextCommitInfo.value.nextRemoteCommit
+            is Either.Right -> remoteCommit
+        }
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
         // the HTLC we are about to create is outgoing, but from their point of view it is incoming
         val outgoingHtlcs = reduced.htlcs.incomings()
@@ -280,14 +277,14 @@ data class Commitments(
     }
 
     fun getOutgoingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
-        val localSigned = (remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit ?: remoteCommit).spec.findIncomingHtlcById(htlcId) ?: return null
+        val localSigned = (remoteNextCommitInfo.left?.nextRemoteCommit ?: remoteCommit).spec.findIncomingHtlcById(htlcId) ?: return null
         val remoteSigned = localCommit.spec.findOutgoingHtlcById(htlcId) ?: return null
         require(localSigned.add == remoteSigned.add)
         return localSigned.add
     }
 
     fun getIncomingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
-        val localSigned = (remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit ?: remoteCommit).spec.findOutgoingHtlcById(htlcId) ?: return null
+        val localSigned = (remoteNextCommitInfo.left?.nextRemoteCommit ?: remoteCommit).spec.findOutgoingHtlcById(htlcId) ?: return null
         val remoteSigned = localCommit.spec.findIncomingHtlcById(htlcId) ?: return null
         require(localSigned.add == remoteSigned.add)
         return localSigned.add
@@ -419,7 +416,7 @@ data class Commitments(
     fun remoteHasChanges(): Boolean = localChanges.acked.isNotEmpty() || remoteChanges.proposed.isNotEmpty()
 
     fun sendCommit(keyManager: KeyManager, log: Logger): Try<Pair<Commitments, CommitSig>> {
-        val remoteNextPerCommitmentPoint = remoteNextCommitInfo.publicKey() ?: return Try.Failure(CannotSignBeforeRevocation(channelId))
+        val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Try.Failure(CannotSignBeforeRevocation(channelId))
         if (!localHasChanges()) return Try.Failure(CannotSignWithoutChanges(channelId))
 
         return runTrying {
@@ -443,7 +440,16 @@ data class Commitments(
             )
 
             val commitments1 = copy(
-                remoteNextCommitInfo = RemoteNextCommitInfo.WFR(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, localCommit.index)),
+                remoteNextCommitInfo = Either.Left(
+                    WaitingForRevocation(
+                        RemoteCommit(
+                            remoteCommit.index + 1,
+                            spec,
+                            remoteCommitTx.tx.txid,
+                            remoteNextPerCommitmentPoint
+                        ), commitSig, localCommit.index
+                    )
+                ),
                 localChanges = localChanges.copy(proposed = emptyList(), signed = localChanges.proposed),
                 remoteChanges = remoteChanges.copy(acked = emptyList(), signed = remoteChanges.acked))
             Pair(commitments1, commitSig)
@@ -534,7 +540,7 @@ data class Commitments(
     }
 
     fun receiveRevocation(revocation: RevokeAndAck): Try<Commitments> {
-        val theirNextCommit = remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit ?: return Try.Failure(UnexpectedRevocation(channelId))
+        val theirNextCommit = remoteNextCommitInfo.left?.nextRemoteCommit ?: return Try.Failure(UnexpectedRevocation(channelId))
         if (revocation.perCommitmentSecret.publicKey() != remoteCommit.remotePerCommitmentPoint) return Try.Failure(InvalidRevocation(channelId))
 
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
@@ -547,7 +553,7 @@ data class Commitments(
             localChanges = localChanges.copy(signed = emptyList(), acked = localChanges.acked + localChanges.signed),
             remoteChanges = remoteChanges.copy(signed = emptyList()),
             remoteCommit = theirNextCommit,
-            remoteNextCommitInfo = RemoteNextCommitInfo.PK(revocation.nextPerCommitmentPoint),
+            remoteNextCommitInfo = Either.Right(revocation.nextPerCommitmentPoint),
             remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommit.index),
             originChannels = originChannels1)
         return Try.Success(commitments1)
@@ -582,10 +588,10 @@ data class Commitments(
           htlcs:
             ${commitments.remoteCommit.spec.htlcs.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }.joinToString("\n            ")}
         next remotecommit:
-          toLocal: ${commitments.remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit?.spec?.toLocal ?: "N/A"}
-          toRemote: ${commitments.remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit?.spec?.toRemote ?: "N/A"}
+          toLocal: ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.toLocal ?: "N/A"}
+          toRemote: ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.toRemote ?: "N/A"}
           htlcs:
-            ${commitments.remoteNextCommitInfo.waitingForRevocation()?.nextRemoteCommit?.spec?.htlcs?.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }?.joinToString("\n            ") ?: "N/A"}
+            ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.htlcs?.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }?.joinToString("\n            ") ?: "N/A"}
     """.trimIndent()
 
     companion object {
