@@ -1,6 +1,6 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.eklair.crypto.Sha256
+import fr.acinq.bitcoin.crypto.Sha256
 import kotlin.experimental.xor
 
 object SHA256HashFunctions : HashFunctions {

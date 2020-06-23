@@ -1,7 +1,6 @@
 package fr.acinq.eklair.crypto
 
-import fr.acinq.eklair.crypto.Pack.intToLittleEndian
-import fr.acinq.eklair.crypto.Pack.littleEndianToInt
+import fr.acinq.bitcoin.crypto.Pack
 import kotlin.experimental.xor
 
 /*
@@ -26,26 +25,26 @@ class ChaCha20(key: ByteArray, nonce: ByteArray, counter: Int) {
         matrix[1] = 0x3320646e
         matrix[2] = 0x79622d32
         matrix[3] = 0x6b206574
-        matrix[4] = littleEndianToInt(key, 0)
-        matrix[5] = littleEndianToInt(key, 4)
-        matrix[6] = littleEndianToInt(key, 8)
-        matrix[7] = littleEndianToInt(key, 12)
-        matrix[8] = littleEndianToInt(key, 16)
-        matrix[9] = littleEndianToInt(key, 20)
-        matrix[10] = littleEndianToInt(key, 24)
-        matrix[11] = littleEndianToInt(key, 28)
+        matrix[4] = Pack.int32LE(key, 0)
+        matrix[5] = Pack.int32LE(key, 4)
+        matrix[6] = Pack.int32LE(key, 8)
+        matrix[7] = Pack.int32LE(key, 12)
+        matrix[8] = Pack.int32LE(key, 16)
+        matrix[9] = Pack.int32LE(key, 20)
+        matrix[10] = Pack.int32LE(key, 24)
+        matrix[11] = Pack.int32LE(key, 28)
         when (nonce.size) {
             NONCE_SIZE_REF -> {        // reference implementation
                 matrix[12] = 0
                 matrix[13] = 0
-                matrix[14] = littleEndianToInt(nonce, 0)
-                matrix[15] = littleEndianToInt(nonce, 4)
+                matrix[14] = Pack.int32LE(nonce, 0)
+                matrix[15] = Pack.int32LE(nonce, 4)
             }
             NONCE_SIZE_IETF -> {
                 matrix[12] = counter
-                matrix[13] = littleEndianToInt(nonce, 0)
-                matrix[14] = littleEndianToInt(nonce, 4)
-                matrix[15] = littleEndianToInt(nonce, 8)
+                matrix[13] = Pack.int32LE(nonce, 0)
+                matrix[14] = Pack.int32LE(nonce, 4)
+                matrix[15] = Pack.int32LE(nonce, 8)
             }
             else -> {
                 throw IllegalArgumentException("invalid nonce")
@@ -83,7 +82,7 @@ class ChaCha20(key: ByteArray, nonce: ByteArray, counter: Int) {
             }
             i = 16
             while (i-- > 0) {
-                intToLittleEndian(x[i], output, 4 * i)
+                Pack.writeInt32LE(x[i], output, 4 * i)
             }
 
             // TODO: (1) check block count is 32-bit vs 64-bit; (2) java int is signed!

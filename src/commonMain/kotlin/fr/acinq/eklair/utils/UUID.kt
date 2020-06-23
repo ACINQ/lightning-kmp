@@ -94,7 +94,7 @@ class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comp
             data[6] = (data[6].toInt() or 0x40).toByte()
             data[8] = (data[8].toInt() and 0x3F).toByte()
             data[8] = (data[8].toInt() or 0x80).toByte()
-            return UUID(Pack.uint64BE(data, 0), Pack.uint64BE(data, 8))
+            return UUID(Pack.int64BE(data, 0), Pack.int64BE(data, 8))
         }
 
         fun fromString(name: String): UUID {

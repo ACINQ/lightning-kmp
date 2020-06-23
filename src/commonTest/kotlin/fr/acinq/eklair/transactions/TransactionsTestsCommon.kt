@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Eclair.MinimumFeeratePerKw
@@ -46,7 +47,6 @@ import fr.acinq.eklair.transactions.Transactions.makeHtlcTxs
 import fr.acinq.eklair.transactions.Transactions.makeMainPenaltyTx
 import fr.acinq.eklair.transactions.Transactions.sign
 import fr.acinq.eklair.transactions.Transactions.weight2fee
-import fr.acinq.eklair.io.SocketBuilder
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.UpdateAddHtlc
@@ -245,7 +245,7 @@ class TransactionsTestsCommon {
         run {
             assertEquals(commitTxNumber, getCommitTxNumber(commitTx.tx, true, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey()))
             val hash = sha256(localPaymentPriv.publicKey().value + remotePaymentPriv.publicKey().value)
-            val num = BtcSerializer.uint64BE(hash.takeLast(8).toByteArray()) and 0xffffffffffffL
+            val num = Pack.int64BE(hash.takeLast(8).toByteArray()) and 0xffffffffffffL
             val check = ((commitTx.tx.txIn.first().sequence and 0xffffffL) shl 24) or (commitTx.tx.lockTime and 0xffffffL)
             assertEquals(commitTxNumber, check xor num)
         }
@@ -427,50 +427,4 @@ class TransactionsTestsCommon {
         assertEquals(htlcOut5.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc5)) }?.output?.publicKeyScript)
     }
 
-    @Test fun `BOLT 2 fee tests`() {
-        SocketBuilder.runBlockingCoroutine {
-            val bolt3 = HttpClient().use { client ->
-                client.get<String>("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
-                    .replace("    name:", "$   name:")
-                // character '$' separates tests
-            }
-
-            // this regex extract params from a given test
-            val testRegex = Regex(
-                """name: (.*)\n""" +
-                        """.*to_local_msat: ([0-9]+)\n""" +
-                        """.*to_remote_msat: ([0-9]+)\n""" +
-                        """.*feerate_per_kw: ([0-9]+)\n""" +
-                        """.*base commitment transaction fee = ([0-9]+)\n""" +
-                        """[^$]+"""
-            )
-
-            // this regex extracts htlc direction and amounts
-            val htlcRegex = Regex(""".*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""")
-
-            val dustLimit = 546.sat
-            data class TestSetup(val name: String, val dustLimit: Satoshi, val spec: CommitmentSpec, val expectedFee: Satoshi)
-
-            val tests = testRegex.findAll(bolt3).map { s ->
-                val (name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s.destructured
-                val htlcs = htlcRegex.findAll(s.value).map { l ->
-                    val (direction, amount) = l.destructured
-                    when (direction) {
-                        "offered" -> OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toLong().sat.toMilliSatoshi(), ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
-                        "received" -> IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toLong().sat.toMilliSatoshi(), ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
-                        else -> error("Unknown direction $direction")
-                    }
-                } .toSet()
-                TestSetup(name, dustLimit, CommitmentSpec(htlcs, feerate_per_kw.toLong(), to_local_msat.toLong().msat, to_remote_msat.toLong().msat), fee.toLong().sat)
-            }.toList()
-
-            // simple non-reg test making sure we are not missing tests
-            assertEquals(15, tests.size, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
-
-            tests.forEach { test ->
-                val fee = commitTxFee(test.dustLimit, test.spec)
-                assertEquals(test.expectedFee, fee, "In '${test.name}'")
-            }
-        }
-    }
 }

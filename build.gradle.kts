@@ -5,10 +5,11 @@ plugins {
     application
     kotlin("multiplatform") version "1.4-M2-mt"
     kotlin("plugin.serialization") version "1.4-M2-mt"
+    `maven-publish`
 }
 
 group = "fr.acinq.eklair"
-version = "1.0"
+version = "0.1.0"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -26,86 +27,66 @@ repositories {
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
+val ktor_version = "1.3.2-1.4-M2"
+
 kotlin {
+
+    val commonMain by sourceSets.getting {
+        dependencies {
+            implementation(kotlin("stdlib-common"))
+            implementation("fr.acinq:bitcoink:0.2.0-1.4-M2")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-native-mt-1.4-M2")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M2")
+            implementation("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
+        }
+    }
+    val commonTest by sourceSets.getting {
+        dependencies {
+            implementation(kotlin("test-common"))
+            implementation(kotlin("test-annotations-common"))
+            implementation("io.ktor:ktor-client-core:$ktor_version")
+        }
+    }
+
+    val nativeMain by sourceSets.creating { dependsOn(commonMain) }
+    val nativeTest by sourceSets.creating { dependsOn(commonTest) }
+
     jvm {
-        val main by compilations.getting {
-            kotlinOptions {
-                jvmTarget = "1.8"
-            }
+        compilations["main"].kotlinOptions.jvmTarget = "1.8"
+        compilations["main"].defaultSourceSet.dependencies {
+            implementation(kotlin("stdlib-jdk8"))
+            implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
+            implementation("io.ktor:ktor-client-okhttp:$ktor_version")
+            implementation("io.ktor:ktor-network:$ktor_version")
+            implementation("org.slf4j:slf4j-api:1.7.29")
+        }
+        compilations["test"].defaultSourceSet.dependencies {
+            implementation(kotlin("test-junit"))
+            implementation("org.bouncycastle:bcprov-jdk15on:1.64")
         }
     }
 
-    val isWinHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
-    linuxX64("linux")
-
-    if (currentOs.isMacOsX) {
-        ios {
-            binaries {
-                framework()
-            }
-        }
-    }
-
-    sourceSets {
-        val ktor_version = "1.3.2-1.4-M2"
-
-        val commonMain by getting {
-            dependencies {
-                implementation(kotlin("stdlib-common"))
-                implementation("fr.acinq:bitcoink:0.1-1.4-M2")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-native-mt-1.4-M2")
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M2")
-                implementation("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
-            }
-        }
-        val commonTest by getting {
-            dependencies {
-                implementation(kotlin("test-common"))
-                implementation(kotlin("test-annotations-common"))
-                implementation("io.ktor:ktor-client-core:$ktor_version")
-            }
-        }
-        val jvmMain by getting {
-            dependencies {
-                implementation(kotlin("stdlib-jdk8"))
-                implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
-                implementation("io.ktor:ktor-client-okhttp:$ktor_version")
-                implementation("io.ktor:ktor-network:$ktor_version")
-                implementation("org.slf4j:slf4j-api:1.7.29")
-            }
-        }
-        val jvmTest by getting {
-            dependencies {
-                implementation(kotlin("test-junit"))
-                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-            }
-        }
-        val nativeMain by creating {
-            dependsOn(commonMain)
-        }
-        val nativeTest by creating {
-            dependsOn(commonTest)
-        }
-        if (!isWinHost) {
-            val linuxMain by getting {
+    if (currentOs.isLinux) {
+        linuxX64("linux") {
+            compilations["test"].defaultSourceSet {
                 dependsOn(nativeMain)
             }
-            val linuxTest by getting {
+            compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
                     implementation("io.ktor:ktor-client-curl:$ktor_version")
                 }
             }
         }
+    }
 
-        if (currentOs.isMacOsX) {
-            val iosMain by getting {
+    if (currentOs.isMacOsX) {
+        ios {
+            binaries { framework() }
+            compilations["main"].defaultSourceSet {
                 dependsOn(nativeMain)
-                dependencies {
-                    implementation(kotlin("stdlib"))
-                }
             }
-            val iosTest by getting {
+            compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
                     implementation("io.ktor:ktor-client-ios:$ktor_version")
@@ -154,13 +135,12 @@ kotlin {
 
 // Disable cross compilation
 afterEvaluate {
-    val currentOs = org.gradle.internal.os.OperatingSystem.current()
     val targets = when {
         currentOs.isLinux -> listOf("mingwX64", "macosX64")
         currentOs.isMacOsX -> listOf("mingwX64", "linuxX64")
         currentOs.isWindows -> listOf("linuxX64", "macosX64")
         else -> listOf("mingwX64", "linuxX64", "macosX64")
-    }.mapNotNull { kotlin.targets.findByName(it) as? org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget }
+    }.mapNotNull { kotlin.targets.findByName(it) as? KotlinNativeTarget }
 
     configure(targets) {
         compilations.all {

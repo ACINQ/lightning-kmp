@@ -1,5 +1,7 @@
 package fr.acinq.eklair.crypto
 
+import fr.acinq.bitcoin.crypto.Pack
+
 /**
  * Poly1305 message authentication code, designed by D. J. Bernstein.
  *
@@ -52,10 +54,10 @@ class Poly1305 {
         require(key.size == 32) { "Poly1305 key must be 256 bits." }
 
         // Extract r portion of key (and "clamp" the values)
-        val t0 = Pack.littleEndianToInt(key, 0)
-        val t1 = Pack.littleEndianToInt(key, 4)
-        val t2 = Pack.littleEndianToInt(key, 8)
-        val t3 = Pack.littleEndianToInt(key, 12)
+        val t0 = Pack.int32LE(key, 0)
+        val t1 = Pack.int32LE(key, 4)
+        val t2 = Pack.int32LE(key, 8)
+        val t3 = Pack.int32LE(key, 12)
 
         // NOTE: The masks perform the key "clamping" implicitly
         r0 = t0 and 0x03FFFFFF
@@ -73,10 +75,10 @@ class Poly1305 {
         val kOff: Int
         kBytes = key
         kOff = BLOCK_SIZE
-        k0 = Pack.littleEndianToInt(kBytes, kOff + 0)
-        k1 = Pack.littleEndianToInt(kBytes, kOff + 4)
-        k2 = Pack.littleEndianToInt(kBytes, kOff + 8)
-        k3 = Pack.littleEndianToInt(kBytes, kOff + 12)
+        k0 = Pack.int32LE(kBytes, kOff + 0)
+        k1 = Pack.int32LE(kBytes, kOff + 4)
+        k2 = Pack.int32LE(kBytes, kOff + 8)
+        k3 = Pack.int32LE(kBytes, kOff + 12)
     }
 
     fun getAlgorithmName(): String = "Poly1305"
@@ -110,10 +112,10 @@ class Poly1305 {
                 currentBlock[i] = 0
             }
         }
-        val t0 = 0xffffffffL and Pack.littleEndianToInt(currentBlock, 0).toLong()
-        val t1 = 0xffffffffL and Pack.littleEndianToInt(currentBlock, 4).toLong()
-        val t2 = 0xffffffffL and Pack.littleEndianToInt(currentBlock, 8).toLong()
-        val t3 = 0xffffffffL and Pack.littleEndianToInt(currentBlock, 12).toLong()
+        val t0 = 0xffffffffL and Pack.int32LE(currentBlock, 0).toLong()
+        val t1 = 0xffffffffL and Pack.int32LE(currentBlock, 4).toLong()
+        val t2 = 0xffffffffL and Pack.int32LE(currentBlock, 8).toLong()
+        val t3 = 0xffffffffL and Pack.int32LE(currentBlock, 12).toLong()
         h0 += (t0 and 0x3ffffffL).toInt()
         h1 += (t1 shl 32 or t0 ushr 26 and 0x3ffffffL).toInt()
         h2 += (t2 shl 32 or t1 ushr 20 and 0x3ffffffL).toInt()
@@ -253,13 +255,13 @@ class Poly1305 {
         f1 = ((h1 ushr 6 or (h2 shl 20)).toLong() and 0xffffffffL) + (0xffffffffL and k1.toLong())
         f2 = ((h2 ushr 12 or (h3 shl 14)).toLong() and 0xffffffffL) + (0xffffffffL and k2.toLong())
         f3 = ((h3 ushr 18 or (h4 shl 8)).toLong() and 0xffffffffL) + (0xffffffffL and k3.toLong())
-      Pack.intToLittleEndian(f0.toInt(), out, outOff)
+      Pack.writeInt32LE(f0.toInt(), out, outOff)
         f1 += f0 ushr 32
-      Pack.intToLittleEndian(f1.toInt(), out, outOff + 4)
+      Pack.writeInt32LE(f1.toInt(), out, outOff + 4)
         f2 += f1 ushr 32
-      Pack.intToLittleEndian(f2.toInt(), out, outOff + 8)
+      Pack.writeInt32LE(f2.toInt(), out, outOff + 8)
         f3 += f2 ushr 32
-      Pack.intToLittleEndian(f3.toInt(), out, outOff + 12)
+      Pack.writeInt32LE(f3.toInt(), out, outOff + 12)
         reset()
         return BLOCK_SIZE
     }

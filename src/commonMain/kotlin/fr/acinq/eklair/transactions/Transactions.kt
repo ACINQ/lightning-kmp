@@ -17,6 +17,7 @@
 package fr.acinq.eklair.transactions
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Eclair
 import fr.acinq.eklair.MilliSatoshi
@@ -173,7 +174,7 @@ object Transactions {
         else
             Crypto.sha256(remotePaymentBasePoint.value + localPaymentBasePoint.value)
 
-        val blind = BtcSerializer.uint64(h.takeLast(6).reversed().toByteArray() + ByteArray(4) { 0 })
+        val blind = Pack.int64LE(h.takeLast(6).reversed().toByteArray() + ByteArray(4) { 0 })
         return commitTxNumber xor blind
     }
 
