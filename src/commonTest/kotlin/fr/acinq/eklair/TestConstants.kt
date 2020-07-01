@@ -24,7 +24,6 @@ object TestConstants {
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val nodeParams = NodeParams(
             keyManager = keyManager,
-            blockCount = 144L,
             alias = "alice",
             features = Features(
                 setOf(
@@ -89,7 +88,6 @@ object TestConstants {
         val keyManager = LocalKeyManager(Alice.seed, Block.RegtestGenesisBlock.hash)
         val nodeParams = NodeParams(
             keyManager = keyManager,
-            blockCount = 144L,
             alias = "alice",
             features = Features(
                 setOf(

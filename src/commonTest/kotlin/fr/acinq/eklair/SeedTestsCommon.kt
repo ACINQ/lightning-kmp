@@ -1,6 +1,7 @@
 package fr.acinq.eklair
 
 import fr.acinq.bitcoin.MnemonicCode
+import fr.acinq.bitcoin.Hex
 import fr.acinq.eklair.crypto.assertArrayEquals
 import kotlin.test.Test
 import kotlin.test.assertEquals

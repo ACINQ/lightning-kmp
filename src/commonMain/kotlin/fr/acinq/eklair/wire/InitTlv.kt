@@ -9,10 +9,9 @@ import fr.acinq.bitcoin.io.Output
 sealed class InitTlv : Tlv {
     companion object {
         data class Networks(val chainHashes: List<ByteVector32>) : InitTlv(), LightningSerializable<Networks> {
-            override val tag: ULong
-                get() = 1UL
-
             override fun serializer(): LightningSerializer<Networks> = Networks
+            override val tag: ULong
+                get() = serializer().tag
 
             companion object : LightningSerializer<Networks>() {
                 override fun read(input: Input): Networks {
@@ -27,6 +26,9 @@ sealed class InitTlv : Tlv {
                 override fun write(message: Networks, out: Output) {
                     message.chainHashes.forEach { writeBytes(it, out) }
                 }
+
+                override val tag: ULong
+                    get() = 1UL
             }
         }
     }

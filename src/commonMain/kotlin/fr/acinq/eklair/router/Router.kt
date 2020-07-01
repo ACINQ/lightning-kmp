@@ -35,3 +35,18 @@ data class ChannelHop(override val nodeId: PublicKey, override val nextNodeId: P
 
     override fun fee(amount: MilliSatoshi): MilliSatoshi = Eclair.nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
 }
+
+/**
+ * A directed hop between two trampoline nodes.
+ * These nodes need not be connected and we don't need to know a route between them.
+ * The start node will compute the route to the end node itself when it receives our payment.
+ *
+ * @param nodeId          id of the start node.
+ * @param nextNodeId      id of the end node.
+ * @param cltvExpiryDelta cltv expiry delta.
+ * @param fee             total fee for that hop.
+ */
+data class NodeHop(override val nodeId: PublicKey, override val nextNodeId: PublicKey, override val cltvExpiryDelta: CltvExpiryDelta, val fee: MilliSatoshi) : Hop {
+    override fun fee(amount: MilliSatoshi): MilliSatoshi = fee
+}
+

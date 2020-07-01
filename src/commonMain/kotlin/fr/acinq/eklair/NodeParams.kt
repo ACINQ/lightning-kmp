@@ -42,9 +42,7 @@ data class NodeParams(
     val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
     val enableTrampolinePayment: Boolean,
-    private val blockCount: Long // TODO: use an atomic reference to an external value
 ) {
     val privateKey = keyManager.nodeKey.privateKey
     val nodeId = keyManager.nodeId
-    val currentBlockHeight = blockCount
 }

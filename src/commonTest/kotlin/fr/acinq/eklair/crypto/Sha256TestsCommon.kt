@@ -1,6 +1,7 @@
 package fr.acinq.eklair.crypto
 
-import fr.acinq.eklair.Hex
+import fr.acinq.bitcoin.Hex
+import fr.acinq.bitcoin.crypto.Sha256
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue

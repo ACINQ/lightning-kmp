@@ -18,8 +18,7 @@ import org.kodein.log.LoggerFactory
 
 /*
  * Channel is implemented as a finite state machine
- * Its main method is a (State, Event) -> (State, List<Action>)
- *
+ * Its main method is (State, Event) -> (State, List<Action>)
  */
 
 /**
@@ -44,6 +43,8 @@ data class MessageReceived(val message: LightningMessage) : Event()
 data class WatchReceived(val watch: WatchEvent) : Event()
 data class ExecuteCommand(val command: Command) : Event()
 data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : Event()
+data class NewBlock(val height: Int, val Header: BlockHeader): Event()
+
 /**
  * Channel Actions (outputs produced by the state machine)
  */
@@ -51,6 +52,8 @@ sealed class Action
 data class SendMessage(val message: LightningMessage) : Action()
 data class SendWatch(val watch: Watch) : Action()
 data class StoreState(val data: State) : Action()
+data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
+data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): Action()
 data class HandleError(val error: Throwable) : Action()
 data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : Action()
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : Action()
@@ -66,10 +69,18 @@ data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
  */
 sealed class State {
     abstract val staticParams: StaticParams
+    abstract val currentTip: Pair<Int, BlockHeader>
+    val currentBlockHeight: Int
+            get() = currentTip.first
     val keyManager: KeyManager
         get() = staticParams.nodeParams.keyManager
 
+    /**
+     * @param event input event (for example, a message was received, a command was sent by the GUI/API, ...
+     * @return a (new state, list of actions) pair
+     */
     abstract fun process(event: Event): Pair<State, List<Action>>
+
     val logger = LoggerFactory.default.newLogger(Channel::class)
 }
 
@@ -79,11 +90,11 @@ interface HasCommitments {
         get() = commitments.channelId
 }
 
-data class WaitForInit(override val staticParams: StaticParams) : State() {
+data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>) : State() {
     override fun process(event: Event): Pair<State, List<Action>> {
         return when (event) {
             is InitFundee -> {
-                val nextState = WaitForOpenChannel(staticParams, event.temporaryChannelId, event.localParams, event.remoteInit)
+                val nextState = WaitForOpenChannel(staticParams, currentTip, event.temporaryChannelId, event.localParams, event.remoteInit)
                 Pair(nextState, listOf())
             }
             is InitFunder -> {
@@ -123,7 +134,7 @@ data class WaitForInit(override val staticParams: StaticParams) : State() {
                         }
                     )
                 )
-                val nextState = WaitForAcceptChannel(staticParams, event, open)
+                val nextState = WaitForAcceptChannel(staticParams, currentTip, event, open)
                 Pair(nextState, listOf(SendMessage(open)))
             }
             else -> Pair(this, listOf())
@@ -133,6 +144,7 @@ data class WaitForInit(override val staticParams: StaticParams) : State() {
 
 data class WaitForOpenChannel(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteInit: Init
@@ -197,6 +209,7 @@ data class WaitForOpenChannel(
 
                         val nextState = WaitForFundingCreated(
                             staticParams,
+                            currentTip,
                             event.message.temporaryChannelId,
                             localParams,
                             remoteParams,
@@ -220,6 +233,7 @@ data class WaitForOpenChannel(
 
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -298,7 +312,7 @@ data class WaitForFundingCreated(
                             //context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
                             //context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                             // NB: we don't send a ChannelSignatureSent for the first commit
-                            // TODO log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
+                            logger.info { "waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
                             // phoenix channels have a zero mindepth for funding tx
                             val fundingMinDepth =
                                 if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else Helpers.minDepthForFunding(
@@ -318,7 +332,7 @@ data class WaitForFundingCreated(
                                 BITCOIN_FUNDING_DEPTHOK
                             )
                             val nextState =
-                                WaitForFundingConfirmed(staticParams, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                                WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
                             Pair(nextState, listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), StoreState(nextState)))
                         }
                     }
@@ -330,7 +344,7 @@ data class WaitForFundingCreated(
 
 }
 
-data class WaitForAcceptChannel(override val staticParams: StaticParams, val initFunder: InitFunder, val lastSent: OpenChannel) : State() {
+data class WaitForAcceptChannel(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, val initFunder: InitFunder, val lastSent: OpenChannel) : State() {
     override fun process(event: Event): Pair<State, List<Action>> {
         return when {
             event is MessageReceived && event.message is AcceptChannel -> {
@@ -362,6 +376,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, val ini
                         val makeFundingTx = MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeeratePerKw)
                         val nextState = WaitForFundingInternal(
                             staticParams,
+                            currentTip,
                             initFunder.temporaryChannelId,
                             initFunder.localParams,
                             remoteParams,
@@ -383,6 +398,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, val ini
 
 data class WaitForFundingInternal(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -425,6 +441,7 @@ data class WaitForFundingInternal(
                 // NB: we don't send a ChannelSignatureSent for the first commit
                 val nextState = WaitForFundingSigned(
                     staticParams,
+                    currentTip,
                     channelId,
                     localParams,
                     remoteParams,
@@ -445,6 +462,7 @@ data class WaitForFundingInternal(
 
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     val channelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -491,7 +509,7 @@ data class WaitForFundingSigned(
                         // make sure we first persist the commitment that returns back the funds to us in case of problem
                         val publishTx = PublishTx(fundingTx)
 
-                        val nextState = WaitForFundingConfirmed(staticParams, commitments, fundingTx, now, null, Either.Left(lastSent))
+                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, fundingTx, now, null, Either.Left(lastSent))
 
                         Pair(nextState, listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), StoreState(nextState), publishTx))
                     }
@@ -504,6 +522,7 @@ data class WaitForFundingSigned(
 
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val commitments: Commitments,
     val fundingTx: Transaction?,
     val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
@@ -542,7 +561,7 @@ data class WaitForFundingConfirmed(
                         val blockHeight = event.watch.blockHeight
                         val txIndex = event.watch.txIndex
                         val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
-                        val nextState = WaitForFundingLocked(staticParams, commitments, shortChannelId, fundingLocked)
+                        val nextState = WaitForFundingLocked(staticParams, currentTip, commitments, shortChannelId, fundingLocked)
                         val actions = listOf(SendWatch(watchLost), SendMessage(fundingLocked), StoreState(nextState))
                         Pair(nextState, actions)
                     }
@@ -559,6 +578,7 @@ data class WaitForFundingConfirmed(
 
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
@@ -593,6 +613,7 @@ data class WaitForFundingLocked(
                         // TODO: context.system.scheduler.schedule(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
                         val nextState = Normal(
                             staticParams,
+                            currentTip,
                             commitments.copy(remoteNextCommitInfo = Either.Right(event.message.nextPerCommitmentPoint)),
                             shortChannelId,
                             buried = false,
@@ -613,6 +634,7 @@ data class WaitForFundingLocked(
 
 data class Normal(
     override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val commitments: Commitments,
     val hortChannelId: ShortChannelId,
     val buried: Boolean,
@@ -627,7 +649,7 @@ data class Normal(
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
                         // TODO: handle shutdown in progress
-                        val result = commitments.sendAdd(event.command, Helpers.origin(event.command), staticParams.nodeParams.currentBlockHeight)
+                        val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())
                         when (result) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
@@ -685,12 +707,12 @@ data class Normal(
                                         // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                                         // counterparty, so only htlcs above remote's dust_limit matter
                                         val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
-                                        trimmedHtlcs.map { it.add }.forEach {
+                                        val htlcInfos = trimmedHtlcs.map { it.add }.map {
                                             logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
-                                            staticParams.nodeParams.db.channels.addHtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
+                                            HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                                         }
                                         val newState = this.copy(commitments = result.result.first)
-                                        val actions = listOf(StoreState(newState), SendMessage(result.result.second))
+                                        val actions = listOf(StoreHtlcInfos(htlcInfos), StoreState(newState), SendMessage(result.result.second))
                                         Pair(newState, actions)
                                     }
                                 }

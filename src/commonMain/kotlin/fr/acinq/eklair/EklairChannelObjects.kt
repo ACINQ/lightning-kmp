@@ -1,6 +1,7 @@
 package fr.acinq.eklair
 
 import fr.acinq.bitcoin.crypto.Secp256k1
+import fr.acinq.bitcoin.Hex
 import fr.acinq.eklair.EklairClient.nodeId
 import fr.acinq.eklair.io.LightningSession
 import fr.acinq.eklair.io.SocketBuilder
