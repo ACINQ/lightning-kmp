@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "fr.acinq.eklair"
-version = "0.1.0"
+version = "0.1.0-1.4-M2"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -21,6 +21,7 @@ repositories {
     maven("https://dl.bintray.com/kotlin/ktor")
     maven("https://dl.bintray.com/kotlin/kotlin-eap")
     maven("https://dl.bintray.com/kodein-framework/kodein-dev")
+    maven("https://dl.bintray.com/acinq/libs")
     google()
     jcenter()
 }
@@ -34,7 +35,7 @@ kotlin {
     val commonMain by sourceSets.getting {
         dependencies {
             implementation(kotlin("stdlib-common"))
-            implementation("fr.acinq:bitcoink:0.2.0-1.4-M2")
+            implementation("fr.acinq:bitcoink:0.1.0-1.4-M2")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-native-mt-1.4-M2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M2")
             implementation("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
@@ -48,27 +49,28 @@ kotlin {
         }
     }
 
-    val nativeMain by sourceSets.creating { dependsOn(commonMain) }
-    val nativeTest by sourceSets.creating { dependsOn(commonTest) }
-
     jvm {
         compilations["main"].kotlinOptions.jvmTarget = "1.8"
         compilations["main"].defaultSourceSet.dependencies {
             implementation(kotlin("stdlib-jdk8"))
-            implementation("fr.acinq.bitcoin:secp256k1-jni:1.3")
             implementation("io.ktor:ktor-client-okhttp:$ktor_version")
             implementation("io.ktor:ktor-network:$ktor_version")
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
         compilations["test"].defaultSourceSet.dependencies {
+            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.1.0-1.4-M2")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+
         }
     }
 
+    val nativeMain by sourceSets.creating { dependsOn(commonMain) }
+    val nativeTest by sourceSets.creating { dependsOn(commonTest) }
+
     if (currentOs.isLinux) {
         linuxX64("linux") {
-            compilations["test"].defaultSourceSet {
+            compilations["main"].defaultSourceSet {
                 dependsOn(nativeMain)
             }
             compilations["test"].defaultSourceSet {
@@ -82,7 +84,6 @@ kotlin {
 
     if (currentOs.isMacOsX) {
         ios {
-            binaries { framework() }
             compilations["main"].defaultSourceSet {
                 dependsOn(nativeMain)
             }
@@ -137,10 +138,8 @@ kotlin {
 // Disable cross compilation
 afterEvaluate {
     val targets = when {
-        currentOs.isLinux -> listOf("mingwX64", "macosX64")
-        currentOs.isMacOsX -> listOf("mingwX64", "linuxX64")
-        currentOs.isWindows -> listOf("linuxX64", "macosX64")
-        else -> listOf("mingwX64", "linuxX64", "macosX64")
+        currentOs.isLinux -> listOf()
+        else -> listOf("linuxX64")
     }.mapNotNull { kotlin.targets.findByName(it) as? KotlinNativeTarget }
 
     configure(targets) {
