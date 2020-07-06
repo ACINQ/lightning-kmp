@@ -1,5 +1,4 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
-import org.jetbrains.kotlin.gradle.tasks.FatFrameworkTask
 
 plugins {
     application
@@ -35,10 +34,11 @@ kotlin {
     val commonMain by sourceSets.getting {
         dependencies {
             implementation(kotlin("stdlib-common"))
-            implementation("fr.acinq:bitcoink:0.1.0-1.4-M2")
+
+            api("fr.acinq:bitcoink:0.1.0-1.4-M2")
+            api("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-native-mt-1.4-M2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M2")
-            implementation("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
         }
     }
     val commonTest by sourceSets.getting {
@@ -99,38 +99,6 @@ kotlin {
     sourceSets.all {
         languageSettings.useExperimentalAnnotation("kotlin.RequiresOptIn")
         languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
-    }
-
-    // Create a task building a fat framework.
-    tasks.create("createFatFramework", FatFrameworkTask::class) {
-        val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
-
-        // The fat framework must have the same base name as the initial frameworks.
-        baseName = "eklair"
-
-        // The default destination directory is '<build directory>/fat-framework'.
-        destinationDir = buildDir.resolve("eklair/${buildType.toLowerCase()}")
-
-        val iosTargets = listOf(targets.findByName("iosArm64") as? KotlinNativeTarget, targets.findByName("iosX64") as? KotlinNativeTarget)
-        // Specify the frameworks to be merged.
-        val frameworksBinaries = iosTargets.mapNotNull { it?.binaries?.getFramework(buildType) }
-        from(frameworksBinaries)
-        dependsOn(frameworksBinaries.map { it.linkTask })
-
-        // disable gradle's up to date checking
-        outputs.upToDateWhen { false }
-
-        doLast {
-            val srcFile: File = destinationDir
-            val targetDir = System.getProperty("configuration.build.dir") ?: project.buildDir.path
-            println("\uD83C\uDF4E Copying ${srcFile} to ${targetDir}")
-            copy {
-                from(srcFile)
-                into(targetDir)
-                include("*.framework/**")
-                include("*.framework.dSYM/**")
-            }
-        }
     }
 }
 
