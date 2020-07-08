@@ -66,11 +66,11 @@ class CommitmentsTests {
         alice = ra.first
         val watchConfirmed = ra.second.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>().first()
 
-        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.event, 144, 1, fundingTx)))
+        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
         alice = ra.first
         val fundingLockedAlice = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
 
-        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.event, 144, 1, fundingTx)))
+        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
         bob = rb.first
         val fundingLockedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
 

@@ -320,12 +320,14 @@ data class WaitForFundingCreated(
                                     fundingAmount
                                 )
                             val watchSpent = WatchSpent(
+                                this.temporaryChannelId,
                                 commitInput.outPoint.txid,
                                 commitInput.outPoint.index.toInt(),
                                 commitments.commitInput.txOut.publicKeyScript,
                                 BITCOIN_FUNDING_SPENT
                             ) // TODO: should we wait for an acknowledgment from the watcher?
                             val watchConfirmed = WatchConfirmed(
+                                this.temporaryChannelId,
                                 commitInput.outPoint.txid,
                                 commitments.commitInput.txOut.publicKeyScript,
                                 fundingMinDepth.toLong(),
@@ -499,10 +501,10 @@ data class WaitForFundingSigned(
                         val now = currentTimestampSeconds()
                         // TODO context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
-                        val watchSpent = WatchSpent(commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+                        val watchSpent = WatchSpent(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
                         // phoenix channels have a zero mindepth for funding tx
                         val minDepthBlocks = if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else staticParams.nodeParams.minDepthBlocks
-                        val watchConfirmed = WatchConfirmed(commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                        val watchConfirmed = WatchConfirmed(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
                         logger.info { "committing txid=${fundingTx.txid}" }
 
                         // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -551,7 +553,7 @@ data class WaitForFundingConfirmed(
                             // TODO: error handling
                             return Pair(this, listOf())
                         }
-                        val watchLost = WatchLost(commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
+                        val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
                         val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                         val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
@@ -590,6 +592,7 @@ data class WaitForFundingLocked(
                     is FundingLocked -> {
                         // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                         val watchConfirmed = WatchConfirmed(
+                            this.channelId,
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.txOut.publicKeyScript,
                             ANNOUNCEMENTS_MINCONF.toLong(),
