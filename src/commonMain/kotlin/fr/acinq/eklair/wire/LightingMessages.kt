@@ -6,6 +6,8 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.*
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
+import fr.acinq.eklair.utils.toByteVector
+import fr.acinq.eklair.utils.toByteVector32
 import kotlinx.serialization.Serializable
 import kotlin.math.max
 
@@ -67,6 +69,64 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
             serializers.put(InitTlv.Companion.Networks.tag.toLong(), InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
             val serializer = TlvStreamSerializer<InitTlv>(serializers)
             serializer.write(message.tlvs, out)
+        }
+    }
+}
+
+data class Error(override val channelId: ByteVector32, val data: ByteVector) :  SetupMessage, HasChannelId, LightningSerializable<Error> {
+    fun toAscii(): String = data.toByteArray().decodeToString()
+
+    override fun serializer(): LightningSerializer<Error> = Error
+
+    companion object : LightningSerializer<Error>() {
+        override val tag: ULong
+            get() = 17UL
+
+        override fun read(input: Input): Error {
+            return Error(bytes(input, 32).toByteVector32(), bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: Error, out: Output) {
+            writeBytes(message.channelId, out)
+            writeU16(message.data.size(), out)
+            writeBytes(message.data, out)
+        }
+    }
+}
+
+data class Ping(val pongLength: Int, val data: ByteVector) : SetupMessage, LightningSerializable<Ping> {
+    override fun serializer(): LightningSerializer<Ping> = Ping
+
+    companion object : LightningSerializer<Ping>() {
+        override val tag: ULong
+            get() = 18UL
+
+        override fun read(input: Input): Ping {
+            return Ping(u16(input), bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: Ping, out: Output) {
+            writeU16(message.pongLength, out)
+            writeU16(message.data.size(), out)
+            writeBytes(message.data, out)
+        }
+    }
+}
+
+data class Pong(val data: ByteVector) : SetupMessage, LightningSerializable<Pong> {
+    override fun serializer(): LightningSerializer<Pong> = Pong
+
+    companion object : LightningSerializer<Pong>() {
+        override val tag: ULong
+            get() = 19UL
+
+        override fun read(input: Input): Pong {
+            return Pong(bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: Pong, out: Output) {
+            writeU16(message.data.size(), out)
+            writeBytes(message.data, out)
         }
     }
 }
