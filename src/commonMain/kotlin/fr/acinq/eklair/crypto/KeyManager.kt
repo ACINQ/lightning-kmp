@@ -113,7 +113,7 @@ interface KeyManager {
             val path = sequence {
                 var i = 0
                 while (true) {
-                    yield(Pack.uint32BE(buffer, i).toUInt().toLong())
+                    yield(Pack.int32BE(buffer, i).toUInt().toLong())
                     i += 4
                 }
             }

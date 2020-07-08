@@ -62,26 +62,6 @@ class SchaChainTestsCommon {
 
     private val seed = ByteVector32.Zeroes
 
-    @Test fun `generate and receive hashes`() {
-        val result = (0 until 50).map { ShaChain.shaChainFromSeed(seed, -1L /*0xffffffffffffffffL*/ - it) }
-        assertEquals(expected, result)
-
-        var receiver = ShaChain.empty
-        repeat(1000) {
-            receiver = receiver.addHash(ShaChain.shaChainFromSeed(seed, -1L /*0xffffffffffffffffL*/ - it), -1L /*0xffffffffffffffffL*/ - it)
-            assertTrue(receiver.knownHashes.size <= 64)
-            var j: Long = -1L /*0xffffffffffffffffL*/ - it
-            while (j != -1L /*0xffffffffffffffffL*/) {
-                val ho = receiver.getHash(j)
-                assertNotNull(ho)
-                val k = (-1L /*0xffffffffffffffffL*/ - j).toInt()
-                if (k < 50) assertEquals(expected[k], ho)
-                ++j
-            }
-            assertNull(receiver.getHash(-1L /*0xffffffffffffffffL*/ - it - 1))
-        }
-    }
-
     @Test fun `provide sequence`() {
         var receiver = ShaChain.empty
         repeat (50) {

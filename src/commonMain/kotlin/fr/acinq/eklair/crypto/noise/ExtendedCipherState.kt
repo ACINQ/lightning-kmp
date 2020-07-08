@@ -1,6 +1,6 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.eklair.crypto.Pack
+import fr.acinq.bitcoin.crypto.Pack
 
 /**
  * extended cipher state which implements key rotation as per BOLT #8
@@ -63,7 +63,7 @@ data class ExtendedCipherState(val cs: CipherState, val ck: ByteArray) :
     }
 
     fun encrypt(plaintext: ByteArray): Pair<ExtendedCipherState, ByteArray> {
-        val plainlen = Pack.write16(plaintext.size)
+        val plainlen = Pack.writeInt16BE(plaintext.size.toShort())
         val (tmp, cipherlen) = this.encryptWithAd(ByteArray(0), plainlen)
         val (tmp1, cipherbytes) = tmp.encryptWithAd(ByteArray(0), plaintext)
         return Pair(tmp1 as ExtendedCipherState, cipherlen + cipherbytes)

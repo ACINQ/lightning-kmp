@@ -1,13 +1,14 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.bitcoin.crypto.Secp256k1
+import fr.acinq.secp256k1.Secp256k1
+
 
 object Secp256k1DHFunctions : DHFunctions {
     override fun name() = "secp256k1"
 
     override fun generateKeyPair(priv: ByteArray): Pair<ByteArray, ByteArray> {
         require(priv.size == 32) { "private key size must be 32 bytes" }
-        val pub = Secp256k1.computePublicKey(priv)
+        val pub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(priv))
         return Pair(pub, priv)
     }
 
@@ -25,5 +26,5 @@ object Secp256k1DHFunctions : DHFunctions {
 
     override fun dhLen(): Int = 32
 
-    override fun pubKeyLen(): Int = 33
+    override fun pubKeyLen(): Int = 33 // we use compressed public keys
 }

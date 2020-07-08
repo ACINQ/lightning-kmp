@@ -59,7 +59,7 @@ class LocalKeyManagerSpec {
     }
 
     fun makefundingKeyPath(entropy: ByteVector, isFunder: Boolean): KeyPath {
-        val items = (0..7).toList().map {  Pack.uint32BE(entropy.toByteArray(), it * 4).toLong() and 0xFFFFFFFFL } //yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
+        val items = (0..7).toList().map {  Pack.int32BE(entropy.toByteArray(), it * 4).toLong() and 0xFFFFFFFFL } //yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
         val last = DeterministicWallet.hardened(if (isFunder) 1L else 0L)
         return KeyPath(items + last)
     }

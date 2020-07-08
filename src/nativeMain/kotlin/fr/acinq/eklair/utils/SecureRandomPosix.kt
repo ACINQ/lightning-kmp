@@ -7,7 +7,7 @@ import platform.posix.open
 import platform.posix.read
 import kotlin.random.Random
 
-object SecureRandomLinux : Random() {
+object SecureRandomPosix : Random() {
 
     override fun nextBytes(array: ByteArray, fromIndex: Int, toIndex: Int): ByteArray {
         val size = toIndex - fromIndex
@@ -46,4 +46,4 @@ object SecureRandomLinux : Random() {
     }
 }
 
-actual fun Random.Default.secure(): Random = SecureRandomLinux
+actual fun Random.Default.secure(): Random = SecureRandomPosix

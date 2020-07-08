@@ -10,6 +10,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import kotlin.jvm.JvmStatic
 
+@OptIn(ExperimentalUnsignedTypes::class)
 abstract class LightningSerializer<T> {
     /**
      * read a message from a stream
@@ -65,27 +66,30 @@ abstract class LightningSerializer<T> {
         fun u16(input: Input): Int {
             val bin = ByteArray(2)
             input.read(bin, 0, bin.size)
-            return Pack.uint16BE(bin, 0)
+            return Pack.int16BE(bin, 0).toUShort().toInt()
         }
 
-        fun writeU16(input: Int, output: Output) = output.write(Pack.writeUint16BE(input))
+        fun writeU16(input: Int, output: Output) = output.write(Pack.writeInt16BE(input.toShort()))
 
+        // Todo: should be unsigned
         fun u32(input: Input): Int {
             val bin = ByteArray(4)
             input.read(bin, 0, bin.size)
-            return Pack.uint32BE(bin, 0)
+            return Pack.int32BE(bin, 0)
         }
 
-        fun writeU32(input: Int, output: Output) = output.write(Pack.writeUint32BE(input))
+        // Todo: should be unsigned
+        fun writeU32(input: Int, output: Output) = output.write(Pack.writeInt32BE(input))
 
-
+        // Todo: should be unsigned
         fun u64(input: Input): Long {
             val bin = ByteArray(8)
             input.read(bin, 0, bin.size)
-            return Pack.uint64BE(bin, 0)
+            return Pack.int64BE(bin, 0)
         }
 
-        fun writeU64(input: Long, output: Output) = output.write(Pack.writeUint64BE(input))
+        // Todo: should be unsigned
+        fun writeU64(input: Long, output: Output) = output.write(Pack.writeInt64BE(input))
 
         @JvmStatic
         fun bigSize(input: Input): Long {

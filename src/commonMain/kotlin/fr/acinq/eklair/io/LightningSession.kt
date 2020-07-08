@@ -1,34 +1,31 @@
 package fr.acinq.eklair.io
 
-import fr.acinq.eklair.crypto.Pack
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eklair.crypto.noise.CipherState
 import fr.acinq.eklair.crypto.noise.ExtendedCipherState
 
-class LightningSession(val socketHandler: SocketHandler, val enc: CipherState, val dec: CipherState, val ck: ByteArray) {
+class LightningSession(val enc: CipherState, val dec: CipherState, ck: ByteArray) {
     var encryptor: CipherState = ExtendedCipherState(enc, ck)
     var decryptor: CipherState = ExtendedCipherState(dec, ck)
 
-    suspend fun receive(): ByteArray {
-        val cipherlen = ByteArray(18)
-        socketHandler.readFully(cipherlen, 0, 18)
+    suspend fun receive(readBytes: suspend (Int) -> ByteArray): ByteArray {
+        val cipherlen = readBytes(18)
         val (tmp, plainlen) = decryptor.decryptWithAd(ByteArray(0), cipherlen)
         decryptor = tmp
-        val length = Pack.uint16(plainlen, 0)
-        val cipherbytes = ByteArray(length + 16)
-        socketHandler.readFully(cipherbytes, 0, cipherbytes.size)
+        val length = Pack.int16BE(plainlen)
+        val cipherbytes = readBytes(length + 16)
         val (tmp1, plainbytes) = decryptor.decryptWithAd(ByteArray(0), cipherbytes)
         decryptor = tmp1
         return plainbytes
     }
 
-    suspend fun send(data: ByteArray): Unit {
-        val plainlen = Pack.write16(data.size)
+    suspend fun send(data: ByteArray, write: suspend (ByteArray, flush: Boolean) -> Unit) {
+        val plainlen = Pack.writeInt16BE(data.size.toShort())
         val (tmp, cipherlen) = encryptor.encryptWithAd(ByteArray(0), plainlen)
         encryptor = tmp
-        socketHandler.writeFully(cipherlen, 0, cipherlen.size)
+        write(cipherlen, false)
         val (tmp1, cipherbytes) = encryptor.encryptWithAd(ByteArray(0), data)
         encryptor = tmp1
-        socketHandler.writeFully(cipherbytes, 0, cipherbytes.size)
-        socketHandler.flush()
+        write(cipherbytes, true)
     }
 }
