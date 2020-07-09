@@ -37,6 +37,9 @@ data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, Lig
             writeBigSize(message.value.size().toLong(), out)
             writeBytes(message.value, out)
         }
+
+        override val tag: ULong
+            get() = 0UL
     }
 }
 
@@ -45,6 +48,8 @@ data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, Lig
  */
 @kotlin.ExperimentalUnsignedTypes
 class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerializer<T>>) : LightningSerializer<TlvStream<T>>() {
+    override val tag: ULong
+        get() = 0UL
 
     /**
      * @param input input stream
@@ -100,7 +105,7 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
 @kotlin.ExperimentalUnsignedTypes
-class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
+data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
     init {
         val tags = records.map { it.tag }
         require(tags.size == tags.toSet().size) { "tlvstream contains duplicate tags" }

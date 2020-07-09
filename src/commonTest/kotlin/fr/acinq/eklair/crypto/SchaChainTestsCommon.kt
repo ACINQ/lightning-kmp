@@ -1,7 +1,7 @@
 package fr.acinq.eklair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eklair.Hex
+import fr.acinq.bitcoin.Hex
 import kotlin.test.*
 
 

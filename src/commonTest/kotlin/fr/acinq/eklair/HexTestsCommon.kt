@@ -3,6 +3,7 @@ package fr.acinq.eklair
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import fr.acinq.bitcoin.Hex
 
 class HexTestsCommon {
     @Test

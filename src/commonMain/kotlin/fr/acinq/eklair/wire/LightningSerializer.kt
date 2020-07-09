@@ -20,6 +20,8 @@ abstract class LightningSerializer<T> {
      */
     abstract fun read(input: Input): T
 
+    abstract val tag: ULong
+
     fun read(input: ByteArray): T = read(ByteArrayInput(input))
 
     /**
@@ -178,4 +180,7 @@ abstract class LightningSerializer<T> {
 
 interface LightningSerializable<T> {
     fun serializer(): LightningSerializer<T>
+
+    val tag: ULong
+        get() = serializer().tag
 }

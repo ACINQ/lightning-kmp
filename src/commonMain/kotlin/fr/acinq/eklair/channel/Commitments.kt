@@ -10,8 +10,8 @@ import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.crypto.Generators
 import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.ShaChain
-import fr.acinq.eklair.crypto.Sphinx
-import fr.acinq.eklair.crypto.Sphinx.OnionRoutingPacket.PeelResult
+import fr.acinq.eklair.crypto.sphinx.FailurePacket
+import fr.acinq.eklair.crypto.sphinx.Sphinx
 import fr.acinq.eklair.payment.relay.Origin
 import fr.acinq.eklair.transactions.*
 import fr.acinq.eklair.transactions.Transactions.TransactionWithInputInfo
@@ -323,18 +323,19 @@ data class Commitments(
             }
             else -> {
                 // we need the shared secret to build the error packet
-                val result = Sphinx.OnionRoutingPacket.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket)
+                // TODO: is it ok to hardcode the payload length here ?
+                val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, 1300)
                 when (result) {
-                    is PeelResult.Success -> {
+                    is Either.Right -> {
                         val reason = when (cmd.reason) {
-                            is CMD_FAIL_HTLC.Reason.Bytes -> Sphinx.FailurePacket.wrap(cmd.reason.bytes, result.decryptedPacket.sharedSecret)
-                            is CMD_FAIL_HTLC.Reason.Failure -> Sphinx.FailurePacket.create(result.decryptedPacket.sharedSecret, cmd.reason.message)
+                            is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(cmd.reason.bytes.toByteArray(), result.value.sharedSecret)
+                            is CMD_FAIL_HTLC.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, cmd.reason.message)
                         }
-                        val fail = UpdateFailHtlc(channelId, cmd.id, reason)
+                        val fail = UpdateFailHtlc(channelId, cmd.id, ByteVector(reason))
                         val commitments1 = addLocalProposal(fail)
                         Try.Success(Pair(commitments1, fail))
                     }
-                    is PeelResult.Error -> Try.Failure(CannotExtractSharedSecret(channelId, htlc))
+                    is Either.Left -> Try.Failure(CannotExtractSharedSecret(channelId, htlc))
                 }
             }
         }

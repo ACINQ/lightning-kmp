@@ -27,13 +27,15 @@ class CommitmentsTests {
             StaticParams(
                 TestConstants.Alice.nodeParams,
                 TestConstants.Bob.keyManager.nodeId
-            )
+            ),
+            currentTip = Pair(0, Block.RegtestGenesisBlock.header)
         )
         var bob: State = WaitForInit(
             StaticParams(
                 TestConstants.Bob.nodeParams,
                 TestConstants.Alice.keyManager.nodeId
-            )
+            ),
+            currentTip = Pair(0, Block.RegtestGenesisBlock.header)
         )
         val channelFlags = 0.toByte()
         val channelVersion = ChannelVersion.STANDARD
