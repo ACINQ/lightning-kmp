@@ -2,13 +2,13 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     application
-    kotlin("multiplatform") version "1.4-M2-mt"
-    kotlin("plugin.serialization") version "1.4-M2-mt"
+    kotlin("multiplatform") version "1.4-M3"
+    kotlin("plugin.serialization") version "1.4-M3"
     `maven-publish`
 }
 
 group = "fr.acinq.eklair"
-version = "0.1.0-1.4-M3"
+version = "0.2.0-1.4-M3"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
