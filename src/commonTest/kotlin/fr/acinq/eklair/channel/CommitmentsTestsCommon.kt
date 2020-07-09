@@ -15,6 +15,7 @@ import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
