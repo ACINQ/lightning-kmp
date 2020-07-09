@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "fr.acinq.eklair"
-version = "0.1.0-1.4-M2"
+version = "0.1.0-1.4-M3"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -27,7 +27,7 @@ repositories {
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
-val ktor_version = "1.3.2-1.4-M2"
+val ktorVersion = "1.3.2-1.4-M3"
 
 kotlin {
 
@@ -35,7 +35,7 @@ kotlin {
         dependencies {
             implementation(kotlin("stdlib-common"))
 
-            api("fr.acinq:bitcoink:0.1.0-1.4-M2")
+            api("fr.acinq:bitcoink:0.2.0-1.4-M3")
             api("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-native-mt-1.4-M2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M2")
@@ -45,7 +45,7 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("io.ktor:ktor-client-core:$ktor_version")
+            implementation("io.ktor:ktor-client-core:$ktorVersion")
         }
     }
 
@@ -53,12 +53,18 @@ kotlin {
         compilations["main"].kotlinOptions.jvmTarget = "1.8"
         compilations["main"].defaultSourceSet.dependencies {
             implementation(kotlin("stdlib-jdk8"))
-            implementation("io.ktor:ktor-client-okhttp:$ktor_version")
-            implementation("io.ktor:ktor-network:$ktor_version")
+            implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
+            implementation("io.ktor:ktor-network:$ktorVersion")
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
         compilations["test"].defaultSourceSet.dependencies {
-            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.1.0-1.4-M2")
+            val target = when {
+                currentOs.isLinux -> "linux"
+                currentOs.isMacOsX -> "darwin"
+                currentOs.isWindows -> "mingw"
+                else -> error("UnsupportedmOS $currentOs")
+            }
+            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm-$target:0.2.0-1.4-M3")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
 
@@ -76,7 +82,7 @@ kotlin {
             compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
-                    implementation("io.ktor:ktor-client-curl:$ktor_version")
+                    implementation("io.ktor:ktor-client-curl:$ktorVersion")
                 }
             }
         }
@@ -90,7 +96,7 @@ kotlin {
             compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
-                    implementation("io.ktor:ktor-client-ios:$ktor_version")
+                    implementation("io.ktor:ktor-client-ios:$ktorVersion")
                 }
             }
         }
