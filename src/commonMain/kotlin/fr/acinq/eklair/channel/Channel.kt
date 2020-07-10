@@ -58,6 +58,7 @@ data class HandleError(val error: Throwable) : Action()
 data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : Action()
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : Action()
 data class PublishTx(val tx: Transaction): Action()
+data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : Action()
 
 /**
  * channel static parameters
@@ -320,22 +321,22 @@ data class WaitForFundingCreated(
                                     fundingAmount
                                 )
                             val watchSpent = WatchSpent(
-                                this.temporaryChannelId,
+                                channelId,
                                 commitInput.outPoint.txid,
                                 commitInput.outPoint.index.toInt(),
                                 commitments.commitInput.txOut.publicKeyScript,
                                 BITCOIN_FUNDING_SPENT
                             ) // TODO: should we wait for an acknowledgment from the watcher?
                             val watchConfirmed = WatchConfirmed(
-                                this.temporaryChannelId,
+                                channelId,
                                 commitInput.outPoint.txid,
                                 commitments.commitInput.txOut.publicKeyScript,
                                 fundingMinDepth.toLong(),
                                 BITCOIN_FUNDING_DEPTHOK
                             )
-                            val nextState =
-                                WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
-                            Pair(nextState, listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), StoreState(nextState)))
+                            val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                            val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
+                            Pair(nextState, actions)
                         }
                     }
                     else -> Pair(this, listOf())
@@ -549,9 +550,13 @@ data class WaitForFundingConfirmed(
                                 ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
                             )
                         }
-                        if (result.isFailure) {
-                            // TODO: error handling
-                            return Pair(this, listOf())
+                        if (result is Try.Failure) {
+                            logger.error { "funding tx verification failed: ${result.error}" }
+                            if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
+                                logger.error { "ignoring this error on regtest"}
+                            } else {
+                                return Pair(this, listOf(HandleError(result.error)))
+                            }
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
                         val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)

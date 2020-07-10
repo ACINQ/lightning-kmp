@@ -57,6 +57,7 @@ kotlin {
             implementation("io.ktor:ktor-network:$ktor_version")
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
+        compilations["test"].kotlinOptions.jvmTarget = "1.8"
         compilations["test"].defaultSourceSet.dependencies {
             implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.1.0-1.4-M2")
             implementation(kotlin("test-junit"))
