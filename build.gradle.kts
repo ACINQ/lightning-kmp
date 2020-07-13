@@ -3,13 +3,13 @@ import org.jetbrains.kotlin.gradle.tasks.FatFrameworkTask
 
 plugins {
     application
-    kotlin("multiplatform") version "1.4-M2-mt"
-    kotlin("plugin.serialization") version "1.4-M2-mt"
+    kotlin("multiplatform") version "1.4-M3"
+    kotlin("plugin.serialization") version "1.4-M3"
     `maven-publish`
 }
 
 group = "fr.acinq.eklair"
-version = "0.1.0-1.4-M2"
+version = "0.1.0-1.4-M3"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -28,17 +28,17 @@ repositories {
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
-val ktor_version = "1.3.2-1.4-M2"
+val ktor_version = "1.3.2-1.4-M3"
 
 kotlin {
 
     val commonMain by sourceSets.getting {
         dependencies {
             implementation(kotlin("stdlib-common"))
-            implementation("fr.acinq:bitcoink:0.1.0-1.4-M2")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-native-mt-1.4-M2")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M2")
-            implementation("org.kodein.log:kodein-log:0.2.0-1.4-M2-dev-20")
+            implementation("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-M3")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-1.4-M3")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M3")
+            implementation("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-M3-36-b27d97f")
         }
     }
     val commonTest by sourceSets.getting {
@@ -59,7 +59,7 @@ kotlin {
         }
         compilations["test"].kotlinOptions.jvmTarget = "1.8"
         compilations["test"].defaultSourceSet.dependencies {
-            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.1.0-1.4-M2")
+            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.2.1-1.4-M3")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
 

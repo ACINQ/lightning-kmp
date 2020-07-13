@@ -1,6 +1,7 @@
 package fr.acinq.eklair.crypto.sphinx
 
 import fr.acinq.bitcoin.*
+import fr.acinq.secp256k1.Hex
 import fr.acinq.eklair.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.eklair.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.eklair.crypto.sphinx.Sphinx.peekPayloadLength

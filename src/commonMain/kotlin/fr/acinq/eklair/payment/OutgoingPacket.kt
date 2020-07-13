@@ -2,7 +2,7 @@ package fr.acinq.eklair.payment
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Hex
+import fr.acinq.secp256k1.Hex
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.Eclair

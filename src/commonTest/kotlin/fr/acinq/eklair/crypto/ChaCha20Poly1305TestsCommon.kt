@@ -1,6 +1,6 @@
 package fr.acinq.eklair.crypto
 
-import fr.acinq.bitcoin.Hex
+import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 
 @ExperimentalStdlibApi

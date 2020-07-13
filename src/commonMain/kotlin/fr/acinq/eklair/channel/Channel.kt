@@ -14,6 +14,7 @@ import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
 /*
@@ -83,7 +84,7 @@ sealed class State {
      */
     abstract fun process(event: Event): Pair<State, List<Action>>
 
-    val logger = LoggerFactory.default.newLogger(Channel::class)
+    val logger = LoggerFactory.default.newLogger(Logger.Tag(Channel::class))
 }
 
 interface HasCommitments {

@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eklair.CltvExpiryDelta
-import fr.acinq.bitcoin.Hex
+import fr.acinq.secp256k1.Hex
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import kotlinx.serialization.json.Json

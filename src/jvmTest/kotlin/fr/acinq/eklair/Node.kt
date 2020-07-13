@@ -18,6 +18,7 @@ import fr.acinq.eklair.io.LightningSession
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.*
+import fr.acinq.secp256k1.Hex
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
@@ -27,6 +28,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import java.net.InetSocketAddress
 import kotlin.text.toByteArray
@@ -42,7 +44,7 @@ class Peer(
     val input: Channel<PeerEvent>,
     val output: Channel<ByteArray>
 ) {
-    private val logger = LoggerFactory.default.newLogger(Peer::class)
+    private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
     private val channels: HashMap<ByteVector32, State> = HashMap()
 

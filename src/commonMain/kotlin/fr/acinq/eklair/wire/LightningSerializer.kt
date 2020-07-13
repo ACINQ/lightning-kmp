@@ -2,7 +2,7 @@ package fr.acinq.eklair.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Hex
+import fr.acinq.secp256k1.Hex
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput

@@ -14,13 +14,14 @@ import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class CommitmentsTests {
-    val logger = LoggerFactory.default.newLogger(CommitmentSpecTestsCommon::class)
+    val logger = LoggerFactory.default.newLogger(Logger.Tag(CommitmentSpecTestsCommon::class))
 
     fun reachNormal(): Pair<Normal, Normal> {
         var alice: State = WaitForInit(
