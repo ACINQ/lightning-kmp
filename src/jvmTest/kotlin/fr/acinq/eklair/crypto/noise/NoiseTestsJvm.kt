@@ -1,7 +1,7 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.bitcoin.Hex
 import fr.acinq.eklair.crypto.assertArrayEquals
+import fr.acinq.secp256k1.Hex
 import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.junit.Test
 

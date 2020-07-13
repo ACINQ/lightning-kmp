@@ -2,12 +2,12 @@ package fr.acinq.eklair.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Hex
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.secp256k1.Hex
 import kotlin.jvm.JvmStatic
 
 @OptIn(ExperimentalUnsignedTypes::class)

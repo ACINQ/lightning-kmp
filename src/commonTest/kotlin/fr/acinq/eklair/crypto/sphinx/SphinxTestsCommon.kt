@@ -1,11 +1,15 @@
 package fr.acinq.eklair.crypto.sphinx
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.eklair.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.eklair.crypto.sphinx.Sphinx.peekPayloadLength
 import fr.acinq.eklair.utils.Either
 import fr.acinq.eklair.wire.OnionRoutingPacketSerializer
+import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

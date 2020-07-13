@@ -1,9 +1,9 @@
 package fr.acinq.eklair
 
+import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import fr.acinq.bitcoin.Hex
 
 class HexTestsCommon {
     @Test

@@ -1,7 +1,7 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.bitcoin.Hex
 import fr.acinq.eklair.crypto.assertArrayEquals
+import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

@@ -1,6 +1,6 @@
 package fr.acinq.eklair.utils
 
-import fr.acinq.bitcoin.Hex
+import fr.acinq.secp256k1.Hex
 import kotlin.experimental.and
 import kotlin.experimental.or
 

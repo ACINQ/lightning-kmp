@@ -35,7 +35,7 @@ kotlin {
         dependencies {
             implementation(kotlin("stdlib-common"))
 
-            api("fr.acinq:bitcoink:0.2.0-1.4-M3")
+            api("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-M3")
             api("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-M3-36-b27d97f")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-1.4-M3")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M3")
