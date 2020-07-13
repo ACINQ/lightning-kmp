@@ -51,6 +51,7 @@ data class NewBlock(val height: Int, val Header: BlockHeader): Event()
 sealed class Action
 data class SendMessage(val message: LightningMessage) : Action()
 data class SendWatch(val watch: Watch) : Action()
+data class ProcessCommand(val command: Command) : Action()
 data class StoreState(val data: State) : Action()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): Action()
@@ -138,7 +139,10 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, event, open)
                 Pair(nextState, listOf(SendMessage(open)))
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event ins state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -225,9 +229,15 @@ data class WaitForOpenChannel(
 
                         Pair(nextState, listOf(SendMessage(accept)))
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event ins state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -339,9 +349,15 @@ data class WaitForFundingCreated(
                             Pair(nextState, actions)
                         }
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled message ${event.message} in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 
@@ -458,7 +474,10 @@ data class WaitForFundingInternal(
                     fundingCreated)
                 Pair(nextState, listOf(channelIdAssigned, SendMessage(fundingCreated)))
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -518,7 +537,10 @@ data class WaitForFundingSigned(
                     }
                 }
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -578,7 +600,10 @@ data class WaitForFundingConfirmed(
                     }
                     else -> Pair(this, listOf())
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -632,9 +657,15 @@ data class WaitForFundingLocked(
                         )
                         Pair(nextState, listOf(SendWatch(watchConfirmed), StoreState(nextState)))
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -657,40 +688,46 @@ data class Normal(
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
                         // TODO: handle shutdown in progress
-                        val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())
-                        when (result) {
+                        when (val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                val actions = listOf(SendMessage(result.result.second))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                   actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
                                 Pair(newState, actions)
                             }
                         }
                     }
                     is CMD_FULFILL_HTLC -> {
-                        val result = commitments.sendFulfill(event.command)
-                        when (result) {
+                        when (val result = commitments.sendFulfill(event.command)) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                val actions = listOf(SendMessage(result.result.second))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
                                 Pair(newState, actions)
                             }
                         }
                     }
                     is CMD_FAIL_HTLC -> {
-                        val result = commitments.sendFail(event.command, staticParams.nodeParams.privateKey)
-                        when (result) {
+                        when (val result = commitments.sendFail(event.command, staticParams.nodeParams.privateKey)) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                val actions = listOf(SendMessage(result.result.second))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
                                 Pair(newState, actions)
                             }
                         }
@@ -727,62 +764,74 @@ data class Normal(
                             }
                         }
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
             }
             is MessageReceived -> {
                 when (event.message) {
                     is UpdateAddHtlc -> {
-                        val result = commitments.receiveAdd(event.message)
-                        when (result) {
+                        when (val result = commitments.receiveAdd(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result), listOf())
                         }
                     }
                     is UpdateFulfillHtlc -> {
-                        val result = commitments.receiveFulfill(event.message)
                         // README: we don't relay payments, so we don't need to send preimages upstream
-                        when (result) {
+                        when (val result = commitments.receiveFulfill(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
                         }
                     }
                     is UpdateFailHtlc -> {
-                        val result = commitments.receiveFail(event.message)
                         // README: we don't relay payments, so we don't need to send failures upstream
-                        when (result) {
+                        when (val result = commitments.receiveFail(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
                         }
                     }
                     is CommitSig -> {
-                        val result = commitments.receiveCommit(event.message, keyManager, logger)
                         // README: we don't relay payments, so we don't need to send failures upstream
-                        when (result) {
+                        when (val result = commitments.receiveCommit(event.message, keyManager, logger)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
                                 }
-                                Pair(this.copy(commitments = result.result.first), listOf(SendMessage(result.result.second)))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (result.result.first.localHasChanges()) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
+                                Pair(this.copy(commitments = result.result.first), actions)
                             }
                         }
                     }
                     is RevokeAndAck -> {
-                        val result = commitments.receiveRevocation(event.message)
-                        when (result) {
+                        when (val result = commitments.receiveRevocation(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 // TODO: handle shutdown
                                 val newState = this.copy(commitments = result.result)
-                                Pair(newState, listOf(StoreState(newState)))
+                                var actions = listOf<Action>(StoreState(newState))
+                                if (result.result.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
+                                Pair(newState, actions)
                             }
                         }
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
