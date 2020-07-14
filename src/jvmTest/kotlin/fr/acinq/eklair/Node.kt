@@ -365,6 +365,8 @@ object Node {
 
 @ExperimentalStdlibApi
 object Wire {
+    val logger = LoggerFactory.default.newLogger(Logger.Tag(Wire::class))
+
     fun decode(input: ByteArray) : LightningMessage? {
         val stream = ByteArrayInput(input)
         val code = LightningSerializer.u16(stream)
@@ -373,21 +375,16 @@ object Wire {
             Error.tag -> Error.read(stream)
             Ping.tag -> Ping.read(stream)
             Pong.tag -> Pong.read(stream)
-            OpenChannel.tag -> {
-                val open = OpenChannel.read(stream)
-                open
-            }
+            OpenChannel.tag -> OpenChannel.read(stream)
             AcceptChannel.tag -> AcceptChannel.read(stream)
             FundingCreated.tag -> FundingCreated.read(stream)
             FundingSigned.tag -> FundingSigned.read(stream)
-            FundingLocked.tag -> {
-                val locked = FundingLocked.read(stream)
-                locked
-            }
+            FundingLocked.tag -> FundingLocked.read(stream)
             CommitSig.tag -> CommitSig.read(stream)
             RevokeAndAck.tag -> RevokeAndAck.read(stream)
+            UpdateAddHtlc.tag -> UpdateAddHtlc.read(stream)
             else -> {
-                println("cannot decode $code")
+                logger.warning {"cannot decode ${Hex.encode(input)}" }
                 null
             }
         }
@@ -431,7 +428,22 @@ object Wire {
                 LightningSerializer.writeU16(input.tag.toInt(), out)
                 LightningSerializer.writeBytes(input.serializer().write(input), out)
             }
-            else -> Unit
+            is CommitSig -> {
+                LightningSerializer.writeU16(input.tag.toInt(), out)
+                LightningSerializer.writeBytes(input.serializer().write(input), out)
+            }
+            is RevokeAndAck -> {
+                LightningSerializer.writeU16(input.tag.toInt(), out)
+                LightningSerializer.writeBytes(input.serializer().write(input), out)
+            }
+            is UpdateAddHtlc -> {
+                LightningSerializer.writeU16(input.tag.toInt(), out)
+                LightningSerializer.writeBytes(input.serializer().write(input), out)
+            }
+            else -> {
+                logger.warning { "cannot encode $input"}
+                Unit
+            }
         }
     }
 

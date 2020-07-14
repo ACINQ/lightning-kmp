@@ -370,7 +370,34 @@ data class UpdateAddHtlc(
     val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
     val onionRoutingPacket: OnionRoutingPacket
-) : HtlcMessage, UpdateMessage, HasChannelId
+) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateAddHtlc> {
+
+    override fun serializer(): LightningSerializer<UpdateAddHtlc> = UpdateAddHtlc
+
+    companion object : LightningSerializer<UpdateAddHtlc>() {
+        override val tag: ULong
+            get() = 128UL
+
+        override fun read(input: Input): UpdateAddHtlc {
+            val channelId = ByteVector32(bytes(input, 32))
+            val id = u64(input)
+            val amount = MilliSatoshi(u64(input))
+            val paymentHash = ByteVector32(bytes(input, 32))
+            val expiry = CltvExpiry(u32(input).toLong())
+            val onion = OnionRoutingPacketSerializer(1300).read(input)
+            return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion)
+        }
+
+        override fun write(message: UpdateAddHtlc, out: Output) {
+            writeBytes(message.channelId, out)
+            writeU64(message.id, out)
+            writeU64(message.amountMsat.toLong(), out)
+            writeBytes(message.paymentHash, out)
+            writeU32(message.cltvExpiry.toLong().toInt(), out)
+            OnionRoutingPacketSerializer(1300).write(message.onionRoutingPacket, out)
+        }
+    }
+}
 
 data class UpdateFulfillHtlc(
     override val channelId: ByteVector32,
