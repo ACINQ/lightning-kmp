@@ -403,23 +403,25 @@ data class UpdateFulfillHtlc(
     override val channelId: ByteVector32,
     val id: Long,
     val paymentPreimage: ByteVector32
-) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<FundingLocked> {
-    override fun serializer(): LightningSerializer<FundingLocked> = FundingLocked
+) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFulfillHtlc> {
+    override fun serializer(): LightningSerializer<UpdateFulfillHtlc> = UpdateFulfillHtlc
 
-    companion object : LightningSerializer<FundingLocked>() {
+    companion object : LightningSerializer<UpdateFulfillHtlc>() {
         override val tag: ULong
             get() = 130UL
 
-        override fun read(input: Input): FundingLocked {
-            return FundingLocked(
+        override fun read(input: Input): UpdateFulfillHtlc {
+            return UpdateFulfillHtlc(
                 ByteVector32(bytes(input, 32)),
-                PublicKey(bytes(input, 33))
+                u64(input),
+                ByteVector32(bytes(input, 32))
             )
         }
 
-        override fun write(message: FundingLocked, out: Output) {
+        override fun write(message: UpdateFulfillHtlc, out: Output) {
             writeBytes(message.channelId, out)
-            writeBytes(message.nextPerCommitmentPoint.value, out)
+            writeU64(message.id, out)
+            writeBytes(message.paymentPreimage, out)
         }
     }
 }
