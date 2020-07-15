@@ -53,6 +53,9 @@ sealed class Action
 data class SendMessage(val message: LightningMessage) : Action()
 data class SendWatch(val watch: Watch) : Action()
 data class ProcessCommand(val command: Command) : Action()
+data class ProcessAdd(val add: UpdateAddHtlc): Action()
+data class ProcessFail(val fail: UpdateFailHtlc): Action()
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc): Action()
 data class StoreState(val data: State) : Action()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): Action()
@@ -814,9 +817,9 @@ data class Normal(
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 // TODO: handle shutdown
-                                val newState = this.copy(commitments = result.result)
-                                var actions = listOf<Action>(StoreState(newState))
-                                if (result.result.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
+                                val newState = this.copy(commitments = result.result.first)
+                                var actions = listOf<Action>(StoreState(newState)) + result.result.second
+                                if (result.result.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
                                     actions += listOf<Action>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)

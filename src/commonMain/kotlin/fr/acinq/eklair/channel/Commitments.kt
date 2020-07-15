@@ -540,7 +540,7 @@ data class Commitments(
         Pair(commitments1, revocation)
     }
 
-    fun receiveRevocation(revocation: RevokeAndAck): Try<Commitments> {
+    fun receiveRevocation(revocation: RevokeAndAck): Try<Pair<Commitments, List<Action>>> {
         val theirNextCommit = remoteNextCommitInfo.left?.nextRemoteCommit ?: return Try.Failure(UnexpectedRevocation(channelId))
         if (revocation.perCommitmentSecret.publicKey() != remoteCommit.remotePerCommitmentPoint) return Try.Failure(InvalidRevocation(channelId))
 
@@ -550,6 +550,15 @@ data class Commitments(
         val completedOutgoingHtlcs = remoteCommit.spec.htlcs.incomings().map { it.id } - theirNextCommit.spec.htlcs.incomings().map { it.id }
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = originChannels - completedOutgoingHtlcs
+        val actions: MutableList<Action> = ArrayList<Action>().toMutableList()
+        remoteChanges.signed.forEach {
+            when(it) {
+                is UpdateAddHtlc -> actions += ProcessAdd(it)
+                is UpdateFailHtlc -> actions += ProcessFail(it)
+                is UpdateFailMalformedHtlc -> actions += ProcessFailMalformed(it)
+                else -> Unit
+            }
+        }
         val commitments1 = this.copy(
             localChanges = localChanges.copy(signed = emptyList(), acked = localChanges.acked + localChanges.signed),
             remoteChanges = remoteChanges.copy(signed = emptyList()),
@@ -557,7 +566,7 @@ data class Commitments(
             remoteNextCommitInfo = Either.Right(revocation.nextPerCommitmentPoint),
             remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommit.index),
             originChannels = originChannels1)
-        return Try.Success(commitments1)
+        return Try.Success(Pair(commitments1, actions.toList()))
     }
 
     fun changes2String(): String = """
