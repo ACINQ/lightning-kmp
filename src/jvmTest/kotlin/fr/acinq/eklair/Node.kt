@@ -17,6 +17,7 @@ import fr.acinq.eklair.db.TestDatabases
 import fr.acinq.eklair.io.LightningSession
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
+import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.eklair.wire.*
 import fr.acinq.secp256k1.Hex
 import io.ktor.network.selector.*
@@ -36,6 +37,10 @@ import kotlin.text.toByteArray
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry) : PeerEvent() {
+    val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
+}
+data class ChannelEvent(val channelId: ByteVector32, val event: fr.acinq.eklair.channel.Event) : PeerEvent()
 
 @ExperimentalStdlibApi
 class Peer(
@@ -46,11 +51,32 @@ class Peer(
 ) {
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
+    // channels map, indexed by channel id
+    // note that a channel starts with a temporary id then switchs to its final id once the funding tx is known
     private val channels: HashMap<ByteVector32, State> = HashMap()
+
+    // pending payments, indexed by payment hash
+    private val pendingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
 
     private var theirInit: Init? = null
 
+    private suspend fun send(actions: List<Action>) {
+        actions.forEach {
+            when (it) {
+                is SendMessage -> {
+                    val encoded = Wire.encode(it.message)
+                    encoded?.let { bin ->
+                        logger.info { "sending ${it.message}" }
+                        output.send(bin)
+                    }
+                }
+                else -> Unit
+            }
+        }
+    }
+
     suspend fun run() {
+
         for (event in input) {
             when {
                 event is BytesReceived -> {
@@ -101,16 +127,8 @@ class Peer(
                             val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), Pair(0, Block.RegtestGenesisBlock.header))
                             val (state1, actions1) = state.process(InitFundee(msg.temporaryChannelId, localParams, theirInit!!))
                             val (state2, actions2) = state1.process(MessageReceived(msg))
-                            (actions1  + actions2).forEach {
-                                when(it) {
-                                    is SendMessage -> {
-                                        val encoded = Wire.encode(it.message)
-                                        encoded?.let { output.send(it) }
-                                    }
-                                    else -> logger.warning {"ignoring action $it" }
-                                }
-                            }
-                            channels.put(msg.temporaryChannelId, state2)
+                            send(actions1  + actions2)
+                            channels[msg.temporaryChannelId] = state2
                             logger.info { "new state for ${msg.temporaryChannelId}: $state2" }
                         }
                         msg is HasTemporaryChannelId && !channels.containsKey(msg.temporaryChannelId) -> {
@@ -120,20 +138,18 @@ class Peer(
                             logger.info { "received $msg for temporary channel ${msg.temporaryChannelId}" }
                             val state = channels[msg.temporaryChannelId]!!
                             val (state1, actions) = state.process(MessageReceived(msg))
-                            channels.put(msg.temporaryChannelId, state1)
+                            channels[msg.temporaryChannelId] = state1
                             logger.info { "channel ${msg.temporaryChannelId} new state $state1" }
+                            send(actions)
                             actions.forEach {
                                 when(it) {
-                                    is SendMessage -> {
-                                        val encoded = Wire.encode(it.message)
-                                        encoded?.let { output.send(it) }
-                                    }
                                     is ChannelIdSwitch -> {
-                                        logger.info { "id switch from ${msg.temporaryChannelId} to ${it.newChannelId}" }
-                                        channels.put(it.newChannelId, state1)
+                                        logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
+                                        channels[it.newChannelId] = state1
                                     }
                                     is SendWatch -> {
                                         if (it.watch is WatchConfirmed) {
+                                            // TODO: use a real watcher, here we just blindly confirm whatever tx they sent us
                                             val tx = Transaction(
                                                 version = 2,
                                                 txIn = listOf(),
@@ -154,17 +170,25 @@ class Peer(
                             logger.info { "received $msg for channel ${msg.channelId}" }
                             val state = channels[msg.channelId]!!
                             val (state1, actions) = state.process(MessageReceived(msg))
+                            channels[msg.channelId] = state1
+                            logger.info { "channel ${msg.channelId} new state $state1" }
+                            send(actions)
                             actions.forEach {
-                                when(it) {
-                                    is SendMessage -> {
-                                        val encoded = Wire.encode(it.message)
-                                        encoded?.let { output.send(it) }
+                                when {
+                                    it is ProcessAdd && !pendingPayments.containsKey(it.add.paymentHash) -> {
+                                       logger.warning { "received ${it.add} } for which we don't have a preimage" }
                                     }
-                                    else -> logger.warning { "ignoring $it" }
+                                    it is ProcessAdd -> {
+                                        val payment= pendingPayments[it.add.paymentHash]!!
+                                        logger.info { "receive ${it.add} for $payment" }
+                                        input.send(ChannelEvent(msg.channelId, ExecuteCommand(CMD_FULFILL_HTLC(it.add.id, payment.paymentPreimage, commit = true))))
+                                    }
+                                    it is ProcessCommand -> input.send(ChannelEvent(msg.channelId, ExecuteCommand(it.command)))
+                                    it !is SendMessage -> {
+                                        logger.warning { "ignoring $it" }
+                                    }
                                 }
                             }
-                            channels.put(msg.channelId, state1)
-                            logger.info { "channel ${msg.channelId} new state $state1" }
                         }
                         else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}"}
                     }
@@ -175,17 +199,27 @@ class Peer(
                 event is WatchReceived -> {
                     val state = channels[event.watch.channelId]!!
                     val (state1, actions) = state.process(fr.acinq.eklair.channel.WatchReceived(event.watch))
+                    send(actions)
+                    channels[event.watch.channelId] = state1
+                    logger.info { "channel ${event.watch.channelId} new state $state1" }
+                }
+                event is ReceivePayment -> {
+                    logger.info { "expecting to receive $event" }
+                    pendingPayments[event.paymentHash] = event
+                }
+                event is ChannelEvent && !channels.containsKey(event.channelId) -> {
+                    logger.error { "received ${event.event} for a unknown channel ${event.channelId}" }
+                }
+                event is ChannelEvent -> {
+                    val state = channels[event.channelId]!!
+                    val (state1, actions) = state.process(event.event)
+                    channels[event.channelId] = state1
+                    send(actions)
                     actions.forEach {
-                        when(it) {
-                            is SendMessage -> {
-                                val encoded = Wire.encode(it.message)
-                                encoded?.let { output.send(it) }
-                            }
-                            else -> logger.warning { "ignoring $it" }
+                        when (it) {
+                            is ProcessCommand -> input.send(ChannelEvent(event.channelId, ExecuteCommand(it.command)))
                         }
                     }
-                    channels.put(event.watch.channelId, state1)
-                    logger.info { "channel ${event.watch.channelId} new state $state1" }
                 }
             }
         }
@@ -252,13 +286,13 @@ object Node {
         val pub = priv.publicKey()
         val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
         val address = InetSocketAddress("localhost", 29735)
+        val remoteNodeId = PublicKey(Hex.decode("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"))
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
         // To create such a seed, you can create a text file seed.hex with the following content:
         // 00000000: 0202 0202 0202 0202 0202 0202 0202 0202  ................
         // 00000010: 0202 0202 0202 0202 0202 0202 0202 0202  ................
         // and convert it to a binary file with:
         // $ xxd -r seed.hex seed.dat
-        val remoteNodeId = PublicKey(Hex.decode("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"))
 
         runBlocking {
             val socket = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(address)
@@ -302,6 +336,7 @@ object Node {
             }
 
             launch { peer.run() }
+            peer.input.send(ReceivePayment(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"), MilliSatoshi(1000000), CltvExpiry(100)))
             launch { doPing() }
             launch { respond() }
             launch { listen() }
@@ -437,6 +472,10 @@ object Wire {
                 LightningSerializer.writeBytes(input.serializer().write(input), out)
             }
             is UpdateAddHtlc -> {
+                LightningSerializer.writeU16(input.tag.toInt(), out)
+                LightningSerializer.writeBytes(input.serializer().write(input), out)
+            }
+            is UpdateFulfillHtlc -> {
                 LightningSerializer.writeU16(input.tag.toInt(), out)
                 LightningSerializer.writeBytes(input.serializer().write(input), out)
             }

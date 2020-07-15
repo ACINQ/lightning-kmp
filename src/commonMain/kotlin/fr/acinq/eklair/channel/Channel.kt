@@ -738,14 +738,16 @@ data class Normal(
                     }
                     is CMD_SIGN -> {
                         when {
-                            !commitments.localHasChanges() -> Pair(this, listOf())
+                            !commitments.localHasChanges() -> {
+                                logger.warning { "no changes to sign" }
+                                Pair(this, listOf())
+                            }
                             commitments.remoteNextCommitInfo is Either.Left -> {
                                 val commitments1 = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))
                                 Pair(this.copy(commitments = commitments1), listOf())
                             }
                             else -> {
-                                val result = commitments.sendCommit(keyManager, logger)
-                                when (result) {
+                                when (val result = commitments.sendCommit(keyManager, logger)) {
                                     is Try.Failure -> {
                                         Pair(this, listOf(HandleError(result.error)))
                                     }

@@ -448,7 +448,7 @@ data class Commitments(
                             spec,
                             remoteCommitTx.tx.txid,
                             remoteNextPerCommitmentPoint
-                        ), commitSig, localCommit.index
+                        ), commitSig, localCommit.index, reSignAsap = true
                     )
                 ),
                 localChanges = localChanges.copy(proposed = emptyList(), signed = localChanges.proposed),
