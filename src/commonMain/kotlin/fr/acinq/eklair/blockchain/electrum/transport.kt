@@ -25,8 +25,8 @@ sealed class ElectrumRequest(vararg params: Any) {
 sealed class ElectrumResponse
 
 data class ServerVersion(
-    private val clientName: String,
-    private val protocolVersion: String
+    private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
+    private val protocolVersion: String = ElectrumClient.ELECTRUM_PROTOCOL_VERSION
 ) : ElectrumRequest(clientName, protocolVersion) {
     override val method: String = "server.version"
 }
@@ -89,6 +89,7 @@ data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val stat
 object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
 }
+//val HeaderSubscription: (Int) -> String = { id -> JsonRPCRequest(id = id, method = "blockchain.headers.subscribe").encode() }
 data class HeaderSubscriptionResponse(val height: Int, val header: BlockHeader) : ElectrumResponse()
 
 /**
