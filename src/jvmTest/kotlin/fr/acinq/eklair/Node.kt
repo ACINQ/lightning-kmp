@@ -24,14 +24,13 @@ import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import java.net.InetSocketAddress
+import java.util.*
+import kotlin.collections.HashMap
 import kotlin.text.toByteArray
 
 sealed class PeerEvent
@@ -60,6 +59,56 @@ class Peer(
 
     private var theirInit: Init? = null
 
+    suspend fun connect(nodeId: PublicKey, address: InetSocketAddress) {
+        val socket = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(address)
+        val w = socket.openWriteChannel(autoFlush = false)
+        val r = socket.openReadChannel()
+        val priv = Node.nodeParams.keyManager.nodeKey.privateKey
+        val pub = priv.publicKey()
+        val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
+        val (enc, dec, ck) = Node.handshake(keyPair, remoteNodeId.value.toByteArray(), r, w)
+        val session = LightningSession(enc, dec, ck)
+
+        suspend fun receive(): ByteArray {
+            return session.receive { size -> val buffer = ByteArray(size); r.readFully(buffer, 0, size); buffer }
+        }
+
+        suspend fun send(message: ByteArray) {
+            session.send(message) { data, flush -> w.writeFully(data); if (flush) w.flush() }
+        }
+
+        val init = Hex.decode("001000000002a8a0")
+        send(init)
+
+        suspend fun doPing() {
+            val ping = Hex.decode("0012000a0004deadbeef")
+            while (true) {
+                delay(30000)
+                send(ping)
+            }
+        }
+
+        suspend fun listen() {
+            while (true) {
+                val received = receive()
+                input.send(BytesReceived(received))
+            }
+        }
+
+        suspend fun respond() {
+            for (msg in output) {
+                send(msg)
+            }
+        }
+
+        coroutineScope {
+            launch { run() }
+            launch { doPing() }
+            launch { respond() }
+            launch { listen() }
+         }
+    }
+
     private suspend fun send(actions: List<Action>) {
         actions.forEach {
             when (it) {
@@ -76,7 +125,7 @@ class Peer(
     }
 
     suspend fun run() {
-
+        logger.info { "peer is active" }
         for (event in input) {
             when {
                 event is BytesReceived -> {
@@ -204,7 +253,7 @@ class Peer(
                     logger.info { "channel ${event.watch.channelId} new state $state1" }
                 }
                 event is ReceivePayment -> {
-                    logger.info { "expecting to receive $event" }
+                    logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
                     pendingPayments[event.paymentHash] = event
                 }
                 event is ChannelEvent && !channels.containsKey(event.channelId) -> {
@@ -295,51 +344,31 @@ object Node {
         // $ xxd -r seed.hex seed.dat
 
         runBlocking {
-            val socket = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(address)
-            val w = socket.openWriteChannel(autoFlush = false)
-            val r = socket.openReadChannel()
-            val (enc, dec, ck) = handshake(keyPair, remoteNodeId.value.toByteArray(), r, w)
-            val session = LightningSession(enc, dec, ck)
+            val peer = Peer(nodeParams, remoteNodeId, Channel<PeerEvent>(10), Channel<ByteArray>(3))
 
-            suspend fun receive(): ByteArray {
-                return session.receive { size -> val buffer = ByteArray(size); r.readFully(buffer, 0, size); buffer }
-            }
-
-            suspend fun send(message: ByteArray) {
-                session.send(message) { data, flush -> w.writeFully(data); if (flush) w.flush() }
-            }
-
-            val peer = Peer(nodeParams, remoteNodeId, Channel<PeerEvent>(10), Channel<ByteArray>())
-
-            val init = Hex.decode("001000000002a8a0")
-            send(init)
-
-            suspend fun doPing() {
-                val ping = Hex.decode("0012000a0004deadbeef")
-                while (true) {
-                    delay(10000)
-                    send(ping)
+            launch {
+                val scanner = Scanner(System.`in`)
+                while(scanner.hasNext()) {
+                    val line = scanner.nextLine()
+                    val tokens = line.split(" ")
+                    println("tokens: $tokens")
+                    when(tokens.first()) {
+                        "connect" -> {
+                            val uri = tokens[1]
+                            val elts = uri.split("@")
+                            val nodeId = PublicKey.fromHex(elts[0])
+                            val elts1 = elts[1].split(":")
+                            val address = InetSocketAddress(elts1[0], elts1[1].toInt())
+                            peer.connect(nodeId, address)
+                        }
+                        "receive" -> {
+                            val paymentPreimage = ByteVector32(tokens[1])
+                            val amount = MilliSatoshi(tokens[2].toLong())
+                            peer.input.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
+                        }
+                    }
                 }
             }
-
-            suspend fun listen() {
-                while (true) {
-                    val received = receive()
-                    peer.input.send(BytesReceived(received))
-                }
-            }
-
-            suspend fun respond() {
-                for (msg in peer.output) {
-                    send(msg)
-                }
-            }
-
-            launch { peer.run() }
-            peer.input.send(ReceivePayment(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"), MilliSatoshi(1000000), CltvExpiry(100)))
-            launch { doPing() }
-            launch { respond() }
-            launch { listen() }
 
             delay(1000 * 1000)
         }
@@ -427,6 +456,11 @@ object Wire {
 
     fun encode(input: LightningMessage, out: Output) {
         when (input) {
+            is LightningSerializable<*> -> {
+                LightningSerializer.writeU16(input.tag.toInt(), out)
+                @Suppress("UNCHECKED_CAST")
+                LightningSerializer.writeBytes((input.serializer() as LightningSerializer<LightningSerializable<*>>).write(input), out)
+            }
             is Init -> {
                 LightningSerializer.writeU16(input.tag.toInt(), out)
                 LightningSerializer.writeBytes(input.serializer().write(input), out)
