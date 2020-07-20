@@ -11,6 +11,8 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
+interface ActorMessage
+
 /**
  * Electrum requests / responses
  */
@@ -25,7 +27,7 @@ sealed class ElectrumRequest(vararg params: Any) {
             params = parameters.asJsonRPCParameters()
         ).encode()
 }
-sealed class ElectrumResponse
+sealed class ElectrumResponse : ActorMessage
 
 data class ServerVersion(
     private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
