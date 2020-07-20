@@ -62,7 +62,7 @@ kotlin {
             implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.2.1-1.4-M3")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-
+            implementation("ch.qos.logback:logback-classic:1.2.3")
         }
     }
 
