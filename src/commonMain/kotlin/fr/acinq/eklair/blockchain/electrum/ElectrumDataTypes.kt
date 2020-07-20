@@ -11,10 +11,13 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
-interface ActorMessage
+/**
+ * Common communication objects between [ElectrumClient] and [ElectrumWatcher]
+ */
+interface ElectrumMessage
 
 /**
- * Electrum requests / responses
+ * [ElectrumClient] requests / responses
  */
 sealed class ElectrumRequest(vararg params: Any) {
     abstract val method: String
@@ -27,7 +30,7 @@ sealed class ElectrumRequest(vararg params: Any) {
             params = parameters.asJsonRPCParameters()
         ).encode()
 }
-sealed class ElectrumResponse : ActorMessage
+sealed class ElectrumResponse : ElectrumMessage
 
 data class ServerVersion(
     private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
@@ -94,7 +97,6 @@ data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val stat
 object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
 }
-//val HeaderSubscription: (Int) -> String = { id -> JsonRPCRequest(id = id, method = "blockchain.headers.subscribe").encode() }
 data class HeaderSubscriptionResponse(val height: Int, val header: BlockHeader) : ElectrumResponse()
 
 /**

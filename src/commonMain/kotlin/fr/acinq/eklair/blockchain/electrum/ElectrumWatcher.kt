@@ -9,7 +9,7 @@ import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-private sealed class WatcherEvent : ActorMessage
+private sealed class WatcherEvent : ElectrumMessage
 private object WatcherConnected : WatcherEvent()
 private object HeaderSubscriptionEvent: WatcherEvent()
 
@@ -31,37 +31,38 @@ private object WatchHeaders : WatcherAction()
  *
  */
 private sealed class WatcherState {
-    abstract fun process(event: ActorMessage): Pair<WatcherState, List<WatcherAction>>
+    abstract fun process(event: ElectrumMessage): Pair<WatcherState, List<WatcherAction>>
 }
 private object WatcherDisconnectedState : WatcherState() {
-    override fun process(event: ActorMessage): Pair<WatcherState, List<WatcherAction>> =
+    override fun process(event: ElectrumMessage): Pair<WatcherState, List<WatcherAction>> =
         when(event) {
-            is Running -> this to listOf(WatchHeaders)
+            is ElectrumClientRunning -> this to listOf(WatchHeaders)
             is HeaderSubscriptionResponse -> WatcherRunningState(height = event.height, tip = event.header) to
                     listOf() // TODO watches / publishQueue / getTxQueue?
             else -> unhandledEvent(event)
         }
 }
 private data class WatcherRunningState(val height: Int, val tip: BlockHeader) : WatcherState() {
-    override fun process(event: ActorMessage): Pair<WatcherState, List<WatcherAction>> = when {
+    override fun process(event: ElectrumMessage): Pair<WatcherState, List<WatcherAction>> = when {
         event is HeaderSubscriptionResponse && event.header == tip -> self()
         event is HeaderSubscriptionResponse -> {
 
             this.copy(height = event.height, tip = event.header) to listOf() // TODO
         }
+        event is ElectrumClientClosed -> self()
         else -> unhandledEvent(event)
     }
 }
 
-private fun WatcherState.unhandledEvent(event: ActorMessage): Nothing = error("The state $this cannot process the event $event")
+private fun WatcherState.unhandledEvent(event: ElectrumMessage): Nothing = error("The state $this cannot process the event $event")
 private fun WatcherState.self(): Pair<WatcherState, List<WatcherAction>> = this to emptyList()
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(
-    val electrumClient: ElectrumClient
+    val client: ElectrumClient
 ) {
 
-    private val eventChannel = Channel<ActorMessage>(Channel.BUFFERED)
+    private val eventChannel = Channel<ElectrumMessage>(Channel.BUFFERED)
     private var state: WatcherState = WatcherDisconnectedState
 
     private suspend fun run() {
@@ -76,7 +77,7 @@ class ElectrumWatcher(
 
             actions.forEach { action ->
                 when (action) {
-                    WatchHeaders -> electrumClient.send(AddHeaderSubscription(eventChannel))
+                    WatchHeaders -> client.events.send(AddHeaderSubscription(eventChannel))
                 }
             }
         }
@@ -84,14 +85,14 @@ class ElectrumWatcher(
 
     suspend fun start() {
         coroutineScope {
-            electrumClient.send(AddStatusSubscription(eventChannel))
+            client.events.send(AddStatusSubscription(eventChannel))
             launch { run() }
         }
     }
 
     suspend fun stop() {
         eventChannel.close()
-        electrumClient.send(Unsubscribe(eventChannel))
+        client.events.send(Unsubscribe(eventChannel))
     }
 
 
