@@ -69,16 +69,6 @@ class ElectrumClientTest {
                     inputChannel.send(json.parse(ElectrumResponseDeserializer, it))
                     logger.info { "Waiting for the next input socket" }
                 }
-
-//                delay(1_000)
-            }
-        }
-
-        val pingJob = launch {
-            while(true) {
-                delay(30_000)
-                logger.info { "PING" }
-                outputChannel.send(Ping.asJsonRPCRequest(-1))
             }
         }
 
@@ -97,7 +87,6 @@ class ElectrumClientTest {
         launch {
             delay(120_000)
             logger.info { "EXIT" }
-            pingJob.cancel()
             start.cancel()
             sendSocketJob.cancel()
             output.close()

@@ -19,7 +19,7 @@ interface ElectrumMessage
 /**
  * [ElectrumClient] requests / responses
  */
-sealed class ElectrumRequest(vararg params: Any) {
+sealed class ElectrumRequest(vararg params: Any) : ElectrumMessage {
     abstract val method: String
     private val parameters = params.toList()
 
