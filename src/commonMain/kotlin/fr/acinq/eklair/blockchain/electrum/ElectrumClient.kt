@@ -1,11 +1,14 @@
 package fr.acinq.eklair.blockchain.electrum
 
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eklair.utils.Either
 import fr.acinq.eklair.utils.JsonRPCResponse
+import fr.acinq.eklair.utils.toByteVector32
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.*
 import org.kodein.log.LoggerFactory
@@ -22,6 +25,8 @@ data class AddStatusSubscription(val watcher: SendChannel<ElectrumMessage>) : El
 data class RemoveStatusSubscription(val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
 data class AddHeaderSubscription(val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
 data class RemoveHeaderSubscription(val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
+data class AddScriptHashSubscription(val scriptHash: ByteVector32, val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
+//data class AddAddressSubscription(val address: String, val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
 data class Unsubscribe(val watcher: SendChannel<ElectrumMessage>): ElectrumClientEvent()
 
 sealed class ElectrumClientAction
@@ -30,11 +35,14 @@ data class SendHeader(val height: Int, val blockHeader: BlockHeader, val request
 data class SendResponse(val response: ElectrumResponse, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumClientAction()
 
 data class BroadcastHeaderSubscription(val headerSubscriptionResponse: HeaderSubscriptionResponse): ElectrumClientAction()
+data class BroadcastScriptHashSubscription(val response: ScriptHashSubscriptionResponse): ElectrumClientAction()
 data class BroadcastState(val state: ElectrumClientState): ElectrumClientAction()
 
 data class AddStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class RemoveStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class AddHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+data class AddScriptHashListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+//data class AddAddressListener(val address: String, val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class RemoveHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class UnsubscribeAction(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 
@@ -115,7 +123,11 @@ data class ElectrumClientRunning(val height: Int, val tip: BlockHeader) : Electr
            message.watcher
        ))
        is ElectrumRequest -> this to listOf(sendRequest(message))
-       is SendElectrumRequest -> this to listOf(sendRequest(message.electrumRequest, message.requestor))
+       is SendElectrumRequest -> this to buildList {
+           add(sendRequest(message.electrumRequest, message.requestor))
+           if (message.electrumRequest is ScriptHashSubscription)
+               add(AddScriptHashListener(message.electrumRequest.scriptHash, message.requestor))
+       }
        is ReceivedResponse -> when (val response = message.response) {
            is Either.Left -> when (val electrumResponse = response.value) {
                is HeaderSubscriptionResponse -> {
@@ -123,6 +135,9 @@ data class ElectrumClientRunning(val height: Int, val tip: BlockHeader) : Electr
                        height = electrumResponse.height,
                        tip = electrumResponse.header
                    ) to listOf(BroadcastHeaderSubscription(electrumResponse))
+               }
+               is ScriptHashSubscriptionResponse -> {
+                   this to listOf(BroadcastScriptHashSubscription(electrumResponse))
                }
                else -> self()
            }
@@ -134,6 +149,18 @@ data class ElectrumClientRunning(val height: Int, val tip: BlockHeader) : Electr
                }
            }
        }
+
+       /*
+            case AddStatusListener(actor)
+            case HeaderSubscription(actor)
+            case request: Request
+            case Right(json: JsonRPCResponse)
+            case Left(response: HeaderSubscriptionResponse)
+            case Left(response: AddressSubscriptionResponse)
+            case Left(response: ScriptHashSubscriptionResponse)
+            case HeaderSubscriptionResponse(height, newtip)
+        */
+
        else -> unhandled(message)
    }
 }
@@ -167,10 +194,10 @@ class ElectrumClient(
 
     val events: Channel<ElectrumMessage> = Channel(Channel.BUFFERED)
 
-    private val addressSubscriptionMap: MutableMap<String, SendChannel<ElectrumMessage>> = mutableMapOf()
-    private val scriptHashSubscriptionMap: MutableMap<ByteVector32, SendChannel<ElectrumMessage>> = mutableMapOf()
-    private val statusSubscriptionList: MutableList<SendChannel<ElectrumMessage>> = mutableListOf()
-    private val headerSubscriptionList: MutableList<SendChannel<ElectrumMessage>> = mutableListOf()
+    // TODO not needed? private val addressSubscriptionMap: MutableMap<String, Set<SendChannel<ElectrumMessage>>> = mutableMapOf()
+    private val scriptHashSubscriptionMap: MutableMap<ByteVector32, Set<SendChannel<ElectrumMessage>>> = mutableMapOf()
+    private val statusSubscriptionList: MutableSet<SendChannel<ElectrumMessage>> = mutableSetOf()
+    private val headerSubscriptionList: MutableSet<SendChannel<ElectrumMessage>> = mutableSetOf()
 
     private var state: ElectrumClientState = ElectrumClientClosed
 
@@ -202,19 +229,29 @@ class ElectrumClient(
                     }
                     is SendResponse -> (action.requestor ?: events).send(action.response)
                     is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
-                        if (channel.isClosedForSend)
-                            headerSubscriptionList.remove(channel)
-                        else
-                            channel.send(action.headerSubscriptionResponse)
+                        channel.send(action.headerSubscriptionResponse)
+                    }
+                    is BroadcastScriptHashSubscription -> scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
+                        channel.send(action.response)
                     }
                     is BroadcastState -> statusSubscriptionList.forEach { it.send(action.state) }
                     is AddStatusListener -> statusSubscriptionList.add(action.listener)
                     is AddHeaderListener -> headerSubscriptionList.add(action.listener)
+                    is AddScriptHashListener -> {
+                        scriptHashSubscriptionMap[action.scriptHash] =
+                            scriptHashSubscriptionMap.getOrElse(action.scriptHash, { setOf() }) + action.listener
+                    }
+//                    is AddAddressListener -> {
+//                        addressSubscriptionMap[action.address] =
+//                            addressSubscriptionMap.getOrElse(action.address, { setOf() }) + action.listener
+//                    }
                     is RemoveStatusListener -> statusSubscriptionList.remove(action.listener)
                     is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
                     is UnsubscribeAction -> {
                         statusSubscriptionList.remove(action.listener)
                         headerSubscriptionList.remove(action.listener)
+//                        addressSubscriptionMap -= addressSubscriptionMap.filterValues { it == action.listener }.keys
+                        scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
                     }
                     is Restart -> {
                         delay(1_000); events.send(Connected)
@@ -226,6 +263,7 @@ class ElectrumClient(
 
     private suspend fun pingPeriodically() {
         while(true) {
+            logger.info { "Ping Electrum Server" }
             delay(30_000)
             events.send(Ping)
         }
@@ -243,5 +281,6 @@ class ElectrumClient(
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
         val version = ServerVersion()
         val logger = LoggerFactory.default.newLogger(ElectrumClient::class)
+        internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }
 }
