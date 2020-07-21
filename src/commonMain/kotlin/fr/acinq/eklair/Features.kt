@@ -105,7 +105,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
     private fun Set<Int>.indicesToByteArray(): ByteArray {
         if (isEmpty()) return ByteArray(0)
         // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
-        val buf = BitField.forAtMost(max()!! + 1)
+        val buf = BitField.forAtMost(maxOrNull()!! + 1)
         forEach { buf.setRight(it) }
         return buf.bytes
     }

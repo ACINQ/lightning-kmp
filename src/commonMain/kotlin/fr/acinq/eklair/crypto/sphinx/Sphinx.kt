@@ -293,8 +293,8 @@ object FailurePacket {
      * @param failure      failure message.
      * @return a failure packet that can be sent to the destination node.
      */
-    fun create(sharedSecret: ByteVector32, failure: FailureMessage): ByteArray {
-        val um = Sphinx.generateKey("um", sharedSecret)
+    fun create(sharedSecret: ByteVector32, @Suppress("UNUSED_PARAMETER") failure: FailureMessage): ByteArray {
+//        val um = Sphinx.generateKey("um", sharedSecret)
         val packet = ByteArray(PacketLength)// TODO: implement FailureMessage serialization FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
         return wrap(packet, sharedSecret)
     }
@@ -331,13 +331,13 @@ object FailurePacket {
         require(packet.size == PacketLength){ "invalid error packet length ${packet.size}, must be $PacketLength" }
 
         // TODO: implement this properly
-        tailrec fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): DecryptedFailurePacket {
+        fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): DecryptedFailurePacket {
             if (secrets.isEmpty())
                 throw IllegalArgumentException("couldn't parse error packet=$packet with sharedSecrets=$secrets")
             else {
-                val (secret, pubkey) = secrets.first()
-                val packet1 = wrap(packet, secret)
-                val um = Sphinx.generateKey("um", secret)
+                val (_, pubkey) = secrets.first()
+//                val packet1 = wrap(packet, secret)
+//                val um = Sphinx.generateKey("um", secret)
                 return DecryptedFailurePacket(pubkey, InvalidRealm)
             }
         }

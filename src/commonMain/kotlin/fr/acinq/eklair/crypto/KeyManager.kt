@@ -10,9 +10,7 @@ import fr.acinq.eklair.channel.ChannelVersion
 import fr.acinq.eklair.channel.LocalParams
 import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.transactions.Transactions.TransactionWithInputInfo
-import kotlinx.serialization.InternalSerializationApi
 
-@OptIn(InternalSerializationApi::class)
 interface KeyManager {
     val nodeKey: DeterministicWallet.ExtendedPrivateKey
 

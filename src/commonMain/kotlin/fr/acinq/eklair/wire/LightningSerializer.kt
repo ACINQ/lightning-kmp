@@ -178,6 +178,7 @@ abstract class LightningSerializer<T> {
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 interface LightningSerializable<T> {
     fun serializer(): LightningSerializer<T>
 

@@ -19,9 +19,9 @@ class NoiseTestsJvm {
     @Test
     fun `Noise_NN_25519_ChaChaPoly_SHA256 test`() {
         // see https://github.com/trevp/screech/blob/master/vectors.txt
-        val key0 = Hex.decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
-        val key1 = Hex.decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
-        val key2 = Hex.decode("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
+//        val key0 = Hex.decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+//        val key1 = Hex.decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+//        val key2 = Hex.decode("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
         val key3 = Hex.decode("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
         val key4 = Hex.decode("4142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60")
 
@@ -34,9 +34,9 @@ class NoiseTestsJvm {
         assertArrayEquals(outputs[0], Hex.decode("358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254"))
         assertArrayEquals(outputs[1], Hex.decode("64b101b1d0be5a8704bd078f9895001fc03e8e9f9522f188dd128d9846d484665cda04f69d491f9bf509e632fc1a20dd"))
 
-        val (enc1, ciphertext01) = enc.encryptWithAd(ByteArray(0), Hex.decode("79656c6c6f777375626d6172696e65"))
+        val (_, ciphertext01) = enc.encryptWithAd(ByteArray(0), Hex.decode("79656c6c6f777375626d6172696e65"))
         assertArrayEquals(ciphertext01, Hex.decode("96cd46be111804586a935795eeb4ce62bdec121048a10520b00266b22722eb"))
-        val (dec1, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("7375626d6172696e6579656c6c6f77"))
+        val (_, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("7375626d6172696e6579656c6c6f77"))
         assertArrayEquals(ciphertext02, Hex.decode("fe2bc534e31964c0bd56337223e921565e39dbc5f156aa04766ced4689a2a2"))
     }
 
@@ -98,9 +98,9 @@ class NoiseTestsJvm {
         assertArrayEquals(ciphertext01, Hex.decode("eb1a3e3d80c1792b1bb9cb0e1382f8d8322bfb1ca7c4c8517bb686"))
         val (dec1, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("4361726c204d656e676572"))
         assertArrayEquals(ciphertext02, Hex.decode("c781b198d2a974eb1da2c7d518c000cf6396de87ca540963c03713"))
-        val (enc2, ciphertext03) = enc1.encryptWithAd(ByteArray(0), Hex.decode("4a65616e2d426170746973746520536179"))
+        val (_, ciphertext03) = enc1.encryptWithAd(ByteArray(0), Hex.decode("4a65616e2d426170746973746520536179"))
         assertArrayEquals(ciphertext03, Hex.decode("c77048eb6919fdfe8fe45842bfc5b8d1ff50d1e20c717453ccdfe6176d805b996d"))
-        val (dec2, ciphertext04) = dec1.encryptWithAd(ByteArray(0), Hex.decode("457567656e2042f6686d20766f6e2042617765726b"))
+        val (_, ciphertext04) = dec1.encryptWithAd(ByteArray(0), Hex.decode("457567656e2042f6686d20766f6e2042617765726b"))
         assertArrayEquals(ciphertext04, Hex.decode("61834d7069dcfb7a1adf8d5ac910f83fa04c73a67789895c6f5f995c5db2ce88e49b124178"))
     }
 
@@ -127,7 +127,7 @@ class NoiseTestsJvm {
          */
         val key0 = Hex.decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
         val key1 = Hex.decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
-        val key2 = Hex.decode("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
+//        val key2 = Hex.decode("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
         val key3 = Hex.decode("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
         val key4 = Hex.decode("4142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60")
 
@@ -142,9 +142,9 @@ class NoiseTestsJvm {
         assertArrayEquals(outputs[1], Hex.decode("64b101b1d0be5a8704bd078f9895001fc03e8e9f9522f188dd128d9846d4846630166c893dafe95f71d102a8ac640a52"))
         assertArrayEquals(outputs[2], Hex.decode("24a819b832ab7a11dd1464c2baf72f2c49e0665757911662ab11495a5fd4437e0abe01f5c07176e776e02716c4cb98a005ec4c884c4dc7500d2d9b99e9670ab3"))
 
-        val (enc1, ciphertext01) = enc.encryptWithAd(ByteArray(0), Hex.decode("79656c6c6f777375626d6172696e65"))
+        val (_, ciphertext01) = enc.encryptWithAd(ByteArray(0), Hex.decode("79656c6c6f777375626d6172696e65"))
         assertArrayEquals(ciphertext01, Hex.decode("e8b0f2fc220f7edc287a91ba45c76f6da1327405789dc61e31a649f57d6d93"))
-        val (dec1, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("7375626d6172696e6579656c6c6f77"))
+        val (_, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("7375626d6172696e6579656c6c6f77"))
         assertArrayEquals(ciphertext02, Hex.decode("ed6901a7cd973e880242b047fc86da03b498e8ed8e9838d6f3d107420dfcd9"))
     }
 

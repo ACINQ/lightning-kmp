@@ -10,8 +10,10 @@ import kotlin.experimental.and
 import kotlin.experimental.or
 
 object Announcements {
+    @Suppress("UNUSED_PARAMETER")
     fun channelUpdateWitnessEncode(
-        chainHash: ByteVector32,
+        chainHash
+        : ByteVector32,
         shortChannelId: ShortChannelId,
         timestamp: Long,
         messageFlags: Byte,
@@ -113,5 +115,6 @@ object Announcements {
         )
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun checkSig(upd: ChannelUpdate, nodeId: PublicKey): Boolean = true
 }
