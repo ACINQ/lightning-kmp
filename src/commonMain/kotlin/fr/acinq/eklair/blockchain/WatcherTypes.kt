@@ -17,10 +17,12 @@ data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()
 data class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(val shortChannelId: ShortChannelId) : BitcoinEvent()
 data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent()
 
+interface WatcherType
+
 /**
  * generic "Watch" request
  */
-sealed class Watch {
+sealed class Watch : WatcherType {
     abstract val event: BitcoinEvent
 }
 
@@ -58,7 +60,7 @@ data class WatchLost(val txId: ByteVector32, val minDepth: Long, override val ev
 /**
  * generic "watch" event
  */
-sealed class WatchEvent {
+sealed class WatchEvent : WatcherType {
     abstract val event: BitcoinEvent
 }
 
@@ -66,3 +68,5 @@ data class WatchEventConfirmed(override val event: BitcoinEvent, val blockHeight
 data class WatchEventSpent(override val event: BitcoinEvent, val tx: Transaction) : WatchEvent()
 data class WatchEventSpentBasic(override val event: BitcoinEvent) : WatchEvent()
 data class WatchEventLost(override val event: BitcoinEvent) : WatchEvent()
+
+class PublishAsap(tx: Transaction)
