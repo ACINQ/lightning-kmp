@@ -31,6 +31,7 @@ import org.kodein.log.LoggerFactory
 import java.net.InetSocketAddress
 import java.util.*
 import kotlin.collections.HashMap
+import kotlin.concurrent.thread
 import kotlin.text.toByteArray
 
 sealed class PeerEvent
@@ -39,6 +40,7 @@ data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
+
 data class ChannelEvent(val channelId: ByteVector32, val event: fr.acinq.eklair.channel.Event) : PeerEvent()
 
 @ExperimentalStdlibApi
@@ -60,6 +62,8 @@ class Peer(
     private var theirInit: Init? = null
 
     suspend fun connect(nodeId: PublicKey, address: InetSocketAddress) {
+        println("start")
+        logger.info { "connecting to {$nodeId}@{$address}" }
         val socket = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(address)
         val w = socket.openWriteChannel(autoFlush = false)
         val r = socket.openReadChannel()
@@ -106,7 +110,9 @@ class Peer(
             launch { doPing() }
             launch { respond() }
             launch { listen() }
-         }
+        }
+
+        delay(1000 * 1000)
     }
 
     private suspend fun send(actions: List<Action>) {
@@ -130,7 +136,7 @@ class Peer(
             when {
                 event is BytesReceived -> {
                     val msg = Wire.decode(event.data)
-                    when  {
+                    when {
                         msg is Init -> {
                             logger.info { "received $msg" }
                             theirInit = msg
@@ -173,10 +179,13 @@ class Peer(
                                 )
 
                             )
-                            val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), Pair(0, Block.RegtestGenesisBlock.header))
+                            val state = WaitForInit(
+                                StaticParams(nodeParams, remoteNodeId),
+                                Pair(0, Block.RegtestGenesisBlock.header)
+                            )
                             val (state1, actions1) = state.process(InitFundee(msg.temporaryChannelId, localParams, theirInit!!))
                             val (state2, actions2) = state1.process(MessageReceived(msg))
-                            send(actions1  + actions2)
+                            send(actions1 + actions2)
                             channels[msg.temporaryChannelId] = state2
                             logger.info { "new state for ${msg.temporaryChannelId}: $state2" }
                         }
@@ -191,7 +200,7 @@ class Peer(
                             logger.info { "channel ${msg.temporaryChannelId} new state $state1" }
                             send(actions)
                             actions.forEach {
-                                when(it) {
+                                when (it) {
                                     is ChannelIdSwitch -> {
                                         logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
                                         channels[it.newChannelId] = state1
@@ -205,7 +214,17 @@ class Peer(
                                                 txOut = listOf(TxOut(Satoshi(100), (it.watch as WatchConfirmed).publicKeyScript)),
                                                 lockTime = 0L
                                             )
-                                            input.send(WatchReceived(WatchEventConfirmed(it.watch.channelId, it.watch.event, 100, 0, tx)))
+                                            input.send(
+                                                WatchReceived(
+                                                    WatchEventConfirmed(
+                                                        it.watch.channelId,
+                                                        it.watch.event,
+                                                        100,
+                                                        0,
+                                                        tx
+                                                    )
+                                                )
+                                            )
                                         }
                                     }
                                     else -> logger.warning { "ignoring $it" }
@@ -225,21 +244,37 @@ class Peer(
                             actions.forEach {
                                 when {
                                     it is ProcessAdd && !pendingPayments.containsKey(it.add.paymentHash) -> {
-                                       logger.warning { "received ${it.add} } for which we don't have a preimage" }
+                                        logger.warning { "received ${it.add} } for which we don't have a preimage" }
                                     }
                                     it is ProcessAdd -> {
-                                        val payment= pendingPayments[it.add.paymentHash]!!
+                                        val payment = pendingPayments[it.add.paymentHash]!!
                                         logger.info { "receive ${it.add} for $payment" }
-                                        input.send(ChannelEvent(msg.channelId, ExecuteCommand(CMD_FULFILL_HTLC(it.add.id, payment.paymentPreimage, commit = true))))
+                                        input.send(
+                                            ChannelEvent(
+                                                msg.channelId,
+                                                ExecuteCommand(
+                                                    CMD_FULFILL_HTLC(
+                                                        it.add.id,
+                                                        payment.paymentPreimage,
+                                                        commit = true
+                                                    )
+                                                )
+                                            )
+                                        )
                                     }
-                                    it is ProcessCommand -> input.send(ChannelEvent(msg.channelId, ExecuteCommand(it.command)))
+                                    it is ProcessCommand -> input.send(
+                                        ChannelEvent(
+                                            msg.channelId,
+                                            ExecuteCommand(it.command)
+                                        )
+                                    )
                                     it !is SendMessage -> {
                                         logger.warning { "ignoring $it" }
                                     }
                                 }
                             }
                         }
-                        else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}"}
+                        else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}" }
                     }
                 }
                 event is WatchReceived && !channels.containsKey(event.watch.channelId) -> {
@@ -343,34 +378,50 @@ object Node {
         // and convert it to a binary file with:
         // $ xxd -r seed.hex seed.dat
 
-        runBlocking {
-            val peer = Peer(nodeParams, remoteNodeId, Channel<PeerEvent>(10), Channel<ByteArray>(3))
+        val peer = Peer(nodeParams, remoteNodeId, Channel<PeerEvent>(10), Channel<ByteArray>(3))
+        val commandChannel = Channel<List<String>>(2)
 
-            launch {
-                val scanner = Scanner(System.`in`)
-                while(scanner.hasNext()) {
-                    val line = scanner.nextLine()
-                    val tokens = line.split(" ")
-                    println("tokens: $tokens")
-                    when(tokens.first()) {
-                        "connect" -> {
-                            val uri = tokens[1]
-                            val elts = uri.split("@")
-                            val nodeId = PublicKey.fromHex(elts[0])
-                            val elts1 = elts[1].split(":")
-                            val address = InetSocketAddress(elts1[0], elts1[1].toInt())
+        suspend fun readLoop() {
+            println("ready:")
+            for(tokens in commandChannel) {
+                when (tokens.first()) {
+                    "connect" -> {
+                        val uri = tokens[1]
+                        val elts = uri.split("@")
+                        val nodeId = PublicKey.fromHex(elts[0])
+                        val elts1 = elts[1].split(":")
+                        val address = InetSocketAddress(elts1[0], elts1[1].toInt())
+                        GlobalScope.launch {
                             peer.connect(nodeId, address)
                         }
-                        "receive" -> {
-                            val paymentPreimage = ByteVector32(tokens[1])
-                            val amount = MilliSatoshi(tokens[2].toLong())
-                            peer.input.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
-                        }
+                    }
+                    "receive" -> {
+                        val paymentPreimage = ByteVector32(tokens[1])
+                        val amount = MilliSatoshi(tokens[2].toLong())
+                        peer.input.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
+                    }
+                    else -> {
+                        println("I don't undertand ${tokens}")
                     }
                 }
             }
+        }
 
-            delay(1000 * 1000)
+        suspend fun writeLoop() {
+            while (true) {
+                val line = readLine()
+                line?.let {
+                    val tokens = it.split(" ")
+                    commandChannel.send(tokens)
+                }
+            }
+        }
+
+        runBlocking {
+            launch { readLoop() }
+            launch(newSingleThreadContext("MyOwnThread")) { // will get its own new thread
+               writeLoop()
+            }
         }
     }
 
@@ -431,7 +482,7 @@ object Node {
 object Wire {
     val logger = LoggerFactory.default.newLogger(Logger.Tag(Wire::class))
 
-    fun decode(input: ByteArray) : LightningMessage? {
+    fun decode(input: ByteArray): LightningMessage? {
         val stream = ByteArrayInput(input)
         val code = LightningSerializer.u16(stream)
         return when (code.toULong()) {
@@ -448,7 +499,7 @@ object Wire {
             RevokeAndAck.tag -> RevokeAndAck.read(stream)
             UpdateAddHtlc.tag -> UpdateAddHtlc.read(stream)
             else -> {
-                logger.warning {"cannot decode ${Hex.encode(input)}" }
+                logger.warning { "cannot decode ${Hex.encode(input)}" }
                 null
             }
         }
@@ -461,66 +512,14 @@ object Wire {
                 @Suppress("UNCHECKED_CAST")
                 LightningSerializer.writeBytes((input.serializer() as LightningSerializer<LightningSerializable<*>>).write(input), out)
             }
-            is Init -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is Error -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is Ping -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is Pong -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is OpenChannel -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is AcceptChannel -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is FundingCreated -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is FundingSigned -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is FundingLocked -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is CommitSig -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is RevokeAndAck -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is UpdateAddHtlc -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
-            is UpdateFulfillHtlc -> {
-                LightningSerializer.writeU16(input.tag.toInt(), out)
-                LightningSerializer.writeBytes(input.serializer().write(input), out)
-            }
             else -> {
-                logger.warning { "cannot encode $input"}
+                logger.warning { "cannot encode $input" }
                 Unit
             }
         }
     }
 
-    fun encode(input: LightningMessage) : ByteArray? {
+    fun encode(input: LightningMessage): ByteArray? {
         val out = ByteArrayOutput()
         encode(input, out)
         return out.toByteArray()
