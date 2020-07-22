@@ -8,18 +8,26 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
 import fr.acinq.eklair.utils.*
 import fr.acinq.secp256k1.Hex
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
 /**
- * Common communication objects between [ElectrumClient] and [ElectrumWatcher]
+ * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
  */
-interface ElectrumMessage
+sealed class ElectrumMessage
+sealed class ElectrumClientState : ElectrumMessage()
+object ElectrumClientReady : ElectrumClientState()
+object ElectrumClientClosed : ElectrumClientState()
+sealed class ElectrumSubscription(val listener: SendChannel<ElectrumMessage>) : ElectrumMessage()
+class ElectrumStatusSubscription(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
+class ElectrumHeaderSubscription(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
+data class ElectrumSendRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumMessage()
 
 /**
  * [ElectrumClient] requests / responses
  */
-sealed class ElectrumRequest(vararg params: Any) : ElectrumMessage {
+sealed class ElectrumRequest(vararg params: Any) {
     abstract val method: String
     private val parameters = params.toList()
 
@@ -30,7 +38,7 @@ sealed class ElectrumRequest(vararg params: Any) : ElectrumMessage {
             params = parameters.asJsonRPCParameters()
         ).encode()
 }
-sealed class ElectrumResponse : ElectrumMessage
+sealed class ElectrumResponse : ElectrumMessage()
 
 data class ServerVersion(
     private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
@@ -62,7 +70,7 @@ data class ScriptHashListUnspentResponse(val scriptHash: ByteVector32, val unspe
 data class BroadcastTransaction(val tx: Transaction) : ElectrumRequest(tx) {
     override val method: String = "blockchain.transaction.broadcast"
 }
-data class BroadcastTransactionResponse(val tx: Transaction, val error: Error? = null) : ElectrumResponse()
+data class BroadcastTransactionResponse(val tx: Transaction, val error: JsonRPCError? = null) : ElectrumResponse()
 
 data class GetTransactionIdFromPosition(val height: Int, val tx_pos: Int, val merkle: Boolean = false) : ElectrumRequest(height, tx_pos, merkle) {
     override val method: String = "blockchain.transaction.id_from_pos"
@@ -104,7 +112,7 @@ data class HeaderSubscriptionResponse(val height: Int, val header: BlockHeader) 
  */
 data class TransactionHistory(val history: List<TransactionHistoryItem>) : ElectrumResponse()
 data class AddressStatus(val address: String, val status: String?) : ElectrumResponse()
-data class ServerError(val request: ElectrumRequest, val error: Error) : ElectrumResponse()
+data class ServerError(val request: ElectrumRequest, val error: JsonRPCError) : ElectrumResponse()
 
 /**
  * ElectrumResponse deserializer
@@ -221,10 +229,10 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             when(result) {
                 is Try.Success -> {
                     if (result.result == request.tx.txid) BroadcastTransactionResponse(request.tx)
-                    else BroadcastTransactionResponse(request.tx, Error(1, "response txid $result does not match request txid ${request.tx.txid}"))
+                    else BroadcastTransactionResponse(request.tx, JsonRPCError(1, "response txid $result does not match request txid ${request.tx.txid}"))
                 }
                 is Try.Failure -> {
-                    BroadcastTransactionResponse(request.tx, Error(1, message))
+                    BroadcastTransactionResponse(request.tx, JsonRPCError(1, message))
                 }
             }
         }

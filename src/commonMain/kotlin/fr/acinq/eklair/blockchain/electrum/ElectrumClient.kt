@@ -14,12 +14,12 @@ import kotlinx.coroutines.channels.*
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-sealed class ElectrumClientEvent : ElectrumMessage
+sealed class ElectrumClientEvent
 object Connected : ElectrumClientEvent()
 object Disconnected : ElectrumClientEvent()
 data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ElectrumClientEvent()
 
-data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
+data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumClientEvent()
 
 data class AddStatusSubscription(val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
 data class RemoveStatusSubscription(val watcher: SendChannel<ElectrumMessage>) : ElectrumClientEvent()
@@ -42,7 +42,6 @@ data class AddStatusListener(val listener: SendChannel<ElectrumMessage>) : Elect
 data class RemoveStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class AddHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class AddScriptHashListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-//data class AddAddressListener(val address: String, val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class RemoveHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 data class UnsubscribeAction(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 
@@ -60,7 +59,7 @@ private object Restart : ElectrumClientAction()
  *         +-----+
  *
  */
-sealed class ElectrumClientState : ElectrumMessage {
+private sealed class ClientState {
     /**
      * Unique ID to match response with origin request
      */
@@ -73,72 +72,72 @@ sealed class ElectrumClientState : ElectrumMessage {
         return SendRequest(electrumRequest.asJsonRPCRequest(newRequestId))
     }
 
-    abstract fun process(message: ElectrumMessage): Pair<ElectrumClientState, List<ElectrumClientAction>>
+    abstract fun process(event: ElectrumClientEvent): Pair<ClientState, List<ElectrumClientAction>>
 }
 
-object WaitingForVersion : ElectrumClientState() {
-    override fun process(message: ElectrumMessage): Pair<ElectrumClientState, List<ElectrumClientAction>> = when {
-            message is ReceivedResponse && message.response is Either.Right -> {
-                val electrumResponse = parseJsonResponse(version, message.response.value)
+private object WaitingForVersion : ClientState() {
+    override fun process(event: ElectrumClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
+            event is ReceivedResponse && event.response is Either.Right -> {
+                val electrumResponse = parseJsonResponse(version, event.response.value)
                 logger.info { "Response received: $electrumResponse" }
                 when (electrumResponse) {
-                    is ServerVersionResponse -> {
-                        WaitingForTip to listOf(sendRequest(HeaderSubscription))
+                    is ServerVersionResponse -> newState {
+                        state = WaitingForTip
+                        actions = listOf(sendRequest(HeaderSubscription))
                     }
-                    else -> ElectrumClientClosed to listOf(Restart)
+                    is ServerError -> newState {
+                        state = ClientClosed
+                        actions = listOf(BroadcastState(ElectrumClientClosed), Restart)
+                    }
+                    else -> returnState() // TODO handle error?
                 }
             }
-            message is AddStatusSubscription -> this to listOf(AddStatusListener(message.watcher))
-            else -> unhandled(message)
+            event is AddStatusSubscription -> returnState(AddStatusListener(event.watcher))
+            else -> unhandled(event)
         }
     }
 
-object WaitingForTip : ElectrumClientState() {
-    override fun process(message: ElectrumMessage): Pair<ElectrumClientState, List<ElectrumClientAction>> =
-        when(message) {
+private object WaitingForTip : ClientState() {
+    override fun process(event: ElectrumClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
+        when(event) {
             is ReceivedResponse -> {
-                when (val rpcResponse = message.response) {
+                when (val rpcResponse = event.response) {
                     is Either.Right ->
                         when (val response = parseJsonResponse(HeaderSubscription, rpcResponse.value)) {
-                            is HeaderSubscriptionResponse -> {
-                                val state = ElectrumClientRunning(height = response.height, tip = response.header)
-                                state to listOf(BroadcastState(state), BroadcastHeaderSubscription(response))
+                            is HeaderSubscriptionResponse -> newState {
+                                state = ClientRunning(height = response.height, tip = response.header)
+                                actions = listOf(BroadcastState(ElectrumClientReady), BroadcastHeaderSubscription(response))
                             }
-                            else -> ElectrumClientClosed to listOf(BroadcastState(ElectrumClientClosed), Restart)
+                            else -> returnState()
                         }
-                    else -> this to emptyList()
+                    else -> returnState()
                 }
             }
-            is AddStatusSubscription -> this to listOf(AddStatusListener(message.watcher))
-            else -> unhandled(message)
+            is AddStatusSubscription -> returnState(AddStatusListener(event.watcher))
+            else -> unhandled(event)
         }
 }
 
-data class ElectrumClientRunning(val height: Int, val tip: BlockHeader) : ElectrumClientState() {
-   override fun process(message: ElectrumMessage): Pair<ElectrumClientState, List<ElectrumClientAction>> = when (message) {
-       is AddStatusSubscription -> returnState(AddStatusListener(message.watcher), BroadcastState(this))
-       is AddHeaderSubscription -> returnState(AddHeaderListener(message.watcher), SendHeader(
-           height,
-           tip,
-           message.watcher
-       ))
-       is ElectrumRequest -> returnState(sendRequest(message))
+private data class ClientRunning(val height: Int, val tip: BlockHeader) : ClientState() {
+   override fun process(event: ElectrumClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
+       is AddStatusSubscription -> returnState(AddStatusListener(event.watcher), BroadcastState(ElectrumClientReady))
+       is AddHeaderSubscription -> returnState(
+           AddHeaderListener(event.watcher),
+           SendHeader(height, tip, event.watcher)
+       )
+       is ElectrumRequest -> returnState(sendRequest(event))
        is SendElectrumRequest -> returnState(buildList {
-           add(sendRequest(message.electrumRequest, message.requestor))
-           if (message.electrumRequest is ScriptHashSubscription)
-               add(AddScriptHashListener(message.electrumRequest.scriptHash, message.requestor))
+           add(sendRequest(event.electrumRequest, event.requestor))
+           if (event.electrumRequest is ScriptHashSubscription && event.requestor != null)
+               add(AddScriptHashListener(event.electrumRequest.scriptHash, event.requestor))
        })
-       is ReceivedResponse -> when (val response = message.response) {
+       is ReceivedResponse -> when (val response = event.response) {
            is Either.Left -> when (val electrumResponse = response.value) {
-               is HeaderSubscriptionResponse -> {
-                   newState {
-                       state = copy(height = electrumResponse.height, tip = electrumResponse.header)
-                       actions = listOf(BroadcastHeaderSubscription(electrumResponse))
-                   }
+               is HeaderSubscriptionResponse -> newState {
+                   state = copy(height = electrumResponse.height, tip = electrumResponse.header)
+                   actions = listOf(BroadcastHeaderSubscription(electrumResponse))
                }
-               is ScriptHashSubscriptionResponse -> {
-                   returnState(BroadcastScriptHashSubscription(electrumResponse))
-               }
+               is ScriptHashSubscriptionResponse -> returnState(BroadcastScriptHashSubscription(electrumResponse))
                else -> returnState()
            }
            is Either.Right -> {
@@ -153,6 +152,8 @@ data class ElectrumClientRunning(val height: Int, val tip: BlockHeader) : Electr
        }
 
        /*
+        - OK:
+        - TODO:
             case AddStatusListener(actor)
             case HeaderSubscription(actor)
             case request: Request
@@ -163,43 +164,39 @@ data class ElectrumClientRunning(val height: Int, val tip: BlockHeader) : Electr
             case HeaderSubscriptionResponse(height, newtip)
         */
 
-       else -> unhandled(message)
+       else -> unhandled(event)
    }
 }
 
-internal object ElectrumClientClosed : ElectrumClientState() {
-    override fun process(message: ElectrumMessage): Pair<ElectrumClientState, List<ElectrumClientAction>> =
-        when(message) {
-            Connected -> {
-                newState {
-                    state = WaitingForVersion
-                    actions = listOf(SendRequest(version.asJsonRPCRequest()))
-                }
+private object ClientClosed : ClientState() {
+    override fun process(event: ElectrumClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
+        when(event) {
+            Connected -> newState {
+                state = WaitingForVersion
+                actions = listOf(SendRequest(version.asJsonRPCRequest()))
             }
-            is AddStatusSubscription -> returnState(AddStatusListener(message.watcher))
-            else -> unhandled(message)
+            is AddStatusSubscription -> returnState(AddStatusListener(event.watcher))
+            else -> unhandled(event)
         }
 }
 
-private fun ElectrumClientState.unhandled(message: ElectrumMessage) : Pair<ElectrumClientState, List<ElectrumClientAction>> =
-    when (message) {
-        is Unsubscribe -> returnState(UnsubscribeAction(message.watcher))
-        is Ping -> returnState(sendRequest(Ping))
-        is PingResponse -> returnState()
-        else -> error("The state $this cannot process the event $message")
+private fun ClientState.unhandled(event: ElectrumClientEvent) : Pair<ClientState, List<ElectrumClientAction>> =
+    when (event) {
+        is Unsubscribe -> returnState(UnsubscribeAction(event.watcher))
+        else -> returnState() // error("The state $this cannot process the event $event")
     }
 
 private class ClientStateBuilder {
-    var state: ElectrumClientState = ElectrumClientClosed
+    var state: ClientState = ClientClosed
     var actions = emptyList<ElectrumClientAction>()
     fun build() = state to actions
 }
 private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder().apply(init).build()
-private fun newState(newState: ElectrumClientState) = ClientStateBuilder().apply { state = newState }.build()
+private fun newState(newState: ClientState) = ClientStateBuilder().apply { state = newState }.build()
 
-private fun ElectrumClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ElectrumClientState, List<ElectrumClientAction>> = this to actions
-private fun ElectrumClientState.returnState(action: ElectrumClientAction): Pair<ElectrumClientState, List<ElectrumClientAction>> = this to listOf(action)
-private fun ElectrumClientState.returnState(vararg actions: ElectrumClientAction): Pair<ElectrumClientState, List<ElectrumClientAction>> = this to listOf(*actions)
+private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
+private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(action)
+private fun ClientState.returnState(vararg actions: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(*actions)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
@@ -208,14 +205,20 @@ class ElectrumClient(
     // TODO to be internalized with socket implementation
     private val socketOutputChannel: SendChannel<String>) {
 
-    val events: Channel<ElectrumMessage> = Channel(Channel.BUFFERED)
+    private val eventChannel: Channel<ElectrumClientEvent> = Channel(Channel.BUFFERED)
+    val messageChannel: Channel<ElectrumMessage> = Channel(Channel.BUFFERED)
+
+    private val input = CoroutineScope(Dispatchers.Default).produce(capacity = Channel.BUFFERED) {
+        launch { eventChannel.consumeEach { send(it) } }
+        launch { messageChannel.consumeEach { send(it) } }
+    }
 
     // TODO not needed? private val addressSubscriptionMap: MutableMap<String, Set<SendChannel<ElectrumMessage>>> = mutableMapOf()
     private val scriptHashSubscriptionMap: MutableMap<ByteVector32, Set<SendChannel<ElectrumMessage>>> = mutableMapOf()
     private val statusSubscriptionList: MutableSet<SendChannel<ElectrumMessage>> = mutableSetOf()
     private val headerSubscriptionList: MutableSet<SendChannel<ElectrumMessage>> = mutableSetOf()
 
-    private var state: ElectrumClientState = ElectrumClientClosed
+    private var state: ClientState = ClientClosed
         set(value) {
             if (value != field) logger.info { "Updated State: $field -> $value" }
             field = value
@@ -225,49 +228,65 @@ class ElectrumClient(
         coroutineScope {
             launch { run() }
             launch { listenToSocketInput() }
-            launch { events.send(Connected) }
+            launch { eventChannel.send(Connected) }
             launch { pingPeriodically() }
         }
     }
 
     private suspend fun run() {
-        events.consumeEach { message ->
-            logger.info { "Message received: $message" }
+        input.consumeEach { input ->
+            logger.info { "Input received: $input" }
 
-            val (newState, actions) = state.process(message)
-            state = newState
+            when(input) {
+                is ElectrumClientEvent -> process(input)
+                is ElectrumMessage -> {
+                    when(input) {
+                        is ElectrumStatusSubscription -> eventChannel.send(AddStatusSubscription(input.listener))
+                        is ElectrumHeaderSubscription -> eventChannel.send(AddHeaderSubscription(input.listener))
+                        is ElectrumSendRequest -> eventChannel.send(SendElectrumRequest(input.electrumRequest, input.requestor))
+                        is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(input)))
+                    }
+                }
+            }
+        }
+    }
 
-            actions.forEach { action ->
-                logger.info { action.toString() }
-                when (action) {
-                    is SendRequest -> socketOutputChannel.send(action.request)
-                    is SendHeader -> action.run {
-                        requestor.send(HeaderSubscriptionResponse(height, blockHeader))
-                    }
-                    is SendResponse -> (action.requestor ?: events).send(action.response)
-                    is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
-                        channel.send(action.headerSubscriptionResponse)
-                    }
-                    is BroadcastScriptHashSubscription -> scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
-                        channel.send(action.response)
-                    }
-                    is BroadcastState -> statusSubscriptionList.forEach { it.send(action.state) }
-                    is AddStatusListener -> statusSubscriptionList.add(action.listener)
-                    is AddHeaderListener -> headerSubscriptionList.add(action.listener)
-                    is AddScriptHashListener -> {
-                        scriptHashSubscriptionMap[action.scriptHash] =
-                            scriptHashSubscriptionMap.getOrElse(action.scriptHash, { setOf() }) + action.listener
-                    }
-                    is RemoveStatusListener -> statusSubscriptionList.remove(action.listener)
-                    is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
-                    is UnsubscribeAction -> {
-                        statusSubscriptionList.remove(action.listener)
-                        headerSubscriptionList.remove(action.listener)
-                        scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
-                    }
-                    is Restart -> {
-                        delay(1_000); events.send(Connected)
-                    }
+    private suspend fun process(event: ElectrumClientEvent) {
+        val (newState, actions) = state.process(event)
+        state = newState
+
+        actions.forEach { action ->
+            logger.info { "Execute action: $action" }
+            when (action) {
+                is SendRequest -> socketOutputChannel.send(action.request)
+                is SendHeader -> action.run {
+                    requestor.send(HeaderSubscriptionResponse(height, blockHeader))
+                }
+                is SendResponse -> (action.requestor ?: messageChannel).send(action.response)
+                is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
+                    channel.send(action.headerSubscriptionResponse)
+                }
+                is BroadcastScriptHashSubscription -> scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
+                    channel.send(action.response)
+                }
+                is BroadcastState ->
+                    statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
+                is AddStatusListener ->
+                    statusSubscriptionList.add(action.listener)
+                is AddHeaderListener -> headerSubscriptionList.add(action.listener)
+                is AddScriptHashListener -> {
+                    scriptHashSubscriptionMap[action.scriptHash] =
+                        scriptHashSubscriptionMap.getOrElse(action.scriptHash, { setOf() }) + action.listener
+                }
+                is RemoveStatusListener -> statusSubscriptionList.remove(action.listener)
+                is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
+                is UnsubscribeAction -> {
+                    statusSubscriptionList.remove(action.listener)
+                    headerSubscriptionList.remove(action.listener)
+                    scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
+                }
+                is Restart -> {
+                    delay(1_000); eventChannel.send(Connected)
                 }
             }
         }
@@ -277,14 +296,14 @@ class ElectrumClient(
         while(true) {
             logger.info { "Ping Electrum Server" }
             delay(30_000)
-            events.send(Ping)
+            eventChannel.send(SendElectrumRequest(Ping))
         }
     }
 
     private suspend fun listenToSocketInput() {
         socketInputChannel.consumeEach {
             logger.info { "Electrum response received: $it" }
-            events.send(ReceivedResponse(it))
+            eventChannel.send(ReceivedResponse(it))
         }
     }
 
