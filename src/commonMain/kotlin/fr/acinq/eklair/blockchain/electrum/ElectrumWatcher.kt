@@ -185,13 +185,13 @@ class ElectrumWatcher(val client: ElectrumClient) {
 
                     actions.forEach { action ->
                         when (action) {
-                            RegisterToElectrumStatus -> client.messageChannel.send(ElectrumStatusSubscription(messageChannel))
-                            RegisterToHeaderNotification -> client.messageChannel.send(ElectrumHeaderSubscription(messageChannel))
+                            RegisterToElectrumStatus -> client.sendMessage(ElectrumStatusSubscription(messageChannel))
+                            RegisterToHeaderNotification -> client.sendMessage(ElectrumHeaderSubscription(messageChannel))
                             is PublishAsapAction -> eventChannel.send(PublishEvent(action.publishAsap))
-                            is AskForScriptHashHistory -> client.messageChannel.send(
+                            is AskForScriptHashHistory -> client.sendMessage(
                                 ElectrumSendRequest(GetScriptHashHistory(action.scriptHash), messageChannel)
                             )
-                            is RegisterToScriptHashNotification -> client.messageChannel.send(
+                            is RegisterToScriptHashNotification -> client.sendMessage(
                                 ElectrumSendRequest(ScriptHashSubscription(action.scriptHash), messageChannel)
                             )
                         }

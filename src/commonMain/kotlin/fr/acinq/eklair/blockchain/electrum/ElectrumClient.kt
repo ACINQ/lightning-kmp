@@ -206,12 +206,6 @@ class ElectrumClient(
     private val socketOutputChannel: SendChannel<String>) {
 
     private val eventChannel: Channel<ClientEvent> = Channel(Channel.BUFFERED)
-    val messageChannel: Channel<ElectrumMessage> = Channel(Channel.BUFFERED)
-
-    private val input = CoroutineScope(Dispatchers.Default).produce(capacity = Channel.BUFFERED) {
-        launch { eventChannel.consumeEach { send(it) } }
-        launch { messageChannel.consumeEach { send(it) } }
-    }
 
     // TODO not needed? private val addressSubscriptionMap: MutableMap<String, Set<SendChannel<ElectrumMessage>>> = mutableMapOf()
     private val scriptHashSubscriptionMap: MutableMap<ByteVector32, Set<SendChannel<ElectrumMessage>>> = mutableMapOf()
@@ -234,57 +228,53 @@ class ElectrumClient(
     }
 
     private suspend fun run() {
-        input.consumeEach { input ->
-            logger.info { "Input received: $input" }
+        eventChannel.consumeEach { event ->
+            logger.info { "Event received: $event" }
 
-            when(input) {
-                is ClientEvent -> process(input)
-                is ElectrumMessage -> {
-                    when(input) {
-                        is ElectrumStatusSubscription -> eventChannel.send(RegisterStatusListener(input.listener))
-                        is ElectrumHeaderSubscription -> eventChannel.send(RegisterHeaderNotificationListener(input.listener))
-                        is ElectrumSendRequest -> eventChannel.send(SendElectrumRequest(input.electrumRequest, input.requestor))
-                        is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(input)))
+            val (newState, actions) = state.process(event)
+            state = newState
+
+            actions.forEach { action ->
+                logger.info { "Execute action: $action" }
+                when (action) {
+                    is SendRequest -> socketOutputChannel.send(action.request)
+                    is SendHeader -> action.run {
+                        requestor.send(HeaderSubscriptionResponse(height, blockHeader))
+                    }
+                    is SendResponse -> action.requestor?.send(action.response) ?: sendMessage(action.response)
+                    is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
+                        channel.send(action.headerSubscriptionResponse)
+                    }
+                    is BroadcastScriptHashSubscription -> scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
+                        channel.send(action.response)
+                    }
+                    is BroadcastState ->
+                        statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
+                    is AddStatusListener ->
+                        statusSubscriptionList.add(action.listener)
+                    is AddHeaderListener -> headerSubscriptionList.add(action.listener)
+                    is AddScriptHashListener -> {
+                        scriptHashSubscriptionMap[action.scriptHash] =
+                            scriptHashSubscriptionMap.getOrElse(action.scriptHash, { setOf() }) + action.listener
+                    }
+                    is RemoveStatusListener -> statusSubscriptionList.remove(action.listener)
+                    is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
+                    is RemoveScriptHashListener -> scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
+                    is Restart -> {
+                        delay(1_000); eventChannel.send(Connected)
                     }
                 }
             }
         }
     }
 
-    private suspend fun process(event: ClientEvent) {
-        val (newState, actions) = state.process(event)
-        state = newState
-
-        actions.forEach { action ->
-            logger.info { "Execute action: $action" }
-            when (action) {
-                is SendRequest -> socketOutputChannel.send(action.request)
-                is SendHeader -> action.run {
-                    requestor.send(HeaderSubscriptionResponse(height, blockHeader))
-                }
-                is SendResponse -> (action.requestor ?: messageChannel).send(action.response)
-                is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
-                    channel.send(action.headerSubscriptionResponse)
-                }
-                is BroadcastScriptHashSubscription -> scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
-                    channel.send(action.response)
-                }
-                is BroadcastState ->
-                    statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
-                is AddStatusListener ->
-                    statusSubscriptionList.add(action.listener)
-                is AddHeaderListener -> headerSubscriptionList.add(action.listener)
-                is AddScriptHashListener -> {
-                    scriptHashSubscriptionMap[action.scriptHash] =
-                        scriptHashSubscriptionMap.getOrElse(action.scriptHash, { setOf() }) + action.listener
-                }
-                is RemoveStatusListener -> statusSubscriptionList.remove(action.listener)
-                is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
-                is RemoveScriptHashListener -> scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
-                is Restart -> {
-                    delay(1_000); eventChannel.send(Connected)
-                }
-            }
+    suspend fun sendMessage(message: ElectrumMessage) {
+        when(message) {
+            is ElectrumStatusSubscription -> eventChannel.send(RegisterStatusListener(message.listener))
+            is ElectrumHeaderSubscription -> eventChannel.send(RegisterHeaderNotificationListener(message.listener))
+            is ElectrumSendRequest -> eventChannel.send(SendElectrumRequest(message.electrumRequest, message.requestor))
+            is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(message)))
+            else -> logger.info { "ElectrumClient does not handle messages like: $message" }
         }
     }
 
