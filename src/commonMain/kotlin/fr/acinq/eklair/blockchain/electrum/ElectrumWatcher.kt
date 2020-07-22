@@ -12,18 +12,18 @@ import kotlinx.coroutines.channels.produce
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-private sealed class ElectrumWatcherEvent
-private object WatcherStart: ElectrumWatcherEvent()
-private class PublishEvent(val publishAsap: PublishAsap) : ElectrumWatcherEvent()
-private class WatchTypeEvent(val watch: WatcherType) : ElectrumWatcherEvent()
-private class ReceivedMessage(val message: ElectrumMessage) : ElectrumWatcherEvent()
+private sealed class WatcherEvent
+private object StartWatcher: WatcherEvent()
+private class PublishEvent(val publishAsap: PublishAsap) : WatcherEvent()
+private class ReceiveWatch(val watch: WatcherType) : WatcherEvent()
+private class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
 
-private sealed class ElectrumWatcherAction
-private object RegisterToStatusSubscription : ElectrumWatcherAction()
-private object RegisterToHeaderSubscription : ElectrumWatcherAction()
-private data class RegisterToScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumWatcherAction()
-private data class GetScriptHashHistoryAction(val scriptHash: ByteVector32) : ElectrumWatcherAction()
-private data class PublishAsapAction(val publishAsap: PublishAsap) : ElectrumWatcherAction()
+private sealed class WatcherAction
+private object RegisterToElectrumStatus : WatcherAction()
+private object RegisterToHeaderNotification : WatcherAction()
+private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32) : WatcherAction()
+private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
+private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 
 /**
  * [ElectrumWatcherState] State
@@ -44,17 +44,17 @@ private data class PublishAsapAction(val publishAsap: PublishAsap) : ElectrumWat
  */
 private sealed class ElectrumWatcherState {
     // TODO change ElectrumMessage to ElectrumWatcherEvent
-    abstract fun process(event: ElectrumWatcherEvent): Pair<ElectrumWatcherState, List<ElectrumWatcherAction>>
+    abstract fun process(event: WatcherEvent): Pair<ElectrumWatcherState, List<WatcherAction>>
 }
 private object ElectrumWatcherDisconnected : ElectrumWatcherState() {
-    override fun process(event: ElectrumWatcherEvent): Pair<ElectrumWatcherState, List<ElectrumWatcherAction>> =
+    override fun process(event: WatcherEvent): Pair<ElectrumWatcherState, List<WatcherAction>> =
         when(event) {
             is ReceivedMessage -> when (val message = event.message) {
-                is ElectrumClientReady -> returnState(action = RegisterToHeaderSubscription)
+                is ElectrumClientReady -> returnState(action = RegisterToHeaderNotification)
                 is HeaderSubscriptionResponse -> ElectrumWatcherRunning(height = message.height, tip = message.header) to listOf() // TODO watches / publishQueue / getTxQueue?
                 else -> returnState()
             }
-            is WatcherStart -> returnState(action = RegisterToStatusSubscription)
+            is StartWatcher -> returnState(action = RegisterToElectrumStatus)
             else -> unhandled(event)
         }
 }
@@ -67,7 +67,7 @@ private data class ElectrumWatcherRunning(
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val sent: ArrayDeque<Transaction> = ArrayDeque()
 ) : ElectrumWatcherState() {
-    override fun process(event: ElectrumWatcherEvent): Pair<ElectrumWatcherState, List<ElectrumWatcherAction>> =
+    override fun process(event: WatcherEvent): Pair<ElectrumWatcherState, List<WatcherAction>> =
         when (event) {
             is ReceivedMessage -> {
                 val message = event.message
@@ -78,7 +78,7 @@ private data class ElectrumWatcherRunning(
                         logger.info { "new tip: ${newTip.blockId} $newHeight" }
                         val scriptHashesActions = watches.filterIsInstance<WatchConfirmed>().map {
                             val scriptHash = ElectrumClient.computeScriptHash(it.publicKeyScript)
-                            GetScriptHashHistoryAction(scriptHash)
+                            AskForScriptHashHistory(scriptHash)
                         }
 
                         val toPublish = block2tx.filterKeys { it <= newHeight }
@@ -92,7 +92,7 @@ private data class ElectrumWatcherRunning(
                     else -> returnState()
                 }
             }
-            is WatchTypeEvent -> when (val watch = event.watch) {
+            is ReceiveWatch -> when (val watch = event.watch) {
                 is Watch -> when (watch) {
                     in watches -> returnState()
                     is WatchSpent -> {
@@ -101,7 +101,7 @@ private data class ElectrumWatcherRunning(
                         logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
                         newState {
                             state = copy(watches = watches + watch)
-                            actions = listOf(RegisterToScriptHashSubscription(scriptHash))
+                            actions = listOf(RegisterToScriptHashNotification(scriptHash))
                         }
                     }
                     is WatchConfirmed -> TODO()
@@ -138,27 +138,27 @@ private data class ElectrumWatcherRunning(
         }
 }
 
-private fun ElectrumWatcherState.unhandled(message: ElectrumWatcherEvent) : Pair<ElectrumWatcherState, List<ElectrumWatcherAction>> =
+private fun ElectrumWatcherState.unhandled(message: WatcherEvent) : Pair<ElectrumWatcherState, List<WatcherAction>> =
     when (message) {
         else -> error("The state $this cannot process the event $message")
     }
 
 private class WatcherStateBuilder {
     var state: ElectrumWatcherState = ElectrumWatcherDisconnected
-    var actions = emptyList<ElectrumWatcherAction>()
+    var actions = emptyList<WatcherAction>()
     fun build() = state to actions
 }
 private fun newState(init: WatcherStateBuilder.() -> Unit) = WatcherStateBuilder().apply(init).build()
 private fun newState(newState: ElectrumWatcherState) = WatcherStateBuilder().apply { state = newState }.build()
 
-private fun ElectrumWatcherState.returnState(actions: List<ElectrumWatcherAction> = emptyList()): Pair<ElectrumWatcherState, List<ElectrumWatcherAction>> = this to actions
-private fun ElectrumWatcherState.returnState(action: ElectrumWatcherAction): Pair<ElectrumWatcherState, List<ElectrumWatcherAction>> = this to listOf(action)
-private fun ElectrumWatcherState.returnState(vararg actions: ElectrumWatcherAction): Pair<ElectrumWatcherState, List<ElectrumWatcherAction>> = this to listOf(*actions)
+private fun ElectrumWatcherState.returnState(actions: List<WatcherAction> = emptyList()): Pair<ElectrumWatcherState, List<WatcherAction>> = this to actions
+private fun ElectrumWatcherState.returnState(action: WatcherAction): Pair<ElectrumWatcherState, List<WatcherAction>> = this to listOf(action)
+private fun ElectrumWatcherState.returnState(vararg actions: WatcherAction): Pair<ElectrumWatcherState, List<WatcherAction>> = this to listOf(*actions)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(val client: ElectrumClient) {
 
-    private val eventChannel = Channel<ElectrumWatcherEvent>(Channel.BUFFERED)
+    private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
     private val messageChannel = Channel<ElectrumMessage>(Channel.BUFFERED)
     val watchChannel = Channel<WatcherType>(Channel.BUFFERED)
 
@@ -177,7 +177,7 @@ class ElectrumWatcher(val client: ElectrumClient) {
     private suspend fun run() {
         input.consumeEach { input ->
             when(input) {
-                is ElectrumWatcherEvent -> {
+                is WatcherEvent -> {
                     logger.info { "Event received: $input" }
 
                     val (newState, actions) = state.process(input)
@@ -185,13 +185,13 @@ class ElectrumWatcher(val client: ElectrumClient) {
 
                     actions.forEach { action ->
                         when (action) {
-                            RegisterToStatusSubscription -> client.messageChannel.send(ElectrumStatusSubscription(messageChannel))
-                            RegisterToHeaderSubscription -> client.messageChannel.send(ElectrumHeaderSubscription(messageChannel))
+                            RegisterToElectrumStatus -> client.messageChannel.send(ElectrumStatusSubscription(messageChannel))
+                            RegisterToHeaderNotification -> client.messageChannel.send(ElectrumHeaderSubscription(messageChannel))
                             is PublishAsapAction -> eventChannel.send(PublishEvent(action.publishAsap))
-                            is GetScriptHashHistoryAction -> client.messageChannel.send(
+                            is AskForScriptHashHistory -> client.messageChannel.send(
                                 ElectrumSendRequest(GetScriptHashHistory(action.scriptHash), messageChannel)
                             )
-                            is RegisterToScriptHashSubscription -> client.messageChannel.send(
+                            is RegisterToScriptHashNotification -> client.messageChannel.send(
                                 ElectrumSendRequest(ScriptHashSubscription(action.scriptHash), messageChannel)
                             )
                         }
@@ -199,7 +199,7 @@ class ElectrumWatcher(val client: ElectrumClient) {
                 }
                 is Watch -> {
                     logger.info { "Watch received: $input" }
-                    eventChannel.send(WatchTypeEvent(input))
+                    eventChannel.send(ReceiveWatch(input))
                 }
                 is ElectrumMessage -> {
                     logger.info { "Message received: $input" }
@@ -211,7 +211,7 @@ class ElectrumWatcher(val client: ElectrumClient) {
 
     suspend fun start() {
         coroutineScope {
-            eventChannel.send(WatcherStart)
+            eventChannel.send(StartWatcher)
             launch { run() }
         }
     }
