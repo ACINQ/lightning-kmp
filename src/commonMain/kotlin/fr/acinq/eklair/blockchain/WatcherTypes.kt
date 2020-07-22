@@ -14,8 +14,8 @@ object BITCOIN_FUNDING_TIMEOUT : BitcoinEvent()
 object BITCOIN_FUNDING_SPENT : BitcoinEvent()
 object BITCOIN_OUTPUT_SPENT : BitcoinEvent()
 data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()
-class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId: ShortChannelId) : BitcoinEvent()
-class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) : BitcoinEvent()
+data class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(val shortChannelId: ShortChannelId) : BitcoinEvent()
+data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent()
 
 /**
  * generic "Watch" request

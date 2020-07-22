@@ -15,11 +15,9 @@ import fr.acinq.eklair.utils.Either
 import fr.acinq.eklair.wire.AcceptChannel
 import fr.acinq.eklair.wire.ChannelTlv
 import fr.acinq.eklair.wire.OpenChannel
-import kotlinx.serialization.InternalSerializationApi
 import kotlin.math.abs
 
 
-@OptIn(InternalSerializationApi::class)
 object Helpers {
 
     fun getChannelVersion(open: OpenChannel): ChannelVersion {
@@ -133,9 +131,9 @@ object Helpers {
 
             if (!localParams.isFunder) {
                 // they are funder, therefore they pay the fee: we need to make sure they can afford it!
-                val toRemoteMsat = remoteSpec.toLocal
+                val localToRemoteMsat = remoteSpec.toLocal
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-                val missing = toRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
+                val missing = localToRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
                 if (missing < Satoshi(0)) {
                     throw CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees)
                 }

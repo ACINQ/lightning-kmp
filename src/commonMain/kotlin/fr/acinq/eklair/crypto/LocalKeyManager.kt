@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.eklair.Eclair.secureRandom
 import fr.acinq.eklair.Features
 import fr.acinq.eklair.ShortChannelId
-import fr.acinq.eklair.router.Announcements
 import fr.acinq.eklair.transactions.Transactions
 
 class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
@@ -48,7 +47,7 @@ class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyMa
         return KeyPath(listOf(next(), next(), next(), next(), next(), next(), next(), next(), last))
     }
 
-    override fun fundingPublicKey(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(0)))
+    override fun fundingPublicKey(keyPath: KeyPath) = publicKey(internalKeyPath(keyPath, hardened(0)))
 
     override fun revocationPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(1)))
 

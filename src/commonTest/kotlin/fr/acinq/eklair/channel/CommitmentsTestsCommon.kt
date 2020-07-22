@@ -15,6 +15,7 @@ import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -85,9 +86,7 @@ class CommitmentsTests {
 
     @Test
     fun `reach normal state`() {
-        val (alice, bob) = reachNormal()
-        assertTrue { alice is Normal }
-        assertTrue { bob is Normal }
+        reachNormal()
     }
 
     @Test
@@ -221,7 +220,7 @@ class CommitmentsTests {
         assertEquals(bc0.availableBalanceForReceive(), a)
 
         val currentBlockHeight = 144L
-        val (payment_preimage, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (_, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (ac1, add) = (ac0.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight) as Try.Success<Pair<Commitments, UpdateAddHtlc>>).result
         assertEquals(ac1.availableBalanceForSend(), a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
@@ -317,7 +316,7 @@ class CommitmentsTests {
         assertEquals(ac1.availableBalanceForSend(), a - p1 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
-        val (payment_preimage2, cmdAdd2) = TestsHelper.makeCmdAdd(p2, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (_, cmdAdd2) = TestsHelper.makeCmdAdd(p2, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (ac2, add2) = (ac1.sendAdd(cmdAdd2, Origin.Local(UUID.randomUUID()), currentBlockHeight) as Try.Success<Pair<Commitments, UpdateAddHtlc>>).result
         assertEquals(ac2.availableBalanceForSend(), a - p1 - fee - p2 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac2.availableBalanceForReceive(), b)
@@ -480,6 +479,7 @@ class CommitmentsTests {
         }
     }
 
+    @OptIn(ExperimentalUnsignedTypes::class)
     companion object {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: Long = 0, dustLimit: Satoshi = 0.sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments {
             val localParams = LocalParams(randomKey().publicKey(), KeyPath("42"), dustLimit, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, null, Features.empty)

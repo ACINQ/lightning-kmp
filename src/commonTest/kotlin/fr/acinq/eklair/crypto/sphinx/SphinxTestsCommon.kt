@@ -1,11 +1,15 @@
 package fr.acinq.eklair.crypto.sphinx
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.eklair.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.eklair.crypto.sphinx.Sphinx.peekPayloadLength
 import fr.acinq.eklair.utils.Either
 import fr.acinq.eklair.wire.OnionRoutingPacketSerializer
+import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -240,7 +244,5 @@ class SphinxTestsCommon {
         val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, 400) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), trampolinePayloads)
         assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.map { it.first })
-
-        val packets = listOf(decrypted0.nextPacket, decrypted1.nextPacket, decrypted2.nextPacket, decrypted3.nextPacket, decrypted4.nextPacket)
     }
 }

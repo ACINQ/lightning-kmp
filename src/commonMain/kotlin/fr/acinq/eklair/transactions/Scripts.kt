@@ -6,12 +6,10 @@ import fr.acinq.bitcoin.ScriptEltMapping.elt2code
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.utils.sat
-import kotlinx.serialization.InternalSerializationApi
 
 /**
  * Created by PM on 02/12/2016.
  */
-@OptIn(InternalSerializationApi::class)
 object Scripts {
 
     fun der(sig: ByteVector64): ByteVector = Crypto.compact2der(sig).concat(1)
@@ -87,7 +85,7 @@ object Scripts {
                 sequence and TxIn.SEQUENCE_LOCKTIME_MASK
             }
 
-        return if (tx.version < 2) 0L else tx.txIn.map { it.sequence } .map { sequenceToBlockHeight(it) } .max()!!
+        return if (tx.version < 2) 0L else tx.txIn.map { it.sequence } .map { sequenceToBlockHeight(it) }.maxOrNull()!!
     }
 
     fun toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): List<ScriptElt> =

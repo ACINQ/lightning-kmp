@@ -53,6 +53,7 @@ class ChaCha20(key: ByteArray, nonce: ByteArray, counter: Int) {
     }
 
     fun encrypt(dst: ByteArray, src: ByteArray, len: Int) {
+        @Suppress("NAME_SHADOWING")
         var len = len
         val x = IntArray(16)
         val output = ByteArray(64)
@@ -93,13 +94,13 @@ class ChaCha20(key: ByteArray, nonce: ByteArray, counter: Int) {
             if (len <= 64) {
                 i = len
                 while (i-- > 0) {
-                    dst[i + dpos] = (src[i + spos] xor output[i]) as Byte
+                    dst[i + dpos] = (src[i + spos] xor output[i])
                 }
                 return
             }
             i = 64
             while (i-- > 0) {
-                dst[i + dpos] = (src[i + spos] xor output[i]) as Byte
+                dst[i + dpos] = (src[i + spos] xor output[i])
             }
             len -= 64
             spos += 64

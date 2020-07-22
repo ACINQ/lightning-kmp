@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.channel.ChannelVersion
 import fr.acinq.eklair.utils.BitField
 
+@OptIn(ExperimentalUnsignedTypes::class)
 sealed class ChannelTlv : Tlv {
     companion object {
         /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */

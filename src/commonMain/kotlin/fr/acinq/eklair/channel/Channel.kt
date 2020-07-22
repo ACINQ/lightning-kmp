@@ -15,6 +15,7 @@ import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine

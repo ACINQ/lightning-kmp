@@ -1,4 +1,3 @@
-@file:OptIn(InternalSerializationApi::class)
 package fr.acinq.eklair.channel
 
 import fr.acinq.bitcoin.*
@@ -6,16 +5,12 @@ import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Features
 import fr.acinq.eklair.MilliSatoshi
-import fr.acinq.eklair.transactions.CommitmentSpec
-import fr.acinq.eklair.transactions.Transactions
-import fr.acinq.eklair.transactions.Transactions.TransactionWithInputInfo.CommitTx
 import fr.acinq.eklair.utils.BitField
 import fr.acinq.eklair.utils.UUID
 import fr.acinq.eklair.utils.sum
 import fr.acinq.eklair.wire.FailureMessage
 import fr.acinq.eklair.wire.OnionRoutingPacket
 import fr.acinq.eklair.wire.UpdateAddHtlc
-import kotlinx.serialization.InternalSerializationApi
 
 
 /*
@@ -37,7 +32,7 @@ sealed class Upstream {
     /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
     data class TrampolineRelayed(val adds: List<UpdateAddHtlc>) : Upstream() {
         val amountIn: MilliSatoshi = adds.map { it.amountMsat }.sum()
-        val expiryIn: CltvExpiry = adds.map { it.cltvExpiry } .min()!!
+        val expiryIn: CltvExpiry = adds.map { it.cltvExpiry }.minOrNull()!!
     }
 }
 

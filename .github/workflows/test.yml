@@ -1,0 +1,54 @@
+name: Check
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '**.adoc'
+      - '**/.gitignore'
+      - '.github/**'
+      - '!.github/workflows/test.yml'
+  push:
+    branches:
+      - 'master'
+    paths-ignore:
+      - '**.md'
+      - '**.adoc'
+      - '**/.gitignore'
+      - '.github/**'
+      - '!.github/workflows/test.yml'
+
+jobs:
+
+  upload:
+    name: Check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest]
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+        with:
+          submodules: 'true'
+      - name: Cached Konan
+        uses: actions/cache@v2
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}-${{ hashFiles('**/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-konan-
+      - name: Cached Gradle
+        uses: actions/cache@v2
+        with:
+          path: ~/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}-${{ hashFiles('**/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+      - name: Install curl
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt install -y libcurl4-gnutls-dev
+      - name: Set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: Check
+        run: ./gradlew check

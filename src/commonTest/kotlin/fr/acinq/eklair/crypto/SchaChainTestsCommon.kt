@@ -1,7 +1,7 @@
 package fr.acinq.eklair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Hex
+import fr.acinq.secp256k1.Hex
 import kotlin.test.*
 
 
@@ -142,7 +142,7 @@ class SchaChainTestsCommon {
         val chain4 = chain3.addHash(ByteVector32(Hex.decode("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116")), 281474976710652L)
         val chain5 = chain4.addHash(ByteVector32(Hex.decode("631373ad5f9ef654bb3dade742d09504c567edd24320d2fcd68e3cc47e2ff6a6")), 281474976710651L)
         assertFailsWith<IllegalArgumentException> {
-            val chain6 = chain5.addHash(ByteVector32(Hex.decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")), 281474976710650L)
+            chain5.addHash(ByteVector32(Hex.decode("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2")), 281474976710650L)
         }
     }
 

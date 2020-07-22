@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 
 /** Tlv types used inside Init messages. */
-@kotlin.ExperimentalUnsignedTypes
+@OptIn(ExperimentalUnsignedTypes::class)
 sealed class InitTlv : Tlv {
     companion object {
         data class Networks(val chainHashes: List<ByteVector32>) : InitTlv(), LightningSerializable<Networks> {

@@ -25,7 +25,6 @@ import fr.acinq.eklair.transactions.CommitmentOutput.InHtlc
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.UpdateAddHtlc
-import kotlinx.serialization.InternalSerializationApi
 
 
 /** Type alias for a collection of commitment output links */
@@ -34,7 +33,7 @@ typealias TransactionsCommitmentOutputs = List<Transactions.CommitmentOutputLink
 /**
  * Created by PM on 15/12/2016.
  */
-@OptIn(ExperimentalStdlibApi::class, InternalSerializationApi::class, ExperimentalUnsignedTypes::class)
+@OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
 object Transactions {
 
     data class InputInfo constructor(val outPoint: OutPoint, val txOut: TxOut, val redeemScript: ByteVector) {

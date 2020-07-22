@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.*
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
-import kotlinx.serialization.Serializable
 import kotlin.math.max
 
 
@@ -34,7 +33,7 @@ interface HasChainHash : LightningMessage {
 
 interface ChannelMessage
 
-@kotlin.ExperimentalUnsignedTypes
+@OptIn(ExperimentalUnsignedTypes::class)
 data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage, LightningSerializable<Init> {
     val networks = tlvs.get<InitTlv.Companion.Networks>()?.chainHashes ?: listOf()
 
@@ -53,8 +52,9 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
             // merge features together
             val features = ByteVector(globalFeatures.leftPaddedCopyOf(len).or(localFeatures.leftPaddedCopyOf(len)))
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
+            @Suppress("UNCHECKED_CAST")
             serializers.put(InitTlv.Companion.Networks.tag.toLong(), InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
-            val serializer = TlvStreamSerializer<InitTlv>(serializers)
+            val serializer = TlvStreamSerializer(serializers)
             val tlvs = serializer.read(input)
             return Init(features, tlvs)
         }
@@ -64,6 +64,7 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
             writeU16(message.features.size(), out)
             writeBytes(message.features, out)
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
+            @Suppress("UNCHECKED_CAST")
             serializers.put(InitTlv.Companion.Networks.tag.toLong(), InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
             val serializer = TlvStreamSerializer<InitTlv>(serializers)
             serializer.write(message.tlvs, out)
@@ -71,6 +72,7 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class OpenChannel(
     override val chainHash: ByteVector32,
     override val temporaryChannelId: ByteVector32,
@@ -100,7 +102,9 @@ data class OpenChannel(
 
         override fun read(input: Input): OpenChannel {
             val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.UpfrontShutdownScript.tag.toLong(), ChannelTlv.Companion.UpfrontShutdownScript.Companion as LightningSerializer<ChannelTlv>)
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.ChannelVersionTlv.tag.toLong(), ChannelTlv.Companion.ChannelVersionTlv.Companion as LightningSerializer<ChannelTlv>)
 
             return OpenChannel(
@@ -128,7 +132,9 @@ data class OpenChannel(
 
         override fun write(message: OpenChannel, out: Output) {
             val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.UpfrontShutdownScript.tag.toLong(), ChannelTlv.Companion.UpfrontShutdownScript.Companion as LightningSerializer<ChannelTlv>)
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.ChannelVersionTlv.tag.toLong(), ChannelTlv.Companion.ChannelVersionTlv.Companion as LightningSerializer<ChannelTlv>)
 
             writeBytes(message.chainHash, out)
@@ -154,6 +160,7 @@ data class OpenChannel(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class AcceptChannel(
     override val temporaryChannelId: ByteVector32,
     val dustLimitSatoshis: Satoshi,
@@ -179,7 +186,9 @@ data class AcceptChannel(
 
         override fun read(input: Input): AcceptChannel {
             val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.UpfrontShutdownScript.tag.toLong(), ChannelTlv.Companion.UpfrontShutdownScript.Companion as LightningSerializer<ChannelTlv>)
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.ChannelVersionTlv.tag.toLong(), ChannelTlv.Companion.ChannelVersionTlv.Companion as LightningSerializer<ChannelTlv>)
 
             return AcceptChannel(
@@ -203,6 +212,7 @@ data class AcceptChannel(
 
         override fun write(message: AcceptChannel, out: Output) {
             val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
+            @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.Companion.UpfrontShutdownScript.tag.toLong(), ChannelTlv.Companion.UpfrontShutdownScript.Companion as LightningSerializer<ChannelTlv>)
 
             writeBytes(message.temporaryChannelId, out)
@@ -224,6 +234,7 @@ data class AcceptChannel(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class FundingCreated(
     override val temporaryChannelId: ByteVector32,
     val fundingTxid: ByteVector32,
@@ -254,6 +265,7 @@ data class FundingCreated(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class FundingSigned(
     override val channelId: ByteVector32,
     val signature: ByteVector64,
@@ -279,6 +291,7 @@ data class FundingSigned(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class FundingLocked(
     override val channelId: ByteVector32,
     val nextPerCommitmentPoint: PublicKey
@@ -312,6 +325,7 @@ data class UpdateAddHtlc(
     val onionRoutingPacket: OnionRoutingPacket
 ) : HtlcMessage, UpdateMessage, HasChannelId
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class UpdateFulfillHtlc(
     override val channelId: ByteVector32,
     val id: Long,
@@ -337,6 +351,7 @@ data class UpdateFulfillHtlc(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class UpdateFailHtlc(
     override val channelId: ByteVector32,
     val id: Long,
@@ -365,6 +380,7 @@ data class UpdateFailHtlc(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class UpdateFailMalformedHtlc(
     override val channelId: ByteVector32,
     val id: Long,
@@ -395,6 +411,7 @@ data class UpdateFailMalformedHtlc(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class CommitSig(
     override val channelId: ByteVector32,
     val signature: ByteVector64,
@@ -426,6 +443,7 @@ data class CommitSig(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class RevokeAndAck(
     override val channelId: ByteVector32,
     val perCommitmentSecret: PrivateKey,
@@ -453,6 +471,7 @@ data class RevokeAndAck(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class UpdateFee(
     override val channelId: ByteVector32,
     val feeratePerKw: Long
@@ -477,6 +496,7 @@ data class UpdateFee(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class ChannelReestablish(
     override val channelId: ByteVector32,
     val nextCommitmentNumber: Long,
@@ -510,6 +530,7 @@ data class ChannelReestablish(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class AnnouncementSignatures(
     override val channelId: ByteVector32,
     val shortChannelId: ShortChannelId,
@@ -540,6 +561,7 @@ data class AnnouncementSignatures(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class ChannelAnnouncement(
     val nodeSignature1: ByteVector64,
     val nodeSignature2: ByteVector64,
@@ -570,6 +592,7 @@ data class ChannelAnnouncement(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class ChannelUpdate(
     val signature: ByteVector64,
     override val chainHash: ByteVector32,
@@ -606,6 +629,7 @@ data class ChannelUpdate(
     fun isNode1(): Boolean = (channelFlags.toInt() and 1) == 0
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class Shutdown(
     override val channelId: ByteVector32,
     val scriptPubKey: ByteVector,
