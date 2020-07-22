@@ -17,33 +17,33 @@ import org.kodein.log.newLogger
 /*
     Events
  */
-private sealed class ClientEvent
-private object Connected : ClientEvent()
-private object Disconnected : ClientEvent()
-private data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
-private data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ClientEvent()
-private data class RegisterStatusListener(val listener: SendChannel<ElectrumMessage>) : ClientEvent()
-private data class RegisterHeaderNotificationListener(val listener: SendChannel<ElectrumMessage>) : ClientEvent()
-private data class RegisterScriptHashNotificationListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ClientEvent()
-private data class UnregisterListener(val listener: SendChannel<ElectrumMessage>): ClientEvent()
+internal sealed class ClientEvent
+internal object Connected : ClientEvent()
+internal object Disconnected : ClientEvent()
+internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
+internal data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ClientEvent()
+internal data class RegisterStatusListener(val listener: SendChannel<ElectrumMessage>) : ClientEvent()
+internal data class RegisterHeaderNotificationListener(val listener: SendChannel<ElectrumMessage>) : ClientEvent()
+internal data class RegisterScriptHashNotificationListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ClientEvent()
+internal data class UnregisterListener(val listener: SendChannel<ElectrumMessage>): ClientEvent()
 
 /*
     Actions
  */
-private sealed class ElectrumClientAction
-private data class SendRequest(val request: String): ElectrumClientAction()
-private data class SendHeader(val height: Int, val blockHeader: BlockHeader, val requestor: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private data class SendResponse(val response: ElectrumResponse, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumClientAction()
-private data class BroadcastHeaderSubscription(val headerSubscriptionResponse: HeaderSubscriptionResponse): ElectrumClientAction()
-private data class BroadcastScriptHashSubscription(val response: ScriptHashSubscriptionResponse): ElectrumClientAction()
-private data class BroadcastState(val state: ElectrumClientState): ElectrumClientAction()
-private data class AddStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private data class AddHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private data class AddScriptHashListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private data class RemoveStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private data class RemoveHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private data class RemoveScriptHashListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
-private object Restart : ElectrumClientAction()
+internal sealed class ElectrumClientAction
+internal data class SendRequest(val request: String): ElectrumClientAction()
+internal data class SendHeader(val height: Int, val blockHeader: BlockHeader, val requestor: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal data class SendResponse(val response: ElectrumResponse, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumClientAction()
+internal data class BroadcastHeaderSubscription(val headerSubscriptionResponse: HeaderSubscriptionResponse): ElectrumClientAction()
+internal data class BroadcastScriptHashSubscription(val response: ScriptHashSubscriptionResponse): ElectrumClientAction()
+internal data class BroadcastState(val state: ElectrumClientState): ElectrumClientAction()
+internal data class AddStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal data class AddHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal data class AddScriptHashListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal data class RemoveStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal data class RemoveHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal data class RemoveScriptHashListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal object Restart : ElectrumClientAction()
 
 /**
  * [ElectrumClient] State
@@ -57,7 +57,7 @@ private object Restart : ElectrumClientAction()
  *         +-----+
  *
  */
-private sealed class ClientState {
+internal sealed class ClientState {
     /**
      * Unique ID to match response with origin request
      */
@@ -73,7 +73,7 @@ private sealed class ClientState {
     abstract fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>>
 }
 
-private object WaitingForVersion : ClientState() {
+internal object WaitingForVersion : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
             event is ReceivedResponse && event.response is Either.Right -> {
                 val electrumResponse = parseJsonResponse(version, event.response.value)
@@ -95,7 +95,7 @@ private object WaitingForVersion : ClientState() {
         }
     }
 
-private object WaitingForTip : ClientState() {
+internal object WaitingForTip : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when(event) {
             is ReceivedResponse -> {
@@ -116,7 +116,7 @@ private object WaitingForTip : ClientState() {
         }
 }
 
-private data class ClientRunning(val height: Int, val tip: BlockHeader) : ClientState() {
+internal data class ClientRunning(val height: Int, val tip: BlockHeader) : ClientState() {
    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
        is RegisterStatusListener -> returnState(AddStatusListener(event.listener), BroadcastState(ElectrumClientReady))
        is RegisterHeaderNotificationListener -> returnState(
@@ -166,7 +166,7 @@ private data class ClientRunning(val height: Int, val tip: BlockHeader) : Client
    }
 }
 
-private object ClientClosed : ClientState() {
+internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when(event) {
             Connected -> newState {
@@ -183,6 +183,7 @@ private fun ClientState.unhandled(event: ClientEvent) : Pair<ClientState, List<E
         is UnregisterListener -> event.listener.let {
             returnState(RemoveStatusListener(it), RemoveHeaderListener(it), RemoveScriptHashListener(it))
         }
+        Disconnected -> newState(ClientClosed)
         else -> returnState() // error("The state $this cannot process the event $event")
     }
 
