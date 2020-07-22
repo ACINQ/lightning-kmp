@@ -59,8 +59,8 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
          */
         fun derive(node: Node, direction: Boolean) =
             if (direction) {
-                val flipped = flip(node.value, 63 - node.height)
-                val sha = ByteVector32(sha256(flipped))
+//                val flipped = flip(node.value, 63 - node.height)
+//                val sha = ByteVector32(sha256(flipped))
                 Node(ByteVector32(sha256(flip(node.value, 63 - node.height))), node.height + 1, node)
             }
             else Node(node.value, node.height + 1, node)

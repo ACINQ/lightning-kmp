@@ -16,6 +16,7 @@ object Chacha20Poly1305CipherFunctions : CipherFunctions {
     }
 
     // Decrypts ciphertext using a cipher key k of 32 bytes, an 8-byte unsigned integer nonce n, and associated data ad.
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray {
         val ciphertext = ciphertextAndMac.dropLast(16).toByteArray()
         val mac = ciphertextAndMac.takeLast(16).toByteArray()

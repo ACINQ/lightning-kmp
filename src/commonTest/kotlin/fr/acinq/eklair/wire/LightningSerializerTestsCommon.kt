@@ -4,9 +4,9 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eklair.CltvExpiryDelta
-import fr.acinq.secp256k1.Hex
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
+import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
 import kotlinx.serialization.json.content
@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
+@OptIn(ExperimentalUnsignedTypes::class, UnstableDefault::class)
 class LightningSerializerTestsCommon {
 
     fun point(fill: Byte) = PrivateKey(ByteArray(32) { fill }).publicKey()

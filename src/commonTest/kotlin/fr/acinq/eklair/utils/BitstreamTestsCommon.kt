@@ -35,7 +35,8 @@ class BitstreamTestsCommon {
         assertEquals(bits.bitCount(),  9)
         bits.writeBit(true)
         assertEquals(bits.bitCount(),  10)
+        val bits1 = bits.clone()
         assertEquals(bits.popByte(), 0xd5.toByte())
-        assertEquals(bits.readByte(), 0xb5.toByte())
+        assertEquals(bits1.readByte(), 0xb5.toByte())
     }
 }

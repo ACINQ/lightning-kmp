@@ -1,17 +1,21 @@
 package fr.acinq.eklair.utils
 
+import fr.acinq.bitcoin.updated
 import kotlin.experimental.and
 
 /**
  * Bit stream that can be written to and read at both ends (i.e. you can read from the end or the beginning of the stream)
  *
+ *  TODO: either merge this with Bitfield or find a way to use Bech32 methods instead
  * @param bytes    bits packed as bytes, the last byte is padded with 0s
  * @param offstart offset at which the first bit is in the first byte
  * @param offend   offset at which the last bit is in the last byte
  */
-data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: Int, private var offend: Int) {
+data class BitStream(private var bytes: List<Byte>, private var offstart: Int, private var offend: Int) {
 
     constructor() : this(ArrayList(), 0, 0)
+
+    fun clone() = BitStream(bytes.toList(), offstart, offend)
 
     // offstart: 0 1 2 3 4 5 6 7
     // offend: 7 6 5 4 3 2 1 0
@@ -28,13 +32,13 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
      */
     fun writeByte(input: Byte) {
         when(offend) {
-            0 -> bytes.add(input)
+            0 -> bytes += input
             else -> {
                 val input1 = input.toInt() and 0xff
                 val last = ((bytes.last().toInt() or (input1.ushr(8 - offend))) and 0xff).toByte()
                 val next = ((input1 shl offend) and 0xff).toByte()
-                bytes[bytes.size  - 1] = last
-                bytes.add(next)
+                bytes = bytes.dropLast(2)
+                bytes = bytes + last + next
             }
         }
     }
@@ -58,15 +62,15 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
     fun writeBit(bit: Boolean) {
         when {
             offend == 0 && bit -> {
-                bytes.add(0x80.toByte())
+                bytes += (0x80.toByte())
                 offend = 7
             }
             offend == 0 -> {
-                bytes.add(0x00.toByte())
+                bytes += (0x00.toByte())
                 offend = 7
             }
             bit -> {
-                bytes[bytes.size - 1] = (bytes.last() + (1 shl (offend - 1))).toByte()
+                bytes = bytes.updated(bytes.size - 1, (bytes.last() + (1 shl (offend - 1))).toByte())
                 offend -= 1
             }
             else -> offend -= 1
@@ -91,7 +95,7 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
     fun popBit() : Boolean = when(offend) {
         7 -> {
             val result = lastBit()
-            bytes.removeAt(bytes.lastIndex)
+            bytes = bytes.dropLast(1)
             offend = 0
             result
         }
@@ -99,7 +103,7 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
             val result = lastBit()
             val shift = offend + 1
             val last = (bytes.last().toInt() ushr shift) shl shift
-            bytes[bytes.size - 1] = last.toByte()
+            bytes = bytes.updated(bytes.size - 1, last.toByte())
             offend += 1
             result
         }
@@ -113,7 +117,7 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
     fun popByte(): Byte = when(offend) {
         0 -> {
             val result = bytes.last()
-            bytes.removeAt(bytes.lastIndex)
+            bytes = bytes.dropLast(1)
             result
         }
         else -> {
@@ -121,8 +125,8 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
             val b = bytes[bytes.size - 1].toInt() and 0xff
             val result = ((a shl (8 - offend)) or (b ushr offend)) and 0xff
             val a1 = (a ushr offend) shl offend
-            bytes.removeAt(bytes.lastIndex)
-            bytes[bytes.size - 1] = a1.toByte()
+            bytes = bytes.dropLast(2)
+            bytes += a1.toByte()
             result.toByte()
         }
     }
@@ -143,7 +147,7 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
     fun readBit() : Boolean = when(offstart) {
         7 -> {
             val result = firstBit()
-            bytes.removeAt(0)
+            bytes = bytes.drop(1)
             offstart = 0
             result
         }
@@ -169,7 +173,7 @@ data class BitStream(private var bytes: ArrayList<Byte>, private var offstart: I
      */
     fun readByte(): Byte {
         val result = ((bytes[0].toInt() shl offstart) or (bytes[1].toInt() ushr (7 - offstart))) and 0xff
-        bytes .removeAt(0)
+        bytes = bytes.drop(1)
         return result.toByte()
     }
 

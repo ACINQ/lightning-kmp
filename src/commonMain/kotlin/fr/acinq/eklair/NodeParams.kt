@@ -6,6 +6,7 @@ import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.db.Databases
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class NodeParams(
     val keyManager: KeyManager,
     val alias: String,

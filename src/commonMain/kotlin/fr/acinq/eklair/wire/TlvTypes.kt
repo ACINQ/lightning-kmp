@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 
-@kotlin.ExperimentalUnsignedTypes
+@OptIn(ExperimentalUnsignedTypes::class)
 interface Tlv {
     val tag: ULong
 }
@@ -16,7 +16,7 @@ interface Tlv {
  * @param tag   tlv tag.
  * @param value tlv value (length is implicit, and encoded as a varint).
  */
-@kotlin.ExperimentalUnsignedTypes
+@OptIn(ExperimentalUnsignedTypes::class)
 data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, LightningSerializable<GenericTlv> {
     init {
         require(tag.rem(2UL) != 0UL) { "unknown even tag ($tag) " }
@@ -46,7 +46,7 @@ data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, Lig
 /**
  * @param serializers custom serializers. The will be used to decode TLV values (and not the entire TLV including its tag and length)
  */
-@kotlin.ExperimentalUnsignedTypes
+@OptIn(ExperimentalUnsignedTypes::class)
 class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerializer<T>>) : LightningSerializer<TlvStream<T>>() {
     override val tag: ULong
         get() = 0UL
@@ -104,7 +104,6 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
  * @param unknown unknown tlv records.
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
-@kotlin.ExperimentalUnsignedTypes
 data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
     init {
         val tags = records.map { it.tag }
@@ -113,7 +112,7 @@ data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv
 
     inline fun <reified R : T> get(): R? {
         for (r in records) {
-            if (r is R) return r as R?
+            if (r is R) return r
         }
         return null
     }

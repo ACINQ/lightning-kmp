@@ -1,7 +1,7 @@
 package fr.acinq.eklair.crypto.noise
 
-import fr.acinq.secp256k1.Hex
 import fr.acinq.eklair.crypto.assertArrayEquals
+import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -53,8 +53,8 @@ class NoiseTestsCommon {
         dec as InitializedCipherState
         assertArrayEquals(enc.k, Hex.decode("969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9"))
         assertArrayEquals(dec.k, Hex.decode("bb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442"))
-        val (enc1, ciphertext01) = enc.encryptWithAd(ByteArray(0), Hex.decode("79656c6c6f777375626d6172696e65"))
-        val (dec1, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("7375626d6172696e6579656c6c6f77"))
+        val (_, ciphertext01) = enc.encryptWithAd(ByteArray(0), Hex.decode("79656c6c6f777375626d6172696e65"))
+        val (_, ciphertext02) = dec.encryptWithAd(ByteArray(0), Hex.decode("7375626d6172696e6579656c6c6f77"))
         assertArrayEquals(outputs[0], Hex.decode("036360e856310ce5d294e8be33fc807077dc56ac80d95d9cd4ddbd21325eff73f70df6086551151f58b8afe6c195782c6a"))
         assertArrayEquals(outputs[1], Hex.decode("02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f276e2470b93aac583c9ef6eafca3f730ae"))
         assertArrayEquals(outputs[2], Hex.decode("b9e3a702e93e3a9948c2ed6e5fd7590a6e1c3a0344cfc9d5b57357049aa22355361aa02e55a8fc28fef5bd6d71ad0c38228dc68b1c466263b47fdf31e560e139ba"))

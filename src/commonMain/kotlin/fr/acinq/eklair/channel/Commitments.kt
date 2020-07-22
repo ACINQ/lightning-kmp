@@ -13,7 +13,8 @@ import fr.acinq.eklair.crypto.ShaChain
 import fr.acinq.eklair.crypto.sphinx.FailurePacket
 import fr.acinq.eklair.crypto.sphinx.Sphinx
 import fr.acinq.eklair.payment.relay.Origin
-import fr.acinq.eklair.transactions.*
+import fr.acinq.eklair.transactions.CommitmentSpec
+import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eklair.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.eklair.transactions.Transactions.commitTxFee
@@ -22,9 +23,10 @@ import fr.acinq.eklair.transactions.Transactions.htlcOutputFee
 import fr.acinq.eklair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eklair.transactions.Transactions.offeredHtlcTrimThreshold
 import fr.acinq.eklair.transactions.Transactions.receivedHtlcTrimThreshold
+import fr.acinq.eklair.transactions.incomings
+import fr.acinq.eklair.transactions.outgoings
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
-import kotlinx.serialization.InternalSerializationApi
 import org.kodein.log.Logger
 import kotlin.experimental.and
 
@@ -49,7 +51,6 @@ data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: Co
  * So, when we've signed and sent a commit message and are waiting for their revocation message,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
-@OptIn(InternalSerializationApi::class)
 data class Commitments(
     val channelVersion: ChannelVersion,
     val localParams: LocalParams,

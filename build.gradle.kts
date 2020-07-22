@@ -1,5 +1,4 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
-import org.jetbrains.kotlin.gradle.tasks.FatFrameworkTask
 
 plugins {
     application
@@ -9,7 +8,7 @@ plugins {
 }
 
 group = "fr.acinq.eklair"
-version = "0.1.0-1.4-M3"
+version = "0.2.0-1.4-M3"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -28,24 +27,27 @@ repositories {
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
-val ktor_version = "1.3.2-1.4-M3"
+val ktorVersion = "1.3.2-1.4-M3"
+val secp256k1Version = "0.3.0-1.4-M3"
 
 kotlin {
 
     val commonMain by sourceSets.getting {
         dependencies {
             implementation(kotlin("stdlib-common"))
-            implementation("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-M3")
+
+            api("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-M3")
+            api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
+            api("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-M3-36-b27d97f")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-1.4-M3")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M3")
-            implementation("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-M3-36-b27d97f")
         }
     }
     val commonTest by sourceSets.getting {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("io.ktor:ktor-client-core:$ktor_version")
+            implementation("io.ktor:ktor-client-core:$ktorVersion")
         }
     }
 
@@ -53,13 +55,19 @@ kotlin {
         compilations["main"].kotlinOptions.jvmTarget = "1.8"
         compilations["main"].defaultSourceSet.dependencies {
             implementation(kotlin("stdlib-jdk8"))
-            implementation("io.ktor:ktor-client-okhttp:$ktor_version")
-            implementation("io.ktor:ktor-network:$ktor_version")
+            implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
+            implementation("io.ktor:ktor-network:$ktorVersion")
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
         compilations["test"].kotlinOptions.jvmTarget = "1.8"
         compilations["test"].defaultSourceSet.dependencies {
-            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm:0.2.1-1.4-M3")
+            val target = when {
+                currentOs.isLinux -> "linux"
+                currentOs.isMacOsX -> "darwin"
+                currentOs.isWindows -> "mingw"
+                else -> error("UnsupportedmOS $currentOs")
+            }
+            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm-$target:$secp256k1Version")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             implementation("ch.qos.logback:logback-classic:1.2.3")
@@ -77,7 +85,7 @@ kotlin {
             compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
-                    implementation("io.ktor:ktor-client-curl:$ktor_version")
+                    implementation("io.ktor:ktor-client-curl:$ktorVersion")
                 }
             }
         }
@@ -91,7 +99,7 @@ kotlin {
             compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
-                    implementation("io.ktor:ktor-client-ios:$ktor_version")
+                    implementation("io.ktor:ktor-client-ios:$ktorVersion")
                 }
             }
         }
@@ -100,38 +108,6 @@ kotlin {
     sourceSets.all {
         languageSettings.useExperimentalAnnotation("kotlin.RequiresOptIn")
         languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
-    }
-
-    // Create a task building a fat framework.
-    tasks.create("createFatFramework", FatFrameworkTask::class) {
-        val buildType: String = project.findProperty("kotlin.build.type")?.toString() ?: "DEBUG"
-
-        // The fat framework must have the same base name as the initial frameworks.
-        baseName = "eklair"
-
-        // The default destination directory is '<build directory>/fat-framework'.
-        destinationDir = buildDir.resolve("eklair/${buildType.toLowerCase()}")
-
-        val iosTargets = listOf(targets.findByName("iosArm64") as? KotlinNativeTarget, targets.findByName("iosX64") as? KotlinNativeTarget)
-        // Specify the frameworks to be merged.
-        val frameworksBinaries = iosTargets.mapNotNull { it?.binaries?.getFramework(buildType) }
-        from(frameworksBinaries)
-        dependsOn(frameworksBinaries.map { it.linkTask })
-
-        // disable gradle's up to date checking
-        outputs.upToDateWhen { false }
-
-        doLast {
-            val srcFile: File = destinationDir
-            val targetDir = System.getProperty("configuration.build.dir") ?: project.buildDir.path
-            println("\uD83C\uDF4E Copying ${srcFile} to ${targetDir}")
-            copy {
-                from(srcFile)
-                into(targetDir)
-                include("*.framework/**")
-                include("*.framework.dSYM/**")
-            }
-        }
     }
 }
 
@@ -155,6 +131,16 @@ afterEvaluate {
             val publicationToDisable = this
             tasks.withType<AbstractPublishToMaven>().all { onlyIf { publication != publicationToDisable } }
             tasks.withType<GenerateModuleMetadata>().all { onlyIf { publication.get() != publicationToDisable } }
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.withType<AbstractTestTask>() {
+        testLogging {
+            events("passed", "skipped", "failed", "standard_out", "standard_error")
+            showExceptions = true
+            showStackTraces = true
         }
     }
 }

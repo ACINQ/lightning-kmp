@@ -12,6 +12,7 @@ import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.OnionRoutingPacket
 
+@OptIn(ExperimentalUnsignedTypes::class)
 object TestConstants {
     val defaultBlockHeight = 400000
     val fundingSatoshis = 1000000.sat

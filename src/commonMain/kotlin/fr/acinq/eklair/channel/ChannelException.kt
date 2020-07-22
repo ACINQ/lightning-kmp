@@ -11,7 +11,6 @@ import fr.acinq.eklair.payment.relay.Origin
 import fr.acinq.eklair.wire.AnnouncementSignatures
 import fr.acinq.eklair.wire.ChannelUpdate
 import fr.acinq.eklair.wire.UpdateAddHtlc
-import kotlinx.serialization.InternalSerializationApi
 
 sealed class ChannelOpenError
 data class LocalError(val t: Throwable) : ChannelOpenError()
@@ -40,7 +39,6 @@ data class CannotCloseWithUnsignedOutgoingHtlcs(override val channelId: ByteVect
 data class ChannelUnavailable                  (override val channelId: ByteVector32) : ChannelException(channelId, "channel is unavailable (offline or closing)")
 data class InvalidFinalScript                  (override val channelId: ByteVector32) : ChannelException(channelId, "invalid final script")
 data class FundingTxTimedout                   (override val channelId: ByteVector32) : ChannelException(channelId, "funding tx timed out")
-@OptIn(InternalSerializationApi::class)
 data class FundingTxSpent                      (override val channelId: ByteVector32, val spendingTx: Transaction) : ChannelException(channelId, "funding tx has been spent by txid=${spendingTx.txid}")
 data class HtlcsTimedoutDownstream             (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs timed out downstream: ids=${htlcs.take(10).map { it.id } .joinToString(",")}") // we only display the first 10 ids
 data class HtlcsWillTimeoutUpstream            (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map { it.id }.joinToString()}") // we only display the first 10 ids
@@ -48,9 +46,9 @@ data class HtlcOverriddenByLocalCommit         (override val channelId: ByteVect
 data class FeerateTooSmall                     (override val channelId: ByteVector32, val remoteFeeratePerKw: Long) : ChannelException(channelId, "remote fee rate is too small: remoteFeeratePerKw=$remoteFeeratePerKw")
 data class FeerateTooDifferent                 (override val channelId: ByteVector32, val localFeeratePerKw: Long, val remoteFeeratePerKw: Long) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
 data class InvalidAnnouncementSignatures       (override val channelId: ByteVector32, val annSigs: AnnouncementSignatures) : ChannelException(channelId, "invalid announcement signatures: $annSigs")
-data class InvalidCommitmentSignature          (override val channelId: ByteVector32, @OptIn(InternalSerializationApi::class) val tx: Transaction) : ChannelException(channelId, "invalid commitment signature: tx=$tx")
-data class InvalidHtlcSignature                (override val channelId: ByteVector32, @OptIn(InternalSerializationApi::class)val tx: Transaction) : ChannelException(channelId, "invalid htlc signature: tx=$tx")
-data class InvalidCloseSignature               (override val channelId: ByteVector32, @OptIn(InternalSerializationApi::class)val tx: Transaction) : ChannelException(channelId, "invalid close signature: tx=$tx")
+data class InvalidCommitmentSignature          (override val channelId: ByteVector32, val tx: Transaction) : ChannelException(channelId, "invalid commitment signature: tx=$tx")
+data class InvalidHtlcSignature                (override val channelId: ByteVector32, val tx: Transaction) : ChannelException(channelId, "invalid htlc signature: tx=$tx")
+data class InvalidCloseSignature               (override val channelId: ByteVector32, val tx: Transaction) : ChannelException(channelId, "invalid close signature: tx=$tx")
 data class InvalidCloseFee                     (override val channelId: ByteVector32, val fee: Satoshi) : ChannelException(channelId, "invalid close fee: fee_satoshis=$fee")
 data class HtlcSigCountMismatch                (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "htlc sig count mismatch: expected=$expected actual: $actual")
 data class ForcedLocalCommit                   (override val channelId: ByteVector32) : ChannelException(channelId, "forced local commit")
@@ -58,6 +56,7 @@ data class UnexpectedHtlcId                    (override val channelId: ByteVect
 data class ExpiryTooSmall                      (override val channelId: ByteVector32, val minimum: CltvExpiry, val actual: CltvExpiry, val blockCount: Long) : ChannelException(channelId, "expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")
 data class ExpiryTooBig                        (override val channelId: ByteVector32, val maximum: CltvExpiry, val actual: CltvExpiry, val blockCount: Long) : ChannelException(channelId, "expiry too big: maximum=$maximum actual=$actual blockCount=$blockCount")
 data class HtlcValueTooSmall                   (override val channelId: ByteVector32, val minimum: MilliSatoshi, val actual: MilliSatoshi) : ChannelException(channelId, "htlc value too small: minimum=$minimum actual=$actual")
+@OptIn(ExperimentalUnsignedTypes::class)
 data class HtlcValueTooHighInFlight            (override val channelId: ByteVector32, val maximum: ULong, val actual: MilliSatoshi) : ChannelException(channelId, "in-flight htlcs hold too much value: maximum=$maximum actual=$actual")
 data class TooManyAcceptedHtlcs                (override val channelId: ByteVector32, val maximum: Long) : ChannelException(channelId, "too many accepted htlcs: maximum=$maximum")
 data class InsufficientFunds                   (override val channelId: ByteVector32, val amount: MilliSatoshi, val missing: Satoshi, val reserve: Satoshi, val fees: Satoshi) : ChannelException(channelId, "insufficient funds: missing=$missing reserve=$reserve fees=$fees")

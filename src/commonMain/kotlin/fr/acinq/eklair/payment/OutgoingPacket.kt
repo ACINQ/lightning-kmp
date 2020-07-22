@@ -2,7 +2,6 @@ package fr.acinq.eklair.payment
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.secp256k1.Hex
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.Eclair
@@ -15,6 +14,7 @@ import fr.acinq.eklair.router.ChannelHop
 import fr.acinq.eklair.router.Hop
 import fr.acinq.eklair.router.NodeHop
 import fr.acinq.eklair.wire.*
+import fr.acinq.secp256k1.Hex
 
 object OutgoingPacket {
 

@@ -21,6 +21,7 @@ data class OnionRoutingPacket(val version: Int, val publicKey: ByteVector, val p
  *  - 1300 for standard onion packets used in update_add_htlc
  *  - 400 for trampoline onion packets used inside standard onion packets
  */
+@OptIn(ExperimentalUnsignedTypes::class)
 class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSerializer<OnionRoutingPacket>() {
     override fun read(input: Input): OnionRoutingPacket {
         return OnionRoutingPacket(

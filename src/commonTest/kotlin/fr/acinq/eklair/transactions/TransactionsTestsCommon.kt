@@ -58,6 +58,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 @InternalSerializationApi
 class TransactionsTestsCommon {
@@ -363,6 +364,16 @@ class TransactionsTestsCommon {
             val signed = addSigs(htlcPenaltyTx.result, sig, localRevocationPriv.publicKey())
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
+        }
+    }
+
+    @Test fun `repeated generate valid commitment and htlc transactions`() {
+        repeat(500) {
+            try {
+                `generate valid commitment and htlc transactions`()
+            } catch (ex: Throwable) {
+                fail("Failed at atempt $it", ex)
+            }
         }
     }
 
