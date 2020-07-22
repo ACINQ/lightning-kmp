@@ -7,3 +7,5 @@ pluginManagement {
         jcenter()
     }
 }
+
+include(":ios_ssf")
