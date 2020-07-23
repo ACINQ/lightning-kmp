@@ -21,14 +21,16 @@ data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent(
  * generic "Watch" request
  */
 sealed class Watch {
+    abstract val channelId: ByteVector32
     abstract val event: BitcoinEvent
 }
 
 // we need a public key script to use electrum apis
-data class WatchConfirmed(val txId: ByteVector32, val publicKeyScript: ByteVector, val minDepth: Long, override val event: BitcoinEvent) : Watch() {
+data class WatchConfirmed(override val channelId: ByteVector32, val txId: ByteVector32, val publicKeyScript: ByteVector, val minDepth: Long, override val event: BitcoinEvent) : Watch() {
     // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
     // we support both p2pkh and p2wpkh scripts
-    constructor(tx: Transaction, minDepth: Long, event: BitcoinEvent) : this(
+    constructor(channelId: ByteVector32, tx: Transaction, minDepth: Long, event: BitcoinEvent) : this(
+        channelId,
         tx.txid,
         if (tx.txOut.isEmpty()) ByteVector.empty else tx.txOut[0].publicKeyScript,
         minDepth,
@@ -49,20 +51,21 @@ data class WatchConfirmed(val txId: ByteVector32, val publicKeyScript: ByteVecto
     }
 }
 
-data class WatchSpent(val txId: ByteVector32, val outputIndex: Int, val publicKeyScript: ByteVector, override val event: BitcoinEvent) : Watch() {
-    constructor(tx: Transaction, outputIndex: Int, event: BitcoinEvent) : this(tx.txid, outputIndex, tx.txOut[outputIndex].publicKeyScript, event)
+data class WatchSpent(override val channelId: ByteVector32, val txId: ByteVector32, val outputIndex: Int, val publicKeyScript: ByteVector, override val event: BitcoinEvent) : Watch() {
+    constructor(channelId: ByteVector32, tx: Transaction, outputIndex: Int, event: BitcoinEvent) : this(channelId, tx.txid, outputIndex, tx.txOut[outputIndex].publicKeyScript, event)
 }
 
-data class WatchLost(val txId: ByteVector32, val minDepth: Long, override val event: BitcoinEvent) : Watch()
+data class WatchLost(override val channelId: ByteVector32, val txId: ByteVector32, val minDepth: Long, override val event: BitcoinEvent) : Watch()
 
 /**
  * generic "watch" event
  */
 sealed class WatchEvent {
+    abstract val channelId: ByteVector32
     abstract val event: BitcoinEvent
 }
 
-data class WatchEventConfirmed(override val event: BitcoinEvent, val blockHeight: Int, val txIndex: Int, val tx: Transaction) : WatchEvent()
-data class WatchEventSpent(override val event: BitcoinEvent, val tx: Transaction) : WatchEvent()
-data class WatchEventSpentBasic(override val event: BitcoinEvent) : WatchEvent()
-data class WatchEventLost(override val event: BitcoinEvent) : WatchEvent()
+data class WatchEventConfirmed(override val channelId: ByteVector32, override val event: BitcoinEvent, val blockHeight: Int, val txIndex: Int, val tx: Transaction) : WatchEvent()
+data class WatchEventSpent(override val channelId: ByteVector32, override val event: BitcoinEvent, val tx: Transaction) : WatchEvent()
+data class WatchEventSpentBasic(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()
+data class WatchEventLost(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()

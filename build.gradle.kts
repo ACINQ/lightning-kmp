@@ -60,6 +60,7 @@ kotlin {
             implementation("io.ktor:ktor-network-tls:$ktorVersion")
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
+        compilations["test"].kotlinOptions.jvmTarget = "1.8"
         compilations["test"].defaultSourceSet.dependencies {
             val target = when {
                 currentOs.isLinux -> "linux"
@@ -70,7 +71,7 @@ kotlin {
             implementation("fr.acinq.secp256k1:secp256k1-jni-jvm-$target:$secp256k1Version")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-
+            implementation("ch.qos.logback:logback-classic:1.2.3")
         }
     }
 

@@ -772,6 +772,9 @@ object Transactions {
     }
 
     fun checkSpendable(txinfo: TransactionWithInputInfo): Try<Unit> = runTrying {
+        println("tx: ${txinfo.tx}")
+        println("outpoint: ${txinfo.tx.txIn.first().outPoint}")
+        println("output: ${txinfo.input.txOut}")
         Transaction.correctlySpends(txinfo.tx, mapOf(txinfo.tx.txIn.first().outPoint to txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 

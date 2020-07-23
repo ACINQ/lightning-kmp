@@ -6,6 +6,9 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.*
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
+import fr.acinq.eklair.utils.toByteVector
+import fr.acinq.eklair.utils.toByteVector32
+import kotlinx.serialization.Serializable
 import kotlin.math.max
 
 
@@ -54,7 +57,7 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
             serializers.put(InitTlv.Companion.Networks.tag.toLong(), InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
-            val serializer = TlvStreamSerializer(serializers)
+            val serializer = TlvStreamSerializer<InitTlv>(serializers)
             val tlvs = serializer.read(input)
             return Init(features, tlvs)
         }
@@ -68,6 +71,67 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
             serializers.put(InitTlv.Companion.Networks.tag.toLong(), InitTlv.Companion.Networks.Companion as LightningSerializer<InitTlv>)
             val serializer = TlvStreamSerializer<InitTlv>(serializers)
             serializer.write(message.tlvs, out)
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class Error(override val channelId: ByteVector32, val data: ByteVector) :  SetupMessage, HasChannelId, LightningSerializable<Error> {
+    fun toAscii(): String = data.toByteArray().decodeToString()
+
+    override fun serializer(): LightningSerializer<Error> = Error
+
+    companion object : LightningSerializer<Error>() {
+        override val tag: ULong
+            get() = 17UL
+
+        override fun read(input: Input): Error {
+            return Error(bytes(input, 32).toByteVector32(), bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: Error, out: Output) {
+            writeBytes(message.channelId, out)
+            writeU16(message.data.size(), out)
+            writeBytes(message.data, out)
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class Ping(val pongLength: Int, val data: ByteVector) : SetupMessage, LightningSerializable<Ping> {
+    override fun serializer(): LightningSerializer<Ping> = Ping
+
+    companion object : LightningSerializer<Ping>() {
+        override val tag: ULong
+            get() = 18UL
+
+        override fun read(input: Input): Ping {
+            return Ping(u16(input), bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: Ping, out: Output) {
+            writeU16(message.pongLength, out)
+            writeU16(message.data.size(), out)
+            writeBytes(message.data, out)
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class Pong(val data: ByteVector) : SetupMessage, LightningSerializable<Pong> {
+    override fun serializer(): LightningSerializer<Pong> = Pong
+
+    companion object : LightningSerializer<Pong>() {
+        override val tag: ULong
+            get() = 19UL
+
+        override fun read(input: Input): Pong {
+            return Pong(bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: Pong, out: Output) {
+            writeU16(message.data.size(), out)
+            writeBytes(message.data, out)
         }
     }
 }
@@ -316,6 +380,7 @@ data class FundingLocked(
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
 data class UpdateAddHtlc(
     override val channelId: ByteVector32,
     val id: Long,
@@ -323,30 +388,59 @@ data class UpdateAddHtlc(
     val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
     val onionRoutingPacket: OnionRoutingPacket
-) : HtlcMessage, UpdateMessage, HasChannelId
+) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateAddHtlc> {
+
+    override fun serializer(): LightningSerializer<UpdateAddHtlc> = UpdateAddHtlc
+
+    companion object : LightningSerializer<UpdateAddHtlc>() {
+        override val tag: ULong
+            get() = 128UL
+
+        override fun read(input: Input): UpdateAddHtlc {
+            val channelId = ByteVector32(bytes(input, 32))
+            val id = u64(input)
+            val amount = MilliSatoshi(u64(input))
+            val paymentHash = ByteVector32(bytes(input, 32))
+            val expiry = CltvExpiry(u32(input).toLong())
+            val onion = OnionRoutingPacketSerializer(1300).read(input)
+            return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion)
+        }
+
+        override fun write(message: UpdateAddHtlc, out: Output) {
+            writeBytes(message.channelId, out)
+            writeU64(message.id, out)
+            writeU64(message.amountMsat.toLong(), out)
+            writeBytes(message.paymentHash, out)
+            writeU32(message.cltvExpiry.toLong().toInt(), out)
+            OnionRoutingPacketSerializer(1300).write(message.onionRoutingPacket, out)
+        }
+    }
+}
 
 @OptIn(ExperimentalUnsignedTypes::class)
 data class UpdateFulfillHtlc(
     override val channelId: ByteVector32,
     val id: Long,
     val paymentPreimage: ByteVector32
-) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<FundingLocked> {
-    override fun serializer(): LightningSerializer<FundingLocked> = FundingLocked
+) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFulfillHtlc> {
+    override fun serializer(): LightningSerializer<UpdateFulfillHtlc> = UpdateFulfillHtlc
 
-    companion object : LightningSerializer<FundingLocked>() {
+    companion object : LightningSerializer<UpdateFulfillHtlc>() {
         override val tag: ULong
             get() = 130UL
 
-        override fun read(input: Input): FundingLocked {
-            return FundingLocked(
+        override fun read(input: Input): UpdateFulfillHtlc {
+            return UpdateFulfillHtlc(
                 ByteVector32(bytes(input, 32)),
-                PublicKey(bytes(input, 33))
+                u64(input),
+                ByteVector32(bytes(input, 32))
             )
         }
 
-        override fun write(message: FundingLocked, out: Output) {
+        override fun write(message: UpdateFulfillHtlc, out: Output) {
             writeBytes(message.channelId, out)
-            writeBytes(message.nextPerCommitmentPoint.value, out)
+            writeU64(message.id, out)
+            writeBytes(message.paymentPreimage, out)
         }
     }
 }
