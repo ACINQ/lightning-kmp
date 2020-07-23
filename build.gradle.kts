@@ -49,12 +49,18 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("io.ktor:ktor-client-core:$ktorVersion")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.3.8")
+            implementation(ktorClient("core"))
+            implementation(ktorClient("auth"))
+            implementation(ktorClient("json"))
+            implementation(ktorClient("serialization"))
         }
     }
 
     jvm {
-        compilations["main"].kotlinOptions.jvmTarget = "1.8"
+        compilations.all {
+            kotlinOptions.jvmTarget = "1.8"
+        }
         compilations["main"].defaultSourceSet.dependencies {
             implementation(kotlin("stdlib-jdk8"))
             implementation("io.ktor:ktor-client-okhttp:$ktorVersion")

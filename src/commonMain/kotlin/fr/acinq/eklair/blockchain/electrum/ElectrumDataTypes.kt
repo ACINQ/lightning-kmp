@@ -77,10 +77,10 @@ data class GetTransactionIdFromPosition(val height: Int, val tx_pos: Int, val me
 }
 data class GetTransactionIdFromPositionResponse(val txid: ByteVector32, val height: Int, val tx_pos: Int, val merkle: List<ByteVector32>) : ElectrumResponse()
 
-data class GetTransaction(val txid: ByteVector32) : ElectrumRequest(txid) {
+data class GetTransaction(val txid: ByteVector32, val contextOpt: TransactionHistoryItem?) : ElectrumRequest(txid) {
     override val method: String = "blockchain.transaction.get"
 }
-data class GetTransactionResponse(val tx: Transaction) : ElectrumResponse()
+data class GetTransactionResponse(val tx: Transaction, val contextOpt: TransactionHistoryItem?) : ElectrumResponse()
 
 data class GetHeader(val height: Int) : ElectrumRequest() {
     override val method: String = "blockchain.block.header"
@@ -92,15 +92,15 @@ data class GetHeaders(val start_height: Int, val count: Int, val cp_height: Int 
 }
 data class GetHeadersResponse(val start_height: Int, val headers: List<BlockHeader>, val max: Int) : ElectrumResponse()
 
-data class GetMerkle(val txid: ByteVector32, val height: Int) : ElectrumRequest(txid, height) {
+data class GetMerkle(val txid: ByteVector32, val height: Int, val contextOpt: Transaction?) : ElectrumRequest(txid, height) {
     override val method: String = "blockchain.transaction.get_merkle"
 }
-data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector32>, val block_height: Int, val pos: Int) : ElectrumResponse()
+data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector32>, val block_height: Int, val pos: Int, val contextOpt: Transaction?) : ElectrumResponse()
 
 data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.subscribe"
 }
-data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String?) : ElectrumResponse()
+data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumResponse()
 
 object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
@@ -141,10 +141,10 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
                         val hex = header.getAs<JsonPrimitive>("hex").content
                         Either.Left(HeaderSubscriptionResponse(height, BlockHeader.read(hex)))
                     }
-                    "blockchain.scripthash.subscribe" -> params.first().jsonObject.let { header ->
-                        val scriptHash = header.getAs<JsonPrimitive>("scripthash").content
-                        val status = header.getAs<JsonPrimitive>("status").contentOrNull
-                        Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status))
+                    "blockchain.scripthash.subscribe" -> {
+                        val scriptHash = params[0].content
+                        val status = params[1].contentOrNull
+                        Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status ?: ""))
                     }
                     else -> throw SerializationException("JSON-RPC Method ${method.content} is not support")
                 }
@@ -209,7 +209,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         }
         is GetTransaction -> {
             val hex = rpcResponse.result.content
-            GetTransactionResponse(Transaction.read(hex))
+            GetTransactionResponse(Transaction.read(hex), request.contextOpt)
         }
         is ScriptHashSubscription -> {
             val status = when(rpcResponse.result) {
@@ -265,7 +265,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             val leaves = jsonObject.getAs<JsonArray>("merkle").map { ByteVector32.fromValidHex(it.content) }
             val blockHeight = jsonObject.getAs<JsonLiteral>("block_height").int
             val pos = jsonObject.getAs<JsonLiteral>("block_height").int
-            GetMerkleResponse(request.txid, leaves, blockHeight, pos)
+            GetMerkleResponse(request.txid, leaves, blockHeight, pos, request.contextOpt)
         }
         HeaderSubscription -> {
             val jsonObject = rpcResponse.result.jsonObject

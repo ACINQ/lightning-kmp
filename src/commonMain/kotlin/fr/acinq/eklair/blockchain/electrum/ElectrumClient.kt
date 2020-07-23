@@ -170,15 +170,15 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
 
        /*
         - OK:
-        - TODO:
             case AddStatusListener(actor)
             case HeaderSubscription(actor)
             case request: Request
             case Right(json: JsonRPCResponse)
             case Left(response: HeaderSubscriptionResponse)
-            case Left(response: AddressSubscriptionResponse)
             case Left(response: ScriptHashSubscriptionResponse)
             case HeaderSubscriptionResponse(height, newtip)
+        - TODO:
+            case Left(response: AddressSubscriptionResponse)
         */
 
        else -> unhandled(event)
@@ -266,7 +266,8 @@ class ElectrumClient(
                     is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
                         channel.send(action.headerSubscriptionResponse)
                     }
-                    is BroadcastScriptHashSubscription -> scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
+                    is BroadcastScriptHashSubscription ->
+                        scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
                         channel.send(action.response)
                     }
                     is BroadcastStatus ->

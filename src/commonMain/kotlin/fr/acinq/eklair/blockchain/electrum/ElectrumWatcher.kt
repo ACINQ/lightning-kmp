@@ -4,9 +4,11 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eklair.blockchain.*
+import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.logger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
 import org.kodein.log.LoggerFactory
@@ -23,6 +25,12 @@ private object RegisterToElectrumStatus : WatcherAction()
 private object RegisterToHeaderNotification : WatcherAction()
 private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
+private data class AskForTransaction(val txid: ByteVector32, val item: TransactionHistoryItem) : WatcherAction()
+private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
+private data class NotifyWatchConfirmed(
+    val listener: SendChannel<WatcherType>,
+    val watchEventConfirmed: WatchEventConfirmed
+) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 
 /**
@@ -77,7 +85,7 @@ private data class ElectrumWatcherRunning(
                         val (newHeight, newTip) = message
                         logger.info { "new tip: ${newTip.blockId} $newHeight" }
                         val scriptHashesActions = watches.filterIsInstance<WatchConfirmed>().map {
-                            val scriptHash = ElectrumClient.computeScriptHash(it.publicKeyScript)
+                            val scriptHash = computeScriptHash(it.publicKeyScript)
                             AskForScriptHashHistory(scriptHash)
                         }
 
@@ -89,6 +97,93 @@ private data class ElectrumWatcherRunning(
                             actions = scriptHashesActions + publishAsapActions
                         }
                     }
+                    message is ScriptHashSubscriptionResponse -> {
+                        val (scriptHash, status) = message
+
+                        newState {
+                            state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
+                            actions = buildList {
+                                val s = scriptHashStatus[scriptHash]
+                                when {
+                                    s == status -> logger.info { "already have status=$status for scriptHash=$scriptHash" }
+                                    status.isEmpty() -> logger.info { "empty status for scriptHash=$scriptHash" }
+                                    else -> add(AskForScriptHashHistory(scriptHash))
+                                }
+                            }
+                        }
+                    }
+                    message is GetScriptHashHistoryResponse -> {
+                        // we retrieve the transaction before checking watches
+                        // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed.
+                        // we need to take them into consideration if we want to handle unconfirmed txes (which is the case for turbo channels)
+                        val getTransactionList = message.history.filter { it.height >= -1 }.map {
+                            AskForTransaction(it.tx_hash, it)
+                        }
+                        returnState(actions = getTransactionList)
+                    }
+                    message is GetTransactionResponse -> {
+                        val tx = message.tx
+                        val item = message.contextOpt as? TransactionHistoryItem
+
+                        // TODO WatchSpent
+
+                        // WatchConfirmed
+                        val watchConfirmedTriggered = mutableListOf<WatchConfirmed>()
+                        val notifyWatchConfirmedList = mutableListOf<NotifyWatchConfirmed>()
+                        val getMerkleList = mutableListOf<AskForMerkle>()
+                        watches
+                            .filterIsInstance<WatchConfirmed>()
+                            .filter { it.txId == tx.txid }
+                            .forEach { w ->
+                                if (w.minDepth == 0L) {
+                                    // special case for mempool watches (min depth = 0)
+                                    val (dummyHeight, dummyTxIndex) = ElectrumWatcher.makeDummyShortChannelId(w.txId)
+                                    notifyWatchConfirmedList.add(
+                                        NotifyWatchConfirmed(
+                                            w.listener,
+                                            WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, dummyHeight, dummyTxIndex, tx)
+                                        )
+                                    )
+                                    watchConfirmedTriggered.add(w)
+                                } else if (w.minDepth > 0L) {
+                                    // min depth > 0 here
+                                    item?.let {
+                                        val txheight = item.height
+                                        val confirmations = height - txheight + 1
+                                        logger.info { "txid=${w.txId} was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)" }
+                                        if (confirmations >= w.minDepth) {
+                                            // we need to get the tx position in the block
+                                            getMerkleList.add(AskForMerkle(w.txId, txheight, tx))
+                                        }
+                                    }
+                                }
+                            }
+
+                        newState {
+                            state = copy(watches = watches - watchConfirmedTriggered)
+                            actions = notifyWatchConfirmedList + getMerkleList
+                        }
+                    }
+                    message is GetMerkleResponse -> {
+                        val (txid, _, txheight, pos, tx) = message
+                        val confirmations = height - txheight + 1
+                        val triggered = watches
+                            .filterIsInstance<WatchConfirmed>()
+                            .filter { it.txId == txid && confirmations >= it.minDepth }
+
+                        val notifyWatchConfirmedList = tx?.let {
+                             triggered.map { w ->
+                                 logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
+                                NotifyWatchConfirmed(w.listener, WatchEventConfirmed(w.event, txheight, pos, tx))
+                            }
+                        } ?: emptyList()
+
+                        newState {
+                            state = copy(watches = watches - triggered)
+                            actions = notifyWatchConfirmedList
+                        }
+                    }
+
                     else -> returnState()
                 }
             }
@@ -97,14 +192,22 @@ private data class ElectrumWatcherRunning(
                     in watches -> returnState()
                     is WatchSpent -> {
                         val (txid, outputIndex, publicKeyScript, _) = watch
-                        val scriptHash = ElectrumClient.computeScriptHash(publicKeyScript)
+                        val scriptHash = computeScriptHash(publicKeyScript)
                         logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
                         newState {
                             state = copy(watches = watches + watch)
                             actions = listOf(RegisterToScriptHashNotification(scriptHash))
                         }
                     }
-                    is WatchConfirmed -> TODO()
+                    is WatchConfirmed -> {
+                        val (_, txid, publicKeyScript, _, _) = watch
+                        val scriptHash = computeScriptHash(publicKeyScript)
+                        logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
+                        newState {
+                            state = copy(watches = watches + watch)
+                            actions = listOf(RegisterToScriptHashNotification(scriptHash))
+                        }
+                    }
                     else -> returnState()
                 }
                 is WatchEventSpent -> TODO()
@@ -116,12 +219,12 @@ private data class ElectrumWatcherRunning(
                 case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) if tip == newtip => ()
                 case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip)
                 case watch: Watch if watches.contains(watch) => ()
-            - TODO:
-                case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _)
-                case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _)
                 case watch@WatchConfirmed(_, txid, publicKeyScript, _, _)
                 case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status)
                 case ElectrumClient.GetScriptHashHistoryResponse(_, history)
+            - TODO:
+                case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _)
+                case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _)
                 case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem))
                 case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction))
                 case ElectrumClient.GetTransactionResponse(tx, Some(origin: ActorRef))
@@ -187,13 +290,20 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                         when (action) {
                             RegisterToElectrumStatus -> client.sendMessage(ElectrumStatusSubscription(messageChannel))
                             RegisterToHeaderNotification -> client.sendMessage(ElectrumHeaderSubscription(messageChannel))
+                            is RegisterToScriptHashNotification -> client.sendMessage(
+                                ElectrumSendRequest(ScriptHashSubscription(action.scriptHash), messageChannel)
+                            )
                             is PublishAsapAction -> eventChannel.send(PublishEvent(action.publishAsap))
                             is AskForScriptHashHistory -> client.sendMessage(
                                 ElectrumSendRequest(GetScriptHashHistory(action.scriptHash), messageChannel)
                             )
-                            is RegisterToScriptHashNotification -> client.sendMessage(
-                                ElectrumSendRequest(ScriptHashSubscription(action.scriptHash), messageChannel)
+                            is AskForTransaction -> client.sendMessage(
+                                ElectrumSendRequest(GetTransaction(action.txid, action.item), messageChannel)
                             )
+                            is AskForMerkle -> client.sendMessage(
+                                ElectrumSendRequest(GetMerkle(action.txId, action.txheight, action.tx), messageChannel)
+                            )
+                            is NotifyWatchConfirmed -> action.listener.send(action.watchEventConfirmed)
                         }
                     }
                 }
@@ -209,14 +319,12 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         }
     }
 
-    suspend fun start() {
-        coroutineScope {
-            eventChannel.send(StartWatcher)
-            launch { run() }
-        }
+    fun start() {
+        launch { run() }
+        launch { eventChannel.send(StartWatcher) }
     }
 
-    suspend fun stop() {
+    fun stop() {
         // TODO Unsubscribe from SM?
 //        client.messageChannel.send(Unsubscribe(eventChannel))
         eventChannel.close()
@@ -224,5 +332,17 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     companion object {
         private val logger = LoggerFactory.default.newLogger(ElectrumWatcher::class)
+        internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {
+            // we use a height of 0
+            // - to make sure that the tx will be marked as "confirmed"
+            // - to easily identify scids linked to 0-conf channels
+            //
+            // this gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
+            // collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed)
+            // if this ever becomes a problem we could just extract some bits for our dummy height instead of just returning 0
+            val height = 0
+            val txIndex = txid.slice(0, 16).toByteArray().sum()
+            return height to txIndex
+        }
     }
 }
