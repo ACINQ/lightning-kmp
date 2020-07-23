@@ -57,6 +57,7 @@ kotlin {
             implementation(kotlin("stdlib-jdk8"))
             implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
             implementation("io.ktor:ktor-network:$ktorVersion")
+            implementation("io.ktor:ktor-network-tls:$ktorVersion")
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
         compilations["test"].kotlinOptions.jvmTarget = "1.8"
@@ -93,6 +94,7 @@ kotlin {
 
     if (currentOs.isMacOsX) {
         ios {
+            compilations["main"].cinterops.create("ios_network_framework")
             compilations["main"].defaultSourceSet {
                 dependsOn(nativeMain)
             }

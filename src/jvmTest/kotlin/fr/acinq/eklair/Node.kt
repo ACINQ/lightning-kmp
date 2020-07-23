@@ -15,6 +15,8 @@ import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.eklair.db.TestDatabases
 import fr.acinq.eklair.io.LightningSession
+import fr.acinq.eklair.io.TcpSocket
+import fr.acinq.eklair.io.receiveFully
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
@@ -62,24 +64,22 @@ class Peer(
 
     private var theirInit: Init? = null
 
-    suspend fun connect(nodeId: PublicKey, address: InetSocketAddress) {
+    suspend fun connect(nodeId: PublicKey, address: String, port: Int) {
         println("start")
         logger.info { "connecting to {$nodeId}@{$address}" }
-        val socket = aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(address)
-        val w = socket.openWriteChannel(autoFlush = false)
-        val r = socket.openReadChannel()
+        val socket = TcpSocket.Builder().connect(address, port, tls = false)
         val priv = Node.nodeParams.keyManager.nodeKey.privateKey
         val pub = priv.publicKey()
         val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
-        val (enc, dec, ck) = Node.handshake(keyPair, remoteNodeId.value.toByteArray(), r, w)
+        val (enc, dec, ck) = Node.handshake(keyPair, remoteNodeId.value.toByteArray(), { s -> socket.receiveFully(s) }, { b -> socket.send(b) })
         val session = LightningSession(enc, dec, ck)
 
         suspend fun receive(): ByteArray {
-            return session.receive { size -> val buffer = ByteArray(size); r.readFully(buffer, 0, size); buffer }
+            return session.receive { size -> val buffer = ByteArray(size); socket.receiveFully(buffer); buffer }
         }
 
         suspend fun send(message: ByteArray) {
-            session.send(message) { data, flush -> w.writeFully(data); if (flush) w.flush() }
+            session.send(message) { data, flush -> socket.send(data, flush) }
         }
 
         val init = Hex.decode("001000000002a8a0")
@@ -408,7 +408,7 @@ object Node {
                         val elts1 = elts[1].split(":")
                         val address = InetSocketAddress(elts1[0], elts1[1].toInt())
                         GlobalScope.launch {
-                            peer.connect(nodeId, address)
+                            peer.connect(nodeId, elts1[0], elts1[1].toInt())
                         }
                     }
                     "receive" -> {
@@ -460,8 +460,8 @@ object Node {
     suspend fun handshake(
         ourKeys: Pair<ByteArray, ByteArray>,
         theirPubkey: ByteArray,
-        r: ByteReadChannel,
-        w: ByteWriteChannel
+        r: suspend (Int) -> ByteArray,
+        w: suspend (ByteArray) -> Unit
     ): Triple<CipherState, CipherState, ByteArray> {
 
         /**
@@ -478,22 +478,15 @@ object Node {
 
         val writer = makeWriter(ourKeys, theirPubkey)
         val (state1, message, _) = writer.write(ByteArray(0))
-        w.writeByte(prefix)
-        w.writeFully(message, 0, message.size)
-        w.flush()
+        w(byteArrayOf(prefix) + message)
 
-        val packet = r.readPacket(expectedLength(state1), 0)
-        val payload = packet.readBytes(expectedLength(state1))
+        val payload = r(expectedLength(state1))
         assert(payload[0] == prefix)
 
         val (writer1, a, b) = state1.read(payload.drop(1).toByteArray())
         val (reader1, message1, foo) = writer1.write(ByteArray(0))
         val (enc, dec, ck) = foo!!
-        w.writeByte(prefix)
-        w.writeFully(message1, 0, message1.size)
-        w.flush()
-        assert(packet.remaining == 0L)
-        packet.close()
+        w(byteArrayOf(prefix) + message1)
         return Triple(enc, dec, ck)
     }
 }

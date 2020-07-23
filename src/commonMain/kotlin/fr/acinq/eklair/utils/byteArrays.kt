@@ -41,3 +41,18 @@ fun ByteArray.toByteVector() = ByteVector(this)
 fun ByteArray.toByteVector32() = ByteVector32(this)
 
 fun ByteArray.toByteVector64() = ByteVector64(this)
+
+private val emptyByteArray = ByteArray(0)
+fun ByteArray.subArray(newSize: Int): ByteArray {
+    require(size >= 0)
+    if (size == 0) return emptyByteArray
+    require(newSize <= size)
+    if (newSize == size) return this
+    return copyOf(newSize)
+}
+
+infix fun ByteArray.concat(append: ByteArray): ByteArray {
+    if (this.isEmpty()) return append
+    if (append.isEmpty()) return this
+    return this + append
+}
