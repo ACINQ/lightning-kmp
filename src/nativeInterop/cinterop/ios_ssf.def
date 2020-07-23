@@ -1,4 +1,0 @@
-package = fr.acinq.eklair.io.ios_ssf
-language = Objective-C
-headers = simple_socket_facade/simple_socket_facade.h
-headerFilter = simple_socket_facade/**

@@ -93,6 +93,7 @@ kotlin {
 
     if (currentOs.isMacOsX) {
         ios {
+            compilations["main"].cinterops.create("ios_network_framework")
             compilations["main"].defaultSourceSet {
                 dependsOn(nativeMain)
             }
@@ -102,20 +103,6 @@ kotlin {
                     implementation("io.ktor:ktor-client-ios:$ktorVersion")
                 }
             }
-        }
-        fun KotlinNativeTarget.ssfInterop(os: String) {
-            val target = this
-            compilations["main"].cinterops.create("ios_ssf") {
-                includeDirs.headerFilterOnly("$rootDir/ios_ssf/")
-                tasks[interopProcessingTaskName].dependsOn(":ios_ssf:buildSsf${target.name.capitalize()}")
-            }
-            compilations["main"].kotlinOptions.freeCompilerArgs += listOf("-include-binary", "$rootDir/ios_ssf/build/Debug-$os/libsimple_socket_facade.a")
-        }
-        iosX64 {
-            ssfInterop("iphonesimulator")
-        }
-        iosArm64 {
-            ssfInterop("iphoneos")
         }
     }
 

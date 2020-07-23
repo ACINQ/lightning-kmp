@@ -1,0 +1,15 @@
+package = fr.acinq.eklair.io.ios_network_framework
+language = Objective-C
+
+---
+
+#include <Network/Network.h>
+
+// https://stackoverflow.com/questions/63029901/ios-nw-parameters-configure-protocol-disable-called-directly/63050804#63050804
+
+NW_RETURNS_RETAINED nw_parameters_t nw_k_parameters_create_secure_tcp(bool withTls) {
+    return nw_parameters_create_secure_tcp(
+        withTls ? NW_PARAMETERS_DEFAULT_CONFIGURATION : NW_PARAMETERS_DISABLE_PROTOCOL,
+        NW_PARAMETERS_DEFAULT_CONFIGURATION
+    );
+}
