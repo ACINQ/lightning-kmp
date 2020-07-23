@@ -15,6 +15,7 @@ import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.eklair.db.TestDatabases
 import fr.acinq.eklair.io.LightningSession
+import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.utils.toByteVector32
@@ -40,7 +41,7 @@ data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
-
+data class SendPayment(val paymentRequest: PaymentRequest):  PeerEvent()
 data class ChannelEvent(val channelId: ByteVector32, val event: fr.acinq.eklair.channel.Event) : PeerEvent()
 
 @ExperimentalStdlibApi
@@ -289,7 +290,22 @@ class Peer(
                 }
                 event is ReceivePayment -> {
                     logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
+                    val pr = PaymentRequest("lnbcrt", event.amount, System.currentTimeMillis() / 1000, nodeParams.nodeId,
+                        listOf(
+                            PaymentRequest.Companion.TaggedField.PaymentHash(event.paymentHash),
+                            PaymentRequest.Companion.TaggedField.Description("this is a kotlin test")
+                        ),
+                        ByteVector.empty)
+                        .sign(nodeParams.privateKey)
+                    logger.info { "payment request ${pr.write()}" }
                     pendingPayments[event.paymentHash] = event
+                }
+                event is SendPayment && event.paymentRequest.nodeId != remoteNodeId -> {
+                    logger.error { "no route to ${event.paymentRequest.nodeId}"}
+                }
+                event is SendPayment -> {
+                    logger.info { "sending ${event.paymentRequest.amount} to ${event.paymentRequest.nodeId}"}
+
                 }
                 event is ChannelEvent && !channels.containsKey(event.channelId) -> {
                     logger.error { "received ${event.event} for a unknown channel ${event.channelId}" }
@@ -382,7 +398,7 @@ object Node {
         val commandChannel = Channel<List<String>>(2)
 
         suspend fun readLoop() {
-            println("ready:")
+            println("node ${nodeParams.nodeId} is ready:")
             for(tokens in commandChannel) {
                 when (tokens.first()) {
                     "connect" -> {
@@ -399,6 +415,10 @@ object Node {
                         val paymentPreimage = ByteVector32(tokens[1])
                         val amount = MilliSatoshi(tokens[2].toLong())
                         peer.input.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
+                    }
+                    "pay" -> {
+                        val invoice = PaymentRequest.read(tokens[1])
+                        peer.input.send(SendPayment(invoice))
                     }
                     else -> {
                         println("I don't undertand ${tokens}")
