@@ -44,6 +44,8 @@ kotlin {
         }
     }
     val commonTest by sourceSets.getting {
+        fun ktorClient(module: String, version: String = ktorVersion) = "io.ktor:ktor-client-$module:$version"
+
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))

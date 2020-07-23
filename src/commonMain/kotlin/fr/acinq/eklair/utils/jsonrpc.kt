@@ -21,6 +21,7 @@ data class JsonRPCRequest(
 fun List<Any>.asJsonRPCParameters(): List<JsonRPCParam> = map {
     when(it) {
         is Int -> it.asParam()
+        is Double -> it.asParam()
         is String -> it.asParam()
         is ByteVector -> it.toHex().asParam()
         is Transaction -> Hex.encode(Transaction.write(it)).asParam()
@@ -44,6 +45,21 @@ data class JsonRPCInt(val value: Int) : JsonRPCParam() {
     }
 }
 fun Int.asParam(): JsonRPCParam = JsonRPCInt(this)
+
+@Serializable
+data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
+    @Serializer(forClass = JsonRPCDouble::class)
+    companion object: KSerializer<JsonRPCDouble> {
+        override val descriptor: SerialDescriptor = SerialDescriptor("DoubleParam")
+
+        override fun serialize(encoder: Encoder, value: JsonRPCDouble) {
+            encoder.encodeDouble(value.value)
+        }
+
+        override fun deserialize(decoder: Decoder): JsonRPCDouble = JsonRPCDouble(decoder.decodeDouble())
+    }
+}
+fun Double.asParam(): JsonRPCParam = JsonRPCDouble(this)
 
 @Serializable
 data class JsonRPCString(val value: String) : JsonRPCParam() {
