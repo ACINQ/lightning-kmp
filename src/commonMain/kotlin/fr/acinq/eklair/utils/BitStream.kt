@@ -37,7 +37,7 @@ data class BitStream(private var bytes: List<Byte>, private var offstart: Int, p
                 val input1 = input.toInt() and 0xff
                 val last = ((bytes.last().toInt() or (input1.ushr(8 - offend))) and 0xff).toByte()
                 val next = ((input1 shl offend) and 0xff).toByte()
-                bytes = bytes.dropLast(2)
+                bytes = bytes.dropLast(1)
                 bytes = bytes + last + next
             }
         }
