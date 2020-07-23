@@ -156,13 +156,13 @@ private fun ElectrumWatcherState.returnState(action: WatcherAction): Pair<Electr
 private fun ElectrumWatcherState.returnState(vararg actions: WatcherAction): Pair<ElectrumWatcherState, List<WatcherAction>> = this to listOf(*actions)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ElectrumWatcher(val client: ElectrumClient) {
+class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): CoroutineScope by scope {
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
     private val messageChannel = Channel<ElectrumMessage>(Channel.BUFFERED)
     val watchChannel = Channel<WatcherType>(Channel.BUFFERED)
 
-    private val input = CoroutineScope(Dispatchers.Default).produce(capacity = Channel.BUFFERED) {
+    private val input = scope.produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
         launch { messageChannel.consumeEach { send(it) } }
         launch { watchChannel.consumeEach { send(it) } }
