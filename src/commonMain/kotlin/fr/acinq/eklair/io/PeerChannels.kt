@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eklair.NodeParams
 import fr.acinq.eklair.channel.LocalParams
 
-object Peer {
+object PeerChannels {
     fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: PublicKey?, isFunder: Boolean, fundingAmount: Satoshi): LocalParams {
         // we make sure that funder and fundee key path end differently
         val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)

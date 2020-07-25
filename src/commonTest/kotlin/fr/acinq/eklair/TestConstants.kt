@@ -7,7 +7,7 @@ import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
 import fr.acinq.eklair.channel.LocalParams
 import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.db.TestDatabases
-import fr.acinq.eklair.io.Peer
+import fr.acinq.eklair.io.PeerChannels
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.OnionRoutingPacket
@@ -75,7 +75,7 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
-        val channelParams: LocalParams = Peer.makeChannelParams(
+        val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
             null,
@@ -139,7 +139,7 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
-        val channelParams: LocalParams = Peer.makeChannelParams(
+        val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
             null,

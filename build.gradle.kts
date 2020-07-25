@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "fr.acinq.eklair"
-version = "0.2.0-1.4-rc"
+version = "snapshot"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
