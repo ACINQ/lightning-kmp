@@ -321,12 +321,14 @@ data class WaitForFundingCreated(
                                     fundingAmount
                                 )
                             val watchSpent = WatchSpent(
+                                kotlinx.coroutines.channels.Channel(), // TODO change this
                                 commitInput.outPoint.txid,
                                 commitInput.outPoint.index.toInt(),
                                 commitments.commitInput.txOut.publicKeyScript,
                                 BITCOIN_FUNDING_SPENT
                             ) // TODO: should we wait for an acknowledgment from the watcher?
                             val watchConfirmed = WatchConfirmed(
+                                kotlinx.coroutines.channels.Channel(), // TODO change this
                                 commitInput.outPoint.txid,
                                 commitments.commitInput.txOut.publicKeyScript,
                                 fundingMinDepth.toLong(),
@@ -500,10 +502,12 @@ data class WaitForFundingSigned(
                         val now = currentTimestampSeconds()
                         // TODO context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
-                        val watchSpent = WatchSpent(commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+                        val watchSpent = WatchSpent(
+                            kotlinx.coroutines.channels.Channel(), // TODO change this
+                            commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
                         // phoenix channels have a zero mindepth for funding tx
                         val minDepthBlocks = if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else staticParams.nodeParams.minDepthBlocks
-                        val watchConfirmed = WatchConfirmed(commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                        val watchConfirmed = WatchConfirmed(kotlinx.coroutines.channels.Channel(),commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
                         logger.info { "committing txid=${fundingTx.txid}" }
 
                         // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -591,6 +595,7 @@ data class WaitForFundingLocked(
                     is FundingLocked -> {
                         // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                         val watchConfirmed = WatchConfirmed(
+                            kotlinx.coroutines.channels.Channel(),
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.txOut.publicKeyScript,
                             ANNOUNCEMENTS_MINCONF.toLong(),

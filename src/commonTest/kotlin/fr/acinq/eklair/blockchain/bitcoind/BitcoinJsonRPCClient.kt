@@ -1,7 +1,6 @@
 package fr.acinq.eklair.blockchain.bitcoind
 
 import fr.acinq.bitcoin.*
-import fr.acinq.eklair.blockchain.electrum.ServerError
 import fr.acinq.eklair.utils.*
 import io.ktor.client.*
 import io.ktor.client.features.auth.*
@@ -37,6 +36,8 @@ class BitcoinJsonRPCClient(
             }
         }
     }
+
+    fun close() { httpClient.close() }
 
     @OptIn(UnstableDefault::class)
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
@@ -83,9 +84,9 @@ data class GetNewAddressResponse(val address: String) : BitcoindResponse()
 data class GenerateToAddress(val blockCount: Int, val address: String) : BitcoindRequest(blockCount, address) {
     override val method: String = "generatetoaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): BitcoindResponse =
-        GenerateToAddressReponse(rpcResponse.result.jsonArray.map { it.content })
+        GenerateToAddressResponse(rpcResponse.result.jsonArray.map { it.content })
 }
-data class GenerateToAddressReponse(val blocks: List<String>) : BitcoindResponse()
+data class GenerateToAddressResponse(val blocks: List<String>) : BitcoindResponse()
 
 data class DumpPrivateKey(val address: String) : BitcoindRequest(address) {
     override val method: String = "dumpprivkey"
@@ -110,7 +111,13 @@ data class GetRawTransaction(val txid: String) : BitcoindRequest(txid) {
     override val method: String = "getrawtransaction"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetRawTransactionResponse =
         GetRawTransactionResponse(
-            Transaction.Companion.read(rpcResponse.result.content)
+            Transaction.read(rpcResponse.result.content)
         )
 }
 data class GetRawTransactionResponse(val tx: Transaction) : BitcoindResponse()
+data class SendRawTransaction(val tx: Transaction) : BitcoindRequest(tx.toString()) {
+    override val method: String = "sendrawtransaction"
+    override fun parseResponse(rpcResponse: JsonRPCResponse): SendRawTransactionResponse =
+        SendRawTransactionResponse(rpcResponse.result.content)
+}
+data class SendRawTransactionResponse(val txid: String) : BitcoindResponse()

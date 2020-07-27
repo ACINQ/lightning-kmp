@@ -77,10 +77,10 @@ data class GetTransactionIdFromPosition(val height: Int, val tx_pos: Int, val me
 }
 data class GetTransactionIdFromPositionResponse(val txid: ByteVector32, val height: Int, val tx_pos: Int, val merkle: List<ByteVector32>) : ElectrumResponse()
 
-data class GetTransaction(val txid: ByteVector32, val contextOpt: TransactionHistoryItem?) : ElectrumRequest(txid) {
+data class GetTransaction(val txid: ByteVector32, val contextOpt: Any?) : ElectrumRequest(txid) {
     override val method: String = "blockchain.transaction.get"
 }
-data class GetTransactionResponse(val tx: Transaction, val contextOpt: TransactionHistoryItem?) : ElectrumResponse()
+data class GetTransactionResponse(val tx: Transaction, val contextOpt: Any?) : ElectrumResponse()
 
 data class GetHeader(val height: Int) : ElectrumRequest() {
     override val method: String = "blockchain.block.header"

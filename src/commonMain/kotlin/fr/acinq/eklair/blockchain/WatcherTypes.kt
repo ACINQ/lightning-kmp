@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eklair.ShortChannelId
 import fr.acinq.eklair.utils.Try
 import fr.acinq.eklair.utils.runTrying
+import kotlinx.coroutines.channels.SendChannel
 
 sealed class BitcoinEvent
 object BITCOIN_FUNDING_PUBLISH_FAILED : BitcoinEvent()
@@ -17,20 +18,19 @@ data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()
 data class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(val shortChannelId: ShortChannelId) : BitcoinEvent()
 data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent()
 
-interface WatcherType
-
 /**
  * generic "Watch" request
  */
-sealed class Watch : WatcherType {
+sealed class Watch {
     abstract val event: BitcoinEvent
 }
 
 // we need a public key script to use electrum apis
-data class WatchConfirmed(val txId: ByteVector32, val publicKeyScript: ByteVector, val minDepth: Long, override val event: BitcoinEvent) : Watch() {
+data class WatchConfirmed(val listener: SendChannel<WatchEventConfirmed>, val txId: ByteVector32, val publicKeyScript: ByteVector, val minDepth: Long, override val event: BitcoinEvent) : Watch() {
     // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
     // we support both p2pkh and p2wpkh scripts
-    constructor(tx: Transaction, minDepth: Long, event: BitcoinEvent) : this(
+    constructor(listener: SendChannel<WatchEventConfirmed>, tx: Transaction, minDepth: Long, event: BitcoinEvent) : this(
+        listener,
         tx.txid,
         if (tx.txOut.isEmpty()) ByteVector.empty else tx.txOut[0].publicKeyScript,
         minDepth,
@@ -51,8 +51,8 @@ data class WatchConfirmed(val txId: ByteVector32, val publicKeyScript: ByteVecto
     }
 }
 
-data class WatchSpent(val txId: ByteVector32, val outputIndex: Int, val publicKeyScript: ByteVector, override val event: BitcoinEvent) : Watch() {
-    constructor(tx: Transaction, outputIndex: Int, event: BitcoinEvent) : this(tx.txid, outputIndex, tx.txOut[outputIndex].publicKeyScript, event)
+data class WatchSpent(val listener: SendChannel<WatchEventSpent>, val txId: ByteVector32, val outputIndex: Int, val publicKeyScript: ByteVector, override val event: BitcoinEvent) : Watch() {
+    constructor(listener: SendChannel<WatchEventSpent>, tx: Transaction, outputIndex: Int, event: BitcoinEvent) : this(listener, tx.txid, outputIndex, tx.txOut[outputIndex].publicKeyScript, event)
 }
 
 data class WatchLost(val txId: ByteVector32, val minDepth: Long, override val event: BitcoinEvent) : Watch()
@@ -60,7 +60,7 @@ data class WatchLost(val txId: ByteVector32, val minDepth: Long, override val ev
 /**
  * generic "watch" event
  */
-sealed class WatchEvent : WatcherType {
+sealed class WatchEvent {
     abstract val event: BitcoinEvent
 }
 
@@ -70,3 +70,5 @@ data class WatchEventSpentBasic(override val event: BitcoinEvent) : WatchEvent()
 data class WatchEventLost(override val event: BitcoinEvent) : WatchEvent()
 
 class PublishAsap(tx: Transaction)
+data class GetTxWithMeta(val txid: ByteVector32)
+data class GetTxWithMetaResponse(val txid: ByteVector32, val tx_opt: Transaction?, val lastBlockTimestamp: Long)
