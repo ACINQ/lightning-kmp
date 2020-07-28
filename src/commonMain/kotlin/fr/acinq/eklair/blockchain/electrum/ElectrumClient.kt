@@ -14,6 +14,7 @@ import fr.acinq.eklair.utils.toByteVector32
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
@@ -303,9 +304,12 @@ class ElectrumClient(
                     val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
-            } catch (io: TcpSocket.IOException) {
+            } catch (ex: TcpSocket.IOException) {
+                logger.error(ex)
                 socket.close()
                 eventChannel.send(Disconnected)
+            } catch (ex: SerializationException) {
+                logger.error(ex)
             }
         }
     }
