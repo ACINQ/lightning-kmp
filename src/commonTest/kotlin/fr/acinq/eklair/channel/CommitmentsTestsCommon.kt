@@ -14,6 +14,7 @@ import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.test.Test
@@ -21,28 +22,28 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class CommitmentsTests {
-    val logger = LoggerFactory.default.newLogger(CommitmentSpecTestsCommon::class)
+    val logger = LoggerFactory.default.newLogger(Logger.Tag(CommitmentSpecTestsCommon::class))
 
     fun reachNormal(): Pair<Normal, Normal> {
-        var alice: State = WaitForInit(
-            StaticParams(
-                TestConstants.Alice.nodeParams,
-                TestConstants.Bob.keyManager.nodeId
-            ),
-            currentTip = Pair(0, Block.RegtestGenesisBlock.header)
-        )
-        var bob: State = WaitForInit(
-            StaticParams(
-                TestConstants.Bob.nodeParams,
-                TestConstants.Alice.keyManager.nodeId
-            ),
-            currentTip = Pair(0, Block.RegtestGenesisBlock.header)
-        )
+        var alice: State = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
+        var bob: State = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
         val channelFlags = 0.toByte()
         val channelVersion = ChannelVersion.STANDARD
         val aliceInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val bobInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
-        var ra = alice.process(InitFunder(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.Alice.channelParams, bobInit, channelFlags, channelVersion))
+        var ra = alice.process(
+            InitFunder(
+                ByteVector32.Zeroes,
+                TestConstants.fundingSatoshis,
+                TestConstants.pushMsat,
+                TestConstants.feeratePerKw,
+                TestConstants.feeratePerKw,
+                TestConstants.Alice.channelParams,
+                bobInit,
+                channelFlags,
+                channelVersion
+            )
+        )
         alice = ra.first
         assertTrue { alice is WaitForAcceptChannel }
         var rb = bob.process(InitFundee(ByteVector32.Zeroes, TestConstants.Bob.channelParams, aliceInit))
@@ -56,7 +57,12 @@ class CommitmentsTests {
         ra = alice.process(MessageReceived(accept))
         alice = ra.first
         val makeFundingTx = ra.second.filterIsInstance<MakeFundingTx>().first()
-        val fundingTx = Transaction(version = 2, txIn = listOf(), txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)), lockTime = 0)
+        val fundingTx = Transaction(
+            version = 2,
+            txIn = listOf(),
+            txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)),
+            lockTime = 0
+        )
         ra = alice.process(MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
         alice = ra.first
         val created = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingCreated>().first()
@@ -67,11 +73,11 @@ class CommitmentsTests {
         alice = ra.first
         val watchConfirmed = ra.second.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>().first()
 
-        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.event, 144, 1, fundingTx)))
+        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
         alice = ra.first
         val fundingLockedAlice = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
 
-        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.event, 144, 1, fundingTx)))
+        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
         bob = rb.first
         val fundingLockedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
 
@@ -99,7 +105,7 @@ class CommitmentsTests {
         val ac0 = alice.commitments
         val bc0 = bob.commitments
         // we need to take the additional HTLC fee into account because balances are above the trim threshold.
-        assertEquals(ac0.availableBalanceForSend(),  a - htlcOutputFee)
+        assertEquals(ac0.availableBalanceForSend(), a - htlcOutputFee)
         assertEquals(bc0.availableBalanceForReceive(), a - htlcOutputFee)
 
         val currentBlockHeight = 144L
@@ -108,8 +114,8 @@ class CommitmentsTests {
         val bc1 = (bc0.receiveAdd(add) as Try.Success<Commitments>).result
         val (_, commit1) = (ac1.sendCommit(alice.staticParams.nodeParams.keyManager, logger) as Try.Success<Pair<Commitments, CommitSig>>).result
         val (bc2, _) = (bc1.receiveCommit(commit1, bob.staticParams.nodeParams.keyManager, logger) as Try.Success<Pair<Commitments, RevokeAndAck>>).result
-        assertEquals(ac1.availableBalanceForSend() , 1000.msat)
-        assertEquals(bc2.availableBalanceForReceive() , 1000.msat)
+        assertEquals(ac1.availableBalanceForSend(), 1000.msat)
+        assertEquals(bc2.availableBalanceForReceive(), 1000.msat)
     }
 
     @Test
@@ -149,8 +155,7 @@ class CommitmentsTests {
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - fee)
 
-
-        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Commitments>).result
+        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac3.availableBalanceForSend(), a - p - fee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
@@ -162,7 +167,7 @@ class CommitmentsTests {
         assertEquals(ac4.availableBalanceForSend(), a - p - fee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
-        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Commitments>).result
+        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - fee)
 
@@ -183,7 +188,7 @@ class CommitmentsTests {
         assertEquals(ac6.availableBalanceForSend(), a - p)
         assertEquals(ac6.availableBalanceForReceive(), b + p)
 
-        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Commitments>).result
+        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(bc7.availableBalanceForSend(), b + p)
         assertEquals(bc7.availableBalanceForReceive(), a - p)
 
@@ -195,7 +200,7 @@ class CommitmentsTests {
         assertEquals(bc8.availableBalanceForSend(), b + p)
         assertEquals(bc8.availableBalanceForReceive(), a - p)
 
-        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Commitments>).result
+        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac8.availableBalanceForSend(), a - p)
         assertEquals(ac8.availableBalanceForReceive(), b + p)
     }
@@ -237,8 +242,7 @@ class CommitmentsTests {
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - fee)
 
-
-        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Commitments>).result
+        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac3.availableBalanceForSend(), a - p - fee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
@@ -250,7 +254,7 @@ class CommitmentsTests {
         assertEquals(ac4.availableBalanceForSend(), a - p - fee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
-        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Commitments>).result
+        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - fee)
 
@@ -271,7 +275,7 @@ class CommitmentsTests {
         assertEquals(ac6.availableBalanceForSend(), a)
         assertEquals(ac6.availableBalanceForReceive(), b)
 
-        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Commitments>).result
+        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(bc7.availableBalanceForSend(), b)
         assertEquals(bc7.availableBalanceForReceive(), a)
 
@@ -283,7 +287,7 @@ class CommitmentsTests {
         assertEquals(bc8.availableBalanceForSend(), b)
         assertEquals(bc8.availableBalanceForReceive(), a)
 
-        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Commitments>).result
+        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac8.availableBalanceForSend(), a)
         assertEquals(ac8.availableBalanceForReceive(), b)
     }
@@ -346,7 +350,7 @@ class CommitmentsTests {
         assertEquals(bc4.availableBalanceForSend(), b - p3)
         assertEquals(bc4.availableBalanceForReceive(), a - p1 - fee - p2 - fee)
 
-        val ac5 = (ac4.receiveRevocation(revocation1) as Try.Success<Commitments>).result
+        val ac5 = (ac4.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac5.availableBalanceForSend(), a - p1 - fee - p2 - fee)
         assertEquals(ac5.availableBalanceForReceive(), b - p3)
 
@@ -355,10 +359,10 @@ class CommitmentsTests {
         assertEquals(bc5.availableBalanceForReceive(), a - p1 - fee - p2 - fee)
 
         val (ac6, revocation2) = (ac5.receiveCommit(commit2, alice.staticParams.nodeParams.keyManager, logger) as Try.Success<Pair<Commitments, RevokeAndAck>>).result
-        assertEquals(ac6.availableBalanceForSend(), a - p1 - fee - p2 - fee - fee ) // alice has acknowledged b's hltc so it needs to pay the fee for it
+        assertEquals(ac6.availableBalanceForSend(), a - p1 - fee - p2 - fee - fee) // alice has acknowledged b's hltc so it needs to pay the fee for it
         assertEquals(ac6.availableBalanceForReceive(), b - p3)
 
-        val bc6 = (bc5.receiveRevocation(revocation2) as Try.Success<Commitments>).result
+        val bc6 = (bc5.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(bc6.availableBalanceForSend(), b - p3)
         assertEquals(bc6.availableBalanceForReceive(), a - p1 - fee - p2 - fee - fee)
 
@@ -370,7 +374,7 @@ class CommitmentsTests {
         assertEquals(bc7.availableBalanceForSend(), b - p3)
         assertEquals(bc7.availableBalanceForReceive(), a - p1 - fee - p2 - fee - fee)
 
-        val ac8 = (ac7.receiveRevocation(revocation3) as Try.Success<Commitments>).result
+        val ac8 = (ac7.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac8.availableBalanceForSend(), a - p1 - fee - p2 - fee - fee)
         assertEquals(ac8.availableBalanceForReceive(), b - p3)
 
@@ -409,8 +413,8 @@ class CommitmentsTests {
         assertEquals(bc11.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc11.availableBalanceForReceive(), a - p1 - fee - p2 - fee + p3)
 
-        val ac13 = (ac12.receiveRevocation(revocation4) as Try.Success<Commitments>).result
-        assertEquals(ac13.availableBalanceForSend(), a - p1 - fee - p2 - fee +p3)
+        val ac13 = (ac12.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        assertEquals(ac13.availableBalanceForSend(), a - p1 - fee - p2 - fee + p3)
         assertEquals(ac13.availableBalanceForReceive(), b + p1 - p3)
 
         val (bc12, commit5) = (bc11.sendCommit(bob.staticParams.nodeParams.keyManager, logger) as Try.Success<Pair<Commitments, CommitSig>>).result
@@ -421,7 +425,7 @@ class CommitmentsTests {
         assertEquals(ac14.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac14.availableBalanceForReceive(), b + p1 - p3)
 
-        val bc13 = (bc12.receiveRevocation(revocation5) as Try.Success<Commitments>).result
+        val bc13 = (bc12.receiveRevocation(revocation5) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(bc13.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc13.availableBalanceForReceive(), a - p1 + p3)
 
@@ -433,14 +437,14 @@ class CommitmentsTests {
         assertEquals(bc14.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc14.availableBalanceForReceive(), a - p1 + p3)
 
-        val ac16 = (ac15.receiveRevocation(revocation6) as Try.Success<Commitments>).result
+        val ac16 = (ac15.receiveRevocation(revocation6) as Try.Success<Pair<Commitments, List<Action>>>).result.first
         assertEquals(ac16.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac16.availableBalanceForReceive(), b + p1 - p3)
     }
 
     // See https://github.com/lightningnetwork/lightning-rfc/issues/728
-    @Test 
-    fun`funder keeps additional reserve to avoid channel being stuck`() {
+    @Test
+    fun `funder keeps additional reserve to avoid channel being stuck`() {
         val isFunder = true
         val currentBlockHeight = 144L
         val c = makeCommitments(100000000.msat, 50000000.msat, 2500, 546.sat, isFunder)
@@ -473,7 +477,9 @@ class CommitmentsTests {
         val currentBlockHeight = 144L
         listOf(true, false).forEach {
             val c = makeCommitments(31000000.msat, 702000000.msat, 2679, 546.sat, it)
-            val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive(), randomBytes32(), CltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket)
+            val add = UpdateAddHtlc(
+                randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive(), randomBytes32(), CltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket
+            )
             val result = c.receiveAdd(add)
             assertTrue(result.isSuccess)
         }
@@ -482,16 +488,31 @@ class CommitmentsTests {
     @OptIn(ExperimentalUnsignedTypes::class)
     companion object {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: Long = 0, dustLimit: Satoshi = 0.sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments {
-            val localParams = LocalParams(randomKey().publicKey(), KeyPath("42"), dustLimit, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, null, Features.empty)
-            val remoteParams = RemoteParams(randomKey().publicKey(), dustLimit, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty)
-            val commitmentInput = Helpers.Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey)
+            val localParams = LocalParams(
+                randomKey().publicKey(), KeyPath("42"), dustLimit, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, null, Features.empty
+            )
+            val remoteParams = RemoteParams(
+                randomKey().publicKey(), dustLimit, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50,
+                randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(),
+                Features.empty
+            )
+            val commitmentInput = Helpers.Funding.makeFundingInputInfo(
+                randomBytes32(),
+                0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey
+            )
             return Commitments(
                 ChannelVersion.STANDARD,
                 localParams,
                 remoteParams,
                 channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-                LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0)), listOf())),
-                RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                LocalCommit(
+                    0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(
+                        Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0)), listOf()
+                    )
+                ),
+                RemoteCommit(
+                    0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()
+                ),
                 LocalChanges(listOf(), listOf(), listOf()),
                 RemoteChanges(listOf(), listOf(), listOf()),
                 localNextHtlcId = 1,
@@ -500,20 +521,37 @@ class CommitmentsTests {
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 commitInput = commitmentInput,
                 remotePerCommitmentSecrets = ShaChain.init,
-                channelId = randomBytes32())
+                channelId = randomBytes32()
+            )
         }
 
-        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments {
-            val localParams = LocalParams(localNodeId, KeyPath("42L"), 0.sat, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, null, Features.empty)
-            val remoteParams = RemoteParams(remoteNodeId, 0.sat, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty)
-            val commitmentInput = Helpers.Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey)
+        fun makeCommitments(
+            toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean
+        ): Commitments {
+            val localParams = LocalParams(
+                localNodeId, KeyPath("42L"), 0.sat, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, null, Features.empty
+            )
+            val remoteParams = RemoteParams(
+                remoteNodeId, 0.sat, ULong.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
+            )
+            val commitmentInput = Helpers.Funding.makeFundingInputInfo(
+                randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey
+            )
             return Commitments(
                 ChannelVersion.STANDARD,
                 localParams,
                 remoteParams,
                 channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-                LocalCommit(0, CommitmentSpec(setOf(), 0, toLocal, toRemote), PublishableTxs(Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0)), listOf())),
-                RemoteCommit(0, CommitmentSpec(setOf(), 0, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                LocalCommit(
+                    0, CommitmentSpec(setOf(), 0, toLocal, toRemote), PublishableTxs(
+                        Transactions.TransactionWithInputInfo.CommitTx(
+                            commitmentInput, Transaction(2, listOf(), listOf(), 0)
+                        ), listOf()
+                    )
+                ),
+                RemoteCommit(
+                    0, CommitmentSpec(setOf(), 0, toRemote, toLocal), randomBytes32(), randomKey().publicKey()
+                ),
                 LocalChanges(listOf(), listOf(), listOf()),
                 RemoteChanges(listOf(), listOf(), listOf()),
                 localNextHtlcId = 1,
@@ -522,8 +560,8 @@ class CommitmentsTests {
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 commitInput = commitmentInput,
                 remotePerCommitmentSecrets = ShaChain.init,
-                channelId = randomBytes32())
+                channelId = randomBytes32()
+            )
         }
-
     }
 }

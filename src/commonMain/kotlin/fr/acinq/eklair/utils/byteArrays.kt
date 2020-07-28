@@ -2,6 +2,7 @@ package fr.acinq.eklair.utils
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.ByteVector64
 import kotlin.experimental.and
 import kotlin.experimental.or
 import kotlin.experimental.xor
@@ -38,6 +39,8 @@ infix fun ByteArray.xor(other: ByteArray): ByteArray {
 fun ByteArray.toByteVector() = ByteVector(this)
 
 fun ByteArray.toByteVector32() = ByteVector32(this)
+
+fun ByteArray.toByteVector64() = ByteVector64(this)
 
 private val emptyByteArray = ByteArray(0)
 fun ByteArray.subArray(newSize: Int): ByteArray {

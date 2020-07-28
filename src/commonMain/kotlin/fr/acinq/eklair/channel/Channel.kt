@@ -14,6 +14,7 @@ import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
@@ -52,6 +53,10 @@ data class NewBlock(val height: Int, val Header: BlockHeader): Event()
 sealed class Action
 data class SendMessage(val message: LightningMessage) : Action()
 data class SendWatch(val watch: Watch) : Action()
+data class ProcessCommand(val command: Command) : Action()
+data class ProcessAdd(val add: UpdateAddHtlc): Action()
+data class ProcessFail(val fail: UpdateFailHtlc): Action()
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc): Action()
 data class StoreState(val data: State) : Action()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): Action()
@@ -59,6 +64,7 @@ data class HandleError(val error: Throwable) : Action()
 data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : Action()
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : Action()
 data class PublishTx(val tx: Transaction): Action()
+data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : Action()
 
 /**
  * channel static parameters
@@ -82,7 +88,7 @@ sealed class State {
      */
     abstract fun process(event: Event): Pair<State, List<Action>>
 
-    val logger = LoggerFactory.default.newLogger(Channel::class)
+    val logger = LoggerFactory.default.newLogger(Logger.Tag(Channel::class))
 }
 
 interface HasCommitments {
@@ -138,7 +144,10 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, event, open)
                 Pair(nextState, listOf(SendMessage(open)))
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event ins state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -225,9 +234,15 @@ data class WaitForOpenChannel(
 
                         Pair(nextState, listOf(SendMessage(accept)))
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event ins state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -321,29 +336,33 @@ data class WaitForFundingCreated(
                                     fundingAmount
                                 )
                             val watchSpent = WatchSpent(
-                                // TODO must provide a coroutine Channel from Channel State Machine
-                                kotlinx.coroutines.channels.Channel(),
+                                channelId,
                                 commitInput.outPoint.txid,
                                 commitInput.outPoint.index.toInt(),
                                 commitments.commitInput.txOut.publicKeyScript,
                                 BITCOIN_FUNDING_SPENT
                             ) // TODO: should we wait for an acknowledgment from the watcher?
                             val watchConfirmed = WatchConfirmed(
-                                // TODO must provide a coroutine Channel from Channel State Machine
-                                kotlinx.coroutines.channels.Channel(),
+                                channelId,
                                 commitInput.outPoint.txid,
                                 commitments.commitInput.txOut.publicKeyScript,
                                 fundingMinDepth.toLong(),
                                 BITCOIN_FUNDING_DEPTHOK
                             )
-                            val nextState =
-                                WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
-                            Pair(nextState, listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), StoreState(nextState)))
+                            val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                            val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
+                            Pair(nextState, actions)
                         }
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled message ${event.message} in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 
@@ -460,7 +479,10 @@ data class WaitForFundingInternal(
                     fundingCreated)
                 Pair(nextState, listOf(channelIdAssigned, SendMessage(fundingCreated)))
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -504,15 +526,10 @@ data class WaitForFundingSigned(
                         val now = currentTimestampSeconds()
                         // TODO context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
-                        val watchSpent = WatchSpent(
-                            // TODO must provide a coroutine Channel from Channel State Machine
-                            kotlinx.coroutines.channels.Channel(),
-                            commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+                        val watchSpent = WatchSpent(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
                         // phoenix channels have a zero mindepth for funding tx
                         val minDepthBlocks = if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else staticParams.nodeParams.minDepthBlocks
-                        val watchConfirmed = WatchConfirmed(
-                            // TODO must provide a coroutine Channel from Channel State Machine
-                            kotlinx.coroutines.channels.Channel(),commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                        val watchConfirmed = WatchConfirmed(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
                         logger.info { "committing txid=${fundingTx.txid}" }
 
                         // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -525,7 +542,10 @@ data class WaitForFundingSigned(
                     }
                 }
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -557,11 +577,15 @@ data class WaitForFundingConfirmed(
                                 ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
                             )
                         }
-                        if (result.isFailure) {
-                            // TODO: error handling
-                            return Pair(this, listOf())
+                        if (result is Try.Failure) {
+                            logger.error { "funding tx verification failed: ${result.error}" }
+                            if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
+                                logger.error { "ignoring this error on regtest"}
+                            } else {
+                                return Pair(this, listOf(HandleError(result.error)))
+                            }
                         }
-                        val watchLost = WatchLost(commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
+                        val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
                         val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                         val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
@@ -581,7 +605,10 @@ data class WaitForFundingConfirmed(
                     }
                     else -> Pair(this, listOf())
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -600,8 +627,7 @@ data class WaitForFundingLocked(
                     is FundingLocked -> {
                         // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                         val watchConfirmed = WatchConfirmed(
-                            // TODO must provide a coroutine Channel from Channel State Machine
-                            kotlinx.coroutines.channels.Channel(),
+                            this.channelId,
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.txOut.publicKeyScript,
                             ANNOUNCEMENTS_MINCONF.toLong(),
@@ -636,9 +662,15 @@ data class WaitForFundingLocked(
                         )
                         Pair(nextState, listOf(SendWatch(watchConfirmed), StoreState(nextState)))
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
@@ -661,54 +693,62 @@ data class Normal(
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
                         // TODO: handle shutdown in progress
-                        val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())
-                        when (result) {
+                        when (val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                val actions = listOf(SendMessage(result.result.second))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                   actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
                                 Pair(newState, actions)
                             }
                         }
                     }
                     is CMD_FULFILL_HTLC -> {
-                        val result = commitments.sendFulfill(event.command)
-                        when (result) {
+                        when (val result = commitments.sendFulfill(event.command)) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                val actions = listOf(SendMessage(result.result.second))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
                                 Pair(newState, actions)
                             }
                         }
                     }
                     is CMD_FAIL_HTLC -> {
-                        val result = commitments.sendFail(event.command, staticParams.nodeParams.privateKey)
-                        when (result) {
+                        when (val result = commitments.sendFail(event.command, staticParams.nodeParams.privateKey)) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                val actions = listOf(SendMessage(result.result.second))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
                                 Pair(newState, actions)
                             }
                         }
                     }
                     is CMD_SIGN -> {
                         when {
-                            !commitments.localHasChanges() -> Pair(this, listOf())
+                            !commitments.localHasChanges() -> {
+                                logger.warning { "no changes to sign" }
+                                Pair(this, listOf())
+                            }
                             commitments.remoteNextCommitInfo is Either.Left -> {
                                 val commitments1 = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))
                                 Pair(this.copy(commitments = commitments1), listOf())
                             }
                             else -> {
-                                val result = commitments.sendCommit(keyManager, logger)
-                                when (result) {
+                                when (val result = commitments.sendCommit(keyManager, logger)) {
                                     is Try.Failure -> {
                                         Pair(this, listOf(HandleError(result.error)))
                                     }
@@ -731,62 +771,74 @@ data class Normal(
                             }
                         }
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
             }
             is MessageReceived -> {
                 when (event.message) {
                     is UpdateAddHtlc -> {
-                        val result = commitments.receiveAdd(event.message)
-                        when (result) {
+                        when (val result = commitments.receiveAdd(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result), listOf())
                         }
                     }
                     is UpdateFulfillHtlc -> {
-                        val result = commitments.receiveFulfill(event.message)
                         // README: we don't relay payments, so we don't need to send preimages upstream
-                        when (result) {
+                        when (val result = commitments.receiveFulfill(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
                         }
                     }
                     is UpdateFailHtlc -> {
-                        val result = commitments.receiveFail(event.message)
                         // README: we don't relay payments, so we don't need to send failures upstream
-                        when (result) {
+                        when (val result = commitments.receiveFail(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
                         }
                     }
                     is CommitSig -> {
-                        val result = commitments.receiveCommit(event.message, keyManager, logger)
                         // README: we don't relay payments, so we don't need to send failures upstream
-                        when (result) {
+                        when (val result = commitments.receiveCommit(event.message, keyManager, logger)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
                                 }
-                                Pair(this.copy(commitments = result.result.first), listOf(SendMessage(result.result.second)))
+                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                if (result.result.first.localHasChanges()) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
+                                Pair(this.copy(commitments = result.result.first), actions)
                             }
                         }
                     }
                     is RevokeAndAck -> {
-                        val result = commitments.receiveRevocation(event.message)
-                        when (result) {
+                        when (val result = commitments.receiveRevocation(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 // TODO: handle shutdown
-                                val newState = this.copy(commitments = result.result)
-                                Pair(newState, listOf(StoreState(newState)))
+                                val newState = this.copy(commitments = result.result.first)
+                                var actions = listOf<Action>(StoreState(newState)) + result.result.second
+                                if (result.result.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
+                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                }
+                                Pair(newState, actions)
                             }
                         }
                     }
-                    else -> Pair(this, listOf())
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
                 }
             }
-            else -> Pair(this, listOf())
+            else -> {
+                logger.warning { "unhandled event $event in state ${this::class}" }
+                Pair(this, listOf())
+            }
         }
     }
 }
