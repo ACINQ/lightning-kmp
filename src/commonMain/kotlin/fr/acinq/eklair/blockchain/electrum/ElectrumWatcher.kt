@@ -401,11 +401,11 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                 }
                 is Watch -> {
                     logger.info { "Watch received: $input" }
-                    eventChannel.send(ReceiveWatch(input))
+                    if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatch(input))
                 }
                 is ElectrumMessage -> {
                     logger.info { "Electrum message received: $input" }
-                    eventChannel.send(ReceivedMessage(input))
+                    if (!eventChannel.isClosedForSend) eventChannel.send(ReceivedMessage(input))
                 }
             }
         }
@@ -425,9 +425,11 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     fun stop() {
-        // TODO Unsubscribe from SM?
-//        client.messageChannel.send(Unsubscribe(eventChannel))
+//        client.sendMessage(UnsubscribeListener(electrumMessageChannel))// TODO?
+        electrumMessageChannel.close()
+        watchChannel.close()
         eventChannel.close()
+        input.cancel()
     }
 
     companion object {
