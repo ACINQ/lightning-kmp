@@ -9,6 +9,7 @@ import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.test.TestCoroutineScope
 import org.junit.FixMethodOrder
 import org.junit.runners.MethodSorters
@@ -46,8 +47,8 @@ class ElectrumWatcherIntegrationTest {
         bitcoinService.generateBlocks(5)
 
         withTimeout(20_000) {
-            val msg = listener.receive()
-            assertEquals(tx.txid, msg.tx.txid)
+            val confirmed = listener.receive()
+            assertEquals(tx.txid, confirmed.tx.txid)
         }
     }
 
@@ -62,13 +63,13 @@ class ElectrumWatcherIntegrationTest {
         watcher.watch(WatchConfirmed(listener ,tx.txid, tx.txOut[0].publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
 
         withTimeout(20_000) {
-            val msg = listener.receive()
-            assertEquals(tx.txid, msg.tx.txid)
+            val confirmed = listener.receive()
+            assertEquals(tx.txid, confirmed.tx.txid)
         }
     }
 
     @Test
-    fun `03 watch for spent transactions`() = runBlocking {
+    fun `03 watch for spent transactions`() = runBlocking<Unit> {
         val (address, privateKey) = bitcoinService.getNewAddress()
         val tx = bitcoinService.sendToAddress(address, 1.0)
 
@@ -106,10 +107,10 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(spendingTx, sentTx)
         bitcoinService.generateBlocks(2)
 
-//        withTimeout(20_000) {
+        withTimeout(20_000) {
             val msg = listener.receive()
-            assertEquals(tx.txid, msg.tx.txid)
-//        }
+            assertEquals(spendingTx.txid, msg.tx.txid)
+        }
     }
 
     @Test
@@ -144,7 +145,8 @@ class ElectrumWatcherIntegrationTest {
         }
 
         // send raw tx
-        bitcoinService.sendRawTransaction(spendingTx)
+        val sentTx = bitcoinService.sendRawTransaction(spendingTx)
+        assertEquals(spendingTx, sentTx)
         bitcoinService.generateBlocks(2)
 
         val listener = Channel<WatchEventSpent>()
@@ -152,13 +154,77 @@ class ElectrumWatcherIntegrationTest {
 
         withTimeout(20_000) {
             val msg = listener.receive()
-            assertEquals(tx.txid, msg.tx.txid)
+            assertEquals(spendingTx.txid, msg.tx.txid)
         }
     }
 
-    @OptIn(ExperimentalTime::class)
+//    @Test
+    fun `05 watch for mempool transactions (txs in mempool before we set the watch)`() = runBlocking {
+        val statusListener = Channel<ElectrumMessage>()
+        client.sendMessage(ElectrumStatusSubscription(statusListener))
+
+        val status = statusListener.receive()
+        assertTrue { status is ElectrumClientReady }
+
+        val (address, privateKey) = bitcoinService.getNewAddress()
+        val tx = bitcoinService.sendToAddress(address, 1.0)
+        val (tx1, tx2) = bitcoinService.createUnspentTxChain(tx, privateKey)
+
+        val sentTx1 = bitcoinService.sendRawTransaction(tx1)
+        assertEquals(tx1, sentTx1)
+        val sentTx2 = bitcoinService.sendRawTransaction(tx2)
+        assertEquals(tx2, sentTx2)
+
+        // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
+        withTimeout(30_000) {
+            while (true) {
+                val getHistoryListener = Channel<ElectrumMessage>()
+                client.sendMessage(SendElectrumRequest(GetScriptHashHistory(ElectrumClient.computeScriptHash(tx2.txOut[0].publicKeyScript)), getHistoryListener))
+
+                val (_, history) = getHistoryListener.receive() as GetScriptHashHistoryResponse
+                if (history.map { it.tx_hash }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) break
+
+                delay(5_000)
+            }
+        }
+
+        val listener = Channel<WatchEventConfirmed>()
+        watcher.watch(WatchConfirmed(listener ,tx2.txid, tx2.txOut[0].publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+
+        withTimeout(20_000) {
+            val confirmed = listener.receive()
+            assertEquals(tx2.txid, confirmed.tx.txid)
+        }
+    }
+
+//    @Test
+    fun `06 watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runBlocking {
+        val statusListener = Channel<ElectrumMessage>()
+        client.sendMessage(ElectrumStatusSubscription(statusListener))
+
+        statusListener.consumeEach { if (it is ElectrumClientReady) return@consumeEach }
+
+        val (address, privateKey) = bitcoinService.getNewAddress()
+        val tx = bitcoinService.sendToAddress(address, 1.0)
+        val (tx1, tx2) = bitcoinService.createUnspentTxChain(tx, privateKey)
+
+        val listener = Channel<WatchEventConfirmed>()
+        watcher.watch(WatchConfirmed(listener ,tx2.txid, tx2.txOut[0].publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+
+        val sentTx1 = bitcoinService.sendRawTransaction(tx1)
+        assertEquals(tx1, sentTx1)
+        val sentTx2 = bitcoinService.sendRawTransaction(tx2)
+        assertEquals(tx2, sentTx2)
+
+        withTimeout(20_000) {
+            val confirmed = listener.receive()
+            assertEquals(tx2.txid, confirmed.tx.txid)
+        }
+    }
+
     @Test
-    fun `05 get transaction`() = runBlocking {
+    @OptIn(ExperimentalTime::class)
+    fun `07 get transaction`() = runBlocking {
         // Run on a production server
         val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, testScope)
         val electrumWatcher = ElectrumWatcher(electrumClient, testScope)
@@ -197,10 +263,10 @@ class ElectrumWatcherIntegrationTest {
     - OK:
         test("watch for confirmed transactions")
         test("watch for confirmed transactions when being offline")
+        test("get transaction")
+    - KO:
         test("watch for spent transactions")
         test("generate unique dummy scids") => UnitTests
-        test("get transaction")
-    - TODO:
         test("watch for mempool transactions (txs in mempool before we set the watch)")
         test("watch for mempool transactions (txs not yet in the mempool when we set the watch)")
      */

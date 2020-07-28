@@ -22,7 +22,7 @@ object ElectrumClientClosed : ElectrumClientState()
 sealed class ElectrumSubscription(val listener: SendChannel<ElectrumMessage>) : ElectrumMessage()
 class ElectrumStatusSubscription(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
 class ElectrumHeaderSubscription(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
-data class ElectrumSendRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumMessage()
+data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumMessage()
 
 /**
  * [ElectrumClient] requests / responses

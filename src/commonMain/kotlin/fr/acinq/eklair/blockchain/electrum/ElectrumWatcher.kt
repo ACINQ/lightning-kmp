@@ -3,6 +3,7 @@ package fr.acinq.eklair.blockchain.electrum
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxIn
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eklair.blockchain.*
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
@@ -42,10 +43,12 @@ private data class NotifyTxWithMeta(
     val listener: SendChannel<GetTxWithMetaResponse>,
     val txWithMeta: GetTxWithMetaResponse
 ) : WatcherAction()
+private data class RelayWatch(val watch: Watch) : WatcherAction()
+private data class RelayGetTxWithMeta(val txid: ByteVector32, val listener: SendChannel<GetTxWithMetaResponse>) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 
 /**
- * [ElectrumWatcherState] State
+ * [WatcherState] State
  *
  *                   ElectrumClient
  *                         ^
@@ -61,31 +64,54 @@ private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherActi
  * +----------+         +-----+
  *
  */
-private sealed class ElectrumWatcherState {
-    abstract fun process(event: WatcherEvent): Pair<ElectrumWatcherState, List<WatcherAction>>
+private sealed class WatcherState {
+    abstract fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>>
 }
-private object ElectrumWatcherDisconnected : ElectrumWatcherState() {
-    override fun process(event: WatcherEvent): Pair<ElectrumWatcherState, List<WatcherAction>> =
+private data class WatcherDisconnected(
+    val watches: Set<Watch> = setOf(),
+    val publishQueue: ArrayDeque<PublishAsap> = ArrayDeque(),
+    val block2tx: Map<Long, List<Transaction>> = mapOf(),
+    val getTxQueue: ArrayDeque<Pair<GetTxWithMeta, SendChannel<GetTxWithMetaResponse>>> = ArrayDeque()
+) : WatcherState() {
+    override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when(event) {
+            is StartWatcher -> returnState(action = RegisterToElectrumStatus)
             is ReceivedMessage -> when (val message = event.message) {
                 is ElectrumClientReady -> returnState(action = RegisterToHeaderNotification)
-                is HeaderSubscriptionResponse -> ElectrumWatcherRunning(height = message.height, tip = message.header) to listOf() // TODO watches / publishQueue / getTxQueue?
+                is HeaderSubscriptionResponse -> {
+                    // TODO actions for watches / publishQueue / getTxQueue?
+                    newState {
+                        state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx))
+                        actions = buildList {
+                            watches.forEach { add(RelayWatch(it)) }
+                            publishQueue.forEach { add(PublishAsapAction(it)) }
+                            getTxQueue.forEach { add(RelayGetTxWithMeta(it.first.txid, it.second)) }
+                        }
+                    }
+                }
                 else -> returnState()
             }
-            is StartWatcher -> returnState(action = RegisterToElectrumStatus)
-            else -> unhandled(event)
+            is ReceiveWatch -> newState(copy(watches = watches + event.watch))
+            is PublishEvent -> {
+                publishQueue.add(event.publishAsap)
+                returnState()
+            }
+            is GetTxWithMetaEvent -> {
+                getTxQueue.add(GetTxWithMeta(event.txid) to event.listener)
+                returnState()
+            }
         }
 }
 
-private data class ElectrumWatcherRunning(
+private data class WatcherRunning(
     val height: Int,
     val tip: BlockHeader,
     val watches: Set<Watch> = setOf(),
     val scriptHashStatus: Map<ByteVector32, String> = mapOf(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val sent: ArrayDeque<Transaction> = ArrayDeque()
-) : ElectrumWatcherState() {
-    override fun process(event: WatcherEvent): Pair<ElectrumWatcherState, List<WatcherAction>> =
+) : WatcherState() {
+    override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
             is ReceivedMessage -> {
                 val message = event.message
@@ -131,36 +157,29 @@ private data class ElectrumWatcherRunning(
                         }
                         returnState(actions = getTransactionList)
                     }
-                    message is GetTransactionResponse  -> {
-                        when(message.contextOpt) {
+                    message is GetTransactionResponse -> {
+                        when (message.contextOpt) {
                             is TransactionHistoryItem -> {
                                 val tx = message.tx
                                 val item = message.contextOpt as TransactionHistoryItem
 
                                 // WatchSpent
-                                val watchSpentListener = watches.filterIsInstance<WatchSpent>()
-                                val txOutPointIndices = tx.txIn.map { it.outPoint.index.toInt() }
-                                logger.info { """
-                                    |Look for WatchSpent in $watchSpentListener
-                                    |for Tx ${message.tx.txid}
-                                    |and $txOutPointIndices
-                                """.trimMargin() }
-                                val notifyWatchSpentList =
-                                    watchSpentListener
-                                        .filter { it.txId == tx.txid && it.outputIndex in txOutPointIndices }
-                                        .distinct()
-                                        .map {
-                                            logger.info { "output ${it.txId}:${it.outputIndex} spent by transaction ${tx.txid}" }
-                                            NotifyWatchSpent(it.listener, WatchEventSpent(it.event, tx))
-                                        }
+                                val notifyWatchSpentList = tx.txIn.map(TxIn::outPoint)
+                                    .flatMap { outPoint ->
+                                        watches
+                                            .filterIsInstance<WatchSpent>()
+                                            .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
+                                            .map {
+                                                logger.info { "output ${it.txId}:${it.outputIndex} spent by transaction ${tx.txid}" }
+                                                NotifyWatchSpent(it.listener, WatchEventSpent(it.event, tx))
+                                            }
+                                    }
 
                                 // WatchConfirmed
-                                val watchConfirmedListener = watches.filterIsInstance<WatchConfirmed>()
-                                logger.info { "Look for WatchConfirmed in $watchConfirmedListener for Tx ${message.tx.txid}" }
                                 val watchConfirmedTriggered = mutableListOf<WatchConfirmed>()
                                 val notifyWatchConfirmedList = mutableListOf<NotifyWatchConfirmed>()
                                 val getMerkleList = mutableListOf<AskForMerkle>()
-                                watchConfirmedListener
+                                watches.filterIsInstance<WatchConfirmed>()
                                     .filter { it.txId == tx.txid }
                                     .forEach { w ->
                                         if (w.minDepth == 0L) {
@@ -169,7 +188,12 @@ private data class ElectrumWatcherRunning(
                                             notifyWatchConfirmedList.add(
                                                 NotifyWatchConfirmed(
                                                     w.listener,
-                                                    WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, dummyHeight, dummyTxIndex, tx)
+                                                    WatchEventConfirmed(
+                                                        BITCOIN_FUNDING_DEPTHOK,
+                                                        dummyHeight,
+                                                        dummyTxIndex,
+                                                        tx
+                                                    )
                                                 )
                                             )
                                             watchConfirmedTriggered.add(w)
@@ -187,16 +211,24 @@ private data class ElectrumWatcherRunning(
                                         }
                                     }
 
+                                logger.info { """Tx notification for ${tx.txid}
+                                    |txIn: ${tx.txIn}
+                                    |txOut: ${tx.txIn}
+                                    |watches: $watches
+                                    |NotifyWatchSpentList: $notifyWatchSpentList
+                                    |NotifyWatchConfirmedList: $notifyWatchConfirmedList
+                                """.trimMargin() }
+
                                 newState {
                                     // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
                                     // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
                                     state = copy(watches = watches - watchConfirmedTriggered)
                                     actions = notifyWatchSpentList + notifyWatchConfirmedList + getMerkleList
-                                    logger.info { "Actions to call $actions" }
                                 }
                             }
                             is Channel<*> -> {
                                 val tx = message.tx
+
                                 @Suppress("UNCHECKED_CAST")
                                 val listener = message.contextOpt as SendChannel<GetTxWithMetaResponse>
 
@@ -238,7 +270,11 @@ private data class ElectrumWatcherRunning(
                             actions = notifyWatchConfirmedList
                         }
                     }
-
+                    message is ElectrumClientClosed -> newState(WatcherDisconnected(
+                        watches = watches,
+                        publishQueue = ArrayDeque(sent.map { PublishAsap(it) }),
+                        block2tx = block2tx
+                    ))
                     else -> returnState()
                 }
             }
@@ -282,32 +318,32 @@ private data class ElectrumWatcherRunning(
         case ElectrumClient.ServerError(ElectrumClient.GetTransaction(txid, Some(origin: ActorRef)), _)
         case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction))
         case GetTxWithMeta(txid)
+        case ElectrumClient.ElectrumDisconnected
     - TODO:
         case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _)
         case ElectrumClient.BroadcastTransactionResponse(tx, error_opt)
-        case ElectrumClient.ElectrumDisconnected
         case PublishAsap(tx)
     - later:
         case Terminated(actor)
      */
 }
 
-private fun ElectrumWatcherState.unhandled(message: WatcherEvent) : Pair<ElectrumWatcherState, List<WatcherAction>> =
+private fun WatcherState.unhandled(message: WatcherEvent) : Pair<WatcherState, List<WatcherAction>> =
     when (message) {
         else -> error("The state $this cannot process the event $message")
     }
 
 private class WatcherStateBuilder {
-    var state: ElectrumWatcherState = ElectrumWatcherDisconnected
+    var state: WatcherState = WatcherDisconnected()
     var actions = emptyList<WatcherAction>()
     fun build() = state to actions
 }
 private fun newState(init: WatcherStateBuilder.() -> Unit) = WatcherStateBuilder().apply(init).build()
-private fun newState(newState: ElectrumWatcherState) = WatcherStateBuilder().apply { state = newState }.build()
+private fun newState(newState: WatcherState) = WatcherStateBuilder().apply { state = newState }.build()
 
-private fun ElectrumWatcherState.returnState(actions: List<WatcherAction> = emptyList()): Pair<ElectrumWatcherState, List<WatcherAction>> = this to actions
-private fun ElectrumWatcherState.returnState(action: WatcherAction): Pair<ElectrumWatcherState, List<WatcherAction>> = this to listOf(action)
-private fun ElectrumWatcherState.returnState(vararg actions: WatcherAction): Pair<ElectrumWatcherState, List<WatcherAction>> = this to listOf(*actions)
+private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList()): Pair<WatcherState, List<WatcherAction>> = this to actions
+private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
+private fun WatcherState.returnState(vararg actions: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(*actions)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): CoroutineScope by scope {
@@ -322,7 +358,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         launch { electrumMessageChannel.consumeEach { send(it) } }
     }
 
-    private var state: ElectrumWatcherState = ElectrumWatcherDisconnected
+    private var state: WatcherState = WatcherDisconnected()
         set(value) {
             if (value != field) logger.info { "Updated State: $field -> $value" }
             field = value
@@ -337,27 +373,29 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                     val (newState, actions) = state.process(input)
                     state = newState
 
+                    logger.info { "Execute actions: $actions" }
                     actions.forEach { action ->
-                        logger.info { "Execute action: $action" }
                         when (action) {
                             RegisterToElectrumStatus -> client.sendMessage(ElectrumStatusSubscription(electrumMessageChannel))
                             RegisterToHeaderNotification -> client.sendMessage(ElectrumHeaderSubscription(electrumMessageChannel))
                             is RegisterToScriptHashNotification -> client.sendMessage(
-                                ElectrumSendRequest(ScriptHashSubscription(action.scriptHash), electrumMessageChannel)
+                                SendElectrumRequest(ScriptHashSubscription(action.scriptHash), electrumMessageChannel)
                             )
                             is PublishAsapAction -> eventChannel.send(PublishEvent(action.publishAsap))
                             is AskForScriptHashHistory -> client.sendMessage(
-                                ElectrumSendRequest(GetScriptHashHistory(action.scriptHash), electrumMessageChannel)
+                                SendElectrumRequest(GetScriptHashHistory(action.scriptHash), electrumMessageChannel)
                             )
                             is AskForTransaction -> client.sendMessage(
-                                ElectrumSendRequest(GetTransaction(action.txid, action.contextOpt), electrumMessageChannel)
+                                SendElectrumRequest(GetTransaction(action.txid, action.contextOpt), electrumMessageChannel)
                             )
                             is AskForMerkle -> client.sendMessage(
-                                ElectrumSendRequest(GetMerkle(action.txId, action.txheight, action.tx), electrumMessageChannel)
+                                SendElectrumRequest(GetMerkle(action.txId, action.txheight, action.tx), electrumMessageChannel)
                             )
                             is NotifyWatchConfirmed -> action.listener.send(action.watchEventConfirmed)
                             is NotifyWatchSpent -> action.listener.send(action.watchEventSpent)
                             is NotifyTxWithMeta -> action.listener.send(action.txWithMeta)
+                            is RelayWatch -> eventChannel.send(ReceiveWatch(action.watch))
+                            is RelayGetTxWithMeta -> eventChannel.send(GetTxWithMetaEvent(action.txid, action.listener))
                         }
                     }
                 }

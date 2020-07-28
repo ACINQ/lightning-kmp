@@ -1,7 +1,7 @@
 package fr.acinq.eklair.blockchain.bitcoind
 
-import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.*
+import fr.acinq.eklair.utils.sat
 import kotlin.test.assertEquals
 
 object BitcoindService {
@@ -30,5 +30,54 @@ object BitcoindService {
         return transaction.tx
     }
 
-    fun close() = client.close()
+    fun createUnspentTxChain(tx: Transaction, privateKey: PrivateKey): Pair<Transaction, Transaction> {
+        // tx sends funds to our key
+        val publicKey = privateKey.publicKey()
+        val outputIndex = tx.txOut.indexOfFirst { it.publicKeyScript == Script.write(Script.pay2wpkh(publicKey)).byteVector() }
+        val fee = 10000.sat
+
+        // tx1 spends tx
+        val tx1 = kotlin.run {
+            val tmp = Transaction(version = 2,
+                txIn = listOf(TxIn(OutPoint(tx, outputIndex.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
+                txOut = listOf(TxOut(tx.txOut[outputIndex].amount - fee, publicKeyScript = Script.pay2wpkh(publicKey))),
+                lockTime = 0)
+
+            val sig = Transaction.signInput(
+                tmp,
+                0,
+                Script.pay2pkh(publicKey),
+                SigHash.SIGHASH_ALL,
+                tx.txOut[outputIndex].amount,
+                SigVersion.SIGVERSION_WITNESS_V0,
+                privateKey
+            ).byteVector()
+            val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
+            Transaction.correctlySpends(signedTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx
+        }
+
+        // and tx2 spends tx1
+        val tx2 = kotlin.run {
+            val tmp = Transaction(version = 2,
+                txIn = listOf(TxIn(OutPoint(tx1, 0), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
+                txOut = listOf(TxOut(tx1.txOut.first().amount - fee, publicKeyScript = Script.pay2wpkh(publicKey))),
+                lockTime = 0)
+
+            val sig = Transaction.signInput(
+                tmp,
+                0,
+                Script.pay2pkh(publicKey),
+                SigHash.SIGHASH_ALL,
+                tx1.txOut.first().amount,
+                SigVersion.SIGVERSION_WITNESS_V0,
+                privateKey
+            ).byteVector()
+            val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
+            Transaction.correctlySpends(signedTx, listOf(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx
+        }
+
+        return tx1 to tx2
+    }
 }

@@ -28,7 +28,7 @@ internal object Start : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
-internal data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ClientEvent()
+internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ClientEvent()
 internal data class RegisterStatusListener(val listener: SendChannel<ElectrumMessage>) : ClientEvent()
 internal data class RegisterHeaderNotificationListener(val listener: SendChannel<ElectrumMessage>) : ClientEvent()
 internal data class RegisterScriptHashNotificationListener(val scriptHash: ByteVector32, val listener: SendChannel<ElectrumMessage>) : ClientEvent()
@@ -143,7 +143,7 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
            SendHeader(height, tip, event.listener)
        )
        is ElectrumRequest -> returnState(sendRequest(event))
-       is SendElectrumRequest -> returnState(buildList {
+       is SendElectrumApiCall -> returnState(buildList {
            add(sendRequest(event.electrumRequest, event.requestor))
            if (event.electrumRequest is ScriptHashSubscription && event.requestor != null)
                add(AddScriptHashListener(event.electrumRequest.scriptHash, event.requestor))
@@ -177,7 +177,6 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
             case Left(response: HeaderSubscriptionResponse)
             case Left(response: ScriptHashSubscriptionResponse)
             case HeaderSubscriptionResponse(height, newtip)
-        - TODO:
             case Left(response: AddressSubscriptionResponse)
         */
 
@@ -202,7 +201,10 @@ private fun ClientState.unhandled(event: ClientEvent) : Pair<ClientState, List<E
         is UnregisterListener -> event.listener.let {
             returnState(RemoveStatusListener(it), RemoveHeaderListener(it), RemoveScriptHashListener(it))
         }
-        Disconnected -> newState(ClientClosed)
+        Disconnected -> newState {
+            state = ClientClosed
+            actions = listOf(BroadcastStatus(ElectrumClientClosed), Restart)
+        }
         else -> returnState() // error("The state $this cannot process the event $event")
     }
 
@@ -254,8 +256,8 @@ class ElectrumClient(
             val (newState, actions) = state.process(event)
             state = newState
 
+            logger.info { "Execute action: $actions" }
             actions.forEach { action ->
-                logger.info { "Execute action: $action" }
                 when (action) {
                     is ConnectionAttempt -> connect()
                     is SendRequest -> socket.send(action.request.encodeToByteArray(), true)
@@ -283,7 +285,8 @@ class ElectrumClient(
                     is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
                     is RemoveScriptHashListener -> scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
                     is Restart -> {
-                        delay(1_000); eventChannel.send(Connected)
+                        delay(1_000); socket.close()
+                        eventChannel.send(Start)
                     }
                 }
             }
@@ -292,24 +295,31 @@ class ElectrumClient(
 
     private fun connect() {
         launch {
-            socket = TcpSocket.Builder().connect(host, port, tls)
-            eventChannel.send(Connected)
-            socket.linesFlow(this).collect {
-                logger.info { "Electrum response received: $it" }
-                val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
-                eventChannel.send(ReceivedResponse(electrumResponse))
+            try {
+                socket = TcpSocket.Builder().connect(host, port, tls)
+                eventChannel.send(Connected)
+                socket.linesFlow(this).collect {
+                    logger.info { "Electrum response received: $it" }
+                    val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
+                    eventChannel.send(ReceivedResponse(electrumResponse))
+                }
+            } catch (io: TcpSocket.IOException) {
+                socket.close()
+                eventChannel.send(Disconnected)
             }
         }
     }
 
-    suspend fun sendMessage(message: ElectrumMessage) {
-        when(message) {
-            is ElectrumStatusSubscription -> eventChannel.send(RegisterStatusListener(message.listener))
-            is ElectrumHeaderSubscription -> eventChannel.send(RegisterHeaderNotificationListener(message.listener))
-            is ElectrumSendRequest -> eventChannel.send(SendElectrumRequest(message.electrumRequest, message.requestor))
-            is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(message)))
-            else -> logger.info { "ElectrumClient does not handle messages like: $message" }
-        }
+    fun sendMessage(message: ElectrumMessage) {
+         launch {
+             when (message) {
+                 is ElectrumStatusSubscription -> eventChannel.send(RegisterStatusListener(message.listener))
+                 is ElectrumHeaderSubscription -> eventChannel.send(RegisterHeaderNotificationListener(message.listener))
+                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest, message.requestor))
+                 is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(message)))
+                 else -> logger.info { "ElectrumClient does not handle messages like: $message" }
+             }
+         }
     }
 
     private lateinit var pingJob: Job
@@ -317,7 +327,7 @@ class ElectrumClient(
         while (true) {
             delay(30_000)
             logger.info { "Ping Electrum Server" }
-            eventChannel.send(SendElectrumRequest(Ping))
+            eventChannel.send(SendElectrumApiCall(Ping))
         }
     }
 

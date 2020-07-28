@@ -21,7 +21,7 @@ class ElectrumClientStateTest {
             assertTrue { it.second.first() is AddStatusListener }
         }
 
-        ClientClosed.process(SendElectrumRequest(Ping)).let {
+        ClientClosed.process(SendElectrumApiCall(Ping)).let {
             assertEquals(ClientClosed, it.first)
             assertTrue { it.second.isEmpty() }
         }

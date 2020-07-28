@@ -99,7 +99,7 @@ class ElectrumClientIntegrationTest {
 //            }
         }
 
-        client.sendMessage(ElectrumSendRequest(GetHeader(10)))
+        client.sendMessage(SendElectrumRequest(GetHeader(10)))
 
         launch {
             delay(120_000)
