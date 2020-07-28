@@ -171,7 +171,7 @@ private data class WatcherRunning(
                                             .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                                             .map {
                                                 logger.info { "output ${it.txId}:${it.outputIndex} spent by transaction ${tx.txid}" }
-                                                NotifyWatchSpent(it.listener, WatchEventSpent(it.event, tx))
+                                                NotifyWatchSpent(it.listener, WatchEventSpent(ByteVector32.Zeroes, it.event, tx))
                                             }
                                     }
 
@@ -189,6 +189,7 @@ private data class WatcherRunning(
                                                 NotifyWatchConfirmed(
                                                     w.listener,
                                                     WatchEventConfirmed(
+                                                        ByteVector32.Zeroes, // TODO!
                                                         BITCOIN_FUNDING_DEPTHOK,
                                                         dummyHeight,
                                                         dummyTxIndex,
@@ -261,7 +262,7 @@ private data class WatcherRunning(
                         val notifyWatchConfirmedList = tx?.let {
                             triggered.map { w ->
                                 logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
-                                NotifyWatchConfirmed(w.listener, WatchEventConfirmed(w.event, txheight, pos, tx))
+                                NotifyWatchConfirmed(w.listener, WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx))
                             }
                         } ?: emptyList()
 
@@ -282,7 +283,7 @@ private data class WatcherRunning(
             is ReceiveWatch -> when (val watch = event.watch) {
                 in watches -> returnState()
                 is WatchSpent -> {
-                    val (_, txid, outputIndex, publicKeyScript, _) = watch
+                    val (_, _, txid, outputIndex, publicKeyScript, _) = watch
                     val scriptHash = computeScriptHash(publicKeyScript)
                     logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
                     newState {
@@ -291,7 +292,7 @@ private data class WatcherRunning(
                     }
                 }
                 is WatchConfirmed -> {
-                    val (_, txid, publicKeyScript, _, _) = watch
+                    val (_, _, txid, publicKeyScript, _, _) = watch
                     val scriptHash = computeScriptHash(publicKeyScript)
                     logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
                     newState {

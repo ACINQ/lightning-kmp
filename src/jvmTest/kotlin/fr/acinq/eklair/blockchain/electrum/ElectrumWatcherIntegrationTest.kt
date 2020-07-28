@@ -35,7 +35,16 @@ class ElectrumWatcherIntegrationTest {
         val tx = BitcoindService.sendToAddress(address, 1.0)
 
         val listener = Channel<WatchEventConfirmed>()
-        watcher.watch(WatchConfirmed(listener ,tx.txid, tx.txOut[0].publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
+        watcher.watch(
+            WatchConfirmed(
+                listener,
+                ByteVector32.Zeroes,
+                tx.txid,
+                tx.txOut[0].publicKeyScript,
+                4,
+                BITCOIN_FUNDING_DEPTHOK
+            )
+        )
         BitcoindService.generateBlocks(5)
 
         withTimeout(TIMEOUT) {
@@ -58,7 +67,14 @@ class ElectrumWatcherIntegrationTest {
         BitcoindService.generateBlocks(5)
 
         val listener = Channel<WatchEventConfirmed>()
-        watcher.watch(WatchConfirmed(listener ,tx.txid, tx.txOut[0].publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
+        watcher.watch(WatchConfirmed(
+            listener,
+            ByteVector32.Zeroes,
+            tx.txid,
+            tx.txOut[0].publicKeyScript,
+            4,
+            BITCOIN_FUNDING_DEPTHOK
+        ))
 
         withTimeout(TIMEOUT) {
             val confirmed = listener.receive()
@@ -104,7 +120,14 @@ class ElectrumWatcherIntegrationTest {
         }
 
         val listener = Channel<WatchEventSpent>()
-        watcher.watch(WatchSpent(listener ,tx.txid, pos, tx.txOut[pos].publicKeyScript, BITCOIN_FUNDING_SPENT))
+        watcher.watch(WatchSpent(
+            listener,
+            ByteVector32.Zeroes,
+            tx.txid,
+            pos,
+            tx.txOut[pos].publicKeyScript,
+            BITCOIN_FUNDING_SPENT
+        ))
 
         // send raw tx
         val sentTx = BitcoindService.sendRawTransaction(spendingTx)
@@ -160,7 +183,14 @@ class ElectrumWatcherIntegrationTest {
         BitcoindService.generateBlocks(2)
 
         val listener = Channel<WatchEventSpent>()
-        watcher.watch(WatchSpent(listener ,tx.txid, pos, tx.txOut[pos].publicKeyScript, BITCOIN_FUNDING_SPENT))
+        watcher.watch(WatchSpent(
+            listener,
+            ByteVector32.Zeroes,
+            tx.txid,
+            pos,
+            tx.txOut[pos].publicKeyScript,
+            BITCOIN_FUNDING_SPENT
+        ))
 
         withTimeout(TIMEOUT) {
             val msg = listener.receive()
@@ -204,7 +234,14 @@ class ElectrumWatcherIntegrationTest {
         }
 
         val listener = Channel<WatchEventConfirmed>()
-        watcher.watch(WatchConfirmed(listener ,tx2.txid, tx2.txOut[0].publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+        watcher.watch(WatchConfirmed(
+            listener,
+            ByteVector32.Zeroes,
+            tx2.txid,
+            tx2.txOut[0].publicKeyScript,
+            0,
+            BITCOIN_FUNDING_DEPTHOK
+        ))
 
         withTimeout(TIMEOUT) {
             val confirmed = listener.receive()
@@ -229,7 +266,14 @@ class ElectrumWatcherIntegrationTest {
         val (tx1, tx2) = BitcoindService.createUnspentTxChain(tx, privateKey)
 
         val listener = Channel<WatchEventConfirmed>()
-        watcher.watch(WatchConfirmed(listener ,tx2.txid, tx2.txOut[0].publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+        watcher.watch(WatchConfirmed(
+            listener,
+            ByteVector32.Zeroes,
+            tx2.txid,
+            tx2.txOut[0].publicKeyScript,
+            0,
+            BITCOIN_FUNDING_DEPTHOK
+        ))
 
         val sentTx1 = BitcoindService.sendRawTransaction(tx1)
         assertEquals(tx1, sentTx1)

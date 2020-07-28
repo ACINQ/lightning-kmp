@@ -14,9 +14,9 @@ import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
+import kotlinx.coroutines.channels.Channel
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -336,6 +336,7 @@ data class WaitForFundingCreated(
                                     fundingAmount
                                 )
                             val watchSpent = WatchSpent(
+                                Channel(), // Must be defined by the LN Channel itself
                                 channelId,
                                 commitInput.outPoint.txid,
                                 commitInput.outPoint.index.toInt(),
@@ -343,6 +344,7 @@ data class WaitForFundingCreated(
                                 BITCOIN_FUNDING_SPENT
                             ) // TODO: should we wait for an acknowledgment from the watcher?
                             val watchConfirmed = WatchConfirmed(
+                                Channel(), // Must be defined by the LN Channel itself
                                 channelId,
                                 commitInput.outPoint.txid,
                                 commitments.commitInput.txOut.publicKeyScript,
@@ -526,10 +528,24 @@ data class WaitForFundingSigned(
                         val now = currentTimestampSeconds()
                         // TODO context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
-                        val watchSpent = WatchSpent(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+                        val watchSpent = WatchSpent(
+                            Channel(), // Must be defined by the LN Channel itself
+                            this.channelId,
+                            commitments.commitInput.outPoint.txid,
+                            commitments.commitInput.outPoint.index.toInt(),
+                            commitments.commitInput.txOut.publicKeyScript,
+                            BITCOIN_FUNDING_SPENT
+                        ) // TODO: should we wait for an acknowledgment from the watcher?
                         // phoenix channels have a zero mindepth for funding tx
                         val minDepthBlocks = if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else staticParams.nodeParams.minDepthBlocks
-                        val watchConfirmed = WatchConfirmed(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                        val watchConfirmed = WatchConfirmed(
+                            Channel(), // Must be defined by the LN Channel itself
+                            this.channelId,
+                            commitments.commitInput.outPoint.txid,
+                            commitments.commitInput.txOut.publicKeyScript,
+                            minDepthBlocks.toLong(),
+                            BITCOIN_FUNDING_DEPTHOK
+                        )
                         logger.info { "committing txid=${fundingTx.txid}" }
 
                         // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -627,6 +643,7 @@ data class WaitForFundingLocked(
                     is FundingLocked -> {
                         // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                         val watchConfirmed = WatchConfirmed(
+                            Channel<WatchEventConfirmed>(),
                             this.channelId,
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.txOut.publicKeyScript,
