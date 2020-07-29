@@ -2,6 +2,7 @@ package fr.acinq.eklair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.byteVector32
 import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
@@ -9,6 +10,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClientIntegrationTest {
@@ -32,45 +35,179 @@ class ElectrumClientIntegrationTest {
         Hex.decode("98bd1048e04ff1b0af5856d9890cd708d8d67ad6f3a01f777130fbc16810eeb3"))
         .map { it.toByteVector32() }
 
-
-    @Test
-    fun `connect to an electrumx mainnet server`() = runTest {
-        println("create client")
-        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
-
-        println("create channel")
+    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
+        val client = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
+//        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val channel = Channel<ElectrumMessage>()
-        println("send message to client")
         client.sendMessage(ElectrumStatusSubscription(channel))
 
-        withTimeout(15_000) {
-            println("waiting for response")
-            val msg = channel.receive()
-            println("msg is $msg")
-            assertEquals(ElectrumClientReady, msg)
-        }
+        val msg = channel.receive()
+        assertTrue { msg is ElectrumClientReady }
+
+        return client
+    }
+
+    @Test
+    fun `connect to an electrumx mainnet server`() = runTest { connectToMainnetServer().stop() }
+
+    @Test
+    fun `connect to an electrumx mainnet server ios`() = runTest {
+        val client = ElectrumClient("localhost", 51001, false, this)
+        client.start()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendMessage(ElectrumStatusSubscription(channel))
+
+        val msg = channel.receive()
+        assertTrue(msg is ElectrumClientReady)
 
         client.stop()
     }
 
     @Test
-    fun `get transaction id from position`() {TODO() }
+    fun `get transaction id from position`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendMessage(SendElectrumRequest(GetTransactionIdFromPosition(height, position), channel))
+
+        val message = channel.receive()
+        assertTrue(message is GetTransactionIdFromPositionResponse)
+        assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position), message)
+
+        client.stop()
+    }
+
     @Test
-    fun `get transaction id from position with merkle proof`() {TODO() }
+    fun `get transaction id from position with merkle proof`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendMessage(SendElectrumRequest(GetTransactionIdFromPosition(height, position, true), channel))
+
+        val message = channel.receive()
+        assertTrue(message is GetTransactionIdFromPositionResponse)
+        assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, merkleProof), message)
+
+        client.stop()
+    }
+
     @Test
-    fun `get transaction`() {TODO() }
+    fun `get transaction`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendMessage(SendElectrumRequest(GetTransaction(referenceTx.txid), channel))
+
+        val message = channel.receive()
+        assertTrue(message is GetTransactionResponse)
+        assertEquals(referenceTx, message.tx)
+
+        client.stop()
+    }
+
     @Test
-    fun `get header`() {TODO() }
+    fun `get header`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendMessage(SendElectrumRequest(GetHeader(100000), channel))
+
+        val message = channel.receive()
+        assertTrue(message is GetHeaderResponse)
+        assertEquals(
+            Hex.decode("000000000003ba27aa200b1cecaad478d2b00432346c3f1f3986da1afd33e506").byteVector32(),
+            message.header.blockId
+        )
+
+        client.stop()
+    }
+
     @Test
-    fun `get headers`() {TODO() }
+    fun `get headers`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        val start = (500000 / 2016) * 2016
+        client.sendElectrumRequest(GetHeaders(start, 2016), channel)
+
+        val message = channel.receive()
+        assertTrue(message is GetHeadersResponse)
+        assertEquals(start, message.start_height)
+        assertEquals(2016, message.headers.size)
+
+        client.stop()
+    }
+
     @Test
-    fun `get merkle tree`() {TODO() }
+    fun `get merkle tree`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendElectrumRequest(GetMerkle(referenceTx.txid, 500000), channel)
+
+        val message = channel.receive()
+        assertTrue(message is GetMerkleResponse)
+        assertEquals(referenceTx.txid, message.txid)
+        assertEquals(500000, message.block_height)
+        assertEquals(2690, message.pos)
+        assertEquals(Hex.decode("1f6231ed3de07345b607ec2a39b2d01bec2fe10dfb7f516ba4958a42691c9531").byteVector32(), message.root)
+
+        client.stop()
+    }
+
     @Test
-    fun `header subscription`() {TODO() }
+    fun `header subscription`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendMessage(ElectrumHeaderSubscription(channel))
+
+        val message = channel.receive()
+        assertTrue(message is HeaderSubscriptionResponse)
+
+        client.stop()
+    }
+
     @Test
-    fun `scripthash subscription`() {TODO() }
+    fun `scripthash subscription`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendElectrumRequest(ScriptHashSubscription(scriptHash), channel)
+
+        val message = channel.receive()
+        assertTrue(message is ScriptHashSubscriptionResponse)
+        assertNotEquals("", message.status)
+
+        client.stop()
+    }
+
     @Test
-    fun `get scripthash history`() {TODO() }
+    fun `get scripthash history`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendElectrumRequest(GetScriptHashHistory(scriptHash), channel)
+
+        val message = channel.receive()
+        assertTrue(  message is GetScriptHashHistoryResponse )
+        assertTrue { message.history.contains(TransactionHistoryItem(500000, referenceTx.txid)) }
+
+        client.stop()
+    }
+
     @Test
-    fun `list script unspents`() {TODO() }
+    fun `list script unspents`() = runTest {
+        val client = connectToMainnetServer()
+
+        val channel = Channel<ElectrumMessage>()
+        client.sendElectrumRequest(ScriptHashListUnspent(scriptHash), channel)
+
+        val message = channel.receive()
+        assertTrue(message is ScriptHashListUnspentResponse)
+        assertTrue { message.unspents.isEmpty() }
+
+        client.stop()
+    }
 }

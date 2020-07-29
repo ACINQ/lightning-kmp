@@ -25,7 +25,7 @@ class ElectrumWatcherIntegrationTest {
     private val bitcoincli = BitcoindService()
     
     @Test
-    fun `01 watch for confirmed transactions`() = runTest {
+    fun `watch for confirmed transactions`() = runTest {
         println("ENTER")
 
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
@@ -62,7 +62,7 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `02 watch for confirmed transactions created while being offline`() = runTest {
+    fun `watch for confirmed transactions created while being offline`() = runTest {
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
@@ -91,7 +91,7 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `03 watch for spent transactions`() = runTest {
+    fun `watch for spent transactions`() = runTest {
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
@@ -149,7 +149,7 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `04 watch for spent transactions while being offline`() = runTest {
+    fun `watch for spent transactions while being offline`() = runTest {
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
@@ -207,14 +207,14 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `05 watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
+    fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
-//        val statusListener = Channel<ElectrumMessage>()
-//        val status = statusListener.receive()
-//        assertTrue { status is ElectrumClientReady }
-//        client.sendMessage(ElectrumStatusSubscription(statusListener))
+        val statusListener = Channel<ElectrumMessage>()
+        client.sendMessage(ElectrumStatusSubscription(statusListener))
+        val status = statusListener.receive()
+        assertTrue(status is ElectrumClientReady)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -258,13 +258,14 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `06 watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
+    fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
-//        val statusListener = Channel<ElectrumMessage>()
-//        client.sendMessage(ElectrumStatusSubscription(statusListener))
-//        statusListener.consumeEach { if (it is ElectrumClientReady) return@consumeEach }
+        val statusListener = Channel<ElectrumMessage>()
+        client.sendMessage(ElectrumStatusSubscription(statusListener))
+        val status = statusListener.receive()
+        assertTrue(status is ElectrumClientReady)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -296,7 +297,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     @OptIn(ExperimentalTime::class)
-    fun `07 get transaction`() = runTest {
+    fun `get transaction`() = runTest {
         // Run on a production server
         val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
         val electrumWatcher = ElectrumWatcher(electrumClient, this).apply { start() }
@@ -331,15 +332,4 @@ class ElectrumWatcherIntegrationTest {
         electrumWatcher.stop()
         electrumClient.stop()
     }
-
-    /*
-    - OK:
-        test("watch for confirmed transactions")
-        test("watch for confirmed transactions when being offline")
-        test("get transaction")
-        test("watch for spent transactions")
-        test("generate unique dummy scids") => UnitTests
-        test("watch for mempool transactions (txs in mempool before we set the watch)")
-        test("watch for mempool transactions (txs not yet in the mempool when we set the watch)")
-     */
 }

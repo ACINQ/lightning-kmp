@@ -23,6 +23,10 @@ fun List<Any>.asJsonRPCParameters(): List<JsonRPCParam> = map {
         is Int -> it.asParam()
         is Double -> it.asParam()
         is String -> it.asParam()
+        is Boolean -> when {
+            it -> 1
+            else -> 0
+        }.asParam()
         is ByteVector -> it.toHex().asParam()
         is Transaction -> Hex.encode(Transaction.write(it)).asParam()
         else -> error("Unsupported type ${it::class} as JSON-RPC parameter")

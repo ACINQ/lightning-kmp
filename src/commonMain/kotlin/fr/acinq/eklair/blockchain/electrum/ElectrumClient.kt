@@ -18,9 +18,8 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
-import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
-import org.kodein.log.frontend.printFrontend
+import org.kodein.log.frontend.simplePrintFrontend
 import org.kodein.log.newLogger
 
 /*
@@ -54,6 +53,8 @@ internal data class AddScriptHashListener(val scriptHash: ByteVector32, val list
 internal data class RemoveStatusListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 internal data class RemoveHeaderListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
 internal data class RemoveScriptHashListener(val listener: SendChannel<ElectrumMessage>) : ElectrumClientAction()
+internal object StartPing : ElectrumClientAction()
+internal object Shutdown : ElectrumClientAction()
 internal object Restart : ElectrumClientAction()
 
 /**
@@ -88,7 +89,7 @@ internal object WaitingForConnection : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
         Connected -> newState {
             state = WaitingForVersion
-            actions = listOf(SendRequest(version.asJsonRPCRequest()))
+            actions = listOf(StartPing, SendRequest(version.asJsonRPCRequest()))
         }
         is RegisterStatusListener -> returnState(AddStatusListener(event.listener))
         else -> unhandled(event)
@@ -206,7 +207,7 @@ private fun ClientState.unhandled(event: ClientEvent) : Pair<ClientState, List<E
         }
         Disconnected -> newState {
             state = ClientClosed
-            actions = listOf(BroadcastStatus(ElectrumClientClosed), Restart)
+            actions = listOf(BroadcastStatus(ElectrumClientClosed), Shutdown, Restart)
         }
         else -> returnState() // error("The state $this cannot process the event $event")
     }
@@ -242,23 +243,19 @@ class ElectrumClient(
 
     private var state: ClientState = ClientClosed
         set(value) {
-            if (value != field) {
-                logger.info { "Updated State: $field -> $value" }
-                println("Updated State: $field -> $value")
-            }
+            if (value != field) logger.info { "Updated State: $field -> $value" }
             field = value
         }
 
     fun start() {
+        logger.info { "Start Electrum Client" }
         launch { run() }
         launch { eventChannel.send(Start) }
-        pingJob = pingScheduler()
     }
 
     private suspend fun run() {
         eventChannel.consumeEach { event ->
             logger.info { "Event received: $event" }
-            println("Event received: $event")
 
             val (newState, actions) = state.process(event)
             state = newState
@@ -266,7 +263,7 @@ class ElectrumClient(
             logger.info { "Execute action: $actions" }
             actions.forEach { action ->
                 when (action) {
-                    is ConnectionAttempt -> connect()
+                    is ConnectionAttempt -> connectionJob = connect()
                     is SendRequest -> socket.send(action.request.encodeToByteArray(), true)
                     is SendHeader -> action.run {
                         requestor.send(HeaderSubscriptionResponse(height, blockHeader))
@@ -279,14 +276,8 @@ class ElectrumClient(
                         scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
                         channel.send(action.response)
                     }
-                    is BroadcastStatus -> {
-                        println("BroadcastStatus")
-                        statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
-                    }
-                    is AddStatusListener -> {
-                        println("AddStatusListener")
-                        statusSubscriptionList.add(action.listener)
-                    }
+                    is BroadcastStatus -> statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
+                    is AddStatusListener -> statusSubscriptionList.add(action.listener)
                     is AddHeaderListener -> headerSubscriptionList.add(action.listener)
                     is AddScriptHashListener -> {
                         scriptHashSubscriptionMap[action.scriptHash] =
@@ -295,35 +286,40 @@ class ElectrumClient(
                     is RemoveStatusListener -> statusSubscriptionList.remove(action.listener)
                     is RemoveHeaderListener -> headerSubscriptionList.remove(action.listener)
                     is RemoveScriptHashListener -> scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
+                    StartPing -> pingJob = pingScheduler()
+                    is Shutdown -> {
+                        connectionJob.cancel()
+                        socket.close()
+                    }
                     is Restart -> {
-                        delay(1_000); socket.close()
-                        eventChannel.send(Start)
+                        delay(1_000); eventChannel.send(Start)
                     }
                 }
             }
         }
     }
 
-    private fun connect() {
-        launch {
-            try {
-                socket = TcpSocket.Builder().connect(host, port, tls)
-                eventChannel.send(Connected)
-                socket.linesFlow(this).collect {
-                    logger.info { "Electrum response received: $it" }
-                    println("Electrum response received: $it")
-                    val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
-                    eventChannel.send(ReceivedResponse(electrumResponse))
-                }
-            } catch (ex: TcpSocket.IOException) {
-                logger.error(ex)
-                socket.close()
-                eventChannel.send(Disconnected)
-            } catch (ex: SerializationException) {
-                logger.error(ex)
+    private lateinit var connectionJob: Job
+    private fun connect() = launch {
+        try {
+            logger.info { "Attempt connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
+            socket = TcpSocket.Builder().connect(host, port, tls)
+            logger.info { "Connected to electrumx instance" }
+            eventChannel.send(Connected)
+            socket.linesFlow(this).collect {
+                logger.info { "Electrum response received: $it" }
+                val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
+                eventChannel.send(ReceivedResponse(electrumResponse))
             }
+        } catch (ex: TcpSocket.IOException) {
+            logger.error(ex)
+            eventChannel.send(Disconnected)
+        } catch (ex: SerializationException) {
+            logger.error(ex)
         }
     }
+
+    fun sendElectrumRequest(request: ElectrumRequest, requestor: SendChannel<ElectrumMessage>? = null): Unit = sendMessage(SendElectrumRequest(request, requestor))
 
     fun sendMessage(message: ElectrumMessage) {
          launch {
@@ -347,16 +343,18 @@ class ElectrumClient(
     }
 
     fun stop() {
-        eventChannel.close()
+        logger.info { "Stop Electrum Client" }
         pingJob.cancel()
-        launch { socket.close() }
+        connectionJob.cancel()
+        socket.close()
+        eventChannel.close()
     }
 
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
         val version = ServerVersion()
-        val logger = LoggerFactory { Logger(it, listOf(printFrontend)) }.newLogger(ElectrumClient::class)
+        val logger = LoggerFactory(simplePrintFrontend).newLogger(ElectrumClient::class)
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }
 }
