@@ -16,6 +16,7 @@ import kotlinx.coroutines.channels.produce
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.printFrontend
+import org.kodein.log.frontend.simplePrintFrontend
 import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 
@@ -163,7 +164,7 @@ private data class WatcherRunning(
                         when (message.contextOpt) {
                             is TransactionHistoryItem -> {
                                 val tx = message.tx
-                                val item = message.contextOpt as TransactionHistoryItem
+                                val item = message.contextOpt
 
                                 // WatchSpent
                                 val notifyWatchSpentList = tx.txIn.map(TxIn::outPoint)
@@ -202,14 +203,12 @@ private data class WatcherRunning(
                                             watchConfirmedTriggered.add(w)
                                         } else if (w.minDepth > 0L) {
                                             // min depth > 0 here
-                                            item?.let {
-                                                val txheight = item.height
-                                                val confirmations = height - txheight + 1
-                                                logger.info { "txid=${w.txId} was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)" }
-                                                if (confirmations >= w.minDepth) {
-                                                    // we need to get the tx position in the block
-                                                    getMerkleList.add(AskForMerkle(w.txId, txheight, tx))
-                                                }
+                                            val txheight = item.height
+                                            val confirmations = height - txheight + 1
+                                            logger.info { "txid=${w.txId} was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)" }
+                                            if (confirmations >= w.minDepth) {
+                                                // we need to get the tx position in the block
+                                                getMerkleList.add(AskForMerkle(w.txId, txheight, tx))
                                             }
                                         }
                                     }
@@ -332,9 +331,7 @@ private data class WatcherRunning(
 }
 
 private fun WatcherState.unhandled(message: WatcherEvent) : Pair<WatcherState, List<WatcherAction>> =
-    when (message) {
-        else -> error("The state $this cannot process the event $message")
-    }
+        error("The state $this cannot process the event $message")
 
 private class WatcherStateBuilder {
     var state: WatcherState = WatcherDisconnected()
@@ -436,7 +433,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     companion object {
-        val logger = LoggerFactory { Logger(it, listOf(printFrontend)) }.newLogger(ElectrumWatcher::class)
+        val logger = LoggerFactory(simplePrintFrontend).newLogger(ElectrumWatcher::class)
         internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {
             // we use a height of 0
             // - to make sure that the tx will be marked as "confirmed"
