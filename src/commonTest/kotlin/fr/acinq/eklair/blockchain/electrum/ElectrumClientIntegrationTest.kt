@@ -2,24 +2,16 @@ package fr.acinq.eklair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.test.TestCoroutineScope
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClientIntegrationTest {
-    private val testScope = TestCoroutineScope()
-    private val logger = LoggerFactory.default.newLogger(ElectrumClientIntegrationTest::class)
-    private lateinit var client : ElectrumClient
-
     // this is tx #2690 of block #500000
     val referenceTx = Transaction.read("0200000001983c5b32ced1de5ae97d3ce9b7436f8bb0487d15bf81e5cae97b1e238dc395c6000000006a47304402205957c75766e391350eba2c7b752f0056cb34b353648ecd0992a8a81fc9bcfe980220629c286592842d152cdde71177cd83086619744a533f262473298cacf60193500121021b8b51f74dbf0ac1e766d162c8707b5e8d89fc59da0796f3b4505e7c0fb4cf31feffffff0276bd0101000000001976a914219de672ba773aa0bc2e15cdd9d2e69b734138fa88ac3e692001000000001976a914301706dede031e9fb4b60836e073a4761855f6b188ac09a10700")
     val scriptHash = Crypto.sha256(referenceTx.txOut.first().publicKeyScript).toByteVector32().reversed()
@@ -40,21 +32,25 @@ class ElectrumClientIntegrationTest {
         Hex.decode("98bd1048e04ff1b0af5856d9890cd708d8d67ad6f3a01f777130fbc16810eeb3"))
         .map { it.toByteVector32() }
 
-    @BeforeTest fun before() {
-        client = ElectrumClient("localhost", 51001, false, testScope)
-        client.start()
-    }
-    @AfterTest fun after() { client.stop() }
 
     @Test
-    fun `connect to an electrumx mainnet server`() = runBlocking {
+    fun `connect to an electrumx mainnet server`() = runTest {
+        println("create client")
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
+
+        println("create channel")
         val channel = Channel<ElectrumMessage>()
+        println("send message to client")
         client.sendMessage(ElectrumStatusSubscription(channel))
 
         withTimeout(15_000) {
+            println("waiting for response")
             val msg = channel.receive()
+            println("msg is $msg")
             assertEquals(ElectrumClientReady, msg)
         }
+
+        client.stop()
     }
 
     @Test
@@ -77,34 +73,4 @@ class ElectrumClientIntegrationTest {
     fun `get scripthash history`() {TODO() }
     @Test
     fun `list script unspents`() {TODO() }
-
-
-
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test
-    fun `state machines`() = runBlocking {
-
-        val client = ElectrumClient("electrum.acinq.co", 50002, true, this)
-//        val watcher = ElectrumWatcher(client)
-
-        val start = launch {
-//            launch {
-            logger.info { "Start electrum client" }
-            client.start()
-//            }
-//            launch {
-//                logger.info { "Start electrum watcher" }
-//                watcher.start()
-//            }
-        }
-
-        client.sendMessage(SendElectrumRequest(GetHeader(10)))
-
-        launch {
-            delay(120_000)
-            logger.info { "EXIT" }
-            start.cancel()
-        }.join()
-    }
 }

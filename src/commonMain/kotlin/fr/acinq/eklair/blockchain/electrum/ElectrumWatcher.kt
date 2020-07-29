@@ -13,7 +13,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.frontend.printFrontend
 import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 
@@ -434,7 +436,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     companion object {
-        val logger = LoggerFactory.default.newLogger(ElectrumWatcher::class)
+        val logger = LoggerFactory { Logger(it, listOf(printFrontend)) }.newLogger(ElectrumWatcher::class)
         internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {
             // we use a height of 0
             // - to make sure that the tx will be marked as "confirmed"

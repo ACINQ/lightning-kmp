@@ -31,6 +31,7 @@ val ktorVersion = "1.3.2-1.4-M3"
 val secp256k1Version = "0.3.0-1.4-M3"
 
 kotlin {
+    fun ktorClient(module: String, version: String = ktorVersion) = "io.ktor:ktor-client-$module:$version"
 
     val commonMain by sourceSets.getting {
         dependencies {
@@ -44,12 +45,9 @@ kotlin {
         }
     }
     val commonTest by sourceSets.getting {
-        fun ktorClient(module: String, version: String = ktorVersion) = "io.ktor:ktor-client-$module:$version"
-
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.3.8")
             implementation(ktorClient("core"))
             implementation(ktorClient("auth"))
             implementation(ktorClient("json"))

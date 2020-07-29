@@ -8,6 +8,8 @@ import io.ktor.client.features.auth.providers.*
 import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
+import io.ktor.client.request.request
+import io.ktor.client.statement.*
 import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.*
 import org.kodein.log.LoggerFactory
@@ -25,7 +27,7 @@ class BitcoinJsonRPCClient(
     private val serviceUri = "$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
 
     private val httpClient = HttpClient {
-        expectSuccess = false
+//        expectSuccess = false
         install(JsonFeature) {
             serializer = KotlinxSerializer()
         }
@@ -37,15 +39,17 @@ class BitcoinJsonRPCClient(
         }
     }
 
-    fun close() { httpClient.close() }
-
     @OptIn(UnstableDefault::class)
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
+        println("request: $request")
+        println("serviceUri: $serviceUri")
+        println("httpClient: $httpClient")
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
             logger.info { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
             body = request.asJsonRPCRequest()
+            println("post: $body")
         }
-
+        println("rpcResponse: $rpcResponse")
         logger.info { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T

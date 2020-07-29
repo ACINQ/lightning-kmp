@@ -18,7 +18,9 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.frontend.printFrontend
 import org.kodein.log.newLogger
 
 /*
@@ -240,7 +242,10 @@ class ElectrumClient(
 
     private var state: ClientState = ClientClosed
         set(value) {
-            if (value != field) logger.info { "Updated State: $field -> $value" }
+            if (value != field) {
+                logger.info { "Updated State: $field -> $value" }
+                println("Updated State: $field -> $value")
+            }
             field = value
         }
 
@@ -253,6 +258,7 @@ class ElectrumClient(
     private suspend fun run() {
         eventChannel.consumeEach { event ->
             logger.info { "Event received: $event" }
+            println("Event received: $event")
 
             val (newState, actions) = state.process(event)
             state = newState
@@ -273,10 +279,14 @@ class ElectrumClient(
                         scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
                         channel.send(action.response)
                     }
-                    is BroadcastStatus ->
+                    is BroadcastStatus -> {
+                        println("BroadcastStatus")
                         statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
-                    is AddStatusListener ->
+                    }
+                    is AddStatusListener -> {
+                        println("AddStatusListener")
                         statusSubscriptionList.add(action.listener)
+                    }
                     is AddHeaderListener -> headerSubscriptionList.add(action.listener)
                     is AddScriptHashListener -> {
                         scriptHashSubscriptionMap[action.scriptHash] =
@@ -301,6 +311,7 @@ class ElectrumClient(
                 eventChannel.send(Connected)
                 socket.linesFlow(this).collect {
                     logger.info { "Electrum response received: $it" }
+                    println("Electrum response received: $it")
                     val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
@@ -338,14 +349,14 @@ class ElectrumClient(
     fun stop() {
         eventChannel.close()
         pingJob.cancel()
-        socket.close()
+        launch { socket.close() }
     }
 
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
         val version = ServerVersion()
-        val logger = LoggerFactory.default.newLogger(ElectrumClient::class)
+        val logger = LoggerFactory { Logger(it, listOf(printFrontend)) }.newLogger(ElectrumClient::class)
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }
 }
