@@ -264,10 +264,8 @@ class ElectrumClient(
             actions.forEach { action ->
                 when (action) {
                     is ConnectionAttempt -> connectionJob = connect()
-                    is SendRequest -> socket.send(action.request.encodeToByteArray(), true)
-                    is SendHeader -> action.run {
-                        requestor.send(HeaderSubscriptionResponse(height, blockHeader))
-                    }
+                    is SendRequest -> socket.send(action.request.encodeToByteArray())
+                    is SendHeader -> action.requestor.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> action.requestor?.send(action.response) ?: sendMessage(action.response)
                     is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
                         channel.send(action.headerSubscriptionResponse)
@@ -288,6 +286,7 @@ class ElectrumClient(
                     is RemoveScriptHashListener -> scriptHashSubscriptionMap -= scriptHashSubscriptionMap.filterValues { it == action.listener }.keys
                     StartPing -> pingJob = pingScheduler()
                     is Shutdown -> {
+                        pingJob.cancel()
                         connectionJob.cancel()
                         socket.close()
                     }
