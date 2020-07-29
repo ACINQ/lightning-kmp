@@ -47,6 +47,7 @@ class BitcoinJsonRPCClient(
         }
 
         logger.info { "Receive bitcoind response: $rpcResponse" }
+        @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T
     }
 
