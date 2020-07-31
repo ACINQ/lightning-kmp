@@ -164,19 +164,6 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
                )
            }
        }
-
-       /*
-        - OK:
-            case AddStatusListener(actor)
-            case HeaderSubscription(actor)
-            case request: Request
-            case Right(json: JsonRPCResponse)
-            case Left(response: HeaderSubscriptionResponse)
-            case Left(response: ScriptHashSubscriptionResponse)
-            case HeaderSubscriptionResponse(height, newtip)
-            case Left(response: AddressSubscriptionResponse)
-        */
-
        else -> unhandled(event)
    }
 
@@ -208,7 +195,7 @@ private fun ClientState.unhandled(event: ClientEvent) : Pair<ClientState, List<E
             state = ClientClosed
             actions = listOf(BroadcastStatus(ElectrumClientClosed), Shutdown, Restart)
         }
-        else -> returnState() // error("The state $this cannot process the event $event")
+        else -> error("The state $this cannot process the event $event")
     }
 
 private class ClientStateBuilder {
@@ -313,7 +300,7 @@ class ElectrumClientImpl(
     private fun disconnect() {
         pingJob?.cancel()
         connectionJob?.cancel()
-        socket.close()
+        if (this::socket.isInitialized) socket.close()
     }
 
     override fun sendElectrumRequest(request: ElectrumRequest, requestor: SendChannel<ElectrumMessage>?): Unit =
