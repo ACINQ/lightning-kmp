@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.simplePrintFrontend
 import org.kodein.log.newLogger
@@ -171,7 +172,10 @@ private data class WatcherRunning(
                                             .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                                             .map {
                                                 logger.info { "output ${it.txId}:${it.outputIndex} spent by transaction ${tx.txid}" }
-                                                NotifyWatchSpent(it.listener, WatchEventSpent(ByteVector32.Zeroes, it.event, tx))
+                                                NotifyWatchSpent(
+                                                    it.listener,
+                                                    WatchEventSpent(ByteVector32.Zeroes, it.event, tx)
+                                                )
                                             }
                                     }
 
@@ -210,13 +214,15 @@ private data class WatcherRunning(
                                         }
                                     }
 
-                                logger.info { """Tx notification for ${tx.txid}
+                                logger.info {
+                                    """Tx notification for ${tx.txid}
                                     |txIn: ${tx.txIn}
                                     |txOut: ${tx.txIn}
                                     |watches: $watches
                                     |NotifyWatchSpentList: $notifyWatchSpentList
                                     |NotifyWatchConfirmedList: $notifyWatchConfirmedList
-                                """.trimMargin() }
+                                """.trimMargin()
+                                }
 
                                 newState {
                                     // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
@@ -237,6 +243,19 @@ private data class WatcherRunning(
                                         GetTxWithMetaResponse(tx.txid, tx, tip.time)
                                     )
                                 )
+                            }
+                            message is BroadcastTransactionResponse -> {
+                                val (tx, errorOpt) = message
+                                when  {
+                                    errorOpt == null -> {
+                                        logger.info { "broadcast succeeded for txid=${tx.txid} tx=$tx" }
+                                    }
+                                    errorOpt is Error && errorOpt.message?.contains("transaction already in block chain") == true -> {
+                                        logger.info { "broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)" }
+                                    }
+                                    else -> logger.error {"broadcast failed for txid=${tx.txid} tx=$tx with error=$errorOpt"}
+                                }
+                                newState(copy(sent = ArrayDeque(sent - tx)))
                             }
                             else -> returnState()
                         }
@@ -260,7 +279,10 @@ private data class WatcherRunning(
                         val notifyWatchConfirmedList = tx?.let {
                             triggered.map { w ->
                                 logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
-                                NotifyWatchConfirmed(w.listener, WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx))
+                                NotifyWatchConfirmed(
+                                    w.listener,
+                                    WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx)
+                                )
                             }
                         } ?: emptyList()
 
@@ -269,15 +291,58 @@ private data class WatcherRunning(
                             actions = notifyWatchConfirmedList
                         }
                     }
-                    message is ElectrumClientClosed -> newState(WatcherDisconnected(
-                        watches = watches,
-                        publishQueue = ArrayDeque(sent.map { PublishAsap(it) }),
-                        block2tx = block2tx
-                    ))
+                    message is ElectrumClientClosed -> newState(
+                        WatcherDisconnected(
+                            watches = watches,
+                            publishQueue = ArrayDeque(sent.map { PublishAsap(it) }),
+                            block2tx = block2tx
+                        )
+                    )
                     else -> returnState()
                 }
             }
             is GetTxWithMetaEvent -> returnState(AskForTransaction(event.txid, event.listener))
+            is PublishEvent -> {
+                /* TODO
+                      val blockCount = this.blockCount.get()
+                      val cltvTimeout = Scripts.cltvTimeout(tx)
+                      val csvTimeout = Scripts.csvTimeout(tx)
+                      if (csvTimeout > 0) {
+                        require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
+                        val parentTxid = tx.txIn(0).outPoint.txid
+                        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
+                        val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
+                        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+                      } else if (cltvTimeout > blockCount) {
+                        log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
+                        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
+                        context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
+                      } else {
+                        log.info(s"publishing tx=$tx")
+                        client ! ElectrumClient.BroadcastTransaction(tx)
+                        context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
+                      }
+                 */
+                returnState()
+            }
+            /*
+            TODO
+                case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
+              log.info(s"parent tx of txid=${tx.txid} has been confirmed")
+              val blockCount = this.blockCount.get()
+              val csvTimeout = Scripts.csvTimeout(tx)
+              val absTimeout = blockHeight + csvTimeout
+              if (absTimeout > blockCount) {
+                log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
+                val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
+                context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
+              } else {
+                log.info(s"publishing tx=$tx")
+                client ! ElectrumClient.BroadcastTransaction(tx)
+                context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
+              }
+
+             */
             is ReceiveWatch -> when (val watch = event.watch) {
                 in watches -> returnState()
                 is WatchSpent -> {
@@ -318,9 +383,9 @@ private data class WatcherRunning(
         case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction))
         case GetTxWithMeta(txid)
         case ElectrumClient.ElectrumDisconnected
+        case ElectrumClient.BroadcastTransactionResponse(tx, error_opt)
     - TODO:
         case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _)
-        case ElectrumClient.BroadcastTransactionResponse(tx, error_opt)
         case PublishAsap(tx)
     - later:
         case Terminated(actor)

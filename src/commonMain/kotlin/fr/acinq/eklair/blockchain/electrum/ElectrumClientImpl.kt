@@ -3,7 +3,6 @@ package fr.acinq.eklair.blockchain.electrum
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.version
-import fr.acinq.eklair.blockchain.electrum.ElectrumClientImpl.Companion.logger
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.io.linesFlow
 import fr.acinq.eklair.utils.Either
@@ -12,11 +11,14 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.cancellable
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.simplePrintFrontend
 import org.kodein.log.newLogger
@@ -86,9 +88,7 @@ internal object WaitingForConnection : ClientState() {
 internal object WaitingForVersion : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
             event is ReceivedResponse && event.response is Either.Right -> {
-                val electrumResponse = parseJsonResponse(version, event.response.value)
-                logger.info { "Response received: $electrumResponse" }
-                when (electrumResponse) {
+                when (parseJsonResponse(version, event.response.value)) {
                     is ServerVersionResponse -> newState {
                         state = WaitingForTip
                         actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
@@ -228,6 +228,7 @@ class ElectrumClientImpl(
     private val host: String,
     private val port: Int,
     private val tls: Boolean,
+    val logger: Logger,
     scope: CoroutineScope
 ) : ElectrumClient, CoroutineScope by scope {
 
@@ -291,7 +292,7 @@ class ElectrumClientImpl(
         }
     }
 
-    private lateinit var connectionJob: Job
+    private var connectionJob: Job? = null
     private fun connect() = launch {
         try {
             logger.info { "Attempt connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
@@ -306,14 +307,12 @@ class ElectrumClientImpl(
         } catch (ex: TcpSocket.IOException) {
             logger.error(ex)
             eventChannel.send(Disconnected)
-        } catch (ex: SerializationException) {
-            logger.error(ex)
         }
     }
 
     private fun disconnect() {
-        pingJob.cancel()
-        connectionJob.cancel()
+        pingJob?.cancel()
+        connectionJob?.cancel()
         socket.close()
     }
 
@@ -332,7 +331,7 @@ class ElectrumClientImpl(
          }
     }
 
-    private lateinit var pingJob: Job
+    private var pingJob: Job? = null
     private fun pingScheduler() = launch {
         while (true) {
             delay(30_000)
@@ -345,10 +344,5 @@ class ElectrumClientImpl(
         logger.info { "Stop Electrum Client" }
         disconnect()
         eventChannel.close()
-    }
-
-    companion object {
-        // TODO inject
-        val logger = LoggerFactory(simplePrintFrontend).newLogger(ElectrumClientImpl::class)
     }
 }
