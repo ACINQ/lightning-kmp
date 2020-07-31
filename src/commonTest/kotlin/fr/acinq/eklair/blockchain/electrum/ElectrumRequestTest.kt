@@ -1,7 +1,5 @@
 package fr.acinq.eklair.blockchain.electrum
 
-import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.ELECTRUM_CLIENT_NAME
-import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.ELECTRUM_PROTOCOL_VERSION
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

@@ -10,7 +10,7 @@ import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
 /**
- * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
+ * Common communication objects between [ElectrumClientImpl] and external ressources (e.g. [ElectrumWatcherImpl])
  */
 sealed class ElectrumMessage
 sealed class ElectrumClientState : ElectrumMessage()
@@ -23,7 +23,7 @@ class UnsubscribeListener(listener: SendChannel<ElectrumMessage>) : ElectrumSubs
 data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumMessage()
 
 /**
- * [ElectrumClient] requests / responses
+ * [ElectrumClientImpl] requests / responses
  */
 sealed class ElectrumRequest(vararg params: Any) {
     abstract val method: String

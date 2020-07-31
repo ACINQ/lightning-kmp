@@ -8,6 +8,8 @@ import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
+import kotlinx.coroutines.channels.consumeEach
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -35,8 +37,8 @@ class ElectrumClientIntegrationTest {
         Hex.decode("98bd1048e04ff1b0af5856d9890cd708d8d67ad6f3a01f777130fbc16810eeb3"))
         .map { it.toByteVector32() }
 
-    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
-        val client = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
+    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClientImpl {
+        val client = ElectrumClientImpl("electrum.acinq.co", 50002, true, this).apply { start() }
 //        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val channel = Channel<ElectrumMessage>()
         client.sendMessage(ElectrumStatusSubscription(channel))
@@ -52,7 +54,7 @@ class ElectrumClientIntegrationTest {
 
     @Test
     fun `connect to an electrumx mainnet server ios`() = runTest {
-        val client = ElectrumClient("localhost", 51001, false, this)
+        val client = ElectrumClientImpl("localhost", 51001, false, this)
         client.start()
 
         val channel = Channel<ElectrumMessage>()
@@ -62,6 +64,32 @@ class ElectrumClientIntegrationTest {
         assertTrue(msg is ElectrumClientReady)
 
         client.stop()
+    }
+
+    @Test
+    fun `test ios`() = runTest {
+        val channel = Channel<String>(BUFFERED)
+
+        launch {
+            println("repeat")
+            repeat(100) {
+                launch { channel.send("$it") }
+            }
+        }
+
+        launch {
+            println("consume")
+            channel.consumeEach { print("$it, ") }
+        }
+
+        println("wait 30s")
+
+        launch { delay(30_000) }
+
+        println()
+        println("quit")
+
+//        channel.close()
     }
 
     @Test
