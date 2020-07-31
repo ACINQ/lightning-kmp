@@ -6,15 +6,12 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
-import kotlinx.serialization.UnstableDefault
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonConfiguration
-import kotlinx.serialization.json.content
+import kotlinx.serialization.json.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
-@OptIn(ExperimentalUnsignedTypes::class, UnstableDefault::class)
+@OptIn(ExperimentalUnsignedTypes::class)
 class LightningSerializerTestsCommon {
 
     fun point(fill: Byte) = PrivateKey(ByteArray(32) { fill }).publicKey()
@@ -126,12 +123,11 @@ class LightningSerializerTestsCommon {
     }
 ]"""
 
-        val json = Json(JsonConfiguration.Default)
-        val items = json.parseJson(raw)
+        val items = Json.parseToJsonElement(raw)
         items.jsonArray.forEach {
-            val name = it.jsonObject["name"]?.content
-            val bytes = it.jsonObject["bytes"]?.content
-            val value = it.jsonObject["value"]?.primitive?.content
+            val name = it.jsonObject["name"]?.jsonPrimitive?.content
+            val bytes = it.jsonObject["bytes"]?.jsonPrimitive?.content
+            val value = it.jsonObject["value"]?.jsonPrimitive?.content
             println(name)
             println(value)
             println(bytes)
