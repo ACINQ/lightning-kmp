@@ -92,7 +92,7 @@ sealed class State {
 }
 
 interface HasCommitments {
-    abstract val commitments: Commitments
+    val commitments: Commitments
     val channelId: ByteVector32
         get() = commitments.channelId
 }
@@ -680,7 +680,7 @@ data class Normal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val commitments: Commitments,
-    val hortChannelId: ShortChannelId,
+    val shortChannelId: ShortChannelId,
     val buried: Boolean,
     val channelAnnouncement: ChannelAnnouncement?,
     val channelUpdate: ChannelUpdate,

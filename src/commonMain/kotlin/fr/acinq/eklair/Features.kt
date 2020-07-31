@@ -4,6 +4,9 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.eklair.utils.BitField
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.frontend.printFrontend
 
 
 enum class FeatureSupport {

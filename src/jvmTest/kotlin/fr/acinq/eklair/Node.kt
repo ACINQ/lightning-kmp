@@ -12,14 +12,12 @@ import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.newSingleThreadContext
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.channels.consumeEach
 
 
-@OptIn(ExperimentalUnsignedTypes::class)
+@OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
     val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
     val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
@@ -74,44 +72,44 @@ object Node {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        val priv = nodeParams.keyManager.nodeKey.privateKey
-//        val pub = priv.publicKey()
-//        val remoteNodeId = PublicKey(Hex.decode("02d684ecbdbde1b556715a4a56186dfe045df1a0d18fe632843299254b482df7d9"))
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
-        // To create such a seed, you can create a text file seed.hex with the following content:
-        // 00000000: 0202 0202 0202 0202 0202 0202 0202 0202  ................
-        // 00000010: 0202 0202 0202 0202 0202 0202 0202 0202  ................
-        // and convert it to a binary file with:
-        // $ xxd -r seed.hex seed.dat
+        val nodeId = PublicKey.fromHex("02d684ecbdbde1b556715a4a56186dfe045df1a0d18fe632843299254b482df7d9")
+        val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId)
 
-        lateinit var peer: Peer
         val commandChannel = Channel<List<String>>(2)
+
+        suspend fun stateLoop() {
+            peer.openStateSubscription().consumeEach {
+                println("State: $it")
+            }
+        }
+
+        suspend fun eventLoop() {
+            peer.openListenerEventSubscription().consumeEach {
+                println("Event: $it")
+            }
+        }
 
         suspend fun readLoop() {
             println("node ${nodeParams.nodeId} is ready:")
             for(tokens in commandChannel) {
                 when (tokens.first()) {
                     "connect" -> {
-                        val uri = tokens[1]
-                        val elts = uri.split("@")
-                        val nodeId = PublicKey.fromHex(elts[0])
-                        val elts1 = elts[1].split(":")
-                        peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, Channel(10), Channel(3))
-                        GlobalScope.launch {
-                            peer.connect(elts1[0], elts1[1].toInt())
-                        }
+                        val host = tokens[1]
+                        val port = tokens[2].toInt()
+                        GlobalScope.launch { peer.connect(host, port) }
                     }
                     "receive" -> {
                         val paymentPreimage = ByteVector32(tokens[1])
                         val amount = MilliSatoshi(tokens[2].toLong())
-                        peer.input.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
+                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
                     }
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
-                        peer.input.send(SendPayment(invoice))
+                        peer.send(SendPayment(invoice))
                     }
                     else -> {
-                        println("I don't undertand ${tokens}")
+                        println("I don't understand $tokens")
                     }
                 }
             }
@@ -129,9 +127,9 @@ object Node {
 
         runBlocking {
             launch { readLoop() }
-            launch(newSingleThreadContext("MyOwnThread")) { // will get its own new thread
-               writeLoop()
-            }
+            launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
+            launch { stateLoop() }
+            launch { eventLoop() }
         }
     }
 
