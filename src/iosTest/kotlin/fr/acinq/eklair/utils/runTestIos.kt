@@ -1,6 +1,8 @@
 package fr.acinq.eklair.utils
 
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import platform.Foundation.NSDate
 import platform.Foundation.NSRunLoop
