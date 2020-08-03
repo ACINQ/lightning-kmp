@@ -2,13 +2,13 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     application
-    kotlin("multiplatform") version "1.4-M3"
-    kotlin("plugin.serialization") version "1.4-M3"
+    kotlin("multiplatform") version "1.4.0-rc"
+    kotlin("plugin.serialization") version "1.4.0-rc"
     `maven-publish`
 }
 
 group = "fr.acinq.eklair"
-version = "0.2.0-1.4-M3"
+version = "0.2.0-1.4-rc"
 
 application {
     mainClassName = "fr.acinq.eklair.Boot"
@@ -27,8 +27,8 @@ repositories {
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
-val ktorVersion = "1.3.2-1.4-M3"
-val secp256k1Version = "0.3.0-1.4-M3"
+val ktorVersion = "1.3.2-1.4.0-rc"
+val secp256k1Version = "0.3.0-1.4-rc"
 
 kotlin {
     fun ktorClient(module: String, version: String = ktorVersion) = "io.ktor:ktor-client-$module:$version"
@@ -37,11 +37,11 @@ kotlin {
         dependencies {
             implementation(kotlin("stdlib-common"))
 
-            api("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-M3")
+            api("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-rc")
             api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.4.0-kotlin-1.4-M3-42")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7-1.4-M3")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:0.20.0-1.4-M3")
+            api("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-rc-41")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.8-1.4.0-rc")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:1.0-M1-1.4.0-rc")
         }
     }
     val commonTest by sourceSets.getting {

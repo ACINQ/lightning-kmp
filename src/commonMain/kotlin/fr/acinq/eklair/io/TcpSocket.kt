@@ -8,6 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.isActive
 
 
 @OptIn(ExperimentalStdlibApi::class)
@@ -45,7 +46,7 @@ suspend fun TcpSocket.receiveFully(size: Int): ByteArray =
 fun TcpSocket.receiveChannel(scope: CoroutineScope, maxChunkSize: Int = 8192) : ReceiveChannel<ByteArray> =
     scope.produce {
         val buffer = ByteArray(maxChunkSize)
-        while (true) {
+        while (isActive) {
             val size = receiveAvailable(buffer)
             send(buffer.subArray(size))
         }
