@@ -15,13 +15,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.collect
-import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonConfiguration
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.simplePrintFrontend
-import org.kodein.log.newLogger
+import org.kodein.log.*
+
 
 /*
     Events
@@ -210,7 +207,7 @@ private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyL
 private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(action)
 private fun ClientState.returnState(vararg actions: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(*actions)
 
-@OptIn(ExperimentalCoroutinesApi::class, UnstableDefault::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
     private val host: String,
     private val port: Int,
@@ -219,7 +216,7 @@ class ElectrumClient(
 ) : CoroutineScope by scope {
 
     private lateinit var socket: TcpSocket
-    private val json = Json(JsonConfiguration.Default.copy(ignoreUnknownKeys = true))
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val eventChannel: Channel<ClientEvent> = Channel(Channel.BUFFERED)
 
@@ -295,7 +292,7 @@ class ElectrumClient(
             eventChannel.send(Connected)
             socket.linesFlow(this).collect {
                 logger.info { "Electrum response received: $it" }
-                val electrumResponse = json.parse(ElectrumResponseDeserializer, it)
+                val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                 eventChannel.send(ReceivedResponse(electrumResponse))
             }
         } catch (ex: TcpSocket.IOException) {

@@ -4,6 +4,10 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 
@@ -39,7 +43,7 @@ sealed class JsonRPCParam
 data class JsonRPCInt(val value: Int) : JsonRPCParam() {
     @Serializer(forClass = JsonRPCInt::class)
     companion object: KSerializer<JsonRPCInt> {
-        override val descriptor: SerialDescriptor = SerialDescriptor("IntParam")
+        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("IntParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCInt) {
             encoder.encodeInt(value.value)
@@ -54,7 +58,7 @@ fun Int.asParam(): JsonRPCParam = JsonRPCInt(this)
 data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
     @Serializer(forClass = JsonRPCDouble::class)
     companion object: KSerializer<JsonRPCDouble> {
-        override val descriptor: SerialDescriptor = SerialDescriptor("DoubleParam")
+        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("DoubleParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCDouble) {
             encoder.encodeDouble(value.value)
@@ -69,7 +73,7 @@ fun Double.asParam(): JsonRPCParam = JsonRPCDouble(this)
 data class JsonRPCString(val value: String) : JsonRPCParam() {
     @Serializer(forClass = JsonRPCString::class)
     companion object: KSerializer<JsonRPCString> {
-        override val descriptor: SerialDescriptor = SerialDescriptor("StringParam")
+        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("StringParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCString) {
             encoder.encodeString(value.value)

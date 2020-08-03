@@ -39,7 +39,7 @@ kotlin {
 
             api("fr.acinq.bitcoink:bitcoink:0.2.0-1.4-rc")
             api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-rc-41")
+            api("org.kodein.log:kodein-log:0.4.0-kotlin-1.4-rc-43")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.8-1.4.0-rc")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:1.0-M1-1.4.0-rc")
         }

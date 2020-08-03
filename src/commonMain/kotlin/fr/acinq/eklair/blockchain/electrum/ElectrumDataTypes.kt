@@ -7,6 +7,11 @@ import fr.acinq.eklair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.PolymorphicKind
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
 
 /**
@@ -140,39 +145,38 @@ data class ServerError(val request: ElectrumRequest, val error: JsonRPCError) : 
 /**
  * ElectrumResponse deserializer
  */
-@OptIn(UnstableDefault::class)
 object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonRPCResponse>> {
-    private val json = Json(JsonConfiguration.Default.copy(ignoreUnknownKeys = true))
+    private val json = Json { ignoreUnknownKeys = true }
 
     override fun deserialize(decoder: Decoder): Either<ElectrumResponse, JsonRPCResponse> {
         // Decoder -> JsonInput
-        val input = decoder as? JsonInput
+        val input = decoder as? JsonDecoder
             ?: throw SerializationException("This class can be loaded only by JSON")
         // JsonInput => JsonElement (JsonObject in this case)
-        val jsonObject = input.decodeJson() as? JsonObject
+        val jsonObject = input.decodeJsonElement() as? JsonObject
             ?: throw SerializationException("Expected JsonObject")
 
         return when(val method = jsonObject["method"]) {
             is JsonPrimitive -> {
-                val params = jsonObject["params"]?.jsonArray?.content.orEmpty().also {
+                val params = jsonObject["params"]?.jsonArray.orEmpty().also {
                     if (it.isEmpty()) throw SerializationException("Parameters for ${method.content} notification should not null or be empty.")
                 }
 
                 when (method.content) {
                     "blockchain.headers.subscribe" -> params.first().jsonObject.let { header ->
-                        val height = header.getAs<JsonPrimitive>("height").int
-                        val hex = header.getAs<JsonPrimitive>("hex").content
+                        val height = header.getValue("height").jsonPrimitive.int
+                        val hex = header.getValue("hex").jsonPrimitive.content
                         Either.Left(HeaderSubscriptionResponse(height, BlockHeader.read(hex)))
                     }
                     "blockchain.scripthash.subscribe" -> {
-                        val scriptHash = params[0].content
-                        val status = params[1].contentOrNull
+                        val scriptHash = params[0].jsonPrimitive.content
+                        val status = params[1].jsonPrimitive.contentOrNull
                         Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status ?: ""))
                     }
                     else -> throw SerializationException("JSON-RPC Method ${method.content} is not support")
                 }
             }
-            else -> Either.Right(json.fromJson(JsonRPCResponse.serializer(), jsonObject))
+            else -> Either.Right(json.decodeFromJsonElement(JsonRPCResponse.serializer(), jsonObject))
         }
     }
 
@@ -180,11 +184,11 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
         throw SerializationException("This ($value) is not meant to be serialized!")
     }
 
+    @OptIn(InternalSerializationApi::class)
     override val descriptor: SerialDescriptor
-        get() = SerialDescriptor("fr.acinq.eklair.utils.Either", PolymorphicKind.SEALED)
+        get() = buildSerialDescriptor("fr.acinq.eklair.utils.Either", PolymorphicKind.SEALED)
 }
 
-@OptIn(UnstableDefault::class)
 internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCResponse): ElectrumResponse =
     if (rpcResponse.error != null) when (request) {
         is BroadcastTransaction -> BroadcastTransactionResponse(request.tx, rpcResponse.error)
@@ -202,8 +206,8 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         is GetScriptHashHistory -> {
             val jsonArray = rpcResponse.result.jsonArray
             val items = jsonArray.map {
-                val height = it.jsonObject.getAs<JsonLiteral>("height").int
-                val txHash = it.jsonObject.getAs<JsonLiteral>("tx_hash").content
+                val height = it.jsonObject.getValue("height").jsonPrimitive.int
+                val txHash = it.jsonObject.getValue("tx_hash").jsonPrimitive.content
                 TransactionHistoryItem(height, ByteVector32.fromValidHex(txHash))
             }
             GetScriptHashHistoryResponse(request.scriptHash, items)
@@ -211,10 +215,10 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         is ScriptHashListUnspent -> {
             val jsonArray = rpcResponse.result.jsonArray
             val items = jsonArray.map {
-                val txHash = it.jsonObject.getAs<JsonLiteral>("tx_hash").content
-                val txPos = it.jsonObject.getAs<JsonLiteral>("tx_pos").int
-                val value = it.jsonObject.getAs<JsonLiteral>("value").long
-                val height = it.jsonObject.getAs<JsonLiteral>("height").long
+                val txHash = it.jsonObject.getValue("tx_hash").jsonPrimitive.content
+                val txPos = it.jsonObject.getValue("tx_pos").jsonPrimitive.int
+                val value = it.jsonObject.getValue("value").jsonPrimitive.long
+                val height = it.jsonObject.getValue("height").jsonPrimitive.long
                 UnspentItem(ByteVector32.fromValidHex(txHash), txPos, value, height)
             }
             ScriptHashListUnspentResponse(request.scriptHash, items)
@@ -224,25 +228,25 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
                 rpcResponse.result.content to emptyList()
             } else {
                 val jsonObject = rpcResponse.result.jsonObject
-                jsonObject.getAs<JsonLiteral>("tx_hash").content to
-                        jsonObject.getAs<JsonArray>("merkle").map { ByteVector32.fromValidHex(it.content) }
+                jsonObject.getValue("tx_hash").jsonPrimitive.content to
+                        jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
             }
 
             GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(txHash), request.height, request.tx_pos, leaves)
         }
         is GetTransaction -> {
-            val hex = rpcResponse.result.content
+            val hex = rpcResponse.result.jsonPrimitive.content
             GetTransactionResponse(Transaction.read(hex), request.contextOpt)
         }
         is ScriptHashSubscription -> {
             val status = when(rpcResponse.result) {
-                is JsonLiteral -> rpcResponse.result.content
+                is JsonPrimitive -> rpcResponse.result.jsonPrimitive.content
                 else -> ""
             }
             ScriptHashSubscriptionResponse(request.scriptHash, status)
         }
         is BroadcastTransaction -> {
-            val message = rpcResponse.result.content
+            val message = rpcResponse.result.jsonPrimitive.content
             // if we got here, it means that the server's response does not contain an error and message should be our
             // transaction id. However, it seems that at least on testnet some servers still use an older version of the
             // Electrum protocol and return an error message in the result field
@@ -260,13 +264,13 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             }
         }
         is GetHeader -> {
-            val hex = rpcResponse.result.content
+            val hex = rpcResponse.result.jsonPrimitive.content
             GetHeaderResponse(request.height, BlockHeader.read(hex))
         }
         is GetHeaders -> {
             val jsonObject = rpcResponse.result.jsonObject
-            val max = jsonObject.getAs<JsonLiteral>("max").int
-            val hex = jsonObject.getAs<JsonLiteral>("hex").content
+            val max = jsonObject.getValue("max").jsonPrimitive.int
+            val hex = jsonObject.getValue("hex").jsonPrimitive.content
 
             val blockHeaders= buildList {
                 val input = ByteArrayInput(Hex.decode(hex))
@@ -286,15 +290,15 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         }
         is GetMerkle -> {
             val jsonObject = rpcResponse.result.jsonObject
-            val leaves = jsonObject.getAs<JsonArray>("merkle").map { ByteVector32.fromValidHex(it.content) }
-            val blockHeight = jsonObject.getAs<JsonLiteral>("block_height").int
-            val pos = jsonObject.getAs<JsonLiteral>("pos").int
+            val leaves = jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
+            val blockHeight = jsonObject.getValue("block_height").jsonPrimitive.int
+            val pos = jsonObject.getValue("pos").jsonPrimitive.int
             GetMerkleResponse(request.txid, leaves, blockHeight, pos, request.contextOpt)
         }
         HeaderSubscription -> {
             val jsonObject = rpcResponse.result.jsonObject
-            val height = jsonObject.getAs<JsonLiteral>("height").int
-            val hex = jsonObject.getAs<JsonLiteral>("hex").content
+            val height = jsonObject.getValue("height").jsonPrimitive.int
+            val hex = jsonObject.getValue("hex").jsonPrimitive.content
             HeaderSubscriptionResponse(height, BlockHeader.read(hex))
         }
     }
@@ -302,8 +306,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
 /**
  * Utils
  */
-@OptIn(UnstableDefault::class)
 private fun JsonRPCRequest.encode(): String = buildString {
-    append(Json.stringify(JsonRPCRequest.serializer(), this@encode))
+    append(Json.encodeToString(JsonRPCRequest.serializer(), this@encode))
     appendLine()
 }

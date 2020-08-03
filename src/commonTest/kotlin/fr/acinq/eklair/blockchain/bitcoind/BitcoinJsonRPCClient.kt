@@ -1,17 +1,17 @@
 package fr.acinq.eklair.blockchain.bitcoind
 
-import fr.acinq.bitcoin.*
-import fr.acinq.eklair.blockchain.electrum.ElectrumClient
-import fr.acinq.eklair.utils.*
+import fr.acinq.bitcoin.Base58
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.Transaction
+import fr.acinq.eklair.utils.JsonRPCRequest
+import fr.acinq.eklair.utils.JsonRPCResponse
+import fr.acinq.eklair.utils.asJsonRPCParameters
 import io.ktor.client.*
 import io.ktor.client.features.auth.*
 import io.ktor.client.features.auth.providers.*
 import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
-import io.ktor.client.request.request
-import io.ktor.client.statement.*
-import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.*
 import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.simplePrintFrontend
@@ -41,7 +41,6 @@ class BitcoinJsonRPCClient(
         }
     }
 
-    @OptIn(UnstableDefault::class)
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
             logger.info { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
@@ -67,26 +66,25 @@ sealed class BitcoindRequest(vararg params: Any) {
 
     protected abstract fun parseResponse(rpcResponse: JsonRPCResponse): BitcoindResponse
 
-    @OptIn(UnstableDefault::class)
     fun asJsonRPCRequest(id: Int = 0): String =
         JsonRPCRequest(
             id = id,
             method = method,
             params = parameters.asJsonRPCParameters()
-        ).let { Json.stringify(JsonRPCRequest.serializer(), it) }
+        ).let { Json.encodeToString(JsonRPCRequest.serializer(), it) }
 }
 sealed class BitcoindResponse
 
 object GetNewAddress : BitcoindRequest() {
     override val method: String = "getnewaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetNewAddressResponse =
-        GetNewAddressResponse(rpcResponse.result.content)
+        GetNewAddressResponse(rpcResponse.result.jsonPrimitive.content)
 }
 data class GetNewAddressResponse(val address: String) : BitcoindResponse()
 data class GenerateToAddress(val blockCount: Int, val address: String) : BitcoindRequest(blockCount, address) {
     override val method: String = "generatetoaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): BitcoindResponse =
-        GenerateToAddressResponse(rpcResponse.result.jsonArray.map { it.content })
+        GenerateToAddressResponse(rpcResponse.result.jsonArray.map { it.jsonPrimitive.content })
 }
 data class GenerateToAddressResponse(val blocks: List<String>) : BitcoindResponse()
 
@@ -94,7 +92,7 @@ data class DumpPrivateKey(val address: String) : BitcoindRequest(address) {
     override val method: String = "dumpprivkey"
 
     override fun parseResponse(rpcResponse: JsonRPCResponse): DumpPrivateKeyResponse {
-        val wif = rpcResponse.result.content
+        val wif = rpcResponse.result.jsonPrimitive.content
         val (privateKey, _) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
 
         return DumpPrivateKeyResponse(privateKey)
@@ -105,7 +103,7 @@ data class DumpPrivateKeyResponse(val privateKey: PrivateKey) : BitcoindResponse
 data class SendToAddress(val address: String, val amount: Double) : BitcoindRequest(address, amount) {
     override val method: String = "sendtoaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): SendToAddressResponse =
-        SendToAddressResponse(rpcResponse.result.content)
+        SendToAddressResponse(rpcResponse.result.jsonPrimitive.content)
 }
 data class SendToAddressResponse(val txid: String) : BitcoindResponse()
 
@@ -113,13 +111,13 @@ data class GetRawTransaction(val txid: String) : BitcoindRequest(txid) {
     override val method: String = "getrawtransaction"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetRawTransactionResponse =
         GetRawTransactionResponse(
-            Transaction.read(rpcResponse.result.content)
+            Transaction.read(rpcResponse.result.jsonPrimitive.content)
         )
 }
 data class GetRawTransactionResponse(val tx: Transaction) : BitcoindResponse()
 data class SendRawTransaction(val tx: Transaction) : BitcoindRequest(tx.toString()) {
     override val method: String = "sendrawtransaction"
     override fun parseResponse(rpcResponse: JsonRPCResponse): SendRawTransactionResponse =
-        SendRawTransactionResponse(rpcResponse.result.content)
+        SendRawTransactionResponse(rpcResponse.result.jsonPrimitive.content)
 }
 data class SendRawTransactionResponse(val txid: String) : BitcoindResponse()
