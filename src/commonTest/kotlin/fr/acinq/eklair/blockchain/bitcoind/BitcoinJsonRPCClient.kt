@@ -1,6 +1,7 @@
 package fr.acinq.eklair.blockchain.bitcoind
 
 import fr.acinq.bitcoin.*
+import fr.acinq.eklair.blockchain.electrum.ElectrumClient
 import fr.acinq.eklair.utils.*
 import io.ktor.client.*
 import io.ktor.client.features.auth.*
@@ -13,6 +14,7 @@ import io.ktor.client.statement.*
 import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.*
 import org.kodein.log.LoggerFactory
+import org.kodein.log.frontend.simplePrintFrontend
 import org.kodein.log.newLogger
 
 class BitcoinJsonRPCClient(
@@ -51,7 +53,7 @@ class BitcoinJsonRPCClient(
     }
 
     companion object {
-        private val logger = LoggerFactory.default.newLogger(BitcoinJsonRPCClient::class)
+        private val logger = LoggerFactory(simplePrintFrontend).newLogger<BitcoinJsonRPCClient>()
     }
 }
 

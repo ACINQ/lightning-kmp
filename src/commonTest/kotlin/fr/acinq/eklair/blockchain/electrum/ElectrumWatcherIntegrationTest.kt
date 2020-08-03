@@ -5,18 +5,15 @@ import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.eklair.blockchain.*
 import fr.acinq.eklair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
+import fr.acinq.eklair.utils.currentTimestampSeconds
 import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
-import org.kodein.log.LoggerFactory
-import org.kodein.log.frontend.simplePrintFrontend
-import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -26,24 +23,12 @@ import kotlin.time.ExperimentalTime
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class)
 class ElectrumWatcherIntegrationTest {
     private val TIMEOUT = 60_000L // Must be lower
-    val testLogger = LoggerFactory(simplePrintFrontend).newLogger<ElectrumWatcherIntegrationTest>()
 
     private val bitcoincli = BitcoindService()
 
-    private suspend fun CoroutineScope.connectToElectrumServer(): ElectrumClient {
-        val client = ElectrumClient("localhost", 51001, false, testLogger,this).apply { start() }
-        val channel = Channel<ElectrumMessage>()
-        client.sendMessage(ElectrumStatusSubscription(channel))
-
-        val msg = channel.receive()
-        assertTrue { msg is ElectrumClientReady }
-
-        return client
-    }
-
     @Test
     fun `watch for confirmed transactions`() = runTest {
-        val client = connectToElectrumServer()
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address,_) = bitcoincli.getNewAddress()
@@ -73,7 +58,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for confirmed transactions created while being offline`() = runTest {
-        val client = connectToElectrumServer()
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address,_) = bitcoincli.getNewAddress()
@@ -102,7 +87,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for spent transactions`() = runTest {
-        val client = connectToElectrumServer()
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -160,7 +145,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for spent transactions while being offline`() = runTest {
-        val client = connectToElectrumServer()
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -218,7 +203,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
-        val client = connectToElectrumServer()
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val statusListener = Channel<ElectrumMessage>()
@@ -263,13 +248,14 @@ class ElectrumWatcherIntegrationTest {
             assertEquals(tx2.txid, confirmed.tx.txid)
         }
 
+        statusListener.close()
         watcher.stop()
         client.stop()
     }
 
     @Test
     fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
-        val client = connectToElectrumServer()
+        val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
         val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val statusListener = Channel<ElectrumMessage>()
@@ -309,7 +295,7 @@ class ElectrumWatcherIntegrationTest {
     @OptIn(ExperimentalTime::class)
     fun `get transaction`() = runTest {
         // Run on a production server
-        val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, testLogger, this).apply { start() }
+        val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
         val electrumWatcher = ElectrumWatcher(electrumClient, this).apply { start() }
 
         delay(1_000) // Wait for the electrum client to be ready
@@ -325,7 +311,7 @@ class ElectrumWatcherIntegrationTest {
                 res.tx_opt,
                 Transaction.read("0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000")
             )
-//            assert(res.lastBlockTimestamp > System.currentTimeMillis().milliseconds.inSeconds - 7200) // this server should be in sync
+            assertTrue(res.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
         }
 
         // tx doesn't exist
@@ -336,7 +322,7 @@ class ElectrumWatcherIntegrationTest {
             val res = listener.receive()
             assertEquals(res.txid, txid)
             assertNull(res.tx_opt)
-//            assert(res.lastBlockTimestamp > System.currentTimeMillis().milliseconds.inSeconds - 7200) // this server should be in sync
+            assertTrue(res.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
         }
 
         electrumWatcher.stop()

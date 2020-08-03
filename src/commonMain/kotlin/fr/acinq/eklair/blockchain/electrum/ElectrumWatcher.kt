@@ -415,7 +415,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     private val watchChannel = Channel<Watch>(Channel.BUFFERED)
     private val electrumMessageChannel = Channel<ElectrumMessage>(Channel.BUFFERED)
 
-    private val input = scope.produce(capacity = Channel.BUFFERED) {
+    private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
         launch { watchChannel.consumeEach { send(it) } }
         launch { electrumMessageChannel.consumeEach { send(it) } }
@@ -487,6 +487,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     fun start() {
+        logger.info { "Start Electrum Watcher" }
         launch { run() }
         launch { eventChannel.send(StartWatcher) }
     }

@@ -19,6 +19,9 @@ import kotlinx.serialization.UnstableDefault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
 import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.frontend.simplePrintFrontend
+import org.kodein.log.newLogger
 
 /*
     Events
@@ -212,7 +215,6 @@ class ElectrumClient(
     private val host: String,
     private val port: Int,
     private val tls: Boolean,
-    val logger: Logger,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 
@@ -225,6 +227,12 @@ class ElectrumClient(
     private val statusSubscriptionList: MutableSet<SendChannel<ElectrumMessage>> = mutableSetOf()
     private val headerSubscriptionList: MutableSet<SendChannel<ElectrumMessage>> = mutableSetOf()
 
+    private var state: ClientState = ClientClosed
+        set(value) {
+            if (value != field) logger.info { "Updated State: $field -> $value" }
+            field = value
+        }
+
     fun start() {
         logger.info { "Start Electrum Client" }
         launch { run() }
@@ -232,18 +240,14 @@ class ElectrumClient(
     }
 
     private suspend fun run() {
-        var state: ClientState = ClientClosed
-
         eventChannel.consumeEach { event ->
             logger.info { "Event received: $event" }
 
             val (newState, actions) = state.process(event)
-
-            if (newState != state) logger.info { "Updated State: $state -> $newState" }
             state = newState
 
-            logger.info { "Execute action: $actions" }
             actions.forEach { action ->
+                logger.info { "Execute action: $action" }
                 when (action) {
                     is ConnectionAttempt -> connectionJob = connect()
                     is SendRequest -> socket.send(action.request.encodeToByteArray())
@@ -256,7 +260,13 @@ class ElectrumClient(
                         scriptHashSubscriptionMap[action.response.scriptHash]?.forEach { channel ->
                         channel.send(action.response)
                     }
-                    is BroadcastStatus -> statusSubscriptionList.forEach { it.send(action.state as ElectrumMessage) }
+                    is BroadcastStatus -> {
+                        logger.info { "BroadcastStatus to $statusSubscriptionList" }
+                        statusSubscriptionList.forEach {
+                            logger.info { "BroadcastStatus to $it" }
+                            it.send(action.state)
+                        }
+                    }
                     is AddStatusListener -> statusSubscriptionList.add(action.listener)
                     is AddHeaderListener -> headerSubscriptionList.add(action.listener)
                     is AddScriptHashListener -> {
@@ -333,6 +343,7 @@ class ElectrumClient(
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
+        val logger = LoggerFactory(simplePrintFrontend).newLogger<ElectrumClient>()
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }
