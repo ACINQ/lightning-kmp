@@ -41,15 +41,10 @@ class BitcoinJsonRPCClient(
 
     @OptIn(UnstableDefault::class)
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
-        println("request: $request")
-        println("serviceUri: $serviceUri")
-        println("httpClient: $httpClient")
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
             logger.info { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
             body = request.asJsonRPCRequest()
-            println("post: $body")
         }
-        println("rpcResponse: $rpcResponse")
         logger.info { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T

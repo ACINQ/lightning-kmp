@@ -8,13 +8,11 @@ class BitcoindService {
     private val client = BitcoinJsonRPCClient()
 
     suspend fun getNewAddress(): Pair<String, PrivateKey> {
-        println("Calling getNewAddress...")
         val address=  client.sendRequest<GetNewAddressResponse>(GetNewAddress).address
         val privateKey = getPrivateKey(address)
         return address to privateKey
     }
     suspend fun getPrivateKey(address: String): PrivateKey {
-        println("Calling getPrivateKey...")
         return client.sendRequest<DumpPrivateKeyResponse>(DumpPrivateKey(address)).privateKey
     }
     suspend fun sendToAddress(address: String, amount: Double): Transaction {
