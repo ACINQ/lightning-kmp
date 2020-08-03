@@ -35,7 +35,8 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 
     override suspend fun receiveFully(buffer: ByteArray): Unit = receive { readChannel.readFully(buffer) }
 
-    override suspend fun receiveAvailable(buffer: ByteArray): Int = readChannel.readAvailable(buffer)
+    override suspend fun receiveAvailable(buffer: ByteArray): Int =
+        readChannel.readAvailable(buffer).takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed
 
     override fun close() {
         socket.close()
