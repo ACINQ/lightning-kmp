@@ -30,8 +30,8 @@ class ElectrumWatcherIntegrationTest {
 
     private val bitcoincli = BitcoindService()
 
-    private suspend fun CoroutineScope.connectToElectrumServer(): ElectrumClientImpl {
-        val client = ElectrumClientImpl("localhost", 51001, false, testLogger,this).apply { start() }
+    private suspend fun CoroutineScope.connectToElectrumServer(): ElectrumClient {
+        val client = ElectrumClient("localhost", 51001, false, testLogger,this).apply { start() }
         val channel = Channel<ElectrumMessage>()
         client.sendMessage(ElectrumStatusSubscription(channel))
 
@@ -44,7 +44,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `watch for confirmed transactions`() = runTest {
         val client = connectToElectrumServer()
-        val watcher = ElectrumWatcherImpl(client, this).apply { start() }
+        val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address,_) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -74,7 +74,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `watch for confirmed transactions created while being offline`() = runTest {
         val client = connectToElectrumServer()
-        val watcher = ElectrumWatcherImpl(client, this).apply { start() }
+        val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address,_) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -103,7 +103,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `watch for spent transactions`() = runTest {
         val client = connectToElectrumServer()
-        val watcher = ElectrumWatcherImpl(client, this).apply { start() }
+        val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -161,7 +161,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `watch for spent transactions while being offline`() = runTest {
         val client = connectToElectrumServer()
-        val watcher = ElectrumWatcherImpl(client, this).apply { start() }
+        val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -219,7 +219,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
         val client = connectToElectrumServer()
-        val watcher = ElectrumWatcherImpl(client, this).apply { start() }
+        val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val statusListener = Channel<ElectrumMessage>()
         client.sendMessage(ElectrumStatusSubscription(statusListener))
@@ -270,7 +270,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
         val client = connectToElectrumServer()
-        val watcher = ElectrumWatcherImpl(client, this).apply { start() }
+        val watcher = ElectrumWatcher(client, this).apply { start() }
 
         val statusListener = Channel<ElectrumMessage>()
         client.sendMessage(ElectrumStatusSubscription(statusListener))
@@ -309,8 +309,8 @@ class ElectrumWatcherIntegrationTest {
     @OptIn(ExperimentalTime::class)
     fun `get transaction`() = runTest {
         // Run on a production server
-        val electrumClient = ElectrumClientImpl("electrum.acinq.co", 50002, true, testLogger, this).apply { start() }
-        val electrumWatcher = ElectrumWatcherImpl(electrumClient, this).apply { start() }
+        val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, testLogger, this).apply { start() }
+        val electrumWatcher = ElectrumWatcher(electrumClient, this).apply { start() }
 
         delay(1_000) // Wait for the electrum client to be ready
 
