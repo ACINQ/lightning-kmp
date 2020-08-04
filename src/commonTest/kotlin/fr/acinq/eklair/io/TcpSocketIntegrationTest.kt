@@ -7,7 +7,7 @@ import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class TcpSocketTest {
+class TcpSocketIntegrationTest {
 
     private val serverVersionRpc = buildString {
         append("""{ "id":"0", "method":"server.version", "params": ["3.3.6", "1.4"]}""")

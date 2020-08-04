@@ -26,6 +26,12 @@ class ElectrumWatcherIntegrationTest {
 
     private val bitcoincli = BitcoindService()
 
+    init {
+        runTest {
+            bitcoincli.generateBlocks(150)
+        }
+    }
+
     @Test
     fun `watch for confirmed transactions`() = runTest {
         val client = ElectrumClient("localhost", 51001, false, this).apply { start() }
@@ -291,8 +297,7 @@ class ElectrumWatcherIntegrationTest {
         client.stop()
     }
 
-    @Test
-    @OptIn(ExperimentalTime::class)
+//    @Test
     fun `get transaction`() = runTest {
         // Run on a production server
         val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
@@ -301,7 +306,7 @@ class ElectrumWatcherIntegrationTest {
         delay(1_000) // Wait for the electrum client to be ready
 
         // tx is in the blockchain
-        kotlin.run {
+        withTimeout(TIMEOUT) {
             val txid = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
             val listener = Channel<GetTxWithMetaResponse>()
             electrumWatcher.send(GetTxWithMetaEvent(txid, listener))
@@ -315,7 +320,7 @@ class ElectrumWatcherIntegrationTest {
         }
 
         // tx doesn't exist
-        kotlin.run {
+        withTimeout(TIMEOUT) {
             val txid = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
             val listener = Channel<GetTxWithMetaResponse>()
             electrumWatcher.send(GetTxWithMetaEvent(txid, listener))
