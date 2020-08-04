@@ -277,7 +277,7 @@ class Peer(
                                 when (it) {
                                     is ChannelIdSwitch -> {
                                         logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
-                                        channels = channels + (it.newChannelId to state1)
+                                        channels = channels - it.oldChannelId + (it.newChannelId to state1)
                                     }
                                     is SendWatch -> {
                                         if (it.watch is WatchConfirmed) {

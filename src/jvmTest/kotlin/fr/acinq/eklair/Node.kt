@@ -78,9 +78,15 @@ object Node {
 
         val commandChannel = Channel<List<String>>(2)
 
-        suspend fun stateLoop() {
-            peer.openStateSubscription().consumeEach {
-                println("State: $it")
+        suspend fun connectLoop() {
+            peer.openConnectedSubscription().consumeEach {
+                println("Connected: $it")
+            }
+        }
+
+        suspend fun channelsLoop() {
+            peer.openChannelsSubscription().consumeEach {
+                println("Channels: $it")
             }
         }
 
@@ -128,7 +134,8 @@ object Node {
         runBlocking {
             launch { readLoop() }
             launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
-            launch { stateLoop() }
+            launch { connectLoop() }
+            launch { channelsLoop() }
             launch { eventLoop() }
         }
     }
