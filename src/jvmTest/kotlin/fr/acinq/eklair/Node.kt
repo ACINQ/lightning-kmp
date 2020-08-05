@@ -6,15 +6,22 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
+import fr.acinq.eklair.channel.State
+import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.LocalKeyManager
-import fr.acinq.eklair.db.TestDatabases
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
+import fr.acinq.eklair.wire.Tlv
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.serialization.*
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
@@ -33,12 +40,12 @@ object Node {
         dustLimit = 100.sat,
         onChainFeeConf = OnChainFeeConf(
             feeTargets = FeeTargets(6, 2, 2, 6),
-            feeEstimator = TestFeeEstimator().setFeerate(10000),
+            feeEstimator = TestFeeEstimator(10000),
             maxFeerateMismatch = 1.5,
             closeOnOfflineMismatch = true,
             updateFeeMinDiffRatio = 0.1
         ),
-        maxHtlcValueInFlightMsat = 150000000UL,
+        maxHtlcValueInFlightMsat = 150000000L,
         maxAcceptedHtlcs = 100,
         expiryDeltaBlocks = CltvExpiryDelta(144),
         fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
@@ -50,7 +57,6 @@ object Node {
         feeProportionalMillionth = 10,
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
         maxReserveToFundingRatio = 0.05,
-        db = TestDatabases(),
         revocationTimeout = 20,
         authTimeout = 10,
         initTimeout = 10,
@@ -70,6 +76,24 @@ object Node {
         enableTrampolinePayment = true
     )
 
+    private val serializationModules = SerializersModule {
+        include(Tlv.serializationModule)
+        include(KeyManager.serializationModule)
+
+        include(TestFeeEstimator.testSerializationModule)
+    }
+
+    private val json = Json {
+//        prettyPrint = true
+        serializersModule = serializationModules
+    }
+
+    private val cbor = Cbor {
+        serializersModule = serializationModules
+    }
+
+    private val mapSerializer = MapSerializer(ByteVector32.serializer(), State.serializer())
+
     @JvmStatic
     fun main(args: Array<String>) {
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
@@ -85,8 +109,25 @@ object Node {
         }
 
         suspend fun channelsLoop() {
-            peer.openChannelsSubscription().consumeEach {
-                println("Channels: $it")
+            try {
+                peer.openChannelsSubscription().consumeEach {
+                    println("===== Original =====")
+                    println(it)
+                    println("===== JSON =====")
+                    val jsonStr = json.encodeToString(mapSerializer, it)
+                    println(jsonStr)
+                    println("===== CBOR =====")
+                    val cborHex = cbor.encodeToHexString(mapSerializer, it)
+                    println(cborHex)
+                    println("===== Decoded =====")
+                    val states = cbor.decodeFromHexString(mapSerializer, cborHex)
+                    println(states)
+                    println("===== Decoded is equal to original? =====")
+                    println(states == it)
+                    println("===== THE END! =====")
+                }
+            } catch (ex: Throwable) {
+                ex.printStackTrace()
             }
         }
 

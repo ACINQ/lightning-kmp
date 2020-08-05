@@ -7,13 +7,19 @@ import fr.acinq.eklair.Eclair.secureRandom
 import fr.acinq.eklair.Features
 import fr.acinq.eklair.ShortChannelId
 import fr.acinq.eklair.transactions.Transactions
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
-class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
+@Serializable
+data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
+
+    @Transient
     private val master = DeterministicWallet.generate(seed)
 
+    @Transient
     override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chainHash))
 
-    override val nodeId: PublicKey = nodeKey.publicKey
+    override val nodeId: PublicKey get() = nodeKey.publicKey
 
     private fun internalKeyPath(channelKeyPath: List<Long>, index: Long): List<Long> = channelKeyBasePath(chainHash) + channelKeyPath + index
 

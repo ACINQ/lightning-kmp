@@ -4,10 +4,33 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 
 @OptIn(ExperimentalUnsignedTypes::class)
 interface Tlv {
-    val tag: ULong
+    val tag: Long
+
+    companion object {
+        val serializationModule = SerializersModule {
+            polymorphic(Tlv::class) {
+                subclass(ChannelTlv.UpfrontShutdownScript.serializer())
+                subclass(ChannelTlv.ChannelVersionTlv.serializer())
+                subclass(InitTlv.Networks.serializer())
+                subclass(OnionTlv.AmountToForward.serializer())
+                subclass(OnionTlv.OutgoingCltv.serializer())
+                subclass(OnionTlv.OutgoingChannelId.serializer())
+                subclass(OnionTlv.PaymentData.serializer())
+                subclass(OnionTlv.InvoiceFeatures.serializer())
+                subclass(OnionTlv.OutgoingNodeId.serializer())
+                subclass(OnionTlv.InvoiceRoutingInfo.serializer())
+                subclass(OnionTlv.TrampolineOnion.serializer())
+                subclass(GenericTlv.serializer())
+            }
+        }
+    }
 }
 
 /**
@@ -17,9 +40,10 @@ interface Tlv {
  * @param value tlv value (length is implicit, and encoded as a varint).
  */
 @OptIn(ExperimentalUnsignedTypes::class)
-data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, LightningSerializable<GenericTlv> {
+@Serializable
+data class GenericTlv(override val tag: Long, val value: ByteVector) : Tlv, LightningSerializable<GenericTlv> {
     init {
-        require(tag.rem(2UL) != 0UL) { "unknown even tag ($tag) " }
+        require(tag.rem(2L) != 0L) { "unknown even tag ($tag) " }
     }
 
     override fun serializer(): LightningSerializer<GenericTlv> = GenericTlv
@@ -29,7 +53,7 @@ data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, Lig
             val tag = bigSize(input)
             val length = bigSize(input)
             val value = bytes(input, length)
-            return GenericTlv(tag.toULong(), ByteVector(value))
+            return GenericTlv(tag, ByteVector(value))
         }
 
         override fun write(message: GenericTlv, out: Output) {
@@ -38,8 +62,8 @@ data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, Lig
             writeBytes(message.value, out)
         }
 
-        override val tag: ULong
-            get() = 0UL
+        override val tag: Long
+            get() = 0L
     }
 }
 
@@ -48,8 +72,8 @@ data class GenericTlv(override val tag: ULong, val value: ByteVector) : Tlv, Lig
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerializer<T>>) : LightningSerializer<TlvStream<T>>() {
-    override val tag: ULong
-        get() = 0UL
+    override val tag: Long
+        get() = 0L
 
     /**
      * @param input input stream
@@ -68,7 +92,7 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
             val serializer = serializers[tag]
             serializer
                 ?.let { records.add(serializer.read(dataStream)) }
-                ?: unknown.add(GenericTlv(tag.toULong(), ByteVector(data)))
+                ?: unknown.add(GenericTlv(tag, ByteVector(data)))
         }
         return TlvStream(records.toList(), unknown.toList())
     }
@@ -78,9 +102,9 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
      * @param out output stream to write the TLV stream to
      */
     override fun write(message: TlvStream<T>, out: Output) {
-        val map = ArrayList<Pair<ULong, ByteArray>>()
+        val map = ArrayList<Pair<Long, ByteArray>>()
         // first, serialize all TLVs
-        message.records.forEach { map.add(Pair(it.tag, serializers[it.tag.toLong()]!!.write(it))) }
+        message.records.forEach { map.add(Pair(it.tag, serializers[it.tag]!!.write(it))) }
         message.unknown.forEach { map.add(Pair(it.tag, it.value.toByteArray())) }
 
         // then sort by tag as per the BOLTs
@@ -104,6 +128,7 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
  * @param unknown unknown tlv records.
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
+@Serializable
 data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
     init {
         val tags = records.map { it.tag }

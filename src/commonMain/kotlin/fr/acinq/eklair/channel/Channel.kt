@@ -13,10 +13,10 @@ import fr.acinq.eklair.transactions.Scripts
 import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
-import fr.acinq.eklair.wire.Init
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -26,8 +26,10 @@ import org.kodein.log.newLogger
 /**
  * Channel Event (inputs to be fed to the state machine)
  */
+@Serializable
 sealed class Event
 
+@Serializable
 data class InitFunder(
     val temporaryChannelId: ByteVector32,
     val fundingAmount: Satoshi,
@@ -69,18 +71,18 @@ data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: Byt
 /**
  * channel static parameters
  */
+@Serializable
 data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 
 /**
  * Channel state
  */
+@Serializable
 sealed class State {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
-    val currentBlockHeight: Int
-            get() = currentTip.first
-    val keyManager: KeyManager
-        get() = staticParams.nodeParams.keyManager
+    val currentBlockHeight: Int get() = currentTip.first
+    val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
 
     /**
      * @param event input event (for example, a message was received, a command was sent by the GUI/API, ...
@@ -88,6 +90,7 @@ sealed class State {
      */
     abstract fun process(event: Event): Pair<State, List<Action>>
 
+    @Transient
     val logger = LoggerFactory.default.newLogger(Logger.Tag(Channel::class))
 }
 
@@ -97,6 +100,7 @@ interface HasCommitments {
         get() = commitments.channelId
 }
 
+@Serializable
 data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>) : State() {
     override fun process(event: Event): Pair<State, List<Action>> {
         return when (event) {
@@ -135,9 +139,9 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
                     tlvStream = TlvStream(
                         if (event.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
-                            listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.Companion.ChannelVersionTlv(event.channelVersion))
+                            listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelVersionTlv(event.channelVersion))
                         } else {
-                            listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty))
+                            listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))
                         }
                     )
                 )
@@ -152,6 +156,8 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     }
 }
 
+
+@Serializable
 data class WaitForOpenChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -199,12 +205,12 @@ data class WaitForOpenChannel(
                             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
                             // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
                             // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-                            tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty)))
+                            tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
                         )
                         val remoteParams = RemoteParams(
                             nodeId = staticParams.remoteNodeId,
                             dustLimit = event.message.dustLimitSatoshis,
-                            maxHtlcValueInFlightMsat = event.message.maxHtlcValueInFlightMsat,
+                            maxHtlcValueInFlightMsat = event.message.maxHtlcValueInFlightMsat.toLong(),
                             channelReserve = event.message.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
                             htlcMinimum = event.message.htlcMinimumMsat,
                             toSelfDelay = event.message.toSelfDelay,
@@ -247,6 +253,7 @@ data class WaitForOpenChannel(
     }
 }
 
+@Serializable
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -258,8 +265,8 @@ data class WaitForFundingCreated(
     val initialFeeratePerKw: Long,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
-    val channelVersion: ChannelVersion, val
-    lastSent: AcceptChannel
+    val channelVersion: ChannelVersion,
+    val lastSent: AcceptChannel
 ) : State() {
     override fun process(event: Event): Pair<State, List<Action>> {
         return when (event) {
@@ -368,6 +375,7 @@ data class WaitForFundingCreated(
 
 }
 
+@Serializable
 data class WaitForAcceptChannel(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, val initFunder: InitFunder, val lastSent: OpenChannel) : State() {
     override fun process(event: Event): Pair<State, List<Action>> {
         return when {
@@ -420,6 +428,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
     }
 }
 
+@Serializable
 data class WaitForFundingInternal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -487,6 +496,7 @@ data class WaitForFundingInternal(
     }
 }
 
+@Serializable
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -550,6 +560,7 @@ data class WaitForFundingSigned(
     }
 }
 
+@Serializable
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -613,6 +624,7 @@ data class WaitForFundingConfirmed(
     }
 }
 
+@Serializable
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -676,6 +688,7 @@ data class WaitForFundingLocked(
 }
 
 
+@Serializable
 data class Normal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

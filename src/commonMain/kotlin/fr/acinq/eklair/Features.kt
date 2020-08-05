@@ -4,9 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.eklair.utils.BitField
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
-import org.kodein.log.frontend.printFrontend
+import kotlinx.serialization.Serializable
 
 
 enum class FeatureSupport {
@@ -18,6 +16,7 @@ enum class FeatureSupport {
     }
 }
 
+@Serializable
 sealed class Feature {
 
     abstract val rfcName: String
@@ -31,66 +30,79 @@ sealed class Feature {
 
     override fun toString() = rfcName
 
+    @Serializable
     object OptionDataLossProtect : Feature() {
-        override val rfcName = "option_data_loss_protect"
-        override val mandatory = 0
+        override val rfcName get() = "option_data_loss_protect"
+        override val mandatory get() = 0
     }
 
+    @Serializable
     object InitialRoutingSync : Feature() {
-        override val rfcName = "initial_routing_sync"
+        override val rfcName get() = "initial_routing_sync"
 
         // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
-        override val mandatory = 2
+        override val mandatory get() = 2
     }
 
+    @Serializable
     object ChannelRangeQueries : Feature() {
-        override val rfcName = "gossip_queries"
-        override val mandatory = 6
+        override val rfcName get() = "gossip_queries"
+        override val mandatory get() = 6
     }
 
+    @Serializable
     object VariableLengthOnion : Feature() {
-        override val rfcName = "var_onion_optin"
-        override val mandatory = 8
+        override val rfcName get() = "var_onion_optin"
+        override val mandatory get() = 8
     }
 
+    @Serializable
     object ChannelRangeQueriesExtended : Feature() {
-        override val rfcName = "gossip_queries_ex"
-        override val mandatory = 10
+        override val rfcName get() = "gossip_queries_ex"
+        override val mandatory get() = 10
     }
 
+    @Serializable
     object StaticRemoteKey : Feature() {
-        override val rfcName = "option_static_remotekey"
-        override val mandatory = 12
+        override val rfcName get() = "option_static_remotekey"
+        override val mandatory get() = 12
     }
 
+    @Serializable
     object PaymentSecret : Feature() {
-        override val rfcName = "payment_secret"
-        override val mandatory = 14
+        override val rfcName get() = "payment_secret"
+        override val mandatory get() = 14
     }
 
+    @Serializable
     object BasicMultiPartPayment : Feature() {
-        override val rfcName = "basic_mpp"
-        override val mandatory = 16
+        override val rfcName get() = "basic_mpp"
+        override val mandatory get()  = 16
     }
 
+    @Serializable
     object Wumbo : Feature() {
-        override val rfcName = "option_support_large_channel"
-        override val mandatory = 18
+        override val rfcName get() = "option_support_large_channel"
+        override val mandatory get() = 18
     }
 
     // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
     // We're not advertising these bits yet in our announcements, clients have to assume support.
     // This is why we haven't added them yet to `areSupported`.
+    @Serializable
     object TrampolinePayment : Feature() {
-        override val rfcName = "trampoline_payment"
-        override val mandatory = 50
+        override val rfcName get() = "trampoline_payment"
+        override val mandatory get() = 50
     }
 }
 
+@Serializable
 data class ActivatedFeature(val feature: Feature, val support: FeatureSupport)
 
+@Serializable
 data class UnknownFeature(val bitIndex: Int)
 
+@Serializable
 data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<UnknownFeature> = emptySet()) {
 
     fun hasFeature(feature: Feature, support: FeatureSupport? = null): Boolean =
@@ -202,7 +214,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
 
 
         // Features may depend on other features, as specified in Bolt 9.
-        private val featuresDependency = mapOf(
+        private val featuresDependency: Map<Feature, List<Feature>> = mapOf(
             Feature.ChannelRangeQueriesExtended to listOf(Feature.ChannelRangeQueries),
             // This dependency requirement was added to the spec after the Phoenix release, which means Phoenix users have "invalid"
             // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
@@ -216,7 +228,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
         fun validateFeatureGraph(features: Features): FeatureException? {
             featuresDependency.forEach { (feature, dependencies) ->
                 if (features.hasFeature(feature)) {
-                    val missing = dependencies.filter { !features.hasFeature(it) }
+                    val missing = dependencies.filter { it: Feature -> !features.hasFeature(it) }
                     if (missing.isNotEmpty()) {
                         return FeatureException("$feature is set but is missing a dependency (${missing.joinToString(" and ")})")
                     }

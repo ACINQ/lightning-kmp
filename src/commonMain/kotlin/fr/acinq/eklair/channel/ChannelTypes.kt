@@ -11,6 +11,7 @@ import fr.acinq.eklair.utils.sum
 import fr.acinq.eklair.wire.FailureMessage
 import fr.acinq.eklair.wire.OnionRoutingPacket
 import fr.acinq.eklair.wire.UpdateAddHtlc
+import kotlinx.serialization.Serializable
 
 
 /*
@@ -57,11 +58,12 @@ object CMD_GETSTATEDATA : Command()
 
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class LocalParams constructor(
     val nodeId: PublicKey,
     val fundingKeyPath: KeyPath,
     val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: ULong, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
     val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
@@ -73,10 +75,11 @@ data class LocalParams constructor(
 )
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class RemoteParams(
     val nodeId: PublicKey,
     val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: ULong, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
     val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
@@ -90,6 +93,7 @@ data class RemoteParams(
 )
 
 
+@Serializable
 data class ChannelVersion(val bits: BitField) {
     init {
         require(bits.byteSize == SIZE_BYTE) { "channel version takes 4 bytes" }

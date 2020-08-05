@@ -8,8 +8,10 @@ import fr.acinq.eklair.Features
 import fr.acinq.eklair.ShortChannelId
 import fr.acinq.eklair.channel.ChannelVersion
 import fr.acinq.eklair.channel.LocalParams
-import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.transactions.Transactions.TransactionWithInputInfo
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 
 interface KeyManager {
     val nodeKey: DeterministicWallet.ExtendedPrivateKey
@@ -119,5 +121,11 @@ interface KeyManager {
         }
 
         fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey) : KeyPath = channelKeyPath(fundingPubKey.publicKey)
+
+        val serializationModule = SerializersModule {
+            polymorphic(KeyManager::class) {
+                subclass(LocalKeyManager.serializer())
+            }
+        }
     }
 }

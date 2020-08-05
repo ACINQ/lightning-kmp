@@ -27,20 +27,21 @@ import fr.acinq.eklair.transactions.incomings
 import fr.acinq.eklair.transactions.outgoings
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
+import kotlinx.serialization.Serializable
 import org.kodein.log.Logger
 import kotlin.experimental.and
 
 // @formatter:off
-data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
+@Serializable data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
     val all: List<UpdateMessage> get() = proposed + signed + acked
 }
-data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
+@Serializable data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
 data class Changes(val ourChanges: LocalChanges, val theirChanges: RemoteChanges)
-data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, val localSig: ByteVector64, val remoteSig: ByteVector64)
-data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
-data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
-data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
-data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
+@Serializable data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, val localSig: ByteVector64, val remoteSig: ByteVector64)
+@Serializable data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
+@Serializable data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
+@Serializable data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
+@Serializable data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
 // @formatter:on
 
 /**
@@ -51,6 +52,7 @@ data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: Co
  * So, when we've signed and sent a commit message and are waiting for their revocation message,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
+@Serializable
 data class Commitments(
     val channelVersion: ChannelVersion,
     val localParams: LocalParams,
@@ -109,7 +111,7 @@ data class Commitments(
     fun addRemoteProposal(proposal: UpdateMessage): Commitments =
         copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed + proposal))
 
-    val announceChannel: Boolean = (channelFlags and 0x01).toInt() != 0
+    val announceChannel: Boolean get() = (channelFlags and 0x01).toInt() != 0
 
     fun availableBalanceForSend(): MilliSatoshi {
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
@@ -219,9 +221,9 @@ data class Commitments(
 
         // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
         val htlcValueInFlight = outgoingHtlcs.toList().map { it.amountMsat }.sum()
-        if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toULong()) {
+        if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toLong()) {
             // TODO: this should be a specific UPDATE error
-            return Try.Failure(HtlcValueTooHighInFlight(channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+            return Try.Failure(HtlcValueTooHighInFlight(channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight))
         }
 
         if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
@@ -266,8 +268,8 @@ data class Commitments(
         }
 
         val htlcValueInFlight = incomingHtlcs.map { it.amountMsat }.sum()
-        if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toULong()) {
-            throw HtlcValueTooHighInFlight(channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
+        if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toLong()) {
+            throw HtlcValueTooHighInFlight(channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight)
         }
 
         if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {

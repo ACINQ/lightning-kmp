@@ -3,12 +3,16 @@ package fr.acinq.eklair.payment.relay
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.utils.UUID
+import kotlinx.serialization.Serializable
 
+@Serializable
 sealed class Origin {
     /** Our node is the origin of the payment. */
+    @Serializable
     data class Local(val id: UUID) : Origin() // we don't persist reference to local actors
 
     /** Our node forwarded a single incoming HTLC to an outgoing channel. */
+    @Serializable
     data class Relayed(val originChannelId: ByteVector32, val originHtlcId: Long, val amountIn: MilliSatoshi, val amountOut: MilliSatoshi) : Origin()
 
     /**
@@ -16,6 +20,7 @@ sealed class Origin {
      *
      * @param origins       origin channelIds and htlcIds.
      */
+    @Serializable
     data class TrampolineRelayed(val origins: List<Pair<ByteVector32, Long>>) : Origin()
 
 }

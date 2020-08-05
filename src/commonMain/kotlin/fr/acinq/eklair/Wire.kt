@@ -16,7 +16,7 @@ object Wire {
     fun decode(input: ByteArray): LightningMessage? {
         val stream = ByteArrayInput(input)
         val code = LightningSerializer.u16(stream)
-        return when (code.toULong()) {
+        return when (code.toLong()) {
             Init.tag -> Init.read(stream)
             Error.tag -> Error.read(stream)
             Ping.tag -> Ping.read(stream)

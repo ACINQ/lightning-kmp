@@ -25,6 +25,7 @@ import fr.acinq.eklair.transactions.CommitmentOutput.InHtlc
 import fr.acinq.eklair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.UpdateAddHtlc
+import kotlinx.serialization.Serializable
 
 
 /** Type alias for a collection of commitment output links */
@@ -36,10 +37,12 @@ typealias TransactionsCommitmentOutputs = List<Transactions.CommitmentOutputLink
 @OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
 object Transactions {
 
+    @Serializable
     data class InputInfo constructor(val outPoint: OutPoint, val txOut: TxOut, val redeemScript: ByteVector) {
         constructor(outPoint: OutPoint, txOut: TxOut, redeemScript: List<ScriptElt>): this(outPoint, txOut, ByteVector(Script.write(redeemScript)))
     }
 
+    @Serializable
     sealed class TransactionWithInputInfo {
         abstract val input: Transactions.InputInfo
         abstract val tx: Transaction
@@ -49,18 +52,18 @@ object Transactions {
             return (Eclair.MinimumRelayFeeRate * vsize / 1000).sat
         }
 
-        data class CommitTx(override val input: Transactions.InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class CommitTx(override val input: Transactions.InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
 
-        data class HtlcSuccessTx(override val input: InputInfo, override val tx: Transaction, val paymentHash: ByteVector32) : TransactionWithInputInfo()
-        data class HtlcTimeoutTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class ClaimHtlcSuccessTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class ClaimHtlcTimeoutTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class ClaimP2WPKHOutputTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class ClaimDelayedOutputTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class ClaimDelayedOutputPenaltyTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class MainPenaltyTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class HtlcPenaltyTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
-        data class ClosingTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class HtlcSuccessTx(override val input: InputInfo, override val tx: Transaction, val paymentHash: ByteVector32) : TransactionWithInputInfo()
+        @Serializable data class HtlcTimeoutTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class ClaimHtlcSuccessTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class ClaimHtlcTimeoutTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class ClaimP2WPKHOutputTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class ClaimDelayedOutputTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class ClaimDelayedOutputPenaltyTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class MainPenaltyTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class HtlcPenaltyTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable data class ClosingTx(override val input: InputInfo, override val tx: Transaction) : TransactionWithInputInfo()
     }
 
     sealed class TxGenerationSkipped {
