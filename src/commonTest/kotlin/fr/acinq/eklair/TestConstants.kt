@@ -55,7 +55,6 @@ object TestConstants {
             feeProportionalMillionth = 10,
             reserveToFundingRatio = 0.01, // note: not used (overridden below)
             maxReserveToFundingRatio = 0.05,
-            db = TestDatabases(),
             revocationTimeout = 20,
             authTimeout = 10,
             initTimeout = 10,
@@ -119,7 +118,6 @@ object TestConstants {
             feeProportionalMillionth = 10,
             reserveToFundingRatio = 0.01, // note: not used (overridden below)
             maxReserveToFundingRatio = 0.05,
-            db = TestDatabases(),
             revocationTimeout = 20,
             authTimeout = 10,
             initTimeout = 10,

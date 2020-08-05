@@ -25,7 +25,6 @@ data class NodeParams(
     val feeProportionalMillionth: Int,
     val reserveToFundingRatio: Double,
     val maxReserveToFundingRatio: Double,
-    val db: Databases,
     val revocationTimeout: Long,
     val authTimeout: Long,
     val initTimeout: Long,

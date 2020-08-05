@@ -158,3 +158,12 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
     }
 }
 
+object Onion {
+    fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32? = null, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload {
+        return when {
+            paymentSecret == null && userCustomTlvs.isNotEmpty() -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry)), userCustomTlvs))
+            paymentSecret == null -> FinalLegacyPayload(amount, expiry)
+            else -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
+        }
+    }
+}
