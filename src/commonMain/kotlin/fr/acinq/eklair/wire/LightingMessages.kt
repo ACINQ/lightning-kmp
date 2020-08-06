@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.*
+import fr.acinq.eklair.io.*
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
 import fr.acinq.eklair.utils.toByteVector
@@ -39,7 +40,7 @@ interface ChannelMessage
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
-data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage, LightningSerializable<Init> {
+data class Init(@Serializable(with = ByteVectorKSerializer::class) val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage, LightningSerializable<Init> {
     @Transient
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
 
@@ -142,23 +143,23 @@ data class Pong(val data: ByteVector) : SetupMessage, LightningSerializable<Pong
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class OpenChannel(
-    override val chainHash: ByteVector32,
-    override val temporaryChannelId: ByteVector32,
-    val fundingSatoshis: Satoshi,
+    @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val temporaryChannelId: ByteVector32,
+    @Serializable(with = SatoshiKSerializer::class) val fundingSatoshis: Satoshi,
     val pushMsat: MilliSatoshi,
-    val dustLimitSatoshis: Satoshi,
+    @Serializable(with = SatoshiKSerializer::class) val dustLimitSatoshis: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserveSatoshis: Satoshi,
+    @Serializable(with = SatoshiKSerializer::class) val channelReserveSatoshis: Satoshi,
     val htlcMinimumMsat: MilliSatoshi,
     val feeratePerKw: Long,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val fundingPubkey: PublicKey,
-    val revocationBasepoint: PublicKey,
-    val paymentBasepoint: PublicKey,
-    val delayedPaymentBasepoint: PublicKey,
-    val htlcBasepoint: PublicKey,
-    val firstPerCommitmentPoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val fundingPubkey: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val firstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash, LightningSerializable<OpenChannel> {
@@ -231,20 +232,20 @@ data class OpenChannel(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class AcceptChannel(
-    override val temporaryChannelId: ByteVector32,
-    val dustLimitSatoshis: Satoshi,
+    @Serializable(with = ByteVector32KSerializer::class) override val temporaryChannelId: ByteVector32,
+    @Serializable(with = SatoshiKSerializer::class) val dustLimitSatoshis: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserveSatoshis: Satoshi,
+    @Serializable(with = SatoshiKSerializer::class) val channelReserveSatoshis: Satoshi,
     val htlcMinimumMsat: MilliSatoshi,
     val minimumDepth: Long,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val fundingPubkey: PublicKey,
-    val revocationBasepoint: PublicKey,
-    val paymentBasepoint: PublicKey,
-    val delayedPaymentBasepoint: PublicKey,
-    val htlcBasepoint: PublicKey,
-    val firstPerCommitmentPoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val fundingPubkey: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val firstPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, LightningSerializable<AcceptChannel> {
     override fun serializer(): LightningSerializer<AcceptChannel> = AcceptChannel
@@ -306,10 +307,10 @@ data class AcceptChannel(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingCreated(
-    override val temporaryChannelId: ByteVector32,
-    val fundingTxid: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val temporaryChannelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) val fundingTxid: ByteVector32,
     val fundingOutputIndex: Int,
-    val signature: ByteVector64
+    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64
 ) : ChannelMessage, HasTemporaryChannelId, LightningSerializable<FundingCreated> {
     override fun serializer(): LightningSerializer<FundingCreated> = FundingCreated
 
@@ -338,9 +339,9 @@ data class FundingCreated(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingSigned(
-    override val channelId: ByteVector32,
-    val signature: ByteVector64,
-    val channelData: ByteVector? = null
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector? = null
 ) : ChannelMessage, HasChannelId, LightningSerializable<FundingSigned> {
     override fun serializer(): LightningSerializer<FundingSigned> = FundingSigned
 
@@ -365,8 +366,8 @@ data class FundingSigned(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingLocked(
-    override val channelId: ByteVector32,
-    val nextPerCommitmentPoint: PublicKey
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Serializable(with = PublicKeyKSerializer::class) val nextPerCommitmentPoint: PublicKey
 ) : ChannelMessage, HasChannelId, LightningSerializable<FundingLocked> {
     override fun serializer(): LightningSerializer<FundingLocked> = FundingLocked
 
@@ -391,10 +392,10 @@ data class FundingLocked(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateAddHtlc(
-    override val channelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     val id: Long,
     val amountMsat: MilliSatoshi,
-    val paymentHash: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
     val onionRoutingPacket: OnionRoutingPacket
 ) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateAddHtlc> {
@@ -517,9 +518,9 @@ data class UpdateFailMalformedHtlc(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class CommitSig(
-    override val channelId: ByteVector32,
-    val signature: ByteVector64,
-    val htlcSignatures: List<ByteVector64>
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
+    val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>
 ) : HtlcMessage, HasChannelId, LightningSerializable<CommitSig> {
     override fun serializer(): LightningSerializer<CommitSig> = CommitSig
 
@@ -668,18 +669,18 @@ data class AnnouncementSignatures(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelAnnouncement(
-    val nodeSignature1: ByteVector64,
-    val nodeSignature2: ByteVector64,
-    val bitcoinSignature1: ByteVector64,
-    val bitcoinSignature2: ByteVector64,
+    @Serializable(with = ByteVector64KSerializer::class) val nodeSignature1: ByteVector64,
+    @Serializable(with = ByteVector64KSerializer::class) val nodeSignature2: ByteVector64,
+    @Serializable(with = ByteVector64KSerializer::class) val bitcoinSignature1: ByteVector64,
+    @Serializable(with = ByteVector64KSerializer::class) val bitcoinSignature2: ByteVector64,
     val features: Features,
-    override val chainHash: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
     val shortChannelId: ShortChannelId,
-    val nodeId1: PublicKey,
-    val nodeId2: PublicKey,
-    val bitcoinKey1: PublicKey,
-    val bitcoinKey2: PublicKey,
-    val unknownFields: ByteVector = ByteVector.empty
+    @Serializable(with = PublicKeyKSerializer::class) val nodeId1: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val nodeId2: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val bitcoinKey1: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val bitcoinKey2: PublicKey,
+    @Serializable(with = ByteVectorKSerializer::class) val unknownFields: ByteVector = ByteVector.empty
 ) : RoutingMessage, AnnouncementMessage, HasChainHash, LightningSerializable<ChannelAnnouncement> {
     override fun serializer(): LightningSerializer<ChannelAnnouncement> = ChannelAnnouncement
 
@@ -700,8 +701,8 @@ data class ChannelAnnouncement(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelUpdate(
-    val signature: ByteVector64,
-    override val chainHash: ByteVector32,
+    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
+    @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
     val shortChannelId: ShortChannelId,
     override val timestamp: Long,
     val messageFlags: Byte,
@@ -711,7 +712,7 @@ data class ChannelUpdate(
     val feeBaseMsat: MilliSatoshi,
     val feeProportionalMillionths: Long,
     val htlcMaximumMsat: MilliSatoshi?,
-    val unknownFields: ByteVector = ByteVector.empty
+    @Serializable(with = ByteVectorKSerializer::class) val unknownFields: ByteVector = ByteVector.empty
 ) : AnnouncementMessage, HasTimestamp, HasChainHash, LightningSerializable<ChannelUpdate> {
     init {
         require(((messageFlags.toInt() and 1) != 0) == (htlcMaximumMsat != null)) { "htlcMaximumMsat is not consistent with messageFlags" }
@@ -738,9 +739,9 @@ data class ChannelUpdate(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class Shutdown(
-    override val channelId: ByteVector32,
-    val scriptPubKey: ByteVector,
-    val channelData: ByteVector? = null
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector? = null
 ) : ChannelMessage, HasChannelId, LightningSerializable<FundingLocked> {
     override fun serializer(): LightningSerializer<FundingLocked> = FundingLocked
 

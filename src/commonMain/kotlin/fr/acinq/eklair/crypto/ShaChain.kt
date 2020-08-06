@@ -2,6 +2,7 @@ package fr.acinq.eklair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.sha256
+import fr.acinq.eklair.io.ByteVector32KSerializer
 import fr.acinq.eklair.utils.startsWith
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -122,14 +123,14 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
 
     object Serializer : KSerializer<ShaChain> {
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ShaChain") {
-            element("knownHashes", mapSerialDescriptor<String, ByteVector32>())
+            element("knownHashes", mapSerialDescriptor(String.serializer().descriptor, ByteVector32KSerializer.descriptor))
             element<Long>("lastIndex", isOptional = true)
         }
 
         private fun List<Boolean>.toBinaryString(): String = this.map { if (it) '1' else '0' } .joinToString(separator = "")
         private fun String.toBooleanList(): List<Boolean> = this.map { it == '1' }
 
-        private val mapSerializer = MapSerializer(String.serializer(), ByteVector32.serializer())
+        private val mapSerializer = MapSerializer(String.serializer(), ByteVector32KSerializer)
 
         override fun serialize(encoder: Encoder, value: ShaChain) {
             val compositeEncoder = encoder.beginStructure(descriptor)

@@ -9,10 +9,7 @@ import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
 import fr.acinq.eklair.channel.State
 import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.LocalKeyManager
-import fr.acinq.eklair.io.Peer
-import fr.acinq.eklair.io.ReceivePayment
-import fr.acinq.eklair.io.SendPayment
-import fr.acinq.eklair.io.TcpSocket
+import fr.acinq.eklair.io.*
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
@@ -95,7 +92,7 @@ object Node {
         serializersModule = serializationModules
     }
 
-    private val mapSerializer = MapSerializer(ByteVector32.serializer(), State.serializer())
+    private val mapSerializer = MapSerializer(ByteVector32KSerializer, State.serializer())
 
     @JvmStatic
     fun main(args: Array<String>) {

@@ -9,13 +9,21 @@ import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.ShortChannelId
 import fr.acinq.eklair.crypto.sphinx.PacketAndSecrets
+import fr.acinq.eklair.io.ByteVector32KSerializer
+import fr.acinq.eklair.io.ByteVectorKSerializer
+import fr.acinq.eklair.io.PublicKeyKSerializer
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.toByteVector
 import fr.acinq.eklair.utils.toByteVector32
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class OnionRoutingPacket(val version: Int, val publicKey: ByteVector, val payload: ByteVector, val hmac: ByteVector32)
+data class OnionRoutingPacket(
+    val version: Int,
+    @Serializable(with = ByteVectorKSerializer::class) val publicKey: ByteVector,
+    @Serializable(with = ByteVectorKSerializer::class) val payload: ByteVector,
+    @Serializable(with = ByteVector32KSerializer::class) val hmac: ByteVector32
+)
 
 /**
  * @param payloadLength payload length:
@@ -75,7 +83,7 @@ sealed class OnionTlv : Tlv {
      * @param totalAmount total amount in multi-part payments. When missing, assumed to be equal to AmountToForward.
      */
     @Serializable
-    data class PaymentData(val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
+    data class PaymentData(@Serializable(with = ByteVector32KSerializer::class) val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
         override val tag: Long
             get() = 8L
     }
@@ -85,14 +93,14 @@ sealed class OnionTlv : Tlv {
      * because the final recipient doesn't support trampoline.
      */
     @Serializable
-    data class InvoiceFeatures(val features: ByteVector) : OnionTlv() {
+    data class InvoiceFeatures(@Serializable(with = ByteVectorKSerializer::class) val features: ByteVector) : OnionTlv() {
         override val tag: Long
             get() = 66097L
     }
 
     /** Id of the next node. */
     @Serializable
-    data class OutgoingNodeId(val nodeId: PublicKey) : OnionTlv() {
+    data class OutgoingNodeId(@Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey) : OnionTlv() {
         override val tag: Long
             get() = 66098L
     }

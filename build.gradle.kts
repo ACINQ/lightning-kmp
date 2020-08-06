@@ -36,7 +36,7 @@ kotlin {
         dependencies {
             implementation(kotlin("stdlib-common"))
 
-            api("fr.acinq.bitcoink:bitcoink:0.3.0-1.4-rc")
+            api("fr.acinq.bitcoink:bitcoink:0.4.0-1.4-rc")
             api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-rc-41")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.8-native-mt-1.4.0-rc")

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.channel.ChannelVersion
+import fr.acinq.eklair.io.ByteVectorKSerializer
 import fr.acinq.eklair.utils.BitField
 import kotlinx.serialization.Serializable
 
@@ -12,7 +13,7 @@ import kotlinx.serialization.Serializable
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
     @Serializable
-    data class UpfrontShutdownScript(val scriptPubkey: ByteVector) : ChannelTlv(), LightningSerializable<UpfrontShutdownScript> {
+    data class UpfrontShutdownScript(@Serializable(with = ByteVectorKSerializer::class) val scriptPubkey: ByteVector) : ChannelTlv(), LightningSerializable<UpfrontShutdownScript> {
         override fun serializer(): LightningSerializer<UpfrontShutdownScript> = UpfrontShutdownScript
 
         val isEmpty: Boolean get() = scriptPubkey.isEmpty()

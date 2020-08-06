@@ -4,6 +4,8 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.crypto.KeyManager
+import fr.acinq.eklair.io.ByteVector32KSerializer
+import fr.acinq.eklair.io.SatoshiKSerializer
 import kotlinx.serialization.Serializable
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -12,7 +14,7 @@ data class NodeParams(
     val keyManager: KeyManager,
     val alias: String,
     val features: Features,
-    val dustLimit: Satoshi,
+    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
     val onChainFeeConf: OnChainFeeConf,
     val maxHtlcValueInFlightMsat: Long,
     val maxAcceptedHtlcs: Int,
@@ -35,12 +37,12 @@ data class NodeParams(
     val autoReconnect: Boolean,
     val initialRandomReconnectDelay: Long,
     val maxReconnectInterval: Long,
-    val chainHash: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) val chainHash: ByteVector32,
     val channelFlags: Byte,
     val paymentRequestExpiry: Long,
     val multiPartPaymentExpiry: Long,
-    val minFundingSatoshis: Satoshi,
-    val maxFundingSatoshis: Satoshi,
+    @Serializable(with = SatoshiKSerializer::class) val minFundingSatoshis: Satoshi,
+    @Serializable(with = SatoshiKSerializer::class) val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
     val enableTrampolinePayment: Boolean,
 ) {

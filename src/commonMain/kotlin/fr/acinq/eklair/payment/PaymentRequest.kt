@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.ShortChannelId
+import fr.acinq.eklair.io.PublicKeyKSerializer
 import fr.acinq.eklair.utils.BitStream
 import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.eklair.utils.toByteVector64
@@ -304,7 +305,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
              * @param cltvExpiryDelta           node cltv expiry delta
              */
             @Serializable
-            data class ExtraHop(val nodeId: PublicKey, val shortChannelId: ShortChannelId, val feeBase: MilliSatoshi, val feeProportionalMillionths: Long, val cltvExpiryDelta: CltvExpiryDelta)
+            data class ExtraHop(@Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey, val shortChannelId: ShortChannelId, val feeBase: MilliSatoshi, val feeProportionalMillionths: Long, val cltvExpiryDelta: CltvExpiryDelta)
 
             /**
              * Routing Info

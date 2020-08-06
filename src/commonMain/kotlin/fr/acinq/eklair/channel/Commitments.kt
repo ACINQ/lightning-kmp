@@ -12,6 +12,10 @@ import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.ShaChain
 import fr.acinq.eklair.crypto.sphinx.FailurePacket
 import fr.acinq.eklair.crypto.sphinx.Sphinx
+import fr.acinq.eklair.io.ByteVector32KSerializer
+import fr.acinq.eklair.io.ByteVector64KSerializer
+import fr.acinq.eklair.io.ByteVectorKSerializer
+import fr.acinq.eklair.io.PublicKeyKSerializer
 import fr.acinq.eklair.payment.relay.Origin
 import fr.acinq.eklair.transactions.CommitmentSpec
 import fr.acinq.eklair.transactions.Transactions
@@ -37,10 +41,10 @@ import kotlin.experimental.and
 }
 @Serializable data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
 data class Changes(val ourChanges: LocalChanges, val theirChanges: RemoteChanges)
-@Serializable data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, val localSig: ByteVector64, val remoteSig: ByteVector64)
+@Serializable data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64)
 @Serializable data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
 @Serializable data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
-@Serializable data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
+@Serializable data class RemoteCommit(val index: Long, val spec: CommitmentSpec, @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey)
 @Serializable data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
 // @formatter:on
 
@@ -65,11 +69,11 @@ data class Commitments(
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
     val originChannels: Map<Long, Origin>, // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
-    val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>,
+    val remoteNextCommitInfo: Either<WaitingForRevocation, @Serializable(with = PublicKeyKSerializer::class) PublicKey>,
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
-    val channelId: ByteVector32,
-    val remoteChannelData: ByteVector? = null
+    @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
+    @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector? = null
 ) {
 
     fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo.isRight

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.eklair.io.ByteVectorKSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
@@ -41,7 +42,7 @@ interface Tlv {
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
-data class GenericTlv(override val tag: Long, val value: ByteVector) : Tlv, LightningSerializable<GenericTlv> {
+data class GenericTlv(override val tag: Long, @Serializable(with = ByteVectorKSerializer::class) val value: ByteVector) : Tlv, LightningSerializable<GenericTlv> {
     init {
         require(tag.rem(2L) != 0L) { "unknown even tag ($tag) " }
     }
