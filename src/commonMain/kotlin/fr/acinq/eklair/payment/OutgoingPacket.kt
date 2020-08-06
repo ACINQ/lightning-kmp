@@ -28,8 +28,8 @@ object OutgoingPacket {
         .map {
             when(it) {
                 // TODO: implement this
-                is FinalPayload -> Hex.decode("01010101")
-                else -> Hex.decode("01010101")
+                is FinalPayload -> FinalPayload.write(it)
+                else -> TODO("payload serialization not implemented")
             }
         }
         return Sphinx.create(sessionKey, nodes, payloadsBin, associatedData, payloadLength)
