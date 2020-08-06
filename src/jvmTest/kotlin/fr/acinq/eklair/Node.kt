@@ -9,6 +9,9 @@ import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
 import fr.acinq.eklair.channel.State
 import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.LocalKeyManager
+import fr.acinq.eklair.io.Peer
+import fr.acinq.eklair.io.ReceivePayment
+import fr.acinq.eklair.io.SendPayment
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat

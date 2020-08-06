@@ -1,14 +1,12 @@
-package fr.acinq.eklair
+package fr.acinq.eklair.io
 
 import fr.acinq.bitcoin.*
+import fr.acinq.eklair.*
 import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
-import fr.acinq.eklair.io.LightningSession
-import fr.acinq.eklair.io.TcpSocket
-import fr.acinq.eklair.io.receiveFully
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.currentTimestampSeconds
 import fr.acinq.eklair.utils.getValue
