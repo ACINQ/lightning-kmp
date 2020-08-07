@@ -849,6 +849,11 @@ data class Normal(
                     }
                 }
             }
+            is NewBlock -> {
+                logger.info { "new tip ${event.height} ${event.Header}" }
+                val newState = this.copy(currentTip = Pair(event.height, event.Header))
+                Pair(newState, listOf())
+            }
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
