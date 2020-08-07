@@ -7,11 +7,10 @@ import fr.acinq.eklair.blockchain.WatchEvent
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
+import fr.acinq.eklair.payment.OutgoingPacket
 import fr.acinq.eklair.payment.PaymentRequest
-import fr.acinq.eklair.utils.currentTimestampSeconds
-import fr.acinq.eklair.utils.getValue
-import fr.acinq.eklair.utils.setValue
-import fr.acinq.eklair.utils.toByteVector32
+import fr.acinq.eklair.router.ChannelHop
+import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,12 +30,13 @@ data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
-data class SendPayment(val paymentRequest: PaymentRequest):  PeerEvent()
+
+data class SendPayment(val paymentRequest: PaymentRequest) : PeerEvent()
 data class ChannelEvent(val channelId: ByteVector32, val event: Event) : PeerEvent()
 
 sealed class PeerListenerEvent
-data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String): PeerListenerEvent()
-data class PaymentReceived(val receivePayment: ReceivePayment): PeerListenerEvent()
+data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
+data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -139,7 +139,7 @@ class Peer(
         actions.forEach {
             when (it) {
                 is SendMessage -> {
-                    val encoded = Wire.encode(it.message)
+                    val encoded = LightningMessage.encode(it.message)
                     encoded?.let { bin ->
                         logger.info { "sending ${it.message}" }
                         output.send(bin)
@@ -200,7 +200,7 @@ class Peer(
         for (event in input) {
             when {
                 event is BytesReceived -> {
-                    val msg = Wire.decode(event.data)
+                    val msg = LightningMessage.decode(event.data)
                     when {
                         msg is Init -> {
                             logger.info { "received $msg" }
@@ -210,7 +210,7 @@ class Peer(
                         msg is Ping -> {
                             logger.info { "received $msg" }
                             val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                            output.send(Wire.encode(pong)!!)
+                            output.send(LightningMessage.encode(pong)!!)
 
                         }
                         msg is Pong -> {
@@ -374,18 +374,54 @@ class Peer(
                             PaymentRequest.Companion.TaggedField.Description("this is a kotlin test")
                         ),
                         ByteVector.empty
-                    )
-                        .sign(nodeParams.privateKey)
+                    ).sign(nodeParams.privateKey)
                     logger.info { "payment request ${pr.write()}" }
                     pendingPayments[event.paymentHash] = event
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 }
                 event is SendPayment && event.paymentRequest.nodeId != remoteNodeId -> {
-                    logger.error { "no route to ${event.paymentRequest.nodeId}"}
+                    logger.error { "no route to ${event.paymentRequest.nodeId}" }
+                }
+                event is SendPayment && event.paymentRequest.nodeId != remoteNodeId -> {
+                    logger.error { "no connection to ${event.paymentRequest.nodeId}" }
+                }
+                event is SendPayment && channels.isEmpty() -> {
+                    logger.error { "no channels to ${event.paymentRequest.nodeId}" }
+                }
+                event is SendPayment && event.paymentRequest.amount == null -> {
+                    // TODO: support amount-less payment requests
+                    logger.error { "payment request does not include an amount" }
                 }
                 event is SendPayment -> {
-                    logger.info { "sending ${event.paymentRequest.amount} to ${event.paymentRequest.nodeId}"}
+                    logger.info { "sending ${event.paymentRequest.amount} to ${event.paymentRequest.nodeId}" }
 
+                    // find a channel with enough outgoing capacity
+                    channels.values.forEach {
+                        when (it) {
+                            is Normal -> logger.info { "channel ${it.channelId} available for send ${it.commitments.availableBalanceForSend()}" }
+                        }
+                    }
+                    val channel = channels.values.find { it is Normal && it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! } as Normal?
+                    if (channel == null) logger.error { "cannot find channel with enough capacity" } else {
+                        val normal = channel!!
+                        val paymentId = UUID.randomUUID()
+                        val expiryDelta = CltvExpiryDelta(18) // TODO: read value from payment request
+                        val expiry = expiryDelta.toCltvExpiry(normal.currentBlockHeight.toLong())
+                        val finalPayload = Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
+
+                        // one hop: this a direct payment to our peer
+                        val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, normal.channelUpdate))
+                        val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
+                        val (state1, actions) = normal.process(ExecuteCommand(cmd))
+                        channels = channels + (normal.channelId to state1)
+                        send(actions)
+                        actions.forEach {
+                            when (it) {
+                                is ProcessCommand -> input.send(ChannelEvent(normal.channelId, ExecuteCommand(it.command)))
+                            }
+                        }
+                        logger.info { "channel ${normal.channelId} new state $state1" }
+                    }
                 }
                 event is ChannelEvent && !channels.containsKey(event.channelId) -> {
                     logger.error { "received ${event.event} for a unknown channel ${event.channelId}" }
@@ -398,7 +434,8 @@ class Peer(
                     actions.forEach {
                         when (it) {
                             is ProcessCommand -> input.send(ChannelEvent(event.channelId, ExecuteCommand(it.command)))
-                            else -> {}
+                            else -> {
+                            }
                         }
                     }
                 }

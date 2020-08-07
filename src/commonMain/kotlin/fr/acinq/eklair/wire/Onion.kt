@@ -141,7 +141,7 @@ sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload>
     override fun serializer(): LightningSerializer<FinalPayload> = FinalPayload
 
     companion object: LightningSerializer<FinalPayload>() {
-        override val tag: ULong
+        override val tag: Long
             get() = TODO("Not yet implemented")
 
         override fun read(input: Input): FinalPayload {
