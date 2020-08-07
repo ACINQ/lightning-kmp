@@ -1,9 +1,11 @@
 package fr.acinq.eklair.payment
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.MilliSatoshi
+import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -55,7 +57,7 @@ class PaymentRequestTestsCommon {
         assertEquals(pr.paymentHash , ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
         assertEquals(pr.timestamp , 1496314658L)
         assertEquals(pr.nodeId , PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
-        // TODO: check description hash
+        assertEquals(pr.descriptionHash, Crypto.sha256("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".encodeToByteArray()).toByteVector32())
         assertEquals(pr.tags.size,  2)
         val check = pr.sign(priv).write()
         assertEquals(ref, check)
@@ -70,7 +72,6 @@ class PaymentRequestTestsCommon {
         assertEquals(pr.paymentHash , ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
         assertEquals(pr.timestamp , 1496314658L)
         assertEquals(pr.nodeId , PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
-        //description, "1 cup coffee")
         assertEquals(pr.tags.size,  3)
         val check = pr.sign(priv).write()
         assertEquals(ref, check)
@@ -86,6 +87,8 @@ class PaymentRequestTestsCommon {
         assertEquals(pr.timestamp , 1496314658L)
         assertEquals(pr.nodeId , PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(pr.tags.size,  4)
+        val nodeIds = pr.routingInfo.flatMap { it.hints.map { it.nodeId } }
+        assertEquals(listOf(PublicKey.fromHex("029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), PublicKey.fromHex("039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255")), nodeIds)
         val check = pr.sign(priv).write()
         assertEquals(ref, check)
     }
@@ -162,6 +165,7 @@ class PaymentRequestTestsCommon {
             assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
             assertEquals(pr.timestamp, 1496314658L)
             assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+            assertEquals(pr.paymentSecret, ByteVector32("0x1111111111111111111111111111111111111111111111111111111111111111"))
             val check = pr.sign(priv).write()
             assertEquals(ref.toLowerCase(), check)
         }
