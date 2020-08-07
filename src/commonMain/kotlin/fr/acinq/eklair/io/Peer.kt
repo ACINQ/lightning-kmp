@@ -32,7 +32,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 }
 
 data class SendPayment(val paymentRequest: PaymentRequest) : PeerEvent()
-data class ChannelEvent(val channelId: ByteVector32, val event: Event) : PeerEvent()
+data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -54,7 +54,7 @@ class Peer(
 
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
-    private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, State>>(HashMap())
+    private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
     private val connectedChannel = ConflatedBroadcastChannel(false)
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
@@ -135,7 +135,7 @@ class Peer(
     fun openConnectedSubscription() = connectedChannel.openSubscription()
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
-    private suspend fun send(actions: List<Action>) {
+    private suspend fun send(actions: List<ChannelAction>) {
         actions.forEach {
             when (it) {
                 is SendMessage -> {
@@ -327,7 +327,7 @@ class Peer(
                                         val payment = pendingPayments[it.add.paymentHash]!!
                                         logger.info { "receive ${it.add} for $payment" }
                                         input.send(
-                                            ChannelEvent(
+                                            WrappedChannelEvent(
                                                 msg.channelId,
                                                 ExecuteCommand(
                                                     CMD_FULFILL_HTLC(
@@ -341,7 +341,7 @@ class Peer(
                                         listenerEventChannel.send(PaymentReceived(payment))
                                     }
                                     it is ProcessCommand -> input.send(
-                                        ChannelEvent(
+                                        WrappedChannelEvent(
                                             msg.channelId,
                                             ExecuteCommand(it.command)
                                         )
@@ -417,23 +417,23 @@ class Peer(
                         send(actions)
                         actions.forEach {
                             when (it) {
-                                is ProcessCommand -> input.send(ChannelEvent(normal.channelId, ExecuteCommand(it.command)))
+                                is ProcessCommand -> input.send(WrappedChannelEvent(normal.channelId, ExecuteCommand(it.command)))
                             }
                         }
                         logger.info { "channel ${normal.channelId} new state $state1" }
                     }
                 }
-                event is ChannelEvent && !channels.containsKey(event.channelId) -> {
-                    logger.error { "received ${event.event} for a unknown channel ${event.channelId}" }
+                event is WrappedChannelEvent && !channels.containsKey(event.channelId) -> {
+                    logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
                 }
-                event is ChannelEvent -> {
+                event is WrappedChannelEvent -> {
                     val state = channels[event.channelId]!!
-                    val (state1, actions) = state.process(event.event)
+                    val (state1, actions) = state.process(event.channelEvent)
                     channels = channels + (event.channelId to state1)
                     send(actions)
                     actions.forEach {
                         when (it) {
-                            is ProcessCommand -> input.send(ChannelEvent(event.channelId, ExecuteCommand(it.command)))
+                            is ProcessCommand -> input.send(WrappedChannelEvent(event.channelId, ExecuteCommand(it.command)))
                             else -> {
                             }
                         }
