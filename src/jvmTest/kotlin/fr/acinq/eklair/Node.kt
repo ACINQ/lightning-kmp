@@ -1,11 +1,13 @@
 package fr.acinq.eklair
 
 import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
+import fr.acinq.eklair.channel.NewBlock
 import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.*
 import fr.acinq.eklair.payment.PaymentRequest
@@ -148,6 +150,11 @@ object Node {
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
                         peer.send(SendPayment(invoice))
+                    }
+                    "newblock" -> {
+                        val height = tokens[1].toInt()
+                        val header = BlockHeader.read(tokens[2])
+                        peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(height, header)))
                     }
                     else -> {
                         println("I don't understand $tokens")

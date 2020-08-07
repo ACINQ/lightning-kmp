@@ -423,6 +423,19 @@ class Peer(
                         logger.info { "channel ${normal.channelId} new state $state1" }
                     }
                 }
+                event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
+                    // this is for all channels
+                    channels.forEach {
+                        val (state1, actions) = it.value.process(event.channelEvent)
+                        send(actions)
+                        actions.forEach { action ->
+                            when (action) {
+                                is ProcessCommand -> input.send(WrappedChannelEvent(it.key, ExecuteCommand(action.command)))
+                            }
+                        }
+                        channels = channels + (it.key to state1)
+                    }
+                }
                 event is WrappedChannelEvent && !channels.containsKey(event.channelId) -> {
                     logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
                 }
