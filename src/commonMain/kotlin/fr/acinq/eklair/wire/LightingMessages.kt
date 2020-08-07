@@ -41,6 +41,7 @@ interface LightningMessage {
                 UpdateAddHtlc.tag -> UpdateAddHtlc.read(stream)
                 UpdateFailHtlc.tag -> UpdateFailHtlc.read(stream)
                 UpdateFailMalformedHtlc.tag -> UpdateFailMalformedHtlc.read(stream)
+                UpdateFulfillHtlc.tag -> UpdateFulfillHtlc.read(stream)
                 else -> {
                     logger.warning { "cannot decode ${Hex.encode(input)}" }
                     null
