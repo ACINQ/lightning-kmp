@@ -21,7 +21,7 @@ import kotlin.math.abs
 object Helpers {
 
     fun getChannelVersion(open: OpenChannel): ChannelVersion {
-        return open.tlvStream.get<ChannelTlv.Companion.ChannelVersionTlv>()
+        return open.tlvStream.get<ChannelTlv.ChannelVersionTlv>()
             ?.channelVersion
             ?: ChannelVersion.STANDARD
     }

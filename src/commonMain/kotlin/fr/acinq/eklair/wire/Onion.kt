@@ -9,12 +9,21 @@ import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.ShortChannelId
 import fr.acinq.eklair.crypto.sphinx.PacketAndSecrets
+import fr.acinq.eklair.io.ByteVector32KSerializer
+import fr.acinq.eklair.io.ByteVectorKSerializer
+import fr.acinq.eklair.io.PublicKeyKSerializer
 import fr.acinq.eklair.payment.PaymentRequest
-import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.toByteVector
 import fr.acinq.eklair.utils.toByteVector32
+import kotlinx.serialization.Serializable
 
-data class OnionRoutingPacket(val version: Int, val publicKey: ByteVector, val payload: ByteVector, val hmac: ByteVector32)
+@Serializable
+data class OnionRoutingPacket(
+    val version: Int,
+    @Serializable(with = ByteVectorKSerializer::class) val publicKey: ByteVector,
+    @Serializable(with = ByteVectorKSerializer::class) val payload: ByteVector,
+    @Serializable(with = ByteVector32KSerializer::class) val hmac: ByteVector32
+)
 
 /**
  * @param payloadLength payload length:
@@ -32,7 +41,7 @@ class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSe
         )
     }
 
-    override val tag: ULong
+    override val tag: Long
         get() = TODO("Not used")
 
     override fun write(message: OnionRoutingPacket, out: Output) {
@@ -44,23 +53,27 @@ class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSe
 }
 
 @OptIn(kotlin.ExperimentalUnsignedTypes::class)
+@Serializable
 sealed class OnionTlv : Tlv {
     /** Amount to forward to the next node. */
+    @Serializable
     data class AmountToForward(val amount: MilliSatoshi) : OnionTlv() {
-        override val tag: ULong
-            get() = 2UL
+        override val tag: Long
+            get() = 2L
     }
 
     /** CLTV value to use for the HTLC offered to the next node. */
+    @Serializable
     data class OutgoingCltv(val cltv: CltvExpiry) : OnionTlv() {
-        override val tag: ULong
-            get() = 4UL
+        override val tag: Long
+            get() = 4L
     }
 
     /** Id of the channel to use to forward a payment to the next node. */
+    @Serializable
     data class OutgoingChannelId(val shortChannelId: ShortChannelId) : OnionTlv() {
-        override val tag: ULong
-            get() = 6UL
+        override val tag: Long
+            get() = 6L
     }
 
     /**
@@ -69,39 +82,44 @@ sealed class OnionTlv : Tlv {
      * @param secret      payment secret specified in the Bolt 11 invoice.
      * @param totalAmount total amount in multi-part payments. When missing, assumed to be equal to AmountToForward.
      */
-    data class PaymentData(val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
-        override val tag: ULong
-            get() = 8UL
+    @Serializable
+    data class PaymentData(@Serializable(with = ByteVector32KSerializer::class) val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
+        override val tag: Long
+            get() = 8L
     }
 
     /**
      * Invoice feature bits. Only included for intermediate trampoline nodes when they should convert to a legacy payment
      * because the final recipient doesn't support trampoline.
      */
-    data class InvoiceFeatures(val features: ByteVector) : OnionTlv() {
-        override val tag: ULong
-            get() = 66097UL
+    @Serializable
+    data class InvoiceFeatures(@Serializable(with = ByteVectorKSerializer::class) val features: ByteVector) : OnionTlv() {
+        override val tag: Long
+            get() = 66097L
     }
 
     /** Id of the next node. */
-    data class OutgoingNodeId(val nodeId: PublicKey) : OnionTlv() {
-        override val tag: ULong
-            get() = 66098UL
+    @Serializable
+    data class OutgoingNodeId(@Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey) : OnionTlv() {
+        override val tag: Long
+            get() = 66098L
     }
 
     /**
      * Invoice routing hints. Only included for intermediate trampoline nodes when they should convert to a legacy payment
      * because the final recipient doesn't support trampoline.
      */
+    @Serializable
     data class InvoiceRoutingInfo(val extraHops: List<List<PaymentRequest.Companion.TaggedField.ExtraHop>>) : OnionTlv() {
-        override val tag: ULong
-            get() = 66099UL
+        override val tag: Long
+            get() = 66099L
     }
 
     /** An encrypted trampoline onion packet. */
+    @Serializable
     data class TrampolineOnion(val packet: OnionRoutingPacket) : OnionTlv() {
-        override val tag: ULong
-            get() = 66100UL
+        override val tag: Long
+            get() = 66100L
     }
 }
 

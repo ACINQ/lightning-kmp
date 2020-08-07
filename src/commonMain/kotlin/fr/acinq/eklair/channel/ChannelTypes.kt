@@ -5,12 +5,14 @@ import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.Features
 import fr.acinq.eklair.MilliSatoshi
+import fr.acinq.eklair.io.*
 import fr.acinq.eklair.utils.BitField
 import fr.acinq.eklair.utils.UUID
 import fr.acinq.eklair.utils.sum
 import fr.acinq.eklair.wire.FailureMessage
 import fr.acinq.eklair.wire.OnionRoutingPacket
 import fr.acinq.eklair.wire.UpdateAddHtlc
+import kotlinx.serialization.Serializable
 
 
 /*
@@ -57,39 +59,42 @@ object CMD_GETSTATEDATA : Command()
 
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class LocalParams constructor(
-    val nodeId: PublicKey,
-    val fundingKeyPath: KeyPath,
-    val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: ULong, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserve: Satoshi,
+    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
+    @Serializable(with = KeyPathKSerializer::class) val fundingKeyPath: KeyPath,
+    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
+    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+    @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
-    val defaultFinalScriptPubKey: ByteVector,
-    val localPaymentBasepoint: PublicKey?,
+    @Serializable(with = ByteVectorKSerializer::class) val defaultFinalScriptPubKey: ByteVector,
+    @Serializable(with = PublicKeyKSerializer::class) val localPaymentBasepoint: PublicKey?,
     val features: Features
 )
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class RemoteParams(
-    val nodeId: PublicKey,
-    val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: ULong, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserve: Satoshi,
+    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
+    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
+    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+    @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val fundingPubKey: PublicKey,
-    val revocationBasepoint: PublicKey,
-    val paymentBasepoint: PublicKey,
-    val delayedPaymentBasepoint: PublicKey,
-    val htlcBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val fundingPubKey: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
+    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
     val features: Features
 )
 
 
+@Serializable
 data class ChannelVersion(val bits: BitField) {
     init {
         require(bits.byteSize == SIZE_BYTE) { "channel version takes 4 bytes" }

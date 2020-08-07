@@ -1,18 +1,25 @@
 package fr.acinq.eklair.blockchain.fee
 
 import fr.acinq.eklair.Eclair.feerateKw2KB
-import fr.acinq.eklair.TestConstants.feeratePerKw
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 
 
-class TestFeeEstimator() : FeeEstimator {
-    private var currentFeerates: Long = 750
+@Serializable
+data class TestFeeEstimator(var currentFeerates: Long = 750) : FeeEstimator {
+
 
     override fun getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates)
 
     override fun getFeeratePerKw(target: Int): Long = currentFeerates
 
-    fun setFeerate(feeratesPerKw: Long): FeeEstimator {
-        currentFeerates = feeratesPerKw
-        return this
+    companion object {
+        val testSerializationModule = SerializersModule {
+            polymorphic(FeeEstimator::class) {
+                subclass(serializer())
+            }
+        }
     }
 }

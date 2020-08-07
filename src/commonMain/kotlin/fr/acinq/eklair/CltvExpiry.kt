@@ -1,11 +1,14 @@
 package fr.acinq.eklair
 
+import kotlinx.serialization.Serializable
+
 /**
  * Bitcoin scripts (in particular HTLCs) need an absolute block expiry (greater than the current block count) to work
  * with OP_CLTV.
  *
  * @param underlying the absolute cltv expiry value (current block count + some delta).
  */
+@Serializable
 data class CltvExpiry(private val underlying: Long) : Comparable<CltvExpiry> {
     // @formatter:off
     operator fun plus(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying + d.toInt())
@@ -24,6 +27,7 @@ data class CltvExpiry(private val underlying: Long) : Comparable<CltvExpiry> {
  *
  * @param underlying the cltv expiry delta value.
  */
+@Serializable
 data class CltvExpiryDelta(private val underlying: Int) : Comparable<CltvExpiryDelta> {
 
     /**

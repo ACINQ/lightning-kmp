@@ -177,7 +177,7 @@ class LightningSerializerTestsCommon {
 
     @Test
     fun `encode - decode open_channel`() {
-        val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1.sat, 1.msat, 1.sat, 1UL, 1.sat, 1.msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte())
+        val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1.sat, 1.msat, 1.sat, 1L, 1.sat, 1.msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte())
         // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
         // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
         // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -189,20 +189,20 @@ class LightningSerializerTestsCommon {
             // legacy encoding without upfront_shutdown_script
             defaultEncoded to defaultOpen,
             // empty upfront_shutdown_script
-            defaultEncoded + ByteVector("0000") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty)))),
+            defaultEncoded + ByteVector("0000") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))),
             // non-empty upfront_shutdown_script
-            defaultEncoded + ByteVector("0004 01abcdef") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector("01abcdef"))))),
+            defaultEncoded + ByteVector("0004 01abcdef") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("01abcdef"))))),
             // missing upfront_shutdown_script + unknown odd tlv records
-            defaultEncoded + ByteVector("0302002a 050102") to defaultOpen.copy(tlvStream = TlvStream(listOf(), listOf(GenericTlv(3UL, ByteVector("002a")), GenericTlv(5UL, ByteVector("02"))))),
+            defaultEncoded + ByteVector("0302002a 050102") to defaultOpen.copy(tlvStream = TlvStream(listOf(), listOf(GenericTlv(3L, ByteVector("002a")), GenericTlv(5L, ByteVector("02"))))),
             // empty upfront_shutdown_script + unknown odd tlv records
             defaultEncoded + ByteVector("0000 0302002a 050102") to defaultOpen.copy(
                 tlvStream = TlvStream(
-                    listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty)),
-                    listOf(GenericTlv(3UL, ByteVector("002a")), GenericTlv(5UL, ByteVector("02")))
+                    listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)),
+                    listOf(GenericTlv(3L, ByteVector("002a")), GenericTlv(5L, ByteVector("02")))
                 )
             ),
             // non-empty upfront_shutdown_script + unknown odd tlv records
-            defaultEncoded + ByteVector("0002 1234 0303010203") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3UL, ByteVector("010203")))))
+            defaultEncoded + ByteVector("0002 1234 0303010203") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203")))))
         )
 
         testCases.forEach {
@@ -233,7 +233,7 @@ class LightningSerializerTestsCommon {
 
     @Test 
     fun `encode - decode accept_channel`() {
-        val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1.sat, 1UL, 1.sat, 1.msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
+        val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1.sat, 1L, 1.sat, 1.msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
         // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
         // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
         // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -241,11 +241,11 @@ class LightningSerializerTestsCommon {
         val defaultEncoded = ByteVector("000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a")
         val testCases = mapOf(
             defaultEncoded to defaultAccept, // legacy encoding without upfront_shutdown_script
-        defaultEncoded + ByteVector("0000") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty)))), // empty upfront_shutdown_script
-        defaultEncoded + ByteVector("0004 01abcdef") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector("01abcdef"))))), // non-empty upfront_shutdown_script
-        defaultEncoded + ByteVector("0000 0102002a 030102") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector.empty)), listOf(GenericTlv(1UL, ByteVector("002a")), GenericTlv(3UL, ByteVector("02"))))), // empty upfront_shutdown_script + unknown odd tlv records
-        defaultEncoded + ByteVector("0002 1234 0303010203") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.Companion.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3UL, ByteVector("010203"))))), // non-empty upfront_shutdown_script + unknown odd tlv records
-        defaultEncoded + ByteVector("0303010203 05020123") to defaultAccept.copy(tlvStream = TlvStream(listOf(), listOf(GenericTlv(3UL, ByteVector("010203")), GenericTlv(5UL, ByteVector("0123"))))) // no upfront_shutdown_script + unknown odd tlv records
+        defaultEncoded + ByteVector("0000") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))), // empty upfront_shutdown_script
+        defaultEncoded + ByteVector("0004 01abcdef") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("01abcdef"))))), // non-empty upfront_shutdown_script
+        defaultEncoded + ByteVector("0000 0102002a 030102") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)), listOf(GenericTlv(1L, ByteVector("002a")), GenericTlv(3L, ByteVector("02"))))), // empty upfront_shutdown_script + unknown odd tlv records
+        defaultEncoded + ByteVector("0002 1234 0303010203") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203"))))), // non-empty upfront_shutdown_script + unknown odd tlv records
+        defaultEncoded + ByteVector("0303010203 05020123") to defaultAccept.copy(tlvStream = TlvStream(listOf(), listOf(GenericTlv(3L, ByteVector("010203")), GenericTlv(5L, ByteVector("0123"))))) // no upfront_shutdown_script + unknown odd tlv records
         )
 
         testCases.forEach {

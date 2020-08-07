@@ -1,9 +1,17 @@
 package fr.acinq.eklair.utils
 
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.and
 import kotlin.experimental.or
 
+@Serializable(with = BitField.Serializer::class)
 class BitField private constructor(val bytes: ByteArray) {
     constructor(sizeBytes: Int) : this(ByteArray(sizeBytes))
 
@@ -99,5 +107,18 @@ class BitField private constructor(val bytes: ByteArray) {
         fun forAtMost(bitCount: Int): BitField =
             if (bitCount <= 0) BitField(ByteArray(0))
             else BitField(ByteArray((bitCount - 1) / 8 + 1))
+    }
+
+    object Serializer: KSerializer<BitField> {
+        override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("BitField", PrimitiveKind.STRING)
+
+        override fun serialize(encoder: Encoder, value: BitField) {
+            encoder.encodeString(value.toBinaryString())
+        }
+
+        override fun deserialize(decoder: Decoder): BitField {
+            return BitField.fromBin(decoder.decodeString())
+        }
+
     }
 }
