@@ -47,7 +47,7 @@ private data class NotifyTxWithMeta(
     val txWithMeta: GetTxWithMetaResponse
 ) : WatcherAction()
 private data class RelayWatch(val watch: Watch) : WatcherAction()
-private data class RethrowWatchConfirmed(
+private data class RelayWatchConfirmed(
     val parentTxid: ByteVector32,
     val parentPublicKeyScript: ByteVector,
     val minDepth: Long,
@@ -323,7 +323,7 @@ private data class WatcherRunning(
                         val parentTxid = tx.txIn[0].outPoint.txid
                         logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                        returnState(RethrowWatchConfirmed(parentTxid, parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx)))
+                        returnState(RelayWatchConfirmed(parentTxid, parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx)))
                     }
                     cltvTimeout > blockCount -> {
                         logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
@@ -450,12 +450,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                             )
                             is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.publishAsap))
                             is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx), null)
-                            is RethrowWatchConfirmed -> {
-                                eventChannel.send(ReceiveWatch(
-                                    WatchConfirmed(watchEventChannel, ByteVector32.Zeroes, action.parentTxid,
-                                        action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
-                                ))
-                            }
                             is AskForScriptHashHistory -> client.sendElectrumRequest(
                                 GetScriptHashHistory(action.scriptHash), electrumMessageChannel
                             )
@@ -469,6 +463,12 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                             is NotifyWatchSpent -> action.listener.send(action.watchEventSpent)
                             is NotifyTxWithMeta -> action.listener.send(action.txWithMeta)
                             is RelayWatch -> eventChannel.send(ReceiveWatch(action.watch))
+                            is RelayWatchConfirmed -> {
+                                eventChannel.send(ReceiveWatch(
+                                    WatchConfirmed(watchEventChannel, ByteVector32.Zeroes, action.parentTxid,
+                                        action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
+                                ))
+                            }
                             is RelayGetTxWithMeta -> eventChannel.send(GetTxWithMetaEvent(action.txid, action.listener))
                         }
                     }
