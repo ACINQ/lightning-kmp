@@ -54,11 +54,7 @@ interface LightningMessage {
                 is LightningSerializable<*> -> {
                     LightningSerializer.writeU16(input.tag.toInt(), out)
                     @Suppress("UNCHECKED_CAST")
-                    (LightningSerializer.writeBytes(
-                        (input.serializer() as LightningSerializer<LightningSerializable<*>>).write(
-                            input
-                        ), out
-                    ))
+                    (LightningSerializer.writeBytes((input.serializer() as LightningSerializer<LightningSerializable<*>>).write(input), out))
                 }
                 else -> {
                     logger.warning { "cannot encode $input" }

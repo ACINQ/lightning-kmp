@@ -63,8 +63,8 @@ class Peer(
     private var channels by channelsChannel
     private var connected by connectedChannel
 
-    // pending payments, indexed by payment hash
-    private val pendingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
+    // pending incoming payments, indexed by payment hash
+    private val pendingIncomingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
 
     private var theirInit: Init? = null
 
@@ -283,12 +283,7 @@ class Peer(
                                             val tx = Transaction(
                                                 version = 2,
                                                 txIn = listOf(),
-                                                txOut = listOf(
-                                                    TxOut(
-                                                        Satoshi(100),
-                                                        (it.watch).publicKeyScript
-                                                    )
-                                                ),
+                                                txOut = listOf(TxOut(Satoshi(100), (it.watch).publicKeyScript)),
                                                 lockTime = 0L
                                             )
                                             input.send(
@@ -320,22 +315,17 @@ class Peer(
                             send(actions)
                             actions.forEach {
                                 when {
-                                    it is ProcessAdd && !pendingPayments.containsKey(it.add.paymentHash) -> {
+                                    it is ProcessAdd && !pendingIncomingPayments.containsKey(it.add.paymentHash) -> {
                                         logger.warning { "received ${it.add} } for which we don't have a preimage" }
                                     }
                                     it is ProcessAdd -> {
-                                        val payment = pendingPayments[it.add.paymentHash]!!
-                                        logger.info { "receive ${it.add} for $payment" }
+                                        val payment = pendingIncomingPayments[it.add.paymentHash]!!
+                                        // TODO: check that we've been paid what we asked for
+                                        logger.info { "received ${it.add} for $payment" }
                                         input.send(
                                             WrappedChannelEvent(
                                                 msg.channelId,
-                                                ExecuteCommand(
-                                                    CMD_FULFILL_HTLC(
-                                                        it.add.id,
-                                                        payment.paymentPreimage,
-                                                        commit = true
-                                                    )
-                                                )
+                                                ExecuteCommand(CMD_FULFILL_HTLC(it.add.id, payment.paymentPreimage, commit = true))
                                             )
                                         )
                                         listenerEventChannel.send(PaymentReceived(payment))
@@ -354,7 +344,7 @@ class Peer(
                         }
                         else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}" }
                     }
-                }
+                } // event is ByteReceived
                 event is WatchReceived && !channels.containsKey(event.watch.channelId) -> {
                     logger.error { "received watch event ${event.watch} for unknown channel ${event.watch.channelId}}" }
                 }
@@ -364,7 +354,10 @@ class Peer(
                     send(actions)
                     channels = channels + (event.watch.channelId to state1)
                     logger.info { "channel ${event.watch.channelId} new state $state1" }
-                }
+                } // event is WatchReceived
+                //
+                // receive payments
+                //
                 event is ReceivePayment -> {
                     logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
                     val pr = PaymentRequest(
@@ -376,17 +369,14 @@ class Peer(
                         ByteVector.empty
                     ).sign(nodeParams.privateKey)
                     logger.info { "payment request ${pr.write()}" }
-                    pendingPayments[event.paymentHash] = event
+                    pendingIncomingPayments[event.paymentHash] = event
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 }
-                event is SendPayment && event.paymentRequest.nodeId != remoteNodeId -> {
-                    logger.error { "no route to ${event.paymentRequest.nodeId}" }
-                }
-                event is SendPayment && event.paymentRequest.nodeId != remoteNodeId -> {
-                    logger.error { "no connection to ${event.paymentRequest.nodeId}" }
-                }
+                //
+                // send payments
+                //
                 event is SendPayment && channels.isEmpty() -> {
-                    logger.error { "no channels to ${event.paymentRequest.nodeId}" }
+                    logger.error { "no channels to send payments with" }
                 }
                 event is SendPayment && event.paymentRequest.amount == null -> {
                     // TODO: support amount-less payment requests
@@ -407,8 +397,11 @@ class Peer(
                         val paymentId = UUID.randomUUID()
                         val expiryDelta = CltvExpiryDelta(18) // TODO: read value from payment request
                         val expiry = expiryDelta.toCltvExpiry(normal.currentBlockHeight.toLong())
-                        val finalPayload = Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
-
+                        val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
+                        val finalPayload = when(isDirectPayment) {
+                            true -> Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
+                            false -> TODO("implement trampoline payment")
+                        }
                         // one hop: this a direct payment to our peer
                         val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, normal.channelUpdate))
                         val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
