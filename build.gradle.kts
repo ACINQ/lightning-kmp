@@ -166,22 +166,20 @@ val dockerCleanup: Task by tasks.creating(Exec::class) {
     workingDir = projectDir
     commandLine("bash", "docker-cleanup.sh")
 }
-val jvmTest by tasks.getting(Test::class) {
-    dependsOn(dockerTestEnv)
-    finalizedBy(dockerCleanup)
-}
 
 when {
     currentOs.isLinux -> {
-        val linuxX64Test by tasks.getting(KotlinNativeTest::class) {
+        val jvmTest by tasks.getting(Test::class) {
+            dependsOn(dockerTestEnv)
+            finalizedBy(dockerCleanup)
+        }
+        val linuxTest by tasks.getting(KotlinNativeTest::class) {
             filter.excludeTestsMatching("*IntegrationTest")
         }
     }
     currentOs.isMacOsX -> {
-        val iosX64Test by tasks.getting(KotlinNativeTest::class) {
-            filter.excludeTestsMatching("*IntegrationTest")
-//            dependsOn(dockerTestEnv)
-//            finalizedBy(dockerCleanup)
-        }
+        val jvmTest by tasks.getting(Test::class)
+        val iosX64Test by tasks.getting(KotlinNativeTest::class)
+        listOf(jvmTest, iosX64Test).onEach { it.filter.excludeTestsMatching("*IntegrationTest") }
     }
 }
