@@ -365,7 +365,7 @@ class TransactionsTestsCommon {
     }
 
     // TODO: enable this test ASAP !!
-    @Ignore fun `repeated generate valid commitment and htlc transactions`() {
+    @Ignore @Test fun `repeated generate valid commitment and htlc transactions`() {
         repeat(500) {
             try {
                 `generate valid commitment and htlc transactions`()

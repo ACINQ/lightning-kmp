@@ -1,5 +1,8 @@
 package fr.acinq.eklair
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class ShortChannelId(private val id: Long) : Comparable<ShortChannelId> {
 
     fun toLong(): Long = id

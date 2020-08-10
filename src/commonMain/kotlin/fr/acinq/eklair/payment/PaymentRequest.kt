@@ -1,21 +1,32 @@
 package fr.acinq.eklair.payment
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.ShortChannelId
+import fr.acinq.eklair.io.PublicKeyKSerializer
 import fr.acinq.eklair.utils.BitStream
 import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.eklair.utils.toByteVector64
+import fr.acinq.eklair.wire.LightningSerializer
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.Serializable
 import kotlin.experimental.and
 
 data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val timestamp: Long, val nodeId: PublicKey, val tags: List<TaggedField>, val signature: ByteVector) {
-    val paymentHash: ByteVector32? = tags.find { it is TaggedField.PaymentHash } ?.run { (this as TaggedField.PaymentHash).hash }
+    val paymentHash: ByteVector32? = tags.find { it is TaggedField.PaymentHash }?.run { (this as TaggedField.PaymentHash).hash }
 
-    val description: String? = tags.find { it is TaggedField.Description } ?.run { (this as TaggedField.Description).description }
+    val paymentSecret: ByteVector32? = tags.find { it is TaggedField.PaymentSecret }?.run { (this as TaggedField.PaymentSecret).secret }
 
-    private fun rawData() : List<Int5> {
+    val description: String? = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
+
+    val descriptionHash: ByteVector32? = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
+
+    val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
+
+    private fun rawData(): List<Int5> {
         val data5 = ArrayList<Int5>()
         data5.addAll(encodeTimestamp(timestamp))
         tags.forEach {
@@ -47,8 +58,8 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
      * @param privateKey private key, which must match the payment request's node id
      * @return a signature (64 bytes) plus a recovery id (1 byte)
      */
-    fun sign(privateKey: PrivateKey) : PaymentRequest {
-        require(privateKey.publicKey() == nodeId){ "private key does not match node id" }
+    fun sign(privateKey: PrivateKey): PaymentRequest {
+        require(privateKey.publicKey() == nodeId) { "private key does not match node id" }
         val msg = hash()
         val sig = Crypto.sign(msg, privateKey)
         val (pub1, _) = Crypto.recoverPublicKey(sig, msg.toByteArray())
@@ -56,7 +67,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         return this.copy(signature = sig.concat(recid))
     }
 
-    fun write() : String {
+    fun write(): String {
         val stream = BitStream()
         rawData().forEach {
             val bits = toBits(it)
@@ -64,14 +75,14 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         }
         stream.writeBytes(signature.toByteArray().toList())
 
-        fun read5() : Int5 {
+        fun read5(): Int5 {
             val bits = stream.readBits(5)
             val value = (if (bits[0]) 1 shl 4 else 0) + (if (bits[1]) 1 shl 3 else 0) + (if (bits[2]) 1 shl 2 else 0) + (if (bits[3]) 1 shl 1 else 0) + (if (bits[4]) 1 shl 0 else 0)
             return value.toByte()
         }
 
         val int5s = ArrayList<Int5>()
-        while(stream.bitCount() >= 5) int5s.add(read5())
+        while (stream.bitCount() >= 5) int5s.add(read5())
 
         return Bech32.encode(hrp(), int5s.toByteArray())
     }
@@ -81,14 +92,14 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
 
         val prefixes = mapOf(Block.RegtestGenesisBlock.hash to "lnbcrt", Block.TestnetGenesisBlock.hash to "lntb", Block.LivenetGenesisBlock.hash to "lnbc")
 
-        fun decodeTimestamp(input: List<Int5>): Long = input.take(7).fold(0L){ a, b -> 32 * a + b }
+        fun decodeTimestamp(input: List<Int5>): Long = input.take(7).fold(0L) { a, b -> 32 * a + b }
 
-        fun encodeTimestamp(input: Long) : List<Int5> {
+        fun encodeTimestamp(input: Long): List<Int5> {
             tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (acc.size == 7) acc.reversed() else loop(value / 32, acc + value.rem(32).toByte())
             return loop(input, listOf())
         }
 
-        fun read(input: String):  PaymentRequest {
+        fun read(input: String): PaymentRequest {
             val (hrp, data) = Bech32.decode(input)
             val prefix = prefixes.values.find { hrp.startsWith(it) } ?: throw IllegalArgumentException("unknown prefix $hrp")
             val amount = decodeAmount(hrp.drop(prefix.length))
@@ -112,12 +123,14 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                     val tag = input[0]
                     val len = 32 * input[1] + input[2]
                     val value = input.drop(3).take(len)
-                    when(tag) {
+                    when (tag) {
                         TaggedField.PaymentHash.tag -> tags.add(kotlin.runCatching { TaggedField.PaymentHash.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.Expiry.tag -> tags.add(kotlin.runCatching { TaggedField.Expiry.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.PaymentSecret.tag -> tags.add(kotlin.runCatching { TaggedField.PaymentSecret.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.Description.tag -> tags.add(kotlin.runCatching { TaggedField.Description.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
+                        TaggedField.DescriptionHash.tag -> tags.add(kotlin.runCatching { TaggedField.DescriptionHash.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.MinFinalCltvExpiry.tag -> tags.add(kotlin.runCatching { TaggedField.MinFinalCltvExpiry.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
+                        TaggedField.RoutingInfo.tag -> tags.add(kotlin.runCatching { TaggedField.RoutingInfo.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         else -> tags.add(TaggedField.UnknownTag(tag, value))
                     }
                     loop(input.drop(3 + len))
@@ -125,13 +138,13 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             }
 
             loop(data.drop(7).dropLast(104))
-            val pr =  PaymentRequest(prefix, amount, timestamp, nodeId, tags, sig)
+            val pr = PaymentRequest(prefix, amount, timestamp, nodeId, tags, sig)
             require(pr.preimage().contentEquals(tohash))
             return pr
         }
 
         fun decodeAmount(input: String): MilliSatoshi? {
-            val amount =  when {
+            val amount = when {
                 input.isEmpty() -> null
                 input.last() == 'p' -> MilliSatoshi(input.dropLast(1).toLong() / 10L)
                 input.last() == 'n' -> MilliSatoshi(input.dropLast(1).toLong() * 100L)
@@ -171,11 +184,13 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             (value and 8) != 0.toByte(),
             (value and 4) != 0.toByte(),
             (value and 2) != 0.toByte(),
-            (value and 1) != 0.toByte())
+            (value and 1) != 0.toByte()
+        )
 
         sealed class TaggedField {
             abstract val tag: Int5
-            abstract fun encode() : List<Int5>
+            abstract fun encode(): List<Int5>
+
             /**
              * Description
              *
@@ -193,6 +208,49 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                     fun decode(input: List<Int5>): Description {
                         val description = Bech32.five2eight(input.toTypedArray(), 0).toByteArray().decodeToString()
                         return Description(description)
+                    }
+                }
+            }
+
+            /**
+             * Mode IOd
+             *
+             * @param nodeId node id (public key) of the payee
+             */
+            data class NodeId(val nodeId: PublicKey) : TaggedField() {
+                override val tag: Int5 = Description.tag
+
+                override fun encode(): List<Int5> {
+                    return Bech32.eight2five(nodeId.value.toByteArray().toTypedArray()).toList()
+                }
+
+                companion object {
+                    const val tag: Int5 = 19
+                    fun decode(input: List<Int5>): NodeId {
+                        val bin = Bech32.five2eight(input.toTypedArray(), 0).toByteArray()
+                        return NodeId(PublicKey((bin)))
+                    }
+                }
+            }
+
+            /**
+             * Description hash
+             *
+             * @param hash sha256 hash of an associated description
+             */
+            data class DescriptionHash(val hash: ByteVector32) : TaggedField() {
+                override val tag: Int5 = DescriptionHash.tag
+
+                override fun encode(): List<Int5> {
+                    return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
+                }
+
+                companion object {
+                    const val tag: Int5 = 23
+                    fun decode(input: List<Int5>): DescriptionHash {
+                        require(input.size == 52)
+                        val hash = Bech32.five2eight(input.toTypedArray(), 0)
+                        return DescriptionHash(hash.toByteArray().toByteVector32())
                     }
                 }
             }
@@ -252,7 +310,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                 override val tag: Int5 = Expiry.tag
 
                 override fun encode(): List<Int5> {
-                    tailrec fun loop(value: Long, acc: List<Int5>) : List<Int5> = if (value == 0L) acc.reversed() else {
+                    tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
                         loop(value / 32, acc + (value.rem(32)).toByte())
                     }
                     return loop(expiry, listOf())
@@ -278,11 +336,12 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                 override val tag: Int5 = MinFinalCltvExpiry.tag
 
                 override fun encode(): List<Int5> {
-                    tailrec fun loop(value: Long, acc: List<Int5>) : List<Int5> = if (value == 0L) acc.reversed() else {
+                    tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
                         loop(value / 32, acc + (value.rem(32)).toByte())
                     }
                     return loop(cltvExpiry, listOf())
                 }
+
                 companion object {
                     const val tag: Int5 = 24
 
@@ -303,19 +362,52 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
              * @param feeProportionalMillionths node proportional fee
              * @param cltvExpiryDelta           node cltv expiry delta
              */
-            data class ExtraHop(val nodeId: PublicKey, val shortChannelId: ShortChannelId, val feeBase: MilliSatoshi, val feeProportionalMillionths: Long, val cltvExpiryDelta: CltvExpiryDelta)
+            @Serializable
+            data class ExtraHop(
+                @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
+                val shortChannelId: ShortChannelId,
+                val feeBase: MilliSatoshi,
+                val feeProportionalMillionths: Long,
+                val cltvExpiryDelta: CltvExpiryDelta
+            )
 
             /**
              * Routing Info
              *
-             * @param path one or more entries containing extra routing information for a private route
+             * @param hints extra routing information for a private route
              */
-            data class RoutingInfo(val path: List<ExtraHop>) : TaggedField() {
-                override val tag: Int5
-                    get() = TODO("Not yet implemented")
+            data class RoutingInfo(val hints: List<ExtraHop>) : TaggedField() {
+                override val tag: Int5 = RoutingInfo.tag
 
                 override fun encode(): List<Int5> {
-                    TODO("Not yet implemented")
+                    val out = ByteArrayOutput()
+                    hints.forEach {
+                        LightningSerializer.writeBytes(it.nodeId.value, out)
+                        LightningSerializer.writeU64(it.shortChannelId.toLong(), out)
+                        LightningSerializer.writeU32(it.feeBase.toLong().toInt(), out)
+                        LightningSerializer.writeU32(it.feeProportionalMillionths.toInt(), out)
+                        LightningSerializer.writeU16(it.cltvExpiryDelta.toInt(), out)
+                    }
+                    return Bech32.eight2five(out.toByteArray().toTypedArray()).toList()
+                }
+
+                companion object {
+                    const val tag: Int5 = 3
+
+                    fun decode(input: List<Int5>): RoutingInfo {
+                        val stream = ByteArrayInput(Bech32.five2eight(input.toTypedArray(), 0).toByteArray())
+                        val hints = ArrayList<ExtraHop>()
+                        while(stream.availableBytes >= 51) {
+                            val hint = ExtraHop(
+                                PublicKey(LightningSerializer.bytes(stream, 33)),
+                                ShortChannelId(LightningSerializer.u64(stream)),
+                                MilliSatoshi(LightningSerializer.u32(stream).toLong()),
+                                LightningSerializer.u32(stream).toLong(),
+                                CltvExpiryDelta(LightningSerializer.u16(stream)))
+                            hints.add(hint)
+                        }
+                        return RoutingInfo(hints)
+                    }
                 }
             }
 
@@ -323,14 +415,14 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
              * Unknown tag (may or may not be valid)
              */
             data class UnknownTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
-                override fun encode(): List<Int5>  = value.toList()
+                override fun encode(): List<Int5> = value.toList()
             }
 
             /**
              * Tag that we know is not valid (value is of the wrong length for example)
              */
             data class InvalidTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
-                override fun encode(): List<Int5>  = value.toList()
+                override fun encode(): List<Int5> = value.toList()
             }
         }
     }

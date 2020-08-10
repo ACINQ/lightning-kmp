@@ -6,8 +6,7 @@ import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
 import fr.acinq.eklair.channel.LocalParams
 import fr.acinq.eklair.crypto.LocalKeyManager
-import fr.acinq.eklair.db.TestDatabases
-import fr.acinq.eklair.io.Peer
+import fr.acinq.eklair.io.PeerChannels
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.OnionRoutingPacket
@@ -38,12 +37,12 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  TestFeeEstimator().setFeerate(10000),
+                feeEstimator =  TestFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
             ),
-            maxHtlcValueInFlightMsat = 150000000UL,
+            maxHtlcValueInFlightMsat = 150000000L,
             maxAcceptedHtlcs = 100,
             expiryDeltaBlocks = CltvExpiryDelta(144),
             fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
@@ -55,7 +54,6 @@ object TestConstants {
             feeProportionalMillionth = 10,
             reserveToFundingRatio = 0.01, // note: not used (overridden below)
             maxReserveToFundingRatio = 0.05,
-            db = TestDatabases(),
             revocationTimeout = 20,
             authTimeout = 10,
             initTimeout = 10,
@@ -75,7 +73,7 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
-        val channelParams: LocalParams = Peer.makeChannelParams(
+        val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
             null,
@@ -102,12 +100,12 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  TestFeeEstimator().setFeerate(10000),
+                feeEstimator =  TestFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
             ),
-            maxHtlcValueInFlightMsat = ULong.MAX_VALUE,
+            maxHtlcValueInFlightMsat = Long.MAX_VALUE,
             maxAcceptedHtlcs = 100,
             expiryDeltaBlocks = CltvExpiryDelta(144),
             fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
@@ -119,7 +117,6 @@ object TestConstants {
             feeProportionalMillionth = 10,
             reserveToFundingRatio = 0.01, // note: not used (overridden below)
             maxReserveToFundingRatio = 0.05,
-            db = TestDatabases(),
             revocationTimeout = 20,
             authTimeout = 10,
             initTimeout = 10,
@@ -139,7 +136,7 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
-        val channelParams: LocalParams = Peer.makeChannelParams(
+        val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
             null,
