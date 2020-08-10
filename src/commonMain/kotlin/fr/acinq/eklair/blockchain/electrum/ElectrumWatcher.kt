@@ -1,14 +1,12 @@
 package fr.acinq.eklair.blockchain.electrum
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.TxIn
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eklair.blockchain.*
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
+import fr.acinq.eklair.transactions.Scripts
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
@@ -46,8 +44,15 @@ private data class NotifyTxWithMeta(
     val txWithMeta: GetTxWithMetaResponse
 ) : WatcherAction()
 private data class RelayWatch(val watch: Watch) : WatcherAction()
+private data class RethrowWatchConfirmed(
+    val parentTxid: ByteVector32,
+    val parentPublicKeyScript: ByteVector,
+    val minDepth: Long,
+    val bitcoinParentTxConfirmed: BITCOIN_PARENT_TX_CONFIRMED
+) : WatcherAction()
 private data class RelayGetTxWithMeta(val txid: ByteVector32, val listener: SendChannel<GetTxWithMetaResponse>) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
+private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
 /**
  * [WatcherState] State
@@ -304,27 +309,34 @@ private data class WatcherRunning(
             }
             is GetTxWithMetaEvent -> returnState(AskForTransaction(event.txid, event.listener))
             is PublishEvent -> {
-                /* TODO
-                      val blockCount = this.blockCount.get()
-                      val cltvTimeout = Scripts.cltvTimeout(tx)
-                      val csvTimeout = Scripts.csvTimeout(tx)
-                      if (csvTimeout > 0) {
-                        require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
-                        val parentTxid = tx.txIn(0).outPoint.txid
-                        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
-                        val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
-                        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
-                      } else if (cltvTimeout > blockCount) {
-                        log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
-                        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
-                        context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
-                      } else {
-                        log.info(s"publishing tx=$tx")
-                        client ! ElectrumClient.BroadcastTransaction(tx)
-                        context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
-                      }
-                 */
-                returnState()
+                // TODO to be tested
+                val tx = event.publishAsap.tx
+                val blockCount = height
+                val cltvTimeout = Scripts.cltvTimeout(tx)
+                val csvTimeout = Scripts.csvTimeout(tx)
+
+                when {
+                    csvTimeout > 0 -> {
+                        require(tx.txIn.size == 1) { "watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs" }
+                        val parentTxid = tx.txIn[0].outPoint.txid
+                        logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
+                        val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
+                        returnState(RethrowWatchConfirmed(parentTxid, parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx)))
+                    }
+                    cltvTimeout > blockCount -> {
+                        logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
+                        val updatedBlock2tx = block2tx.toMutableMap()
+                        updatedBlock2tx[cltvTimeout] = block2tx.getOrElse(cltvTimeout) { listOf(tx) }
+                        newState(copy(block2tx = updatedBlock2tx))
+                    }
+                    else -> {
+                        logger.info { "publishing tx=$tx" }
+                        newState {
+                            state = copy(sent = sent.apply { add(tx) })
+                            actions = listOf(BroadcastTxAction(tx))
+                        }
+                    }
+                }
             }
             /*
             TODO
@@ -413,11 +425,13 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
     private val watchChannel = Channel<Watch>(Channel.BUFFERED)
+    private val watchEventChannel = Channel<WatchEvent>(Channel.BUFFERED)
     private val electrumMessageChannel = Channel<ElectrumMessage>(Channel.BUFFERED)
 
     private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
         launch { watchChannel.consumeEach { send(it) } }
+        launch { watchEventChannel.consumeEach { send(it) } }
         launch { electrumMessageChannel.consumeEach { send(it) } }
     }
 
@@ -449,6 +463,13 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                                 ScriptHashSubscription(action.scriptHash), electrumMessageChannel
                             )
                             is PublishAsapAction -> eventChannel.send(PublishEvent(action.publishAsap))
+// TODO
+//                            is BroadcastTxAction -> TODO()
+//                            is RethrowWatchConfirmed -> {
+//                                val w = WatchConfirmed(watchEventChannel, ByteVector32.Zeroes, action.parentTxid,action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
+////                                eventChannel.send(WatchConfirmed(Watch))
+//                                TODO()
+//                            }
                             is AskForScriptHashHistory -> client.sendElectrumRequest(
                                 GetScriptHashHistory(action.scriptHash), electrumMessageChannel
                             )
