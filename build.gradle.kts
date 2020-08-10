@@ -178,8 +178,9 @@ when {
     }
     currentOs.isMacOsX -> {
         val iosX64Test by tasks.getting(KotlinNativeTest::class) {
-            dependsOn(dockerTestEnv)
-            finalizedBy(dockerCleanup)
+            filter.excludeTestsMatching("*IntegrationTest")
+//            dependsOn(dockerTestEnv)
+//            finalizedBy(dockerCleanup)
         }
     }
 }
