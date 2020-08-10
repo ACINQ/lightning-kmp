@@ -1,27 +1,21 @@
 package fr.acinq.eklair
 
 import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
-import fr.acinq.eklair.channel.State
-import fr.acinq.eklair.crypto.KeyManager
+import fr.acinq.eklair.channel.NewBlock
 import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.*
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
-import fr.acinq.eklair.wire.Tlv
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.serialization.*
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.modules.SerializersModule
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
@@ -76,28 +70,28 @@ object Node {
         enableTrampolinePayment = true
     )
 
-    private val serializationModules = SerializersModule {
-        include(Tlv.serializationModule)
-        include(KeyManager.serializationModule)
-
-        include(TestFeeEstimator.testSerializationModule)
-    }
-
-    private val json = Json {
-//        prettyPrint = true
-        serializersModule = serializationModules
-    }
-
-    private val cbor = Cbor {
-        serializersModule = serializationModules
-    }
-
-    private val mapSerializer = MapSerializer(ByteVector32KSerializer, State.serializer())
+//    private val serializationModules = SerializersModule {
+//        include(Tlv.serializationModule)
+//        include(KeyManager.serializationModule)
+//
+//        include(TestFeeEstimator.testSerializationModule)
+//    }
+//
+//    private val json = Json {
+////        prettyPrint = true
+//        serializersModule = serializationModules
+//    }
+//
+//    private val cbor = Cbor {
+//        serializersModule = serializationModules
+//    }
+//
+//    private val mapSerializer = MapSerializer(ByteVector32KSerializer, State.serializer())
 
     @JvmStatic
     fun main(args: Array<String>) {
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
-        val nodeId = PublicKey.fromHex("02d684ecbdbde1b556715a4a56186dfe045df1a0d18fe632843299254b482df7d9")
+        val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
         val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId)
 
         val commandChannel = Channel<List<String>>(2)
@@ -108,28 +102,28 @@ object Node {
             }
         }
 
-        suspend fun channelsLoop() {
-            try {
-                peer.openChannelsSubscription().consumeEach {
-                    println("===== Original =====")
-                    println(it)
-                    println("===== JSON =====")
-                    val jsonStr = json.encodeToString(mapSerializer, it)
-                    println(jsonStr)
-                    println("===== CBOR =====")
-                    val cborHex = cbor.encodeToHexString(mapSerializer, it)
-                    println(cborHex)
-                    println("===== Decoded =====")
-                    val states = cbor.decodeFromHexString(mapSerializer, cborHex)
-                    println(states)
-                    println("===== Decoded is equal to original? =====")
-                    println(states == it)
-                    println("===== THE END! =====")
-                }
-            } catch (ex: Throwable) {
-                ex.printStackTrace()
-            }
-        }
+//        suspend fun channelsLoop() {
+//            try {
+//                peer.openChannelsSubscription().consumeEach {
+//                    println("===== Original =====")
+//                    println(it)
+//                    println("===== JSON =====")
+//                    val jsonStr = json.encodeToString(mapSerializer, it)
+//                    println(jsonStr)
+//                    println("===== CBOR =====")
+//                    val cborHex = cbor.encodeToHexString(mapSerializer, it)
+//                    println(cborHex)
+//                    println("===== Decoded =====")
+//                    val states = cbor.decodeFromHexString(mapSerializer, cborHex)
+//                    println(states)
+//                    println("===== Decoded is equal to original? =====")
+//                    println(states == it)
+//                    println("===== THE END! =====")
+//                }
+//            } catch (ex: Throwable) {
+//                ex.printStackTrace()
+//            }
+//        }
 
         suspend fun eventLoop() {
             peer.openListenerEventSubscription().consumeEach {
@@ -140,10 +134,12 @@ object Node {
         suspend fun readLoop() {
             println("node ${nodeParams.nodeId} is ready:")
             for(tokens in commandChannel) {
+                println("got tokens $tokens")
                 when (tokens.first()) {
                     "connect" -> {
                         val host = tokens[1]
                         val port = tokens[2].toInt()
+                        println("connecting")
                         GlobalScope.launch { peer.connect(host, port) }
                     }
                     "receive" -> {
@@ -154,6 +150,11 @@ object Node {
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
                         peer.send(SendPayment(invoice))
+                    }
+                    "newblock" -> {
+                        val height = tokens[1].toInt()
+                        val header = BlockHeader.read(tokens[2])
+                        peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(height, header)))
                     }
                     else -> {
                         println("I don't understand $tokens")
@@ -167,6 +168,7 @@ object Node {
                 val line = readLine()
                 line?.let {
                     val tokens = it.split(" ")
+                    println("tokens: $tokens")
                     commandChannel.send(tokens)
                 }
             }
@@ -176,10 +178,8 @@ object Node {
             launch { readLoop() }
             launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
             launch { connectLoop() }
-            launch { channelsLoop() }
+            //launch { channelsLoop() }
             launch { eventLoop() }
         }
     }
-
 }
-

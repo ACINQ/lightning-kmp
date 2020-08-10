@@ -16,7 +16,6 @@ import fr.acinq.eklair.wire.*
 import fr.acinq.eklair.wire.Init
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,8 +24,8 @@ class CommitmentsTests {
     val logger = LoggerFactory.default.newLogger(Logger.Tag(CommitmentSpecTestsCommon::class))
 
     fun reachNormal(): Pair<Normal, Normal> {
-        var alice: State = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
-        var bob: State = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
+        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
+        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
         val channelFlags = 0.toByte()
         val channelVersion = ChannelVersion.STANDARD
         val aliceInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
@@ -155,7 +154,7 @@ class CommitmentsTests {
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - fee)
 
-        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac3.availableBalanceForSend(), a - p - fee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
@@ -167,7 +166,7 @@ class CommitmentsTests {
         assertEquals(ac4.availableBalanceForSend(), a - p - fee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
-        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - fee)
 
@@ -188,7 +187,7 @@ class CommitmentsTests {
         assertEquals(ac6.availableBalanceForSend(), a - p)
         assertEquals(ac6.availableBalanceForReceive(), b + p)
 
-        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(bc7.availableBalanceForSend(), b + p)
         assertEquals(bc7.availableBalanceForReceive(), a - p)
 
@@ -200,7 +199,7 @@ class CommitmentsTests {
         assertEquals(bc8.availableBalanceForSend(), b + p)
         assertEquals(bc8.availableBalanceForReceive(), a - p)
 
-        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac8.availableBalanceForSend(), a - p)
         assertEquals(ac8.availableBalanceForReceive(), b + p)
     }
@@ -242,7 +241,7 @@ class CommitmentsTests {
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - fee)
 
-        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac3 = (ac2.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac3.availableBalanceForSend(), a - p - fee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
@@ -254,7 +253,7 @@ class CommitmentsTests {
         assertEquals(ac4.availableBalanceForSend(), a - p - fee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
-        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val bc4 = (bc3.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - fee)
 
@@ -275,7 +274,7 @@ class CommitmentsTests {
         assertEquals(ac6.availableBalanceForSend(), a)
         assertEquals(ac6.availableBalanceForReceive(), b)
 
-        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val bc7 = (bc6.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(bc7.availableBalanceForSend(), b)
         assertEquals(bc7.availableBalanceForReceive(), a)
 
@@ -287,7 +286,7 @@ class CommitmentsTests {
         assertEquals(bc8.availableBalanceForSend(), b)
         assertEquals(bc8.availableBalanceForReceive(), a)
 
-        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac8 = (ac7.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac8.availableBalanceForSend(), a)
         assertEquals(ac8.availableBalanceForReceive(), b)
     }
@@ -350,7 +349,7 @@ class CommitmentsTests {
         assertEquals(bc4.availableBalanceForSend(), b - p3)
         assertEquals(bc4.availableBalanceForReceive(), a - p1 - fee - p2 - fee)
 
-        val ac5 = (ac4.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac5 = (ac4.receiveRevocation(revocation1) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac5.availableBalanceForSend(), a - p1 - fee - p2 - fee)
         assertEquals(ac5.availableBalanceForReceive(), b - p3)
 
@@ -362,7 +361,7 @@ class CommitmentsTests {
         assertEquals(ac6.availableBalanceForSend(), a - p1 - fee - p2 - fee - fee) // alice has acknowledged b's hltc so it needs to pay the fee for it
         assertEquals(ac6.availableBalanceForReceive(), b - p3)
 
-        val bc6 = (bc5.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val bc6 = (bc5.receiveRevocation(revocation2) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(bc6.availableBalanceForSend(), b - p3)
         assertEquals(bc6.availableBalanceForReceive(), a - p1 - fee - p2 - fee - fee)
 
@@ -374,7 +373,7 @@ class CommitmentsTests {
         assertEquals(bc7.availableBalanceForSend(), b - p3)
         assertEquals(bc7.availableBalanceForReceive(), a - p1 - fee - p2 - fee - fee)
 
-        val ac8 = (ac7.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac8 = (ac7.receiveRevocation(revocation3) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac8.availableBalanceForSend(), a - p1 - fee - p2 - fee - fee)
         assertEquals(ac8.availableBalanceForReceive(), b - p3)
 
@@ -413,7 +412,7 @@ class CommitmentsTests {
         assertEquals(bc11.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc11.availableBalanceForReceive(), a - p1 - fee - p2 - fee + p3)
 
-        val ac13 = (ac12.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac13 = (ac12.receiveRevocation(revocation4) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac13.availableBalanceForSend(), a - p1 - fee - p2 - fee + p3)
         assertEquals(ac13.availableBalanceForReceive(), b + p1 - p3)
 
@@ -425,7 +424,7 @@ class CommitmentsTests {
         assertEquals(ac14.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac14.availableBalanceForReceive(), b + p1 - p3)
 
-        val bc13 = (bc12.receiveRevocation(revocation5) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val bc13 = (bc12.receiveRevocation(revocation5) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(bc13.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc13.availableBalanceForReceive(), a - p1 + p3)
 
@@ -437,7 +436,7 @@ class CommitmentsTests {
         assertEquals(bc14.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc14.availableBalanceForReceive(), a - p1 + p3)
 
-        val ac16 = (ac15.receiveRevocation(revocation6) as Try.Success<Pair<Commitments, List<Action>>>).result.first
+        val ac16 = (ac15.receiveRevocation(revocation6) as Try.Success<Pair<Commitments, List<ChannelAction>>>).result.first
         assertEquals(ac16.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac16.availableBalanceForReceive(), b + p1 - p3)
     }

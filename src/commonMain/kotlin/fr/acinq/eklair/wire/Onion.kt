@@ -132,12 +132,38 @@ sealed class TrampolinePacket : PacketType()
 
 sealed class PerHopPayload
 
-sealed class FinalPayload : PerHopPayload() {
+sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload> {
     abstract val amount: MilliSatoshi
     abstract val expiry: CltvExpiry
     abstract val paymentSecret: ByteVector32?
     abstract val totalAmount: MilliSatoshi
 
+    override fun serializer(): LightningSerializer<FinalPayload> = FinalPayload
+
+    companion object: LightningSerializer<FinalPayload>() {
+        override val tag: Long
+            get() = TODO("Not yet implemented")
+
+        override fun read(input: Input): FinalPayload {
+            // TODO: handle other types of payloads
+            val realm = byte(input)
+            require(realm == 0){ "invalid realm "}
+            bytes(input, 8)
+            val amount = MilliSatoshi(u64(input))
+            val expiry = CltvExpiry(u32(input).toLong())
+            bytes(input, 12)
+            return FinalLegacyPayload(amount, expiry)
+        }
+
+        override fun write(message: FinalPayload, out: Output) {
+            // TODO: handle other types of payloads
+            writeByte(0, out) // realm is always 0
+            writeBytes(ByteArray(8), out)
+            writeU64(message.amount.toLong(), out)
+            writeU32(message.expiry.toLong().toInt(), out)
+            writeBytes(ByteArray(12), out)
+        }
+    }
 }
 
 data class FinalLegacyPayload(override val amount: MilliSatoshi, override val expiry: CltvExpiry) : FinalPayload() {
@@ -176,3 +202,12 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
     }
 }
 
+object Onion {
+    fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32? = null, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload {
+        return when {
+            paymentSecret == null && userCustomTlvs.isNotEmpty() -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry)), userCustomTlvs))
+            paymentSecret == null -> FinalLegacyPayload(amount, expiry)
+            else -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
+        }
+    }
+}

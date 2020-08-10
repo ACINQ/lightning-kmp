@@ -28,7 +28,7 @@ import org.kodein.log.LoggerFactory
  * Channel Event (inputs to be fed to the state machine)
  */
 @Serializable
-sealed class Event
+sealed class ChannelEvent
 
 @Serializable
 data class InitFunder(
@@ -41,33 +41,33 @@ data class InitFunder(
     val remoteInit: Init,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion
-) : Event()
+) : ChannelEvent()
 
-data class InitFundee(val temporaryChannelId: ByteVector32, val localParams: LocalParams, val remoteInit: Init) : Event()
-data class MessageReceived(val message: LightningMessage) : Event()
-data class WatchReceived(val watch: WatchEvent) : Event()
-data class ExecuteCommand(val command: Command) : Event()
-data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : Event()
-data class NewBlock(val height: Int, val Header: BlockHeader): Event()
+data class InitFundee(val temporaryChannelId: ByteVector32, val localParams: LocalParams, val remoteInit: Init) : ChannelEvent()
+data class MessageReceived(val message: LightningMessage) : ChannelEvent()
+data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
+data class ExecuteCommand(val command: Command) : ChannelEvent()
+data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
+data class NewBlock(val height: Int, val Header: BlockHeader): ChannelEvent()
 
 /**
  * Channel Actions (outputs produced by the state machine)
  */
-sealed class Action
-data class SendMessage(val message: LightningMessage) : Action()
-data class SendWatch(val watch: Watch) : Action()
-data class ProcessCommand(val command: Command) : Action()
-data class ProcessAdd(val add: UpdateAddHtlc): Action()
-data class ProcessFail(val fail: UpdateFailHtlc): Action()
-data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc): Action()
-data class StoreState(val data: State) : Action()
+sealed class ChannelAction
+data class SendMessage(val message: LightningMessage) : ChannelAction()
+data class SendWatch(val watch: Watch) : ChannelAction()
+data class ProcessCommand(val command: Command) : ChannelAction()
+data class ProcessAdd(val add: UpdateAddHtlc): ChannelAction()
+data class ProcessFail(val fail: UpdateFailHtlc): ChannelAction()
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc): ChannelAction()
+data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
-data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): Action()
-data class HandleError(val error: Throwable) : Action()
-data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : Action()
-data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : Action()
-data class PublishTx(val tx: Transaction): Action()
-data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : Action()
+data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): ChannelAction()
+data class HandleError(val error: Throwable) : ChannelAction()
+data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : ChannelAction()
+data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelAction()
+data class PublishTx(val tx: Transaction): ChannelAction()
+data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : ChannelAction()
 
 /**
  * channel static parameters
@@ -79,7 +79,7 @@ data class StaticParams(val nodeParams: NodeParams, @Serializable(with = PublicK
  * Channel state
  */
 @Serializable
-sealed class State {
+sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
     val currentBlockHeight: Int get() = currentTip.first
@@ -89,7 +89,7 @@ sealed class State {
      * @param event input event (for example, a message was received, a command was sent by the GUI/API, ...
      * @return a (new state, list of actions) pair
      */
-    abstract fun process(event: Event): Pair<State, List<Action>>
+    abstract fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>>
 
     @Transient
     val logger = LoggerFactory.default.newLogger(Logger.Tag(Channel::class))
@@ -102,8 +102,8 @@ interface HasCommitments {
 }
 
 @Serializable
-data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>) : State() {
-    override fun process(event: Event): Pair<State, List<Action>> {
+data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is InitFundee -> {
                 val nextState = WaitForOpenChannel(staticParams, currentTip, event.temporaryChannelId, event.localParams, event.remoteInit)
@@ -165,8 +165,8 @@ data class WaitForOpenChannel(
     @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteInit: Init
-) : State() {
-    override fun process(event: Event): Pair<State, List<Action>> {
+) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
                 when (event.message) {
@@ -268,8 +268,8 @@ data class WaitForFundingCreated(
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
     val lastSent: AcceptChannel
-) : State() {
-    override fun process(event: Event): Pair<State, List<Action>> {
+) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
                 when (event.message) {
@@ -377,8 +377,8 @@ data class WaitForFundingCreated(
 }
 
 @Serializable
-data class WaitForAcceptChannel(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, val initFunder: InitFunder, val lastSent: OpenChannel) : State() {
-    override fun process(event: Event): Pair<State, List<Action>> {
+data class WaitForAcceptChannel(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, val initFunder: InitFunder, val lastSent: OpenChannel) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived && event.message is AcceptChannel -> {
                 val result = fr.acinq.eklair.utils.runTrying {
@@ -442,8 +442,8 @@ data class WaitForFundingInternal(
     @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
     val channelVersion: ChannelVersion,
     val lastSent: OpenChannel
-) : State() {
-    override fun process(event: Event): Pair<State, List<Action>> {
+) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MakeFundingTxResponse -> {
                 // let's create the first commitment tx that spends the yet uncommitted funding tx
@@ -512,8 +512,8 @@ data class WaitForFundingSigned(
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
     val lastSent: FundingCreated
-) : State() {
-    override fun process(event: Event): Pair<State, List<Action>> {
+) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived && event.message is FundingSigned -> {
                 // we make sure that their sig checks out and that our first commit tx is spendable
@@ -570,9 +570,9 @@ data class WaitForFundingConfirmed(
     val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
-) : State(), HasCommitments {
+) : ChannelState(), HasCommitments {
 
-    override fun process(event: Event): Pair<State, List<Action>> {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
                 when (event.message) {
@@ -632,8 +632,8 @@ data class WaitForFundingLocked(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
-) : State(), HasCommitments {
-    override fun process(event: Event): Pair<State, List<Action>> {
+) : ChannelState(), HasCommitments {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
                 when (event.message) {
@@ -700,8 +700,8 @@ data class Normal(
     val channelUpdate: ChannelUpdate,
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?
-) : State(), HasCommitments {
-    override fun process(event: Event): Pair<State, List<Action>> {
+) : ChannelState(), HasCommitments {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is ExecuteCommand -> {
                 when (event.command) {
@@ -713,9 +713,9 @@ data class Normal(
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                   actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                   actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -728,9 +728,9 @@ data class Normal(
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -743,9 +743,9 @@ data class Normal(
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -821,9 +821,9 @@ data class Normal(
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
                                 }
-                                var actions = listOf<Action>(SendMessage(result.result.second))
+                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (result.result.first.localHasChanges()) {
-                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(this.copy(commitments = result.result.first), actions)
                             }
@@ -835,9 +835,9 @@ data class Normal(
                             is Try.Success -> {
                                 // TODO: handle shutdown
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<Action>(StoreState(newState)) + result.result.second
+                                var actions = listOf<ChannelAction>(StoreState(newState)) + result.result.second
                                 if (result.result.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
-                                    actions += listOf<Action>(ProcessCommand(CMD_SIGN))
+                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -848,6 +848,11 @@ data class Normal(
                         Pair(this, listOf())
                     }
                 }
+            }
+            is NewBlock -> {
+                logger.info { "new tip ${event.height} ${event.Header}" }
+                val newState = this.copy(currentTip = Pair(event.height, event.Header))
+                Pair(newState, listOf())
             }
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
