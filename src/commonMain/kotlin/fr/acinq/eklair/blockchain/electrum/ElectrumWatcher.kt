@@ -7,11 +7,13 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScrip
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
 import fr.acinq.eklair.transactions.Scripts
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
+import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.simplePrintFrontend
 import org.kodein.log.newLogger
@@ -19,9 +21,10 @@ import kotlin.math.absoluteValue
 
 sealed class WatcherEvent
 private object StartWatcher: WatcherEvent()
-private class PublishEvent(val publishAsap: PublishAsap) : WatcherEvent()
+private class PublishAsapEvent(val publishAsap: PublishAsap) : WatcherEvent()
 class GetTxWithMetaEvent(val txid: ByteVector32, val listener: SendChannel<GetTxWithMetaResponse>) : WatcherEvent()
 private class ReceiveWatch(val watch: Watch) : WatcherEvent()
+private class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
 private class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
 
 private sealed class WatcherAction
@@ -76,9 +79,9 @@ private sealed class WatcherState {
 }
 private data class WatcherDisconnected(
     val watches: Set<Watch> = setOf(),
-    val publishQueue: ArrayDeque<PublishAsap> = ArrayDeque(),
+    val publishQueue: List<PublishAsap> = emptyList(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
-    val getTxQueue: ArrayDeque<Pair<GetTxWithMeta, SendChannel<GetTxWithMetaResponse>>> = ArrayDeque()
+    val getTxQueue: List<Pair<GetTxWithMeta, SendChannel<GetTxWithMetaResponse>>> = emptyList()
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when(event) {
@@ -86,7 +89,6 @@ private data class WatcherDisconnected(
             is ReceivedMessage -> when (val message = event.message) {
                 is ElectrumClientReady -> returnState(action = RegisterToHeaderNotification)
                 is HeaderSubscriptionResponse -> {
-                    // TODO actions for watches / publishQueue / getTxQueue?
                     newState {
                         state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx))
                         actions = buildList {
@@ -99,14 +101,14 @@ private data class WatcherDisconnected(
                 else -> returnState()
             }
             is ReceiveWatch -> newState(copy(watches = watches + event.watch))
-            is PublishEvent -> {
-                publishQueue.add(event.publishAsap)
-                returnState()
+            is PublishAsapEvent -> {
+                newState(copy(publishQueue = publishQueue + event.publishAsap))
             }
             is GetTxWithMetaEvent -> {
-                getTxQueue.add(GetTxWithMeta(event.txid) to event.listener)
-                returnState()
+
+                newState(copy(getTxQueue = getTxQueue + (GetTxWithMeta(event.txid) to event.listener)))
             }
+            else -> unhandled(event)
         }
 }
 
@@ -116,7 +118,7 @@ private data class WatcherRunning(
     val watches: Set<Watch> = setOf(),
     val scriptHashStatus: Map<ByteVector32, String> = mapOf(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
-    val sent: ArrayDeque<Transaction> = ArrayDeque()
+    val sent: List<Transaction> = ArrayDeque()
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
@@ -300,7 +302,7 @@ private data class WatcherRunning(
                     message is ElectrumClientClosed -> newState(
                         WatcherDisconnected(
                             watches = watches,
-                            publishQueue = ArrayDeque(sent.map { PublishAsap(it) }),
+                            publishQueue = sent.map { PublishAsap(it) },
                             block2tx = block2tx
                         )
                     )
@@ -308,7 +310,7 @@ private data class WatcherRunning(
                 }
             }
             is GetTxWithMetaEvent -> returnState(AskForTransaction(event.txid, event.listener))
-            is PublishEvent -> {
+            is PublishAsapEvent -> {
                 // TODO to be tested
                 val tx = event.publishAsap.tx
                 val blockCount = height
@@ -332,30 +334,12 @@ private data class WatcherRunning(
                     else -> {
                         logger.info { "publishing tx=$tx" }
                         newState {
-                            state = copy(sent = sent.apply { add(tx) })
+                            state = copy(sent = sent + tx)
                             actions = listOf(BroadcastTxAction(tx))
                         }
                     }
                 }
             }
-            /*
-            TODO
-                case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
-              log.info(s"parent tx of txid=${tx.txid} has been confirmed")
-              val blockCount = this.blockCount.get()
-              val csvTimeout = Scripts.csvTimeout(tx)
-              val absTimeout = blockHeight + csvTimeout
-              if (absTimeout > blockCount) {
-                log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
-                val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
-                context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
-              } else {
-                log.info(s"publishing tx=$tx")
-                client ! ElectrumClient.BroadcastTransaction(tx)
-                context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
-              }
-
-             */
             is ReceiveWatch -> when (val watch = event.watch) {
                 in watches -> returnState()
                 is WatchSpent -> {
@@ -378,31 +362,33 @@ private data class WatcherRunning(
                 }
                 else -> returnState()
             }
+            is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
+                is WatchEventConfirmed -> {
+                    // TODO to be tested
+                    val tx = watchEvent.tx
+                    val blockHeight = watchEvent.blockHeight
+                    logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
+                    val blockCount = height
+                    val csvTimeout = Scripts.csvTimeout(tx)
+                    val absTimeout = blockHeight + csvTimeout
+                    if (absTimeout > blockCount) {
+                        logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)" }
+                        val updatedBlock2tx = block2tx.toMutableMap()
+                        updatedBlock2tx[absTimeout] = block2tx.getOrElse(absTimeout) { listOf(tx) }
+                        newState(copy(block2tx = updatedBlock2tx))
+                    } else {
+                        logger.info { "publishing tx=$tx" }
+                        newState {
+                            state = copy(sent = sent + tx)
+                            actions = listOf(BroadcastTxAction(tx))
+                        }
+                    }
+                    returnState()
+                }
+                else -> unhandled(event)
+            }
             else -> unhandled(event)
         }
-    /*
-    - OK:
-        case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) if tip == newtip => ()
-        case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip)
-        case watch: Watch if watches.contains(watch) => ()
-        case watch@WatchConfirmed(_, txid, publicKeyScript, _, _)
-        case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _)
-        case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _)
-        case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status)
-        case ElectrumClient.GetScriptHashHistoryResponse(_, history)
-        case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem))
-        case ElectrumClient.GetTransactionResponse(tx, Some(origin: ActorRef))
-        case ElectrumClient.ServerError(ElectrumClient.GetTransaction(txid, Some(origin: ActorRef)), _)
-        case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction))
-        case GetTxWithMeta(txid)
-        case ElectrumClient.ElectrumDisconnected
-        case ElectrumClient.BroadcastTransactionResponse(tx, error_opt)
-    - TODO:
-        case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _)
-        case PublishAsap(tx)
-    - later:
-        case Terminated(actor)
-     */
 }
 
 private fun WatcherState.unhandled(message: WatcherEvent) : Pair<WatcherState, List<WatcherAction>> =
@@ -462,14 +448,14 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                             is RegisterToScriptHashNotification -> client.sendElectrumRequest(
                                 ScriptHashSubscription(action.scriptHash), electrumMessageChannel
                             )
-                            is PublishAsapAction -> eventChannel.send(PublishEvent(action.publishAsap))
-// TODO
-//                            is BroadcastTxAction -> TODO()
-//                            is RethrowWatchConfirmed -> {
-//                                val w = WatchConfirmed(watchEventChannel, ByteVector32.Zeroes, action.parentTxid,action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
-////                                eventChannel.send(WatchConfirmed(Watch))
-//                                TODO()
-//                            }
+                            is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.publishAsap))
+                            is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx), null)
+                            is RethrowWatchConfirmed -> {
+                                eventChannel.send(ReceiveWatch(
+                                    WatchConfirmed(watchEventChannel, ByteVector32.Zeroes, action.parentTxid,
+                                        action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
+                                ))
+                            }
                             is AskForScriptHashHistory -> client.sendElectrumRequest(
                                 GetScriptHashHistory(action.scriptHash), electrumMessageChannel
                             )
@@ -490,6 +476,10 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                 is Watch -> {
                     logger.info { "Watch received: $input" }
                     if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatch(input))
+                }
+                is WatchEvent -> {
+                    logger.info { "WatchEvent received: $input" }
+                    if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatchEvent(input))
                 }
                 is ElectrumMessage -> {
                     logger.info { "Electrum message received: $input" }
@@ -516,6 +506,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     fun stop() {
 //        client.sendMessage(UnsubscribeListener(electrumMessageChannel))// TODO?
         electrumMessageChannel.close()
+        watchEventChannel.close()
         watchChannel.close()
         eventChannel.close()
         input.cancel()
