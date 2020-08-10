@@ -297,7 +297,7 @@ class ElectrumWatcherIntegrationTest {
         client.stop()
     }
 
-//    @Test
+    @Test
     fun `get transaction`() = runTest {
         // Run on a production server
         val electrumClient = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
