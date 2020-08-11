@@ -3,6 +3,7 @@ package fr.acinq.eklair.blockchain.electrum
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
+import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
@@ -39,7 +40,7 @@ class ElectrumClientIntegrationTest {
         .map { it.toByteVector32() }
 
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
-        val client = ElectrumClient("electrum.acinq.co", 50002, true, this).apply { start() }
+        val client = ElectrumClient("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES, this).apply { start() }
         val channel = Channel<ElectrumMessage>()
         client.sendMessage(ElectrumStatusSubscription(channel))
 

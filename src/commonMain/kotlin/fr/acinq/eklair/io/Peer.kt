@@ -70,7 +70,7 @@ class Peer(
 
     suspend fun connect(address: String, port: Int) {
         logger.info { "connecting to {$remoteNodeId}@{$address}" }
-        val socket = socketBuilder.connect(address, port, tls = false)
+        val socket = socketBuilder.connect(address, port)
         val priv = nodeParams.keyManager.nodeKey.privateKey
         val pub = priv.publicKey()
         val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())

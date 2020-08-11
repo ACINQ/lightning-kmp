@@ -18,7 +18,7 @@ class TcpSocketIntegrationTest {
     @Ignore // TODO activate this test with docker env
     fun `TCP connection`() = runTest {
         withTimeout(5_000) {
-            val socket = TcpSocket.Builder().connect("localhost", 51001, false)
+            val socket = TcpSocket.Builder().connect("localhost", 51001)
             socket.send(serverVersionRpc)
             val size = socket.receiveAvailable(ByteArray(32))
             assertTrue { size > 0 }
@@ -27,10 +27,9 @@ class TcpSocketIntegrationTest {
     }
 
     @Test
-    @Ignore // TODO SSL handshake fails on iOS
     fun `SSL connection`() = runTest {
         withTimeout(5_000) {
-            val socket = TcpSocket.Builder().connect("electrum.acinq.co", 50002, true)
+            val socket = TcpSocket.Builder().connect("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
             socket.send(serverVersionRpc)
             val size = socket.receiveAvailable(ByteArray(32))
             assertTrue { size > 0 }

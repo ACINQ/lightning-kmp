@@ -8,7 +8,11 @@ import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.withContext
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import java.net.SocketException
+import java.security.cert.X509Certificate
+import javax.net.ssl.X509TrustManager
 
 class JvmTcpSocket(val socket: Socket) : TcpSocket {
     private val readChannel = socket.openReadChannel()
@@ -47,12 +51,22 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 @OptIn(KtorExperimentalAPI::class)
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     val selectorManager = ActorSelectorManager(Dispatchers.IO)
-    override suspend fun connect(host: String, port: Int, tls: Boolean): TcpSocket =
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
         withContext(Dispatchers.IO) {
             JvmTcpSocket(
-                aSocket(selectorManager).tcp().connect(host, port).let {
-                    if (tls) it.tls(Dispatchers.IO)
-                    else it
+                aSocket(selectorManager).tcp().connect(host, port).let { socket ->
+                    when (tls) {
+                        null -> socket
+                        TcpSocket.TLS.SAFE -> socket.tls(Dispatchers.IO)
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
+                            LoggerFactory.default.newLogger(JvmTcpSocket::class).warning { "Using unsafe TLS!" }
+                            trustManager = object : X509TrustManager {
+                                override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
+                                override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
+                                override fun getAcceptedIssuers(): Array<X509Certificate>? = null
+                            }
+                        }
+                    }
                 }
             )
         }

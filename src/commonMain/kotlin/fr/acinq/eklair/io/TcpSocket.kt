@@ -28,8 +28,12 @@ interface TcpSocket {
 
     fun close()
 
-    fun interface Builder {
-        suspend fun connect(host: String, port: Int, tls: Boolean): TcpSocket
+    enum class TLS {
+        SAFE, UNSAFE_CERTIFICATES
+    }
+
+    interface Builder {
+        suspend fun connect(host: String, port: Int, tls: TLS? = null): TcpSocket
 
         companion object {
             operator fun invoke(): Builder = PlatformSocketBuilder

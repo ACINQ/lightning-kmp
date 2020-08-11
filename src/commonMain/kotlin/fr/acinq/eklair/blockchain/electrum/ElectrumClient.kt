@@ -211,7 +211,7 @@ private fun ClientState.returnState(vararg actions: ElectrumClientAction): Pair<
 class ElectrumClient(
     private val host: String,
     private val port: Int,
-    private val tls: Boolean,
+    private val tls: TcpSocket.TLS?,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 

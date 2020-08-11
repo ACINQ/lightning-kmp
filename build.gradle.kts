@@ -158,28 +158,33 @@ afterEvaluate {
 /*
 Electrum integration test environment + tasks configuration
  */
+var cleanUpNeeded = false
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir
     commandLine("bash", "docker-env.sh")
+    doLast { cleanUpNeeded = true }
 }
-val dockerCleanup: Task by tasks.creating(Exec::class) {
-    workingDir = projectDir
-    commandLine("bash", "docker-cleanup.sh")
+gradle.buildFinished {
+    if (cleanUpNeeded)
+        exec {
+            println("Cleaning up dockers...")
+            workingDir = projectDir
+            commandLine("bash", "docker-cleanup.sh")
+        }
 }
 
-when {
-    currentOs.isLinux -> {
-        val jvmTest by tasks.getting(Test::class) {
-            dependsOn(dockerTestEnv)
-            finalizedBy(dockerCleanup)
-        }
-        val linuxTest by tasks.getting(KotlinNativeTest::class) {
-            filter.excludeTestsMatching("*IntegrationTest")
-        }
+val excludeIntegrationTests = project.findProperty("integrationTests") == "exclude"
+tasks.withType<AbstractTestTask> {
+    if (excludeIntegrationTests) {
+        filter.excludeTestsMatching("*IntegrationTest")
+    } else {
+        dependsOn(dockerTestEnv)
     }
-    currentOs.isMacOsX -> {
-        val jvmTest by tasks.getting(Test::class)
-        val iosX64Test by tasks.getting(KotlinNativeTest::class)
-        listOf(jvmTest, iosX64Test).onEach { it.filter.excludeTestsMatching("*IntegrationTest") }
+}
+
+// Linux native does not support integration tests (sockets are not implemented in Linux native)
+if (currentOs.isLinux) {
+    val linuxTest by tasks.getting(KotlinNativeTest::class) {
+        filter.excludeTestsMatching("*IntegrationTest")
     }
 }
