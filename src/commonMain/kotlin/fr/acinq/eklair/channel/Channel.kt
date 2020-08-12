@@ -61,6 +61,7 @@ data class ProcessCommand(val command: Command) : ChannelAction()
 data class ProcessAdd(val add: UpdateAddHtlc): ChannelAction()
 data class ProcessFail(val fail: UpdateFailHtlc): ChannelAction()
 data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc): ChannelAction()
+data class ProcessFulfill(val fulfill: UpdateFulfillHtlc) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>): ChannelAction()
@@ -829,10 +830,10 @@ data class Normal(
                         }
                     }
                     is UpdateFulfillHtlc -> {
-                        // README: we don't relay payments, so we don't need to send preimages upstream
+                        // README: we consider that a payment is fulfilled as soon as we have the preimage (we don't wait for a commit signature)
                         when (val result = commitments.receiveFulfill(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
-                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
+                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message)))
                         }
                     }
                     is UpdateFailHtlc -> {

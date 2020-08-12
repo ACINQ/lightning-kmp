@@ -33,12 +33,13 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
-data class SendPayment(val paymentRequest: PaymentRequest) : PeerEvent()
+data class SendPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
+data class PaymentSent(val id: UUID, val paymentHash: ByteVector32, val paymentPreimage: ByteVector32, val recipientAmount: MilliSatoshi, val recipientNodeId: PublicKey, val timestamp: Long) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -69,6 +70,9 @@ class Peer(
 
     // pending incoming payments, indexed by payment hash
     private val pendingIncomingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
+
+    // pending outgoing payments, indexed by payment payment hash
+    private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
 
     private var theirInit: Init? = null
 
@@ -329,6 +333,14 @@ class Peer(
                                         )
                                         listenerEventChannel.send(PaymentReceived(payment))
                                     }
+                                    it is ProcessFulfill && !pendingOutgoingPayments.containsKey(it.fulfill.paymentPreimage.sha256()) -> {
+                                        logger.warning { "received ${it.fulfill} } for which we don't have a payment hash" }
+                                    }
+                                    it is ProcessFulfill -> {
+                                        val payment = pendingOutgoingPayments[it.fulfill.paymentPreimage.sha256()]!!
+                                        logger.info { "received ${it.fulfill} } for payment $payment" }
+                                        listenerEventChannel.send(PaymentSent(payment.id, payment.paymentRequest.paymentHash!!, it.fulfill.paymentPreimage, payment.paymentRequest.amount!!, payment.paymentRequest.nodeId, currentTimestampMillis()))
+                                    }
                                     it is ProcessCommand -> input.send(
                                         WrappedChannelEvent(
                                             msg.channelId,
@@ -393,8 +405,8 @@ class Peer(
                     val channel = channels.values.find { it is Normal && it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! } as Normal?
                     if (channel == null) logger.error { "cannot find channel with enough capacity" } else {
                         val normal = channel!!
-                        val paymentId = UUID.randomUUID()
-                        val expiryDelta = CltvExpiryDelta(18) // TODO: read value from payment request
+                        val paymentId = event.id
+                        val expiryDelta = CltvExpiryDelta(35) // TODO: read value from payment request
                         val expiry = expiryDelta.toCltvExpiry(normal.currentBlockHeight.toLong())
                         val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
                         val finalPayload = when(isDirectPayment) {
@@ -412,6 +424,7 @@ class Peer(
                                 is ProcessCommand -> input.send(WrappedChannelEvent(normal.channelId, ExecuteCommand(it.command)))
                             }
                         }
+                        pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
                         logger.info { "channel ${normal.channelId} new state $state1" }
                     }
                 }

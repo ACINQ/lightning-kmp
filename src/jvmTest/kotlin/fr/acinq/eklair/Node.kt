@@ -14,6 +14,7 @@ import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.*
 import fr.acinq.eklair.payment.PaymentRequest
+import fr.acinq.eklair.utils.UUID
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.Tlv
@@ -93,7 +94,7 @@ object Node {
     @JvmStatic
     fun main(args: Array<String>) {
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
-        val nodeId = PublicKey.fromHex("033ca4b9a17f9bf9f6824a7accf921c9003f6fc7b00e564c6b8d287f57be87c66e")
+        val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
         val commandChannel = Channel<List<String>>(2)
 
@@ -138,7 +139,7 @@ object Node {
                     }
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
-                        peer.send(SendPayment(invoice))
+                        peer.send(SendPayment(UUID.randomUUID(), invoice))
                     }
                     "newblock" -> {
                         val height = tokens[1].toInt()
@@ -179,7 +180,7 @@ object Node {
             launch { readLoop(peer) }
             launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
             launch { connectLoop(peer) }
-            //launch { channelsLoop() }
+            launch { channelsLoop() }
             launch { eventLoop(peer) }
         }
     }
