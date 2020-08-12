@@ -49,7 +49,7 @@ data class MessageReceived(val message: LightningMessage) : ChannelEvent()
 data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
 data class ExecuteCommand(val command: Command) : ChannelEvent()
 data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
-data class NewBlock(val height: Int, val Header: BlockHeader): ChannelEvent()
+data class NewBlock(val height: Int, val Header: BlockHeader?): ChannelEvent()
 
 /**
  * Channel Actions (outputs produced by the state machine)
@@ -83,7 +83,7 @@ data class StaticParams(val nodeParams: NodeParams, @Serializable(with = PublicK
 @Serializable
 sealed class ChannelState {
     abstract val staticParams: StaticParams
-    abstract val currentTip: Pair<Int, BlockHeader>
+    abstract val currentTip: Pair<Int, BlockHeader?>
     val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
 
@@ -721,7 +721,7 @@ data class WaitForFundingLocked(
 @Serializable
 data class Normal(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader?>,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val buried: Boolean,

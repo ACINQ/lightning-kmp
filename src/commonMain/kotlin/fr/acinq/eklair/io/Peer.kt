@@ -58,7 +58,8 @@ class Peer(
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
-    private val connectedChannel = ConflatedBroadcastChannel(false)
+    enum class Connection { CLOSED, ESTABLISHING, ESTABLISHED }
+    private val connectedChannel = ConflatedBroadcastChannel<Connection>(Connection.CLOSED)
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
     // channels map, indexed by channel id
@@ -73,6 +74,7 @@ class Peer(
 
     suspend fun connect(address: String, port: Int) {
         logger.info { "connecting to {$remoteNodeId}@{$address}" }
+        connected = Connection.ESTABLISHING
         val socket = socketBuilder.connect(address, port)
         val priv = nodeParams.keyManager.nodeKey.privateKey
         val pub = priv.publicKey()
@@ -118,7 +120,7 @@ class Peer(
                     input.send(BytesReceived(received))
                 }
             } finally {
-                connected = false
+                connected = Connection.CLOSED
             }
         }
 
@@ -224,7 +226,7 @@ class Peer(
                         msg is Init -> {
                             logger.info { "received $msg" }
                             theirInit = msg
-                            connected = true
+                            connected = Connection.ESTABLISHED
                         }
                         msg is Ping -> {
                             logger.info { "received $msg" }
