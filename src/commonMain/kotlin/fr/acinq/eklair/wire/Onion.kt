@@ -110,7 +110,7 @@ sealed class OnionTlv : Tlv {
      * because the final recipient doesn't support trampoline.
      */
     @Serializable
-    data class InvoiceRoutingInfo(val extraHops: List<List<PaymentRequest.Companion.TaggedField.ExtraHop>>) : OnionTlv() {
+    data class InvoiceRoutingInfo(val extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>) : OnionTlv() {
         override val tag: Long
             get() = 66099L
     }

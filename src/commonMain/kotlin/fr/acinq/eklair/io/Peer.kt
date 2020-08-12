@@ -374,8 +374,8 @@ class Peer(
                     val pr = PaymentRequest(
                         "lnbcrt", event.amount, currentTimestampSeconds(), nodeParams.nodeId,
                         listOf(
-                            PaymentRequest.Companion.TaggedField.PaymentHash(event.paymentHash),
-                            PaymentRequest.Companion.TaggedField.Description("this is a kotlin test")
+                            PaymentRequest.TaggedField.PaymentHash(event.paymentHash),
+                            PaymentRequest.TaggedField.Description("this is a kotlin test")
                         ),
                         ByteVector.empty
                     ).sign(nodeParams.privateKey)

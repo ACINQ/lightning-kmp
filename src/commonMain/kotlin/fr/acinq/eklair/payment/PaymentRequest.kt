@@ -186,244 +186,244 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             (value and 2) != 0.toByte(),
             (value and 1) != 0.toByte()
         )
+    }
 
-        sealed class TaggedField {
-            abstract val tag: Int5
-            abstract fun encode(): List<Int5>
+    sealed class TaggedField {
+        abstract val tag: Int5
+        abstract fun encode(): List<Int5>
 
-            /**
-             * Description
-             *
-             * @param description a free-format string that will be included in the payment request
-             */
-            data class Description(val description: String) : TaggedField() {
-                override val tag: Int5 = Description.tag
+        /**
+         * Description
+         *
+         * @param description a free-format string that will be included in the payment request
+         */
+        data class Description(val description: String) : TaggedField() {
+            override val tag: Int5 = Description.tag
 
-                override fun encode(): List<Int5> {
-                    return Bech32.eight2five(description.encodeToByteArray().toTypedArray()).toList()
-                }
-
-                companion object {
-                    const val tag: Int5 = 13
-                    fun decode(input: List<Int5>): Description {
-                        val description = Bech32.five2eight(input.toTypedArray(), 0).toByteArray().decodeToString()
-                        return Description(description)
-                    }
-                }
+            override fun encode(): List<Int5> {
+                return Bech32.eight2five(description.encodeToByteArray().toTypedArray()).toList()
             }
 
-            /**
-             * Mode IOd
-             *
-             * @param nodeId node id (public key) of the payee
-             */
-            data class NodeId(val nodeId: PublicKey) : TaggedField() {
-                override val tag: Int5 = Description.tag
-
-                override fun encode(): List<Int5> {
-                    return Bech32.eight2five(nodeId.value.toByteArray().toTypedArray()).toList()
+            companion object {
+                const val tag: Int5 = 13
+                fun decode(input: List<Int5>): Description {
+                    val description = Bech32.five2eight(input.toTypedArray(), 0).toByteArray().decodeToString()
+                    return Description(description)
                 }
-
-                companion object {
-                    const val tag: Int5 = 19
-                    fun decode(input: List<Int5>): NodeId {
-                        val bin = Bech32.five2eight(input.toTypedArray(), 0).toByteArray()
-                        return NodeId(PublicKey((bin)))
-                    }
-                }
-            }
-
-            /**
-             * Description hash
-             *
-             * @param hash sha256 hash of an associated description
-             */
-            data class DescriptionHash(val hash: ByteVector32) : TaggedField() {
-                override val tag: Int5 = DescriptionHash.tag
-
-                override fun encode(): List<Int5> {
-                    return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
-                }
-
-                companion object {
-                    const val tag: Int5 = 23
-                    fun decode(input: List<Int5>): DescriptionHash {
-                        require(input.size == 52)
-                        val hash = Bech32.five2eight(input.toTypedArray(), 0)
-                        return DescriptionHash(hash.toByteArray().toByteVector32())
-                    }
-                }
-            }
-
-            /**
-             * Payment Hash
-             *
-             * @param hash payment hash
-             */
-            data class PaymentHash(val hash: ByteVector32) : TaggedField() {
-                override val tag: Int5 = PaymentHash.tag
-
-                override fun encode(): List<Int5> {
-                    return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
-                }
-
-                companion object {
-                    const val tag: Int5 = 1
-
-                    fun decode(input: List<Int5>): PaymentHash {
-                        require(input.size == 52)
-                        val hash = Bech32.five2eight(input.toTypedArray(), 0)
-                        return PaymentHash(hash.toByteArray().toByteVector32())
-                    }
-                }
-            }
-
-            /**
-             * Payment Secret
-             *
-             * @param secret payment secret
-             */
-            data class PaymentSecret(val secret: ByteVector32) : TaggedField() {
-                override val tag: Int5 = PaymentSecret.tag
-
-                override fun encode(): List<Int5> {
-                    return Bech32.eight2five(secret.toByteArray().toTypedArray()).toList()
-                }
-
-                companion object {
-                    const val tag: Int5 = 16
-
-                    fun decode(input: List<Int5>): PaymentSecret {
-                        require(input.size == 52)
-                        val secret = Bech32.five2eight(input.toTypedArray(), 0)
-                        return PaymentSecret(secret.toByteArray().toByteVector32())
-                    }
-                }
-            }
-
-            /**
-             * Payment expiry (in seconds)
-             *
-             * @param expiry payment expiry
-             */
-            data class Expiry(val expiry: Long) : TaggedField() {
-                override val tag: Int5 = Expiry.tag
-
-                override fun encode(): List<Int5> {
-                    tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
-                        loop(value / 32, acc + (value.rem(32)).toByte())
-                    }
-                    return loop(expiry, listOf())
-                }
-
-                companion object {
-                    const val tag: Int5 = 6
-
-                    fun decode(input: List<Int5>): Expiry {
-                        var expiry = 0L
-                        input.forEach { expiry = expiry * 32 + it }
-                        return Expiry(expiry)
-                    }
-                }
-            }
-
-            /**
-             * Payment expiry (in seconds)
-             *
-             * @param expiry payment expiry
-             */
-            data class MinFinalCltvExpiry(val cltvExpiry: Long) : TaggedField() {
-                override val tag: Int5 = MinFinalCltvExpiry.tag
-
-                override fun encode(): List<Int5> {
-                    tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
-                        loop(value / 32, acc + (value.rem(32)).toByte())
-                    }
-                    return loop(cltvExpiry, listOf())
-                }
-
-                companion object {
-                    const val tag: Int5 = 24
-
-                    fun decode(input: List<Int5>): MinFinalCltvExpiry {
-                        var expiry = 0L
-                        input.forEach { expiry = expiry * 32 + it }
-                        return MinFinalCltvExpiry(expiry)
-                    }
-                }
-            }
-
-            /**
-             * Extra hop contained in RoutingInfoTag
-             *
-             * @param nodeId                    start of the channel
-             * @param shortChannelId            channel id
-             * @param feeBase                   node fixed fee
-             * @param feeProportionalMillionths node proportional fee
-             * @param cltvExpiryDelta           node cltv expiry delta
-             */
-            @Serializable
-            data class ExtraHop(
-                @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
-                val shortChannelId: ShortChannelId,
-                val feeBase: MilliSatoshi,
-                val feeProportionalMillionths: Long,
-                val cltvExpiryDelta: CltvExpiryDelta
-            )
-
-            /**
-             * Routing Info
-             *
-             * @param hints extra routing information for a private route
-             */
-            data class RoutingInfo(val hints: List<ExtraHop>) : TaggedField() {
-                override val tag: Int5 = RoutingInfo.tag
-
-                override fun encode(): List<Int5> {
-                    val out = ByteArrayOutput()
-                    hints.forEach {
-                        LightningSerializer.writeBytes(it.nodeId.value, out)
-                        LightningSerializer.writeU64(it.shortChannelId.toLong(), out)
-                        LightningSerializer.writeU32(it.feeBase.toLong().toInt(), out)
-                        LightningSerializer.writeU32(it.feeProportionalMillionths.toInt(), out)
-                        LightningSerializer.writeU16(it.cltvExpiryDelta.toInt(), out)
-                    }
-                    return Bech32.eight2five(out.toByteArray().toTypedArray()).toList()
-                }
-
-                companion object {
-                    const val tag: Int5 = 3
-
-                    fun decode(input: List<Int5>): RoutingInfo {
-                        val stream = ByteArrayInput(Bech32.five2eight(input.toTypedArray(), 0).toByteArray())
-                        val hints = ArrayList<ExtraHop>()
-                        while(stream.availableBytes >= 51) {
-                            val hint = ExtraHop(
-                                PublicKey(LightningSerializer.bytes(stream, 33)),
-                                ShortChannelId(LightningSerializer.u64(stream)),
-                                MilliSatoshi(LightningSerializer.u32(stream).toLong()),
-                                LightningSerializer.u32(stream).toLong(),
-                                CltvExpiryDelta(LightningSerializer.u16(stream)))
-                            hints.add(hint)
-                        }
-                        return RoutingInfo(hints)
-                    }
-                }
-            }
-
-            /**
-             * Unknown tag (may or may not be valid)
-             */
-            data class UnknownTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
-                override fun encode(): List<Int5> = value.toList()
-            }
-
-            /**
-             * Tag that we know is not valid (value is of the wrong length for example)
-             */
-            data class InvalidTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
-                override fun encode(): List<Int5> = value.toList()
             }
         }
-    }
+
+        /**
+         * Mode IOd
+         *
+         * @param nodeId node id (public key) of the payee
+         */
+        data class NodeId(val nodeId: PublicKey) : TaggedField() {
+            override val tag: Int5 = Description.tag
+
+            override fun encode(): List<Int5> {
+                return Bech32.eight2five(nodeId.value.toByteArray().toTypedArray()).toList()
+            }
+
+            companion object {
+                const val tag: Int5 = 19
+                fun decode(input: List<Int5>): NodeId {
+                    val bin = Bech32.five2eight(input.toTypedArray(), 0).toByteArray()
+                    return NodeId(PublicKey((bin)))
+                }
+            }
+        }
+
+        /**
+         * Description hash
+         *
+         * @param hash sha256 hash of an associated description
+         */
+        data class DescriptionHash(val hash: ByteVector32) : TaggedField() {
+            override val tag: Int5 = DescriptionHash.tag
+
+            override fun encode(): List<Int5> {
+                return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
+            }
+
+            companion object {
+                const val tag: Int5 = 23
+                fun decode(input: List<Int5>): DescriptionHash {
+                    require(input.size == 52)
+                    val hash = Bech32.five2eight(input.toTypedArray(), 0)
+                    return DescriptionHash(hash.toByteArray().toByteVector32())
+                }
+            }
+        }
+
+        /**
+         * Payment Hash
+         *
+         * @param hash payment hash
+         */
+        data class PaymentHash(val hash: ByteVector32) : TaggedField() {
+            override val tag: Int5 = PaymentHash.tag
+
+            override fun encode(): List<Int5> {
+                return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
+            }
+
+            companion object {
+                const val tag: Int5 = 1
+
+                fun decode(input: List<Int5>): PaymentHash {
+                    require(input.size == 52)
+                    val hash = Bech32.five2eight(input.toTypedArray(), 0)
+                    return PaymentHash(hash.toByteArray().toByteVector32())
+                }
+            }
+        }
+
+        /**
+         * Payment Secret
+         *
+         * @param secret payment secret
+         */
+        data class PaymentSecret(val secret: ByteVector32) : TaggedField() {
+            override val tag: Int5 = PaymentSecret.tag
+
+            override fun encode(): List<Int5> {
+                return Bech32.eight2five(secret.toByteArray().toTypedArray()).toList()
+            }
+
+            companion object {
+                const val tag: Int5 = 16
+
+                fun decode(input: List<Int5>): PaymentSecret {
+                    require(input.size == 52)
+                    val secret = Bech32.five2eight(input.toTypedArray(), 0)
+                    return PaymentSecret(secret.toByteArray().toByteVector32())
+                }
+            }
+        }
+
+        /**
+         * Payment expiry (in seconds)
+         *
+         * @param expiry payment expiry
+         */
+        data class Expiry(val expiry: Long) : TaggedField() {
+            override val tag: Int5 = Expiry.tag
+
+            override fun encode(): List<Int5> {
+                tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
+                    loop(value / 32, acc + (value.rem(32)).toByte())
+                }
+                return loop(expiry, listOf())
+            }
+
+            companion object {
+                const val tag: Int5 = 6
+
+                fun decode(input: List<Int5>): Expiry {
+                    var expiry = 0L
+                    input.forEach { expiry = expiry * 32 + it }
+                    return Expiry(expiry)
+                }
+            }
+        }
+
+        /**
+         * Payment expiry (in seconds)
+         *
+         * @param expiry payment expiry
+         */
+        data class MinFinalCltvExpiry(val cltvExpiry: Long) : TaggedField() {
+            override val tag: Int5 = MinFinalCltvExpiry.tag
+
+            override fun encode(): List<Int5> {
+                tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
+                    loop(value / 32, acc + (value.rem(32)).toByte())
+                }
+                return loop(cltvExpiry, listOf())
+            }
+
+            companion object {
+                const val tag: Int5 = 24
+
+                fun decode(input: List<Int5>): MinFinalCltvExpiry {
+                    var expiry = 0L
+                    input.forEach { expiry = expiry * 32 + it }
+                    return MinFinalCltvExpiry(expiry)
+                }
+            }
+        }
+
+        /**
+         * Extra hop contained in RoutingInfoTag
+         *
+         * @param nodeId                    start of the channel
+         * @param shortChannelId            channel id
+         * @param feeBase                   node fixed fee
+         * @param feeProportionalMillionths node proportional fee
+         * @param cltvExpiryDelta           node cltv expiry delta
+         */
+        @Serializable
+        data class ExtraHop(
+            @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
+            val shortChannelId: ShortChannelId,
+            val feeBase: MilliSatoshi,
+            val feeProportionalMillionths: Long,
+            val cltvExpiryDelta: CltvExpiryDelta
+        )
+
+        /**
+         * Routing Info
+         *
+         * @param hints extra routing information for a private route
+         */
+        data class RoutingInfo(val hints: List<ExtraHop>) : TaggedField() {
+            override val tag: Int5 = RoutingInfo.tag
+
+            override fun encode(): List<Int5> {
+                val out = ByteArrayOutput()
+                hints.forEach {
+                    LightningSerializer.writeBytes(it.nodeId.value, out)
+                    LightningSerializer.writeU64(it.shortChannelId.toLong(), out)
+                    LightningSerializer.writeU32(it.feeBase.toLong().toInt(), out)
+                    LightningSerializer.writeU32(it.feeProportionalMillionths.toInt(), out)
+                    LightningSerializer.writeU16(it.cltvExpiryDelta.toInt(), out)
+                }
+                return Bech32.eight2five(out.toByteArray().toTypedArray()).toList()
+            }
+
+            companion object {
+                const val tag: Int5 = 3
+
+                fun decode(input: List<Int5>): RoutingInfo {
+                    val stream = ByteArrayInput(Bech32.five2eight(input.toTypedArray(), 0).toByteArray())
+                    val hints = ArrayList<ExtraHop>()
+                    while(stream.availableBytes >= 51) {
+                        val hint = ExtraHop(
+                            PublicKey(LightningSerializer.bytes(stream, 33)),
+                            ShortChannelId(LightningSerializer.u64(stream)),
+                            MilliSatoshi(LightningSerializer.u32(stream).toLong()),
+                            LightningSerializer.u32(stream).toLong(),
+                            CltvExpiryDelta(LightningSerializer.u16(stream)))
+                        hints.add(hint)
+                    }
+                    return RoutingInfo(hints)
+                }
+            }
+        }
+
+        /**
+         * Unknown tag (may or may not be valid)
+         */
+        data class UnknownTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
+            override fun encode(): List<Int5> = value.toList()
+        }
+
+        /**
+         * Tag that we know is not valid (value is of the wrong length for example)
+         */
+        data class InvalidTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
+            override fun encode(): List<Int5> = value.toList()
+        }
+        }
 }

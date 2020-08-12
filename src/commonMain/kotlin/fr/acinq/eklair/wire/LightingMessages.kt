@@ -6,6 +6,8 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.*
+import fr.acinq.eklair.crypto.KeyManager
+import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.*
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
@@ -14,6 +16,9 @@ import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.max
@@ -78,7 +83,20 @@ interface HasTimestamp : LightningMessage {
     val timestamp: Long
 }
 
-interface UpdateMessage : LightningMessage
+interface UpdateMessage : LightningMessage {
+    companion object {
+        val serializationModule = SerializersModule {
+            polymorphic(UpdateMessage::class) {
+                subclass(UpdateAddHtlc.serializer())
+                subclass(UpdateFailHtlc.serializer())
+                subclass(UpdateFailMalformedHtlc.serializer())
+                subclass(UpdateFee.serializer())
+                subclass(UpdateFulfillHtlc.serializer())
+            }
+        }
+    }
+}
+
 interface HasTemporaryChannelId : LightningMessage {
     val temporaryChannelId: ByteVector32
 }
@@ -483,10 +501,11 @@ data class UpdateAddHtlc(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class UpdateFulfillHtlc(
-    override val channelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     val id: Long,
-    val paymentPreimage: ByteVector32
+    @Serializable(with = ByteVector32KSerializer::class) val paymentPreimage: ByteVector32
 ) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFulfillHtlc> {
     override fun serializer(): LightningSerializer<UpdateFulfillHtlc> = UpdateFulfillHtlc
 
@@ -511,10 +530,11 @@ data class UpdateFulfillHtlc(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class UpdateFailHtlc(
-    override val channelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     val id: Long,
-    val reason: ByteVector
+    @Serializable(with = ByteVectorKSerializer::class) val reason: ByteVector
 ) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFailHtlc> {
     override fun serializer(): LightningSerializer<UpdateFailHtlc> = UpdateFailHtlc
 
@@ -540,10 +560,11 @@ data class UpdateFailHtlc(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class UpdateFailMalformedHtlc(
-    override val channelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     val id: Long,
-    val onionHash: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) val onionHash: ByteVector32,
     val failureCode: Int
 ) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFailMalformedHtlc> {
     override fun serializer(): LightningSerializer<UpdateFailMalformedHtlc> = UpdateFailMalformedHtlc
@@ -632,8 +653,9 @@ data class RevokeAndAck(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class UpdateFee(
-    override val channelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     val feeratePerKw: Long
 ) : ChannelMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFee> {
     override fun serializer(): LightningSerializer<UpdateFee> = UpdateFee

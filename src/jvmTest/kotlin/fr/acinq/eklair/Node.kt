@@ -18,6 +18,7 @@ import fr.acinq.eklair.utils.UUID
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.Tlv
+import fr.acinq.eklair.wire.UpdateMessage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -81,6 +82,7 @@ object Node {
     private val serializationModules = SerializersModule {
         include(Tlv.serializationModule)
         include(KeyManager.serializationModule)
+        include(UpdateMessage.serializationModule)
 
         include(TestFeeEstimator.testSerializationModule)
     }
