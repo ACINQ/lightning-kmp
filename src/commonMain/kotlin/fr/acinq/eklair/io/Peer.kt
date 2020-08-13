@@ -92,8 +92,16 @@ class Peer(
             session.send(message) { data, flush -> socket.send(data, flush) }
         }
 
-        val init = Hex.decode("001000000002a8a0")
-        send(init)
+        val features = Features(
+                setOf(
+                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                )
+        )
+        val init = Init(features.toByteArray().toByteVector())
+        println("sending init ${LightningMessage.encode(init)!!}")
+        send(LightningMessage.encode(init)!!)
 
         suspend fun doPing() {
             val ping = Hex.decode("0012000a0004deadbeef")
@@ -287,9 +295,6 @@ class Peer(
                                     is ChannelIdSwitch -> {
                                         logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
                                         channels = channels - it.oldChannelId + (it.newChannelId to state1)
-                                    }
-                                    is SendWatch -> {
-                                        watcher.watch(it.watch)
                                     }
                                     else -> logger.warning { "ignoring $it" }
                                 }
