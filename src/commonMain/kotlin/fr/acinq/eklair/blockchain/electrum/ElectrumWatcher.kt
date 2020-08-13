@@ -9,11 +9,13 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.makeDummySh
 import fr.acinq.eklair.transactions.Scripts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.channels.BroadcastChannel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.launch
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
-import org.kodein.log.frontend.simplePrintFrontend
-import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 
 sealed class WatcherEvent
@@ -482,7 +484,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     companion object {
         // TODO inject
-        val logger = LoggerFactory(simplePrintFrontend).newLogger(ElectrumWatcher::class)
+        val logger = LoggerFactory.default.newLogger(Logger.Tag(ElectrumWatcher::class))
         internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {
             // we use a height of 0
             // - to make sure that the tx will be marked as "confirmed"
