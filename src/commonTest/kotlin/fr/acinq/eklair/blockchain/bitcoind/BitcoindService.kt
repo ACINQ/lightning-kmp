@@ -2,10 +2,15 @@ package fr.acinq.eklair.blockchain.bitcoind
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eklair.utils.sat
+import kotlinx.serialization.json.JsonElement
 import kotlin.test.assertEquals
 
 class BitcoindService {
     private val client = BitcoinJsonRPCClient()
+
+    suspend fun getNetworkInfo(): JsonElement {
+        return client.sendRequest<GetNetworkInfoResponse>(GetNetworkInfo).result
+    }
 
     suspend fun getNewAddress(): Pair<String, PrivateKey> {
         val address=  client.sendRequest<GetNewAddressResponse>(GetNewAddress).address

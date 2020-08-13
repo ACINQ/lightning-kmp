@@ -74,7 +74,12 @@ sealed class BitcoindRequest(vararg params: Any) {
         ).let { Json.encodeToString(JsonRPCRequest.serializer(), it) }
 }
 sealed class BitcoindResponse
-
+object GetNetworkInfo : BitcoindRequest() {
+    override val method: String = "getnetworkinfo"
+    override fun parseResponse(rpcResponse: JsonRPCResponse): GetNetworkInfoResponse =
+        GetNetworkInfoResponse(rpcResponse.result)
+}
+data class GetNetworkInfoResponse(val result: JsonElement) : BitcoindResponse()
 object GetNewAddress : BitcoindRequest() {
     override val method: String = "getnewaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetNewAddressResponse =

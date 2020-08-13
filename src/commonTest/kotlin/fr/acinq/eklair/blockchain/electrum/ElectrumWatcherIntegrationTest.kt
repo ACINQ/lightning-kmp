@@ -8,6 +8,7 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScrip
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.utils.currentTimestampSeconds
 import fr.acinq.eklair.utils.runTest
+import fr.acinq.eklair.utils.runTrying
 import fr.acinq.eklair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
@@ -30,6 +31,10 @@ class ElectrumWatcherIntegrationTest {
 
     init {
         runTest {
+            var count = 0
+            while(fr.acinq.eklair.utils.runTrying { bitcoincli.getNetworkInfo() }.isFailure && count++ < 5) {
+                delay(1000)
+            }
             bitcoincli.generateBlocks(150)
         }
     }
