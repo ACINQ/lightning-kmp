@@ -150,6 +150,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, event, open)
                 Pair(nextState, listOf(SendMessage(open)))
             }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event ins state ${this::class}" }
                 Pair(this, listOf())
@@ -247,6 +248,7 @@ data class WaitForOpenChannel(
                         Pair(this, listOf())
                     }
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event ins state ${this::class}" }
                 Pair(this, listOf())
@@ -370,6 +372,7 @@ data class WaitForFundingCreated(
                         Pair(this, listOf())
                     }
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -427,6 +430,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
                     }
                 }
             }
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> Pair(this, listOf())
         }
     }
@@ -492,6 +496,7 @@ data class WaitForFundingInternal(
                     fundingCreated)
                 Pair(nextState, listOf(channelIdAssigned, SendMessage(fundingCreated)))
             }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -570,6 +575,7 @@ data class WaitForFundingSigned(
                     }
                 }
             }
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -634,6 +640,7 @@ data class WaitForFundingConfirmed(
                     }
                     else -> Pair(this, listOf())
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -698,6 +705,7 @@ data class WaitForFundingLocked(
                         Pair(this, listOf())
                     }
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
