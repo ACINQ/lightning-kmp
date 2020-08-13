@@ -347,7 +347,6 @@ data class WaitForFundingCreated(
                                     fundingAmount
                                 )
                             val watchSpent = WatchSpent(
-                                Channel(), // Must be defined by the LN Channel itself
                                 channelId,
                                 commitInput.outPoint.txid,
                                 commitInput.outPoint.index.toInt(),
@@ -355,7 +354,6 @@ data class WaitForFundingCreated(
                                 BITCOIN_FUNDING_SPENT
                             ) // TODO: should we wait for an acknowledgment from the watcher?
                             val watchConfirmed = WatchConfirmed(
-                                Channel(), // Must be defined by the LN Channel itself
                                 channelId,
                                 commitInput.outPoint.txid,
                                 commitments.commitInput.txOut.publicKeyScript,
@@ -546,7 +544,6 @@ data class WaitForFundingSigned(
                         // TODO context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
                         val watchSpent = WatchSpent(
-                            Channel(), // Must be defined by the LN Channel itself
                             this.channelId,
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.outPoint.index.toInt(),
@@ -556,7 +553,6 @@ data class WaitForFundingSigned(
                         // phoenix channels have a zero mindepth for funding tx
                         val minDepthBlocks = if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else staticParams.nodeParams.minDepthBlocks
                         val watchConfirmed = WatchConfirmed(
-                            Channel(), // Must be defined by the LN Channel itself
                             this.channelId,
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.txOut.publicKeyScript,
@@ -664,7 +660,6 @@ data class WaitForFundingLocked(
                     is FundingLocked -> {
                         // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                         val watchConfirmed = WatchConfirmed(
-                            Channel<WatchEventConfirmed>(),
                             this.channelId,
                             commitments.commitInput.outPoint.txid,
                             commitments.commitInput.txOut.publicKeyScript,

@@ -9,10 +9,7 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.makeDummySh
 import fr.acinq.eklair.transactions.Scripts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.SendChannel
-import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.channels.produce
+import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.frontend.simplePrintFrontend
@@ -22,7 +19,7 @@ import kotlin.math.absoluteValue
 sealed class WatcherEvent
 private object StartWatcher: WatcherEvent()
 private class PublishAsapEvent(val publishAsap: PublishAsap) : WatcherEvent()
-class GetTxWithMetaEvent(val txid: ByteVector32, val listener: SendChannel<GetTxWithMetaResponse>) : WatcherEvent()
+data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
 private class ReceiveWatch(val watch: Watch) : WatcherEvent()
 private class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
 private class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
@@ -34,18 +31,8 @@ private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : WatcherAction()
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
-private data class NotifyWatchConfirmed(
-    val listener: SendChannel<WatchEventConfirmed>,
-    val watchEventConfirmed: WatchEventConfirmed
-) : WatcherAction()
-private data class NotifyWatchSpent(
-    val listener: SendChannel<WatchEventSpent>,
-    val watchEventSpent: WatchEventSpent
-) : WatcherAction()
-private data class NotifyTxWithMeta(
-    val listener: SendChannel<GetTxWithMetaResponse>,
-    val txWithMeta: GetTxWithMetaResponse
-) : WatcherAction()
+private data class NotifyWatch(val watchEvent: WatchEvent) : WatcherAction()
+private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
 private data class RelayWatch(val watch: Watch) : WatcherAction()
 private data class RelayWatchConfirmed(
     val parentTxid: ByteVector32,
@@ -53,7 +40,7 @@ private data class RelayWatchConfirmed(
     val minDepth: Long,
     val bitcoinParentTxConfirmed: BITCOIN_PARENT_TX_CONFIRMED
 ) : WatcherAction()
-private data class RelayGetTxWithMeta(val txid: ByteVector32, val listener: SendChannel<GetTxWithMetaResponse>) : WatcherAction()
+private data class RelayGetTxWithMeta(val request: GetTxWithMeta) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
@@ -81,7 +68,7 @@ private data class WatcherDisconnected(
     val watches: Set<Watch> = setOf(),
     val publishQueue: List<PublishAsap> = emptyList(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
-    val getTxQueue: List<Pair<GetTxWithMeta, SendChannel<GetTxWithMetaResponse>>> = emptyList()
+    val getTxQueue: List<GetTxWithMeta> = emptyList()
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when(event) {
@@ -94,7 +81,7 @@ private data class WatcherDisconnected(
                         actions = buildList {
                             watches.forEach { add(RelayWatch(it)) }
                             publishQueue.forEach { add(PublishAsapAction(it)) }
-                            getTxQueue.forEach { add(RelayGetTxWithMeta(it.first.txid, it.second)) }
+                            getTxQueue.forEach { add(RelayGetTxWithMeta(it)) }
                         }
                     }
                 }
@@ -105,8 +92,7 @@ private data class WatcherDisconnected(
                 newState(copy(publishQueue = publishQueue + event.publishAsap))
             }
             is GetTxWithMetaEvent -> {
-
-                newState(copy(getTxQueue = getTxQueue + (GetTxWithMeta(event.txid) to event.listener)))
+                newState(copy(getTxQueue = getTxQueue + (event.request)))
             }
             else -> unhandled(event)
         }
@@ -180,8 +166,7 @@ private data class WatcherRunning(
                                             .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                                             .map {
                                                 logger.info { "output ${it.txId}:${it.outputIndex} spent by transaction ${tx.txid}" }
-                                                NotifyWatchSpent(
-                                                    it.listener,
+                                                NotifyWatch(
                                                     WatchEventSpent(ByteVector32.Zeroes, it.event, tx)
                                                 )
                                             }
@@ -189,7 +174,7 @@ private data class WatcherRunning(
 
                                 // WatchConfirmed
                                 val watchConfirmedTriggered = mutableListOf<WatchConfirmed>()
-                                val notifyWatchConfirmedList = mutableListOf<NotifyWatchConfirmed>()
+                                val notifyWatchConfirmedList = mutableListOf<NotifyWatch>()
                                 val getMerkleList = mutableListOf<AskForMerkle>()
                                 watches.filterIsInstance<WatchConfirmed>()
                                     .filter { it.txId == tx.txid }
@@ -198,8 +183,7 @@ private data class WatcherRunning(
                                             // special case for mempool watches (min depth = 0)
                                             val (dummyHeight, dummyTxIndex) = makeDummyShortChannelId(w.txId)
                                             notifyWatchConfirmedList.add(
-                                                NotifyWatchConfirmed(
-                                                    w.listener,
+                                                NotifyWatch(
                                                     WatchEventConfirmed(
                                                         ByteVector32.Zeroes, // TODO!
                                                         BITCOIN_FUNDING_DEPTHOK,
@@ -239,18 +223,9 @@ private data class WatcherRunning(
                                     actions = notifyWatchSpentList + notifyWatchConfirmedList + getMerkleList
                                 }
                             }
-                            is Channel<*> -> {
-                                val tx = message.tx
-
-                                @Suppress("UNCHECKED_CAST")
-                                val listener = message.contextOpt as SendChannel<GetTxWithMetaResponse>
-
-                                returnState(
-                                    NotifyTxWithMeta(
-                                        listener,
-                                        GetTxWithMetaResponse(tx.txid, tx, tip.time)
-                                    )
-                                )
+                            is GetTxWithMeta -> {
+                                message.contextOpt.response.complete(GetTxWithMetaResponse(message.tx.txid, message.tx, tip.time))
+                                returnState()
                             }
                             message is BroadcastTransactionResponse -> {
                                 val (tx, errorOpt) = message
@@ -268,14 +243,9 @@ private data class WatcherRunning(
                             else -> returnState()
                         }
                     }
-                    message is ServerError && message.request is GetTransaction && message.request.contextOpt is Channel<*> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        returnState(
-                            NotifyTxWithMeta(
-                                message.request.contextOpt as Channel<GetTxWithMetaResponse>,
-                                GetTxWithMetaResponse(message.request.txid, null, tip.time)
-                            )
-                        )
+                    message is ServerError && message.request is GetTransaction && message.request.contextOpt is GetTxWithMeta -> {
+                        message.request.contextOpt.response.complete(GetTxWithMetaResponse(message.request.txid, null, tip.time))
+                        returnState()
                     }
                     message is GetMerkleResponse -> {
                         val (txid, _, txheight, pos, tx) = message
@@ -287,8 +257,7 @@ private data class WatcherRunning(
                         val notifyWatchConfirmedList = tx?.let {
                             triggered.map { w ->
                                 logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
-                                NotifyWatchConfirmed(
-                                    w.listener,
+                                NotifyWatch(
                                     WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx)
                                 )
                             }
@@ -309,7 +278,7 @@ private data class WatcherRunning(
                     else -> returnState()
                 }
             }
-            is GetTxWithMetaEvent -> returnState(AskForTransaction(event.txid, event.listener))
+            is GetTxWithMetaEvent -> returnState(AskForTransaction(event.request.txid, event.request))
             is PublishAsapEvent -> {
                 // TODO to be tested
                 val tx = event.publishAsap.tx
@@ -343,7 +312,7 @@ private data class WatcherRunning(
             is ReceiveWatch -> when (val watch = event.watch) {
                 in watches -> returnState()
                 is WatchSpent -> {
-                    val (_, _, txid, outputIndex, publicKeyScript, _) = watch
+                    val (_, txid, outputIndex, publicKeyScript, _) = watch
                     val scriptHash = computeScriptHash(publicKeyScript)
                     logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
                     newState {
@@ -352,7 +321,7 @@ private data class WatcherRunning(
                     }
                 }
                 is WatchConfirmed -> {
-                    val (_, _, txid, publicKeyScript, _, _) = watch
+                    val (_, txid, publicKeyScript, _, _) = watch
                     val scriptHash = computeScriptHash(publicKeyScript)
                     logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
                     newState {
@@ -408,7 +377,7 @@ private fun WatcherState.returnState(vararg actions: WatcherAction): Pair<Watche
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): CoroutineScope by scope {
-
+    val notifications = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
     private val watchChannel = Channel<Watch>(Channel.BUFFERED)
     private val watchEventChannel = Channel<WatchEvent>(Channel.BUFFERED)
@@ -459,17 +428,16 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                             is AskForMerkle -> client.sendElectrumRequest(
                                 GetMerkle(action.txId, action.txheight, action.tx), electrumMessageChannel
                             )
-                            is NotifyWatchConfirmed -> action.listener.send(action.watchEventConfirmed)
-                            is NotifyWatchSpent -> action.listener.send(action.watchEventSpent)
-                            is NotifyTxWithMeta -> action.listener.send(action.txWithMeta)
+                            is NotifyWatch -> notifications.send(action.watchEvent)
+                            is NotifyTxWithMeta -> TODO("implement this")
                             is RelayWatch -> eventChannel.send(ReceiveWatch(action.watch))
                             is RelayWatchConfirmed -> {
                                 eventChannel.send(ReceiveWatch(
-                                    WatchConfirmed(watchEventChannel, ByteVector32.Zeroes, action.parentTxid,
+                                    WatchConfirmed(ByteVector32.Zeroes, action.parentTxid,
                                         action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
                                 ))
                             }
-                            is RelayGetTxWithMeta -> eventChannel.send(GetTxWithMetaEvent(action.txid, action.listener))
+                            is RelayGetTxWithMeta -> eventChannel.send(GetTxWithMetaEvent(action.request))
                         }
                     }
                 }

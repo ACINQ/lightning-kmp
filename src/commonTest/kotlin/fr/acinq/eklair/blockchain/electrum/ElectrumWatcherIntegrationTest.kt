@@ -11,6 +11,7 @@ import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -41,10 +42,9 @@ class ElectrumWatcherIntegrationTest {
         val (address,_) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
-        val listener = Channel<WatchEventConfirmed>()
+        val listener = watcher.notifications.openSubscription()
         watcher.watch(
             WatchConfirmed(
-                listener,
                 ByteVector32.Zeroes,
                 tx.txid,
                 tx.txOut[0].publicKeyScript,
@@ -55,10 +55,10 @@ class ElectrumWatcherIntegrationTest {
         bitcoincli.generateBlocks(5)
 
         withTimeout(TIMEOUT) {
-            val confirmed = listener.receive()
+            val confirmed = listener.receive() as WatchEventConfirmed
             assertEquals(tx.txid, confirmed.tx.txid)
         }
-
+        listener.cancel()
         watcher.stop()
         client.stop()
     }
@@ -73,9 +73,8 @@ class ElectrumWatcherIntegrationTest {
 
         bitcoincli.generateBlocks(5)
 
-        val listener = Channel<WatchEventConfirmed>()
+        val listener = watcher.notifications.openSubscription()
         watcher.watch(WatchConfirmed(
-            listener,
             ByteVector32.Zeroes,
             tx.txid,
             tx.txOut[0].publicKeyScript,
@@ -84,7 +83,7 @@ class ElectrumWatcherIntegrationTest {
         ))
 
         withTimeout(TIMEOUT) {
-            val confirmed = listener.receive()
+            val confirmed = listener.receive() as WatchEventConfirmed
             assertEquals(tx.txid, confirmed.tx.txid)
         }
 
@@ -126,9 +125,8 @@ class ElectrumWatcherIntegrationTest {
             signedTx
         }
 
-        val listener = Channel<WatchEventSpent>()
+        val listener = watcher.notifications.openSubscription()
         watcher.watch(WatchSpent(
-            listener,
             ByteVector32.Zeroes,
             tx.txid,
             pos,
@@ -142,10 +140,10 @@ class ElectrumWatcherIntegrationTest {
         bitcoincli.generateBlocks(2)
 
         withTimeout(TIMEOUT) {
-            val msg = listener.receive()
+            val msg = listener.receive() as WatchEventSpent
             assertEquals(spendingTx.txid, msg.tx.txid)
         }
-
+        listener.cancel()
         watcher.stop()
         client.stop()
     }
@@ -189,9 +187,8 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        val listener = Channel<WatchEventSpent>()
+        val listener = watcher.notifications.openSubscription()
         watcher.watch(WatchSpent(
-            listener,
             ByteVector32.Zeroes,
             tx.txid,
             pos,
@@ -200,10 +197,10 @@ class ElectrumWatcherIntegrationTest {
         ))
 
         withTimeout(TIMEOUT) {
-            val msg = listener.receive()
+            val msg = listener.receive() as WatchEventSpent
             assertEquals(spendingTx.txid, msg.tx.txid)
         }
-
+        listener.cancel()
         watcher.stop()
         client.stop()
     }
@@ -240,9 +237,8 @@ class ElectrumWatcherIntegrationTest {
             }
         }
 
-        val listener = Channel<WatchEventConfirmed>()
+        val listener = watcher.notifications.openSubscription()
         watcher.watch(WatchConfirmed(
-            listener,
             ByteVector32.Zeroes,
             tx2.txid,
             tx2.txOut[0].publicKeyScript,
@@ -251,7 +247,7 @@ class ElectrumWatcherIntegrationTest {
         ))
 
         withTimeout(TIMEOUT) {
-            val confirmed = listener.receive()
+            val confirmed = listener.receive() as WatchEventConfirmed
             assertEquals(tx2.txid, confirmed.tx.txid)
         }
 
@@ -274,9 +270,8 @@ class ElectrumWatcherIntegrationTest {
         val tx = bitcoincli.sendToAddress(address, 1.0)
         val (tx1, tx2) = bitcoincli.createUnspentTxChain(tx, privateKey)
 
-        val listener = Channel<WatchEventConfirmed>()
+        val listener = watcher.notifications.openSubscription()
         watcher.watch(WatchConfirmed(
-            listener,
             ByteVector32.Zeroes,
             tx2.txid,
             tx2.txOut[0].publicKeyScript,
@@ -290,7 +285,7 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(tx2, sentTx2)
 
         withTimeout(TIMEOUT) {
-            val confirmed = listener.receive()
+            val confirmed = listener.receive() as WatchEventConfirmed
             assertEquals(tx2.txid, confirmed.tx.txid)
         }
 
@@ -309,9 +304,9 @@ class ElectrumWatcherIntegrationTest {
         // tx is in the blockchain
         withTimeout(TIMEOUT) {
             val txid = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
-            val listener = Channel<GetTxWithMetaResponse>()
-            electrumWatcher.send(GetTxWithMetaEvent(txid, listener))
-            val res = listener.receive()
+            val result = CompletableDeferred<GetTxWithMetaResponse>()
+            electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid, result)))
+            val res = result.await()
             assertEquals(res.txid, txid)
             assertEquals(
                 res.tx_opt,
@@ -323,9 +318,9 @@ class ElectrumWatcherIntegrationTest {
         // tx doesn't exist
         withTimeout(TIMEOUT) {
             val txid = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-            val listener = Channel<GetTxWithMetaResponse>()
-            electrumWatcher.send(GetTxWithMetaEvent(txid, listener))
-            val res = listener.receive()
+            val result = CompletableDeferred<GetTxWithMetaResponse>()
+            electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid, result)))
+            val res = result.await()
             assertEquals(res.txid, txid)
             assertNull(res.tx_opt)
             assertTrue(res.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync

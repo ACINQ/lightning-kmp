@@ -5,6 +5,7 @@ import fr.acinq.eklair.*
 import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
+import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.eklair.payment.OutgoingPacket
@@ -43,6 +44,7 @@ class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val remoteNodeId: PublicKey,
+    val watcher: ElectrumWatcher
 ) {
     companion object {
         private val prefix: Byte = 0x00
@@ -51,6 +53,7 @@ class Peer(
 
     private val input = Channel<PeerEvent>(10)
     private val output = Channel<ByteArray>(3)
+    private val watchConfirmedChannel = Channel<WatchEventConfirmed>()
 
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
@@ -137,14 +140,15 @@ class Peer(
 
     private suspend fun send(actions: List<ChannelAction>) {
         actions.forEach {
-            when (it) {
-                is SendMessage -> {
+            when  {
+                it is SendMessage -> {
                     val encoded = LightningMessage.encode(it.message)
                     encoded?.let { bin ->
                         logger.info { "sending ${it.message}" }
                         output.send(bin)
                     }
                 }
+                it is SendWatch -> watcher.watch(it.watch)
                 else -> Unit
             }
         }
@@ -278,6 +282,7 @@ class Peer(
                                         channels = channels - it.oldChannelId + (it.newChannelId to state1)
                                     }
                                     is SendWatch -> {
+                                        watcher.watch(it.watch)
                                         if (it.watch is WatchConfirmed) {
                                             // TODO: use a real watcher, here we just blindly confirm whatever tx they sent us
                                             val tx = Transaction(

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.eklair.blockchain.electrum.*
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
@@ -92,11 +93,10 @@ object Node {
     fun main(args: Array<String>) {
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
         val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
-        val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId)
 
         val commandChannel = Channel<List<String>>(2)
 
-        suspend fun connectLoop() {
+        suspend fun connectLoop(peer: Peer) {
             peer.openConnectedSubscription().consumeEach {
                 println("Connected: $it")
             }
@@ -125,13 +125,13 @@ object Node {
 //            }
 //        }
 
-        suspend fun eventLoop() {
+        suspend fun eventLoop(peer: Peer) {
             peer.openListenerEventSubscription().consumeEach {
                 println("Event: $it")
             }
         }
 
-        suspend fun readLoop() {
+        suspend fun readLoop(peer: Peer) {
             println("node ${nodeParams.nodeId} is ready:")
             for(tokens in commandChannel) {
                 println("got tokens $tokens")
@@ -175,11 +175,25 @@ object Node {
         }
 
         runBlocking {
-            launch { readLoop() }
+            val electrum = ElectrumClient("localhost", 51001, null, this).apply { start() }
+            val watcher = ElectrumWatcher(electrum, this).apply { start() }
+            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher)
+            val electrumChannel = Channel<ElectrumMessage>(2)
+            launch {
+                for(msg in electrumChannel) {
+                    when(msg) {
+                        is ElectrumClientReady -> electrum.sendMessage(ElectrumHeaderSubscription(electrumChannel))
+                        is HeaderSubscriptionResponse -> peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                    }
+                }
+            }
+            electrum.sendMessage(ElectrumStatusSubscription(electrumChannel))
+
+            launch { readLoop(peer) }
             launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
-            launch { connectLoop() }
+            launch { connectLoop(peer) }
             //launch { channelsLoop() }
-            launch { eventLoop() }
+            launch { eventLoop(peer) }
         }
     }
 }

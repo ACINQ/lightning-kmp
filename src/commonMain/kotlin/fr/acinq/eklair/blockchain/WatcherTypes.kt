@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eklair.ShortChannelId
 import fr.acinq.eklair.utils.Try
 import fr.acinq.eklair.utils.runTrying
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 
@@ -29,7 +30,6 @@ sealed class Watch {
 
 // we need a public key script to use electrum apis
 data class WatchConfirmed(
-    val listener: SendChannel<WatchEventConfirmed>,
     override val channelId: ByteVector32,
     val txId: ByteVector32,
     val publicKeyScript: ByteVector,
@@ -39,7 +39,6 @@ data class WatchConfirmed(
     // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
     // we support both p2pkh and p2wpkh scripts
     constructor(channelId: ByteVector32, tx: Transaction, minDepth: Long, event: BitcoinEvent) : this(
-        Channel<WatchEventConfirmed>(), // TODO must be defined by the channel itself
         channelId,
         tx.txid,
         if (tx.txOut.isEmpty()) ByteVector.empty else tx.txOut[0].publicKeyScript,
@@ -62,7 +61,6 @@ data class WatchConfirmed(
 }
 
 data class WatchSpent(
-    val listener: SendChannel<WatchEventSpent>,
     override val channelId: ByteVector32,
     val txId: ByteVector32,
     val outputIndex: Int,
@@ -70,7 +68,6 @@ data class WatchSpent(
     override val event: BitcoinEvent
 ) : Watch() {
     constructor(channelId: ByteVector32, tx: Transaction, outputIndex: Int, event: BitcoinEvent) : this(
-        Channel<WatchEventSpent>(), // TODO must be defined by the channel itself
         channelId,
         tx.txid,
         outputIndex,
@@ -94,6 +91,6 @@ data class WatchEventSpent(override val channelId: ByteVector32, override val ev
 data class WatchEventSpentBasic(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()
 data class WatchEventLost(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()
 
-class PublishAsap(val tx: Transaction)
-data class GetTxWithMeta(val txid: ByteVector32)
+data class PublishAsap(val tx: Transaction)
+data class GetTxWithMeta(val txid: ByteVector32, val response: CompletableDeferred<GetTxWithMetaResponse>)
 data class GetTxWithMetaResponse(val txid: ByteVector32, val tx_opt: Transaction?, val lastBlockTimestamp: Long)
