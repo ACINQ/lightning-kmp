@@ -238,13 +238,13 @@ class ElectrumClient(
 
     private suspend fun run() {
         eventChannel.consumeEach { event ->
-            logger.info { "Event received: $event" }
+            logger.verbose { "Event received: $event" }
 
             val (newState, actions) = state.process(event)
             state = newState
 
             actions.forEach { action ->
-                logger.info { "Execute action: $action" }
+                logger.verbose { "Execute action: $action" }
                 when (action) {
                     is ConnectionAttempt -> connectionJob = connect()
                     is SendRequest -> socket.send(action.request.encodeToByteArray())
@@ -291,7 +291,7 @@ class ElectrumClient(
             logger.info { "Connected to electrumx instance" }
             eventChannel.send(Connected)
             socket.linesFlow(this).collect {
-                logger.info { "Electrum response received: $it" }
+                logger.verbose { "Electrum response received: $it" }
                 val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                 eventChannel.send(ReceivedResponse(electrumResponse))
             }
@@ -326,7 +326,7 @@ class ElectrumClient(
     private fun pingScheduler() = launch {
         while (true) {
             delay(30_000)
-            logger.info { "Ping Electrum Server" }
+            logger.verbose { "Ping Electrum Server" }
             eventChannel.send(SendElectrumApiCall(Ping))
         }
     }

@@ -138,8 +138,8 @@ private data class WatcherRunning(
                             actions = buildList {
                                 val s = scriptHashStatus[scriptHash]
                                 when {
-                                    s == status -> logger.info { "already have status=$status for scriptHash=$scriptHash" }
-                                    status.isEmpty() -> logger.info { "empty status for scriptHash=$scriptHash" }
+                                    s == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
+                                    status.isEmpty() -> logger.verbose { "empty status for scriptHash=$scriptHash" }
                                     else -> add(AskForScriptHashHistory(scriptHash))
                                 }
                             }
@@ -444,15 +444,15 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                     }
                 }
                 is Watch -> {
-                    logger.info { "Watch received: $input" }
+                    logger.verbose { "Watch received: $input" }
                     if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatch(input))
                 }
                 is WatchEvent -> {
-                    logger.info { "WatchEvent received: $input" }
+                    logger.verbose { "WatchEvent received: $input" }
                     if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatchEvent(input))
                 }
                 is ElectrumMessage -> {
-                    logger.info { "Electrum message received: $input" }
+                    logger.verbose { "Electrum message received: $input" }
                     if (!eventChannel.isClosedForSend) eventChannel.send(ReceivedMessage(input))
                 }
             }
