@@ -18,6 +18,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -53,7 +54,6 @@ class Peer(
 
     private val input = Channel<PeerEvent>(10)
     private val output = Channel<ByteArray>(3)
-    private val watchConfirmedChannel = Channel<WatchEventConfirmed>()
 
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
@@ -122,6 +122,13 @@ class Peer(
 
         coroutineScope {
             launch { run() }
+            launch {
+                val sub = watcher.notifications.openSubscription()
+                sub.consumeEach {
+                    println("notification: $it")
+                    input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))
+                }
+            }
             launch { doPing() }
             launch { respond() }
             launch { listen() }
@@ -283,26 +290,6 @@ class Peer(
                                     }
                                     is SendWatch -> {
                                         watcher.watch(it.watch)
-                                        if (it.watch is WatchConfirmed) {
-                                            // TODO: use a real watcher, here we just blindly confirm whatever tx they sent us
-                                            val tx = Transaction(
-                                                version = 2,
-                                                txIn = listOf(),
-                                                txOut = listOf(TxOut(Satoshi(100), (it.watch).publicKeyScript)),
-                                                lockTime = 0L
-                                            )
-                                            input.send(
-                                                WatchReceived(
-                                                    WatchEventConfirmed(
-                                                        it.watch.channelId,
-                                                        it.watch.event,
-                                                        100,
-                                                        0,
-                                                        tx
-                                                    )
-                                                )
-                                            )
-                                        }
                                     }
                                     else -> logger.warning { "ignoring $it" }
                                 }

@@ -69,6 +69,7 @@ data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val 
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelAction()
 data class PublishTx(val tx: Transaction): ChannelAction()
 data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : ChannelAction()
+data class SendToSelf(val message: LightningMessage): ChannelAction()
 
 /**
  * channel static parameters
@@ -611,7 +612,7 @@ data class WaitForFundingConfirmed(
                         if (result is Try.Failure) {
                             logger.error { "funding tx verification failed: ${result.error}" }
                             if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
-                                logger.error { "ignoring this error on regtest"}
+                                logger.error { "ignoring this error on regtest" }
                             } else {
                                 return Pair(this, listOf(HandleError(result.error)))
                             }
@@ -628,7 +629,13 @@ data class WaitForFundingConfirmed(
                         val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
                         val nextState = WaitForFundingLocked(staticParams, currentTip, commitments, shortChannelId, fundingLocked)
                         val actions = listOf(SendWatch(watchLost), SendMessage(fundingLocked), StoreState(nextState))
-                        Pair(nextState, actions)
+                        if (deferred != null) {
+                            logger.info { "FundingLocked has already been received" }
+                            val result = nextState.process(MessageReceived(deferred))
+                            Pair(result.first, actions + result.second)
+                        } else {
+                            Pair(nextState, actions)
+                        }
                     }
                     is WatchEventSpent -> {
                         // TODO: handle funding tx spent

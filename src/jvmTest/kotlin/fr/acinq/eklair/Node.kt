@@ -188,7 +188,6 @@ object Node {
                 }
             }
             electrum.sendMessage(ElectrumStatusSubscription(electrumChannel))
-
             launch { readLoop(peer) }
             launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
             launch { connectLoop(peer) }
