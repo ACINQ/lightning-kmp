@@ -49,7 +49,7 @@ data class MessageReceived(val message: LightningMessage) : ChannelEvent()
 data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
 data class ExecuteCommand(val command: Command) : ChannelEvent()
 data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
-data class NewBlock(val height: Int, val Header: BlockHeader?): ChannelEvent()
+data class NewBlock(val height: Int, val Header: BlockHeader): ChannelEvent()
 
 /**
  * Channel Actions (outputs produced by the state machine)

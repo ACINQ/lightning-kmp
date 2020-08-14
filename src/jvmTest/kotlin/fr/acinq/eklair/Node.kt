@@ -106,7 +106,7 @@ object Node {
             }
         }
 
-        suspend fun channelsLoop() {
+        suspend fun channelsLoop(peer: Peer) {
             try {
                 peer.openChannelsSubscription().consumeEach {
                     val jsonStr = json.encodeToString(mapSerializer, it)
@@ -143,10 +143,10 @@ object Node {
                         val invoice = PaymentRequest.read(tokens[1])
                         peer.send(SendPayment(UUID.randomUUID(), invoice))
                     }
-                    "newblock" -> {
-                        val height = tokens[1].toInt()
-                        peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(height, null)))
-                    }
+//                    "newblock" -> {
+//                        val height = tokens[1].toInt()
+//                        peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(height, null)))
+//                    }
                     else -> {
                         println("I don't understand $tokens")
                     }
@@ -179,10 +179,11 @@ object Node {
                 }
             }
             electrum.sendMessage(ElectrumStatusSubscription(electrumChannel))
+
             launch { readLoop(peer) }
             launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
             launch { connectLoop(peer) }
-            launch { channelsLoop() }
+            launch { channelsLoop(peer) }
             launch { eventLoop(peer) }
         }
     }

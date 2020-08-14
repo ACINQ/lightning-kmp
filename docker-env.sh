@@ -11,6 +11,8 @@ docker run --rm -d \
   --net eklair-net \
   -p 18443:18443 \
   -p 18444:18444 \
+  -p 29000:29000 \
+  -p 29001:29001 \
   ruimarinho/bitcoin-core:latest \
   -printtoconsole \
   -regtest=1 \
@@ -20,7 +22,9 @@ docker run --rm -d \
   -txindex=1 \
   -fallbackfee=0.0002 \
   -rpcallowip=172.20.0.0/16 \
-  -rpcbind=0.0.0.0
+  -rpcbind=0.0.0.0 \
+  -zmqpubrawblock=tcp://0.0.0.0:29000 \
+  -zmqpubrawtx=tcp://0.0.0.0:29001
 
 docker run --rm -d \
   --name electrumx \
