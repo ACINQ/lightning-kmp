@@ -5,6 +5,7 @@ import fr.acinq.eklair.*
 import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
+import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.eklair.payment.OutgoingPacket
@@ -17,6 +18,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,6 +45,7 @@ class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val remoteNodeId: PublicKey,
+    val watcher: ElectrumWatcher
 ) {
     companion object {
         private val prefix: Byte = 0x00
@@ -70,7 +73,7 @@ class Peer(
 
     suspend fun connect(address: String, port: Int) {
         logger.info { "connecting to {$remoteNodeId}@{$address}" }
-        val socket = socketBuilder.connect(address, port, tls = false)
+        val socket = socketBuilder.connect(address, port)
         val priv = nodeParams.keyManager.nodeKey.privateKey
         val pub = priv.publicKey()
         val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
@@ -89,8 +92,16 @@ class Peer(
             session.send(message) { data, flush -> socket.send(data, flush) }
         }
 
-        val init = Hex.decode("001000000002a8a0")
-        send(init)
+        val features = Features(
+                setOf(
+                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                )
+        )
+        val init = Init(features.toByteArray().toByteVector())
+        println("sending init ${LightningMessage.encode(init)!!}")
+        send(LightningMessage.encode(init)!!)
 
         suspend fun doPing() {
             val ping = Hex.decode("0012000a0004deadbeef")
@@ -119,6 +130,13 @@ class Peer(
 
         coroutineScope {
             launch { run() }
+            launch {
+                val sub = watcher.notifications.openSubscription()
+                sub.consumeEach {
+                    println("notification: $it")
+                    input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))
+                }
+            }
             launch { doPing() }
             launch { respond() }
             launch { listen() }
@@ -137,14 +155,15 @@ class Peer(
 
     private suspend fun send(actions: List<ChannelAction>) {
         actions.forEach {
-            when (it) {
-                is SendMessage -> {
+            when  {
+                it is SendMessage -> {
                     val encoded = LightningMessage.encode(it.message)
                     encoded?.let { bin ->
                         logger.info { "sending ${it.message}" }
                         output.send(bin)
                     }
                 }
+                it is SendWatch -> watcher.watch(it.watch)
                 else -> Unit
             }
         }
@@ -276,28 +295,6 @@ class Peer(
                                     is ChannelIdSwitch -> {
                                         logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
                                         channels = channels - it.oldChannelId + (it.newChannelId to state1)
-                                    }
-                                    is SendWatch -> {
-                                        if (it.watch is WatchConfirmed) {
-                                            // TODO: use a real watcher, here we just blindly confirm whatever tx they sent us
-                                            val tx = Transaction(
-                                                version = 2,
-                                                txIn = listOf(),
-                                                txOut = listOf(TxOut(Satoshi(100), (it.watch).publicKeyScript)),
-                                                lockTime = 0L
-                                            )
-                                            input.send(
-                                                WatchReceived(
-                                                    WatchEventConfirmed(
-                                                        it.watch.channelId,
-                                                        it.watch.event,
-                                                        100,
-                                                        0,
-                                                        tx
-                                                    )
-                                                )
-                                            )
-                                        }
                                     }
                                     else -> logger.warning { "ignoring $it" }
                                 }

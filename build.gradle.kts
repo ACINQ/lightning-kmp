@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
     application
@@ -31,6 +32,7 @@ val ktorVersion = "1.3.2-1.4.0-rc"
 val secp256k1Version = "0.3.0-1.4-rc"
 
 kotlin {
+    fun ktorClient(module: String, version: String = ktorVersion) = "io.ktor:ktor-client-$module:$version"
 
     val commonMain by sourceSets.getting {
         dependencies {
@@ -38,7 +40,7 @@ kotlin {
 
             api("fr.acinq.bitcoink:bitcoink:0.4.0-1.4-rc")
             api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.3.0-kotlin-1.4-rc-41")
+            api("org.kodein.log:kodein-log:0.4.0-kotlin-1.4-rc-43")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.8-native-mt-1.4.0-rc")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:1.0-M1-1.4.0-rc")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.0-M1-1.4.0-rc")
@@ -48,12 +50,17 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("io.ktor:ktor-client-core:$ktorVersion")
+            implementation(ktorClient("core"))
+            implementation(ktorClient("auth"))
+            implementation(ktorClient("json"))
+            implementation(ktorClient("serialization"))
         }
     }
 
     jvm {
-        compilations["main"].kotlinOptions.jvmTarget = "1.8"
+        compilations.all {
+            kotlinOptions.jvmTarget = "1.8"
+        }
         compilations["main"].defaultSourceSet.dependencies {
             implementation(kotlin("stdlib-jdk8"))
             implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
@@ -145,5 +152,39 @@ afterEvaluate {
             showExceptions = true
             showStackTraces = true
         }
+    }
+}
+
+/*
+Electrum integration test environment + tasks configuration
+ */
+var cleanUpNeeded = false
+val dockerTestEnv by tasks.creating(Exec::class) {
+    workingDir = projectDir
+    commandLine("bash", "docker-env.sh")
+    doLast { cleanUpNeeded = true }
+}
+gradle.buildFinished {
+    if (cleanUpNeeded)
+        exec {
+            println("Cleaning up dockers...")
+            workingDir = projectDir
+            commandLine("bash", "docker-cleanup.sh")
+        }
+}
+
+val excludeIntegrationTests = project.findProperty("integrationTests") == "exclude"
+tasks.withType<AbstractTestTask> {
+    if (excludeIntegrationTests) {
+        filter.excludeTestsMatching("*IntegrationTest")
+    } else {
+        dependsOn(dockerTestEnv)
+    }
+}
+
+// Linux native does not support integration tests (sockets are not implemented in Linux native)
+if (currentOs.isLinux) {
+    val linuxTest by tasks.getting(KotlinNativeTest::class) {
+        filter.excludeTestsMatching("*IntegrationTest")
     }
 }

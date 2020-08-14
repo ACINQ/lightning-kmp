@@ -5,6 +5,7 @@ language = Objective-C
 
 #include <Network/Network.h>
 
+
 // https://stackoverflow.com/questions/63029901/ios-nw-parameters-configure-protocol-disable-called-directly/63050804#63050804
 
 NW_RETURNS_RETAINED nw_parameters_t nw_k_parameters_create_secure_tcp(bool withTls) {
@@ -12,4 +13,22 @@ NW_RETURNS_RETAINED nw_parameters_t nw_k_parameters_create_secure_tcp(bool withT
         withTls ? NW_PARAMETERS_DEFAULT_CONFIGURATION : NW_PARAMETERS_DISABLE_PROTOCOL,
         NW_PARAMETERS_DEFAULT_CONFIGURATION
     );
+}
+
+NW_RETURNS_RETAINED nw_parameters_t nw_k_parameters_create_secure_tcp_custom(nw_parameters_configure_protocol_block_t configure_tls) {
+    return nw_parameters_create_secure_tcp(
+        configure_tls,
+        NW_PARAMETERS_DEFAULT_CONFIGURATION
+    );
+}
+
+
+// https://youtrack.jetbrains.com/issue/KT-40963
+
+typedef void (^nw_k_connection_receive_completion_t)(_Nullable dispatch_data_t content, bool is_complete, _Nullable nw_error_t error);
+
+void nw_k_connection_receive(nw_connection_t connection, uint32_t min, uint32_t max, nw_k_connection_receive_completion_t completion) {
+    nw_connection_receive(connection, min, max, ^(dispatch_data_t content, nw_content_context_t context, bool is_complete, nw_error_t receive_error) {
+        completion(content, is_complete, receive_error);
+    });
 }

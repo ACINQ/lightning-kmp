@@ -42,7 +42,7 @@ fun Flow<ByteArray>.decodeToString(): Flow<String> =
 fun Flow<String>.splitByLines(): Flow<String> =
     flow {
         var buffer = ""
-        val lineEnding = Regex("\\R")
+        val lineEnding = Regex("\\n")
 
         collect {
             buffer += it

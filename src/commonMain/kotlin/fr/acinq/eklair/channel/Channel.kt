@@ -14,6 +14,7 @@ import fr.acinq.eklair.transactions.Scripts
 import fr.acinq.eklair.transactions.Transactions
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import org.kodein.log.Logger
@@ -68,6 +69,7 @@ data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val 
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelAction()
 data class PublishTx(val tx: Transaction): ChannelAction()
 data class ChannelIdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : ChannelAction()
+data class SendToSelf(val message: LightningMessage): ChannelAction()
 
 /**
  * channel static parameters
@@ -149,6 +151,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, event, open)
                 Pair(nextState, listOf(SendMessage(open)))
             }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event ins state ${this::class}" }
                 Pair(this, listOf())
@@ -246,6 +249,7 @@ data class WaitForOpenChannel(
                         Pair(this, listOf())
                     }
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event ins state ${this::class}" }
                 Pair(this, listOf())
@@ -301,6 +305,7 @@ data class WaitForFundingCreated(
                         val result = Transactions.checkSpendable(signedLocalCommitTx)
                         if (result.isFailure) {
                             // TODO: implement error handling
+                            logger.error { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
                             Pair(this, listOf())
                         } else {
                             val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, fundingPubKey)
@@ -367,6 +372,7 @@ data class WaitForFundingCreated(
                         Pair(this, listOf())
                     }
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -424,6 +430,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
                     }
                 }
             }
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> Pair(this, listOf())
         }
     }
@@ -489,6 +496,7 @@ data class WaitForFundingInternal(
                     fundingCreated)
                 Pair(nextState, listOf(channelIdAssigned, SendMessage(fundingCreated)))
             }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -537,10 +545,22 @@ data class WaitForFundingSigned(
                         val now = currentTimestampSeconds()
                         // TODO context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
-                        val watchSpent = WatchSpent(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+                        val watchSpent = WatchSpent(
+                            this.channelId,
+                            commitments.commitInput.outPoint.txid,
+                            commitments.commitInput.outPoint.index.toInt(),
+                            commitments.commitInput.txOut.publicKeyScript,
+                            BITCOIN_FUNDING_SPENT
+                        ) // TODO: should we wait for an acknowledgment from the watcher?
                         // phoenix channels have a zero mindepth for funding tx
                         val minDepthBlocks = if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else staticParams.nodeParams.minDepthBlocks
-                        val watchConfirmed = WatchConfirmed(this.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, minDepthBlocks.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                        val watchConfirmed = WatchConfirmed(
+                            this.channelId,
+                            commitments.commitInput.outPoint.txid,
+                            commitments.commitInput.txOut.publicKeyScript,
+                            minDepthBlocks.toLong(),
+                            BITCOIN_FUNDING_DEPTHOK
+                        )
                         logger.info { "committing txid=${fundingTx.txid}" }
 
                         // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -553,6 +573,7 @@ data class WaitForFundingSigned(
                     }
                 }
             }
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -592,7 +613,7 @@ data class WaitForFundingConfirmed(
                         if (result is Try.Failure) {
                             logger.error { "funding tx verification failed: ${result.error}" }
                             if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
-                                logger.error { "ignoring this error on regtest"}
+                                logger.error { "ignoring this error on regtest" }
                             } else {
                                 return Pair(this, listOf(HandleError(result.error)))
                             }
@@ -609,7 +630,13 @@ data class WaitForFundingConfirmed(
                         val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
                         val nextState = WaitForFundingLocked(staticParams, currentTip, commitments, shortChannelId, fundingLocked)
                         val actions = listOf(SendWatch(watchLost), SendMessage(fundingLocked), StoreState(nextState))
-                        Pair(nextState, actions)
+                        if (deferred != null) {
+                            logger.info { "FundingLocked has already been received" }
+                            val result = nextState.process(MessageReceived(deferred))
+                            Pair(result.first, actions + result.second)
+                        } else {
+                            Pair(nextState, actions)
+                        }
                     }
                     is WatchEventSpent -> {
                         // TODO: handle funding tx spent
@@ -617,6 +644,7 @@ data class WaitForFundingConfirmed(
                     }
                     else -> Pair(this, listOf())
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
@@ -680,6 +708,7 @@ data class WaitForFundingLocked(
                         Pair(this, listOf())
                     }
                 }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
                 logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())

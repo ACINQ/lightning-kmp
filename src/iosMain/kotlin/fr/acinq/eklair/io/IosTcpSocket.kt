@@ -1,8 +1,14 @@
 package fr.acinq.eklair.io
 
+import fr.acinq.eklair.io.ios_network_framework.nw_k_connection_receive
 import fr.acinq.eklair.io.ios_network_framework.nw_k_parameters_create_secure_tcp
+import fr.acinq.eklair.io.ios_network_framework.nw_k_parameters_create_secure_tcp_custom
 import kotlinx.cinterop.*
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import platform.Network.*
+import platform.Security.sec_protocol_options_set_verify_block
 import platform.darwin.dispatch_data_apply
 import platform.darwin.dispatch_data_create
 import platform.darwin.dispatch_data_get_size
@@ -29,7 +35,7 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
 
     private suspend fun receive(buffer: ByteArray, min: Int): Int =
         suspendCoroutine { continuation ->
-            nw_connection_receive(connection, min.convert(), buffer.size.convert()) { data, _, isComplete, error ->
+            nw_k_connection_receive(connection, min.convert(), buffer.size.convert()) { data, isComplete, error ->
                 when {
                     error != null -> continuation.resumeWithException(error.toIOException())
                     data != null -> {
@@ -57,10 +63,23 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    override suspend fun connect(host: String, port: Int, tls: Boolean): TcpSocket =
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
         suspendCoroutine { continuation ->
             val endpoint = nw_endpoint_create_host(host, port.toString())
-            val parameters = nw_k_parameters_create_secure_tcp(tls)
+
+            val parameters =
+                when (tls) {
+                    null -> nw_k_parameters_create_secure_tcp(false)
+                    TcpSocket.TLS.SAFE -> nw_k_parameters_create_secure_tcp(true)
+                    TcpSocket.TLS.UNSAFE_CERTIFICATES -> nw_k_parameters_create_secure_tcp_custom {
+                        LoggerFactory.default.newLogger(IosTcpSocket::class).warning { "Using unsafe TLS!" }
+                        val sec_options = nw_tls_copy_sec_protocol_options(it)
+                        sec_protocol_options_set_verify_block(sec_options, { _, _, handler ->
+                            handler!!(true)
+                        }, dispatch_get_main_queue())
+                    }
+                }
+
             val connection = nw_connection_create(endpoint, parameters)
 
             nw_connection_set_queue(connection, dispatch_get_main_queue())
@@ -88,5 +107,7 @@ private fun nw_error_t.toIOException(): TcpSocket.IOException =
             ECONNRESET -> TcpSocket.IOException.ConnectionClosed
             else -> TcpSocket.IOException.Unknown(this?.debugDescription)
         }
-        else -> TcpSocket.IOException.Unknown(this?.debugDescription)
+        nw_error_domain_dns -> TcpSocket.IOException.Unknown("DNS: ${this?.debugDescription}")
+        nw_error_domain_tls -> TcpSocket.IOException.Unknown("TLS: ${this?.debugDescription}")
+        else -> TcpSocket.IOException.Unknown("Unknown: ${this?.debugDescription}")
     }
