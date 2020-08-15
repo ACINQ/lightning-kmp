@@ -19,10 +19,13 @@ import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.Tlv
 import fr.acinq.eklair.wire.UpdateMessage
+import io.ktor.http.ContentType.Application.Cbor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.encodeToHexString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 
@@ -91,6 +94,10 @@ object Node {
         serializersModule = serializationModules
     }
 
+    private val cbor = Cbor {
+        serializersModule = serializationModules
+    }
+
     private val mapSerializer = MapSerializer(ByteVector32KSerializer, ChannelState.serializer())
 
     @JvmStatic
@@ -109,8 +116,8 @@ object Node {
         suspend fun channelsLoop(peer: Peer) {
             try {
                 peer.openChannelsSubscription().consumeEach {
-                    val jsonStr = json.encodeToString(mapSerializer, it)
-                    println(jsonStr)
+                    println("CBOR: ${cbor.encodeToHexString(mapSerializer, it)}")
+                    println(json.encodeToString(mapSerializer, it))
                 }
             } catch (ex: Throwable) {
                 ex.printStackTrace()

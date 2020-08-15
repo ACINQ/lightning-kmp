@@ -26,8 +26,6 @@ RUN unzip /code/eclair/eclair-node-gui/target/eclair-node-gui-*.zip
 
 RUN mv eclair-node-gui-* eclair-node-gui
 
-COPY entry-point.sh entry-point.sh
 
 
-
-ENTRYPOINT [ "./entry-point.sh" ]
+CMD ./eclair-node-gui/bin/eclair-node-gui.sh -Declair.printToConsole

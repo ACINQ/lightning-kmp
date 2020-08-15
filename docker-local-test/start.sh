@@ -17,9 +17,6 @@ docker run --rm \
     -e DISPLAY=$ip:0 \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -p 48001:48001 \
-    eclair-gui \
-    -bitcoind-host=bitcoind \
-    -bitcoind-zmq-block=tcp://bitcoind:29000 \
-    -bitcoind-zmq-tx=tcp://bitcoind:29001
+    eclair-gui
 
 ../docker-cleanup.sh
