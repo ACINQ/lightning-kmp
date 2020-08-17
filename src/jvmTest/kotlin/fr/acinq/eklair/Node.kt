@@ -25,9 +25,12 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.decodeFromHexString
 import kotlinx.serialization.encodeToHexString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
+import kotlin.concurrent.thread
+import kotlin.coroutines.coroutineContext
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
@@ -116,11 +119,15 @@ object Node {
         suspend fun channelsLoop(peer: Peer) {
             try {
                 peer.openChannelsSubscription().consumeEach {
-                    println("CBOR: ${cbor.encodeToHexString(mapSerializer, it)}")
-                    println(json.encodeToString(mapSerializer, it))
+                    val cborHex = cbor.encodeToHexString(mapSerializer, it)
+                    println("CBOR: $cborHex")
+                    println("JSON: ${json.encodeToString(mapSerializer, it)}")
+                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
+                    println("Serialization resistance: ${it == dec}")
                 }
             } catch (ex: Throwable) {
                 ex.printStackTrace()
+                throw ex
             }
         }
 
@@ -136,10 +143,8 @@ object Node {
                 println("got tokens $tokens")
                 when (tokens.first()) {
                     "connect" -> {
-                        val host = tokens[1]
-                        val port = tokens[2].toInt()
                         println("connecting")
-                        GlobalScope.launch { peer.connect(host, port) }
+                        GlobalScope.launch { peer.connect("localhost", 48001) }
                     }
                     "receive" -> {
                         val paymentPreimage = ByteVector32(tokens[1])
@@ -150,10 +155,6 @@ object Node {
                         val invoice = PaymentRequest.read(tokens[1])
                         peer.send(SendPayment(UUID.randomUUID(), invoice))
                     }
-//                    "newblock" -> {
-//                        val height = tokens[1].toInt()
-//                        peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(height, null)))
-//                    }
                     else -> {
                         println("I don't understand $tokens")
                     }
@@ -161,37 +162,30 @@ object Node {
             }
         }
 
-        suspend fun writeLoop() {
+        fun writeLoop() {
             while (true) {
                 val line = readLine()
                 line?.let {
                     val tokens = it.split(" ")
                     println("tokens: $tokens")
-                    commandChannel.send(tokens)
+                    runBlocking { commandChannel.send(tokens) }
                 }
             }
         }
 
+        thread(isDaemon = true, block = ::writeLoop)
+
         runBlocking {
             val electrum = ElectrumClient("localhost", 51001, null, this).apply { start() }
             val watcher = ElectrumWatcher(electrum, this).apply { start() }
-            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher)
-            val electrumChannel = Channel<ElectrumMessage>(2)
-            launch {
-                for(msg in electrumChannel) {
-                    when(msg) {
-                        is ElectrumClientReady -> electrum.sendMessage(ElectrumHeaderSubscription(electrumChannel))
-                        is HeaderSubscriptionResponse -> peer.send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
-                    }
-                }
-            }
-            electrum.sendMessage(ElectrumStatusSubscription(electrumChannel))
+            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, this)
 
             launch { readLoop(peer) }
-            launch(newSingleThreadContext("Keyboard Input")) { writeLoop() } // Will get its own new thread
             launch { connectLoop(peer) }
             launch { channelsLoop(peer) }
             launch { eventLoop(peer) }
+
+            launch { peer.connect("localhost", 48001) }
         }
     }
 }

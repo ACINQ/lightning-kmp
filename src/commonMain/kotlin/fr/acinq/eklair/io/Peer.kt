@@ -5,7 +5,7 @@ import fr.acinq.eklair.*
 import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
-import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher
+import fr.acinq.eklair.blockchain.electrum.*
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.eklair.payment.OutgoingPacket
@@ -13,15 +13,13 @@ import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.router.ChannelHop
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
+import fr.acinq.eklair.wire.Ping
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
@@ -46,8 +44,9 @@ class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val remoteNodeId: PublicKey,
-    val watcher: ElectrumWatcher
-) {
+    val watcher: ElectrumWatcher,
+    scope: CoroutineScope
+) : CoroutineScope by scope {
     companion object {
         private val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
@@ -76,79 +75,100 @@ class Peer(
 
     private var theirInit: Init? = null
 
-    suspend fun connect(address: String, port: Int) {
-        logger.info { "connecting to {$remoteNodeId}@{$address}" }
-        connected = Connection.ESTABLISHING
-        val socket = socketBuilder.connect(address, port)
-        val priv = nodeParams.keyManager.nodeKey.privateKey
-        val pub = priv.publicKey()
-        val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
-        val (enc, dec, ck) = handshake(
-            keyPair,
-            remoteNodeId.value.toByteArray(),
-            { s -> socket.receiveFully(s) },
-            { b -> socket.send(b) })
-        val session = LightningSession(enc, dec, ck)
-
-        suspend fun receive(): ByteArray {
-            return session.receive { size -> val buffer = ByteArray(size); socket.receiveFully(buffer); buffer }
+    init {
+        val electrumChannel = Channel<ElectrumMessage>(2)
+        launch {
+            for(msg in electrumChannel) {
+                when(msg) {
+                    is ElectrumClientReady -> watcher.client.sendMessage(ElectrumHeaderSubscription(electrumChannel))
+                    is HeaderSubscriptionResponse -> send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                }
+            }
         }
+        watcher.client.sendMessage(ElectrumStatusSubscription(electrumChannel))
+    }
 
-        suspend fun send(message: ByteArray) {
-            session.send(message) { data, flush -> socket.send(data, flush) }
-        }
+    fun connect(address: String, port: Int) {
+        launch {
+            logger.info { "connecting to {$remoteNodeId}@{$address}" }
+            connected = Connection.ESTABLISHING
+            val socket = try {
+                socketBuilder.connect(address, port)
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message ?: ex.toString() }
+                connected = Connection.CLOSED
+                return@launch
+            }
+            val priv = nodeParams.keyManager.nodeKey.privateKey
+            val pub = priv.publicKey()
+            val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
+            val (enc, dec, ck) = handshake(
+                keyPair,
+                remoteNodeId.value.toByteArray(),
+                { s -> socket.receiveFully(s) },
+                { b -> socket.send(b) })
+            val session = LightningSession(enc, dec, ck)
 
-        val features = Features(
+            suspend fun receive(): ByteArray {
+                return session.receive { size -> val buffer = ByteArray(size); socket.receiveFully(buffer); buffer }
+            }
+
+            suspend fun send(message: ByteArray) {
+                session.send(message) { data, flush -> socket.send(data, flush) }
+            }
+
+            val features = Features(
                 setOf(
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
                 )
-        )
-        val init = Init(features.toByteArray().toByteVector())
-        println("sending init ${LightningMessage.encode(init)!!}")
-        send(LightningMessage.encode(init)!!)
+            )
+            val init = Init(features.toByteArray().toByteVector())
+            println("sending init ${LightningMessage.encode(init)!!}")
+            send(LightningMessage.encode(init)!!)
 
-        suspend fun doPing() {
-            val ping = Hex.decode("0012000a0004deadbeef")
-            while (true) {
-                delay(30000)
-                send(ping)
-            }
-        }
-
-        suspend fun listen() {
-            try {
+            suspend fun doPing() {
+                val ping = Hex.decode("0012000a0004deadbeef")
                 while (true) {
-                    val received = receive()
-                    input.send(BytesReceived(received))
-                }
-            } finally {
-                connected = Connection.CLOSED
-            }
-        }
-
-        suspend fun respond() {
-            for (msg in output) {
-                send(msg)
-            }
-        }
-
-        coroutineScope {
-            launch { run() }
-            launch {
-                val sub = watcher.notifications.openSubscription()
-                sub.consumeEach {
-                    println("notification: $it")
-                    input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))
+                    delay(30000)
+                    send(ping)
                 }
             }
-            launch { doPing() }
-            launch { respond() }
-            launch { listen() }
-        }
 
-        delay(1000 * 1000) // TODO: WTF ?
+            suspend fun listen() {
+                try {
+                    while (true) {
+                        val received = receive()
+                        input.send(BytesReceived(received))
+                    }
+                } catch (ex: TcpSocket.IOException) {
+                    logger.warning { ex.message }
+                } finally {
+                    connected = Connection.CLOSED
+                }
+            }
+
+            suspend fun respond() {
+                for (msg in output) {
+                    send(msg)
+                }
+            }
+
+            coroutineScope {
+                launch { run() }
+                launch {
+                    val sub = watcher.notifications.openSubscription()
+                    sub.consumeEach {
+                        println("notification: $it")
+                        input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))
+                    }
+                }
+                launch { doPing() }
+                launch { respond() }
+                launch { listen() }
+            }
+        }
     }
 
     suspend fun send(event: PeerEvent) {

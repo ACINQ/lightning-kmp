@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.withContext
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
+import java.net.ConnectException
 import java.net.SocketException
 import java.security.cert.X509Certificate
 import javax.net.ssl.X509TrustManager
@@ -29,9 +30,9 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
             try {
                 read()
             } catch (_: ClosedReceiveChannelException) {
-                throw TcpSocket.IOException.ConnectionClosed
+                throw TcpSocket.IOException.ConnectionClosed()
             } catch (_: SocketException) {
-                throw TcpSocket.IOException.ConnectionClosed
+                throw TcpSocket.IOException.ConnectionClosed()
             } catch (t: Throwable) {
                 throw TcpSocket.IOException.Unknown(t.message)
             }
@@ -39,8 +40,9 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 
     override suspend fun receiveFully(buffer: ByteArray): Unit = receive { readChannel.readFully(buffer) }
 
-    override suspend fun receiveAvailable(buffer: ByteArray): Int =
-        readChannel.readAvailable(buffer).takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed
+    override suspend fun receiveAvailable(buffer: ByteArray): Int {
+        return readChannel.readAvailable(buffer).takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
+    }
 
     override fun close() {
         socket.close()
@@ -53,8 +55,8 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     val selectorManager = ActorSelectorManager(Dispatchers.IO)
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
         withContext(Dispatchers.IO) {
-            JvmTcpSocket(
-                aSocket(selectorManager).tcp().connect(host, port).let { socket ->
+            try {
+                JvmTcpSocket(aSocket(selectorManager).tcp().connect(host, port).let { socket ->
                     when (tls) {
                         null -> socket
                         TcpSocket.TLS.SAFE -> socket.tls(Dispatchers.IO)
@@ -67,7 +69,11 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                             }
                         }
                     }
-                }
-            )
+                })
+            } catch (ex: ConnectException) {
+                throw TcpSocket.IOException.ConnectionRefused()
+            } catch (ex: SocketException) {
+                throw TcpSocket.IOException.Unknown(ex.message)
+            }
         }
 }
