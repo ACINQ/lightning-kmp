@@ -85,14 +85,14 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
             nw_connection_set_queue(connection, dispatch_get_main_queue())
             var called = false
             nw_connection_set_state_changed_handler(connection) { state, error ->
-                when (state) {
-                    nw_connection_state_ready -> if (!called) {
-                        called = true
-                        continuation.resume(IosTcpSocket(connection))
-                    }
-                    nw_connection_state_failed -> if (!called) {
+                when {
+                    error != null -> if (!called) {
                         called = true
                         continuation.resumeWithException(error.toIOException())
+                    }
+                    state == nw_connection_state_ready -> if (!called) {
+                        called = true
+                        continuation.resume(IosTcpSocket(connection))
                     }
                 }
             }

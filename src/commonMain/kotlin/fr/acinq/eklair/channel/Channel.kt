@@ -633,8 +633,8 @@ data class WaitForFundingConfirmed(
                         val actions = listOf(SendWatch(watchLost), SendMessage(fundingLocked), StoreState(nextState))
                         if (deferred != null) {
                             logger.info { "FundingLocked has already been received" }
-                            val result = nextState.process(MessageReceived(deferred))
-                            Pair(result.first, actions + result.second)
+                            val resultPair = nextState.process(MessageReceived(deferred))
+                            Pair(resultPair.first, actions + resultPair.second)
                         } else {
                             Pair(nextState, actions)
                         }

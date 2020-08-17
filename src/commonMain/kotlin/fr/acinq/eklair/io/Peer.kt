@@ -82,6 +82,7 @@ class Peer(
                 when(msg) {
                     is ElectrumClientReady -> watcher.client.sendMessage(ElectrumHeaderSubscription(electrumChannel))
                     is HeaderSubscriptionResponse -> send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                    else -> {}
                 }
             }
         }
@@ -95,26 +96,36 @@ class Peer(
             val socket = try {
                 socketBuilder.connect(address, port)
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { ex.message ?: ex.toString() }
+                logger.warning { ex.message }
                 connected = Connection.CLOSED
                 return@launch
             }
             val priv = nodeParams.keyManager.nodeKey.privateKey
             val pub = priv.publicKey()
             val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
-            val (enc, dec, ck) = handshake(
-                keyPair,
-                remoteNodeId.value.toByteArray(),
-                { s -> socket.receiveFully(s) },
-                { b -> socket.send(b) })
+            val (enc, dec, ck) = try {
+                handshake(
+                    keyPair,
+                    remoteNodeId.value.toByteArray(),
+                    { s -> socket.receiveFully(s) },
+                    { b -> socket.send(b) })
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+                connected = Connection.CLOSED
+                return@launch
+            }
             val session = LightningSession(enc, dec, ck)
 
             suspend fun receive(): ByteArray {
-                return session.receive { size -> val buffer = ByteArray(size); socket.receiveFully(buffer); buffer }
+                return session.receive { size -> socket.receiveFully(size) }
             }
 
             suspend fun send(message: ByteArray) {
-                session.send(message) { data, flush -> socket.send(data, flush) }
+                try {
+                    session.send(message) { data, flush -> socket.send(data, flush) }
+                } catch (ex: TcpSocket.IOException) {
+                    logger.warning { ex.message }
+                }
             }
 
             val features = Features(
@@ -130,7 +141,7 @@ class Peer(
 
             suspend fun doPing() {
                 val ping = Hex.decode("0012000a0004deadbeef")
-                while (true) {
+                while (isActive) {
                     delay(30000)
                     send(ping)
                 }
@@ -138,7 +149,7 @@ class Peer(
 
             suspend fun listen() {
                 try {
-                    while (true) {
+                    while (isActive) {
                         val received = receive()
                         input.send(BytesReceived(received))
                     }
@@ -417,48 +428,43 @@ class Peer(
                     logger.info { "sending ${event.paymentRequest.amount} to ${event.paymentRequest.nodeId}" }
 
                     // find a channel with enough outgoing capacity
-                    channels.values.forEach {
-                        when (it) {
-                            is Normal -> logger.info { "channel ${it.channelId} available for send ${it.commitments.availableBalanceForSend()}" }
-                        }
-                    }
-                    val channel = channels.values.find { it is Normal && it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! } as Normal?
+                    channels.values
+                        .filterIsInstance<Normal>()
+                        .forEach { logger.info { "channel ${it.channelId} available for send ${it.commitments.availableBalanceForSend()}" } }
+                    val channel = channels.values
+                        .filterIsInstance<Normal>()
+                        .find { it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! }
                     if (channel == null) logger.error { "cannot find channel with enough capacity" } else {
-                        val normal = channel!!
                         val paymentId = event.id
                         val expiryDelta = CltvExpiryDelta(35) // TODO: read value from payment request
-                        val expiry = expiryDelta.toCltvExpiry(normal.currentBlockHeight.toLong())
+                        val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
                         val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
                         val finalPayload = when(isDirectPayment) {
                             true -> Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
                             false -> TODO("implement trampoline payment")
                         }
                         // one hop: this a direct payment to our peer
-                        val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, normal.channelUpdate))
-                        val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
-                        val (state1, actions) = normal.process(ExecuteCommand(cmd))
-                        channels = channels + (normal.channelId to state1)
+                        val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, channel.channelUpdate))
+                        val (cmd, _) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
+                        val (state1, actions) = channel.process(ExecuteCommand(cmd))
+                        channels = channels + (channel.channelId to state1)
                         send(actions)
-                        actions.forEach {
-                            when (it) {
-                                is ProcessCommand -> input.send(WrappedChannelEvent(normal.channelId, ExecuteCommand(it.command)))
-                            }
-                        }
+                        actions
+                            .filterIsInstance<ProcessCommand>()
+                            .forEach { input.send(WrappedChannelEvent(channel.channelId, ExecuteCommand(it.command))) }
                         pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
-                        logger.info { "channel ${normal.channelId} new state $state1" }
+                        logger.info { "channel ${channel.channelId} new state $state1" }
                     }
                 }
                 event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
                     // this is for all channels
-                    channels.forEach {
-                        val (state1, actions) = it.value.process(event.channelEvent)
+                    channels.forEach { (key, value) ->
+                        val (state1, actions) = value.process(event.channelEvent)
                         send(actions)
-                        actions.forEach { action ->
-                            when (action) {
-                                is ProcessCommand -> input.send(WrappedChannelEvent(it.key, ExecuteCommand(action.command)))
-                            }
-                        }
-                        channels = channels + (it.key to state1)
+                        actions
+                            .filterIsInstance<ProcessCommand>()
+                            .forEach { input.send(WrappedChannelEvent(key, ExecuteCommand(it.command))) }
+                        channels = channels + (key to state1)
                     }
                 }
                 event is WrappedChannelEvent && !channels.containsKey(event.channelId) -> {
