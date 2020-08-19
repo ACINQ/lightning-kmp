@@ -4,6 +4,7 @@ import fr.acinq.eklair.io.ios_network_framework.nw_k_connection_receive
 import fr.acinq.eklair.io.ios_network_framework.nw_k_parameters_create_secure_tcp
 import fr.acinq.eklair.io.ios_network_framework.nw_k_parameters_create_secure_tcp_custom
 import kotlinx.cinterop.*
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -18,12 +19,11 @@ import platform.posix.ECONNRESET
 import platform.posix.memcpy
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalUnsignedTypes::class)
 class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
     override suspend fun send(bytes: ByteArray?, flush: Boolean): Unit =
-        suspendCoroutine { continuation ->
+        suspendCancellableCoroutine { continuation ->
             val pinned = bytes?.pin()
             val data = pinned?.let { dispatch_data_create(pinned.addressOf(0), bytes.size.convert(), dispatch_get_main_queue(), ({})) }
             nw_connection_send(connection, data, null, flush) { error ->
@@ -34,7 +34,7 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
         }
 
     private suspend fun receive(buffer: ByteArray, min: Int): Int =
-        suspendCoroutine { continuation ->
+        suspendCancellableCoroutine { continuation ->
             nw_k_connection_receive(connection, min.convert(), buffer.size.convert()) { data, isComplete, error ->
                 when {
                     error != null -> continuation.resumeWithException(error.toIOException())
@@ -63,8 +63,9 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
+    @OptIn(ExperimentalUnsignedTypes::class)
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
-        suspendCoroutine { continuation ->
+        suspendCancellableCoroutine { continuation ->
             val endpoint = nw_endpoint_create_host(host, port.toString())
 
             val parameters =

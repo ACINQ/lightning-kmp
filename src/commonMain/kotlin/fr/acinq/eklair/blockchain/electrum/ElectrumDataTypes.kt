@@ -9,6 +9,7 @@ import kotlinx.coroutines.channels.SendChannel
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.descriptors.buildSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
@@ -158,9 +159,8 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
 
         return when(val method = jsonObject["method"]) {
             is JsonPrimitive -> {
-                val params = jsonObject["params"]?.jsonArray.orEmpty().also {
-                    if (it.isEmpty()) throw SerializationException("Parameters for ${method.content} notification should not null or be empty.")
-                }
+                val params = jsonObject["params"]?.jsonArray.orEmpty().takeIf { it.isNotEmpty() }
+                    ?: throw SerializationException("Parameters for ${method.content} notification should not null or be empty.")
 
                 when (method.content) {
                     "blockchain.headers.subscribe" -> params.first().jsonObject.let { header ->
@@ -184,9 +184,8 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
         throw SerializationException("This ($value) is not meant to be serialized!")
     }
 
-    @OptIn(InternalSerializationApi::class)
     override val descriptor: SerialDescriptor
-        get() = buildSerialDescriptor("fr.acinq.eklair.utils.Either", PolymorphicKind.SEALED)
+        get() = buildClassSerialDescriptor("fr.acinq.eklair.utils.Either")
 }
 
 internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCResponse): ElectrumResponse =

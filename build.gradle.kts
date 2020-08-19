@@ -2,25 +2,20 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    application
-    kotlin("multiplatform") version "1.4.0-rc"
-    kotlin("plugin.serialization") version "1.4.0-rc"
+    kotlin("multiplatform") version "1.4.0"
+    kotlin("plugin.serialization") version "1.4.0"
     `maven-publish`
 }
 
 group = "fr.acinq.eklair"
 version = "snapshot"
 
-application {
-    mainClassName = "fr.acinq.eklair.Boot"
-}
-
 repositories {
     mavenLocal()
     maven("https://dl.bintray.com/kotlin/kotlinx")
     maven("https://dl.bintray.com/kotlin/ktor")
-    maven("https://dl.bintray.com/kotlin/kotlin-eap")
     maven("https://dl.bintray.com/kodein-framework/kodein-dev")
+    maven("https://dl.bintray.com/kodein-framework/Kodein-Log")
     maven("https://dl.bintray.com/acinq/libs")
     google()
     jcenter()
@@ -28,32 +23,29 @@ repositories {
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
-val ktorVersion = "1.3.2-1.4.0-rc"
-val secp256k1Version = "0.3.0-1.4-rc"
-
 kotlin {
-    fun ktorClient(module: String, version: String = ktorVersion) = "io.ktor:ktor-client-$module:$version"
+    fun ktor(module: String, version: String = "1.4.0") = "io.ktor:ktor-$module:$version"
+    val secp256k1Version = "0.3.0"
+    val serializationVersion = "1.0.0-RC"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            implementation(kotlin("stdlib-common"))
-
-            api("fr.acinq.bitcoink:bitcoink:0.4.0-1.4-rc")
+            api("fr.acinq.bitcoink:bitcoink:0.5.0")
             api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.4.0-kotlin-1.4-rc-43")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.8-native-mt-1.4.0-rc")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:1.0-M1-1.4.0-rc")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.0-M1-1.4.0-rc")
+            api("org.kodein.log:kodein-log:0.5.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9-native-mt")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
         }
     }
     val commonTest by sourceSets.getting {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation(ktorClient("core"))
-            implementation(ktorClient("auth"))
-            implementation(ktorClient("json"))
-            implementation(ktorClient("serialization"))
+            implementation(ktor("client-core"))
+            implementation(ktor("client-auth"))
+            implementation(ktor("client-json"))
+            implementation(ktor("client-serialization"))
         }
     }
 
@@ -62,10 +54,9 @@ kotlin {
             kotlinOptions.jvmTarget = "1.8"
         }
         compilations["main"].defaultSourceSet.dependencies {
-            implementation(kotlin("stdlib-jdk8"))
-            implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
-            implementation("io.ktor:ktor-network:$ktorVersion")
-            implementation("io.ktor:ktor-network-tls:$ktorVersion")
+            implementation(ktor("client-okhttp"))
+            implementation(ktor("network"))
+            implementation(ktor("network-tls"))
             implementation("org.slf4j:slf4j-api:1.7.29")
         }
         compilations["test"].kotlinOptions.jvmTarget = "1.8"
@@ -94,7 +85,7 @@ kotlin {
             compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
-                    implementation("io.ktor:ktor-client-curl:$ktorVersion")
+                    implementation(ktor("client-curl"))
                 }
             }
         }
@@ -109,7 +100,7 @@ kotlin {
             compilations["test"].defaultSourceSet {
                 dependsOn(nativeTest)
                 dependencies {
-                    implementation("io.ktor:ktor-client-ios:$ktorVersion")
+                    implementation(ktor("client-ios"))
                 }
             }
         }
@@ -158,19 +149,18 @@ afterEvaluate {
 /*
 Electrum integration test environment + tasks configuration
  */
-var cleanUpNeeded = false
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir
     commandLine("bash", "docker-env.sh")
-    doLast { cleanUpNeeded = true }
-}
-gradle.buildFinished {
-    if (cleanUpNeeded)
-        exec {
-            println("Cleaning up dockers...")
-            workingDir = projectDir
-            commandLine("bash", "docker-cleanup.sh")
+    doLast {
+        gradle.buildFinished {
+            exec {
+                println("Cleaning up dockers...")
+                workingDir = projectDir
+                commandLine("bash", "docker-cleanup.sh")
+            }
         }
+    }
 }
 
 val excludeIntegrationTests = project.findProperty("integrationTests") == "exclude"
