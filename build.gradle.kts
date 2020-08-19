@@ -29,8 +29,6 @@ kotlin {
 
     val commonMain by sourceSets.getting {
         dependencies {
-            implementation(kotlin("stdlib-common"))
-
             api("fr.acinq.bitcoink:bitcoink:0.5.0")
             api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.5.0")
@@ -55,7 +53,6 @@ kotlin {
             kotlinOptions.jvmTarget = "1.8"
         }
         compilations["main"].defaultSourceSet.dependencies {
-            implementation(kotlin("stdlib-jdk8"))
             implementation(ktor("client-okhttp"))
             implementation(ktor("network"))
             implementation(ktor("network-tls"))
@@ -151,19 +148,18 @@ afterEvaluate {
 /*
 Electrum integration test environment + tasks configuration
  */
-var cleanUpNeeded = false
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir
     commandLine("bash", "docker-env.sh")
-    doLast { cleanUpNeeded = true }
-}
-gradle.buildFinished {
-    if (cleanUpNeeded)
-        exec {
-            println("Cleaning up dockers...")
-            workingDir = projectDir
-            commandLine("bash", "docker-cleanup.sh")
+    doLast {
+        gradle.buildFinished {
+            exec {
+                println("Cleaning up dockers...")
+                workingDir = projectDir
+                commandLine("bash", "docker-cleanup.sh")
+            }
         }
+    }
 }
 
 val excludeIntegrationTests = project.findProperty("integrationTests") == "exclude"

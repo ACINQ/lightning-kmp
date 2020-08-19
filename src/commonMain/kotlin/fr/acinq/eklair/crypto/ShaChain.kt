@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eklair.io.ByteVector32KSerializer
 import fr.acinq.eklair.utils.startsWith
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
@@ -101,28 +102,10 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
                 addHash(receiver.copy(knownHashes = nodes1), hash, parentIndex)
             }
 
-        // TODO
-//        val shaChainCodec: Codec[ShaChain] = {
-//            import scodec.Codec
-//                    import scodec.bits.BitVector
-//                    import scodec.codecs._
-//
-//            // codec for a single map entry (i.e. Vector[Boolean] -> ByteVector
-//            val entryCodec = vectorOfN(uint16, bool) ~ variableSizeBytes(uint16, CommonCodecs.bytes32)
-//
-//            // codec for a Map[Vector[Boolean], ByteVector]: write all k -> v pairs using the codec defined above
-//            val mapCodec: Codec[Map[Vector[Boolean], ByteVector32]] = Codec[Map[Vector[Boolean], ByteVector32]](
-//            (m: Map[Vector[Boolean], ByteVector32]) => vectorOfN(uint16, entryCodec).encode(m.toVector),
-//            (b: BitVector) => vectorOfN(uint16, entryCodec).decode(b).map(_.map(_.toMap))
-//            )
-//
-//            // our shachain codec
-//            (("knownHashes" | mapCodec) :: ("lastIndex" | optional(bool, int64))).as[ShaChain]
-//        }
-
     }
 
     object Serializer : KSerializer<ShaChain> {
+        @OptIn(ExperimentalSerializationApi::class)
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ShaChain") {
             element("knownHashes", mapSerialDescriptor(String.serializer().descriptor, ByteVector32KSerializer.descriptor))
             element<Long>("lastIndex", isOptional = true)

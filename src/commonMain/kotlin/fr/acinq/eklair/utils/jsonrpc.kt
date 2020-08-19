@@ -39,10 +39,10 @@ fun List<Any>.asJsonRPCParameters(): List<JsonRPCParam> = map {
 
 @Serializable
 sealed class JsonRPCParam
-@Serializable
+
+@Serializable(with = JsonRPCInt.Serializer::class)
 data class JsonRPCInt(val value: Int) : JsonRPCParam() {
-    @Serializer(forClass = JsonRPCInt::class)
-    companion object: KSerializer<JsonRPCInt> {
+    object Serializer : KSerializer<JsonRPCInt> {
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("IntParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCInt) {
@@ -54,10 +54,10 @@ data class JsonRPCInt(val value: Int) : JsonRPCParam() {
 }
 fun Int.asParam(): JsonRPCParam = JsonRPCInt(this)
 
-@Serializable
+@Serializable(with = JsonRPCDouble.Serializer::class)
 data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
-    @Serializer(forClass = JsonRPCDouble::class)
-    companion object: KSerializer<JsonRPCDouble> {
+    @OptIn(ExperimentalSerializationApi::class)
+    object Serializer: KSerializer<JsonRPCDouble> {
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("DoubleParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCDouble) {
@@ -69,10 +69,10 @@ data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
 }
 fun Double.asParam(): JsonRPCParam = JsonRPCDouble(this)
 
-@Serializable
+@Serializable(JsonRPCString.Serializer::class)
 data class JsonRPCString(val value: String) : JsonRPCParam() {
-    @Serializer(forClass = JsonRPCString::class)
-    companion object: KSerializer<JsonRPCString> {
+    @OptIn(ExperimentalSerializationApi::class)
+    object Serializer: KSerializer<JsonRPCString> {
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("StringParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCString) {
