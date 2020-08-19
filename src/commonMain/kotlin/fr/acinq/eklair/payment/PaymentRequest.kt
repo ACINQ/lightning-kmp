@@ -201,13 +201,13 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             override val tag: Int5 = Description.tag
 
             override fun encode(): List<Int5> {
-                return Bech32.eight2five(description.encodeToByteArray().toTypedArray()).toList()
+                return Bech32.eight2five(description.encodeToByteArray()).toList()
             }
 
             companion object {
                 const val tag: Int5 = 13
                 fun decode(input: List<Int5>): Description {
-                    val description = Bech32.five2eight(input.toTypedArray(), 0).toByteArray().decodeToString()
+                    val description = Bech32.five2eight(input.toTypedArray(), 0).decodeToString()
                     return Description(description)
                 }
             }
@@ -222,13 +222,13 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             override val tag: Int5 = Description.tag
 
             override fun encode(): List<Int5> {
-                return Bech32.eight2five(nodeId.value.toByteArray().toTypedArray()).toList()
+                return Bech32.eight2five(nodeId.value.toByteArray()).toList()
             }
 
             companion object {
                 const val tag: Int5 = 19
                 fun decode(input: List<Int5>): NodeId {
-                    val bin = Bech32.five2eight(input.toTypedArray(), 0).toByteArray()
+                    val bin = Bech32.five2eight(input.toTypedArray(), 0)
                     return NodeId(PublicKey((bin)))
                 }
             }
@@ -243,7 +243,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             override val tag: Int5 = DescriptionHash.tag
 
             override fun encode(): List<Int5> {
-                return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
+                return Bech32.eight2five(hash.toByteArray()).toList()
             }
 
             companion object {
@@ -251,7 +251,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                 fun decode(input: List<Int5>): DescriptionHash {
                     require(input.size == 52)
                     val hash = Bech32.five2eight(input.toTypedArray(), 0)
-                    return DescriptionHash(hash.toByteArray().toByteVector32())
+                    return DescriptionHash(hash.toByteVector32())
                 }
             }
         }
@@ -265,7 +265,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             override val tag: Int5 = PaymentHash.tag
 
             override fun encode(): List<Int5> {
-                return Bech32.eight2five(hash.toByteArray().toTypedArray()).toList()
+                return Bech32.eight2five(hash.toByteArray()).toList()
             }
 
             companion object {
@@ -274,7 +274,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                 fun decode(input: List<Int5>): PaymentHash {
                     require(input.size == 52)
                     val hash = Bech32.five2eight(input.toTypedArray(), 0)
-                    return PaymentHash(hash.toByteArray().toByteVector32())
+                    return PaymentHash(hash.toByteVector32())
                 }
             }
         }
@@ -288,7 +288,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             override val tag: Int5 = PaymentSecret.tag
 
             override fun encode(): List<Int5> {
-                return Bech32.eight2five(secret.toByteArray().toTypedArray()).toList()
+                return Bech32.eight2five(secret.toByteArray()).toList()
             }
 
             companion object {
@@ -297,7 +297,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                 fun decode(input: List<Int5>): PaymentSecret {
                     require(input.size == 52)
                     val secret = Bech32.five2eight(input.toTypedArray(), 0)
-                    return PaymentSecret(secret.toByteArray().toByteVector32())
+                    return PaymentSecret(secret.toByteVector32())
                 }
             }
         }
@@ -389,14 +389,14 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                     LightningSerializer.writeU32(it.feeProportionalMillionths.toInt(), out)
                     LightningSerializer.writeU16(it.cltvExpiryDelta.toInt(), out)
                 }
-                return Bech32.eight2five(out.toByteArray().toTypedArray()).toList()
+                return Bech32.eight2five(out.toByteArray()).toList()
             }
 
             companion object {
                 const val tag: Int5 = 3
 
                 fun decode(input: List<Int5>): RoutingInfo {
-                    val stream = ByteArrayInput(Bech32.five2eight(input.toTypedArray(), 0).toByteArray())
+                    val stream = ByteArrayInput(Bech32.five2eight(input.toTypedArray(), 0))
                     val hints = ArrayList<ExtraHop>()
                     while(stream.availableBytes >= 51) {
                         val hint = ExtraHop(
