@@ -5,7 +5,7 @@ import fr.acinq.eklair.*
 import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
-import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher
+import fr.acinq.eklair.blockchain.electrum.*
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
 import fr.acinq.eklair.payment.OutgoingPacket
@@ -13,15 +13,13 @@ import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.router.ChannelHop
 import fr.acinq.eklair.utils.*
 import fr.acinq.eklair.wire.*
+import fr.acinq.eklair.wire.Ping
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
@@ -33,20 +31,22 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
-data class SendPayment(val paymentRequest: PaymentRequest) : PeerEvent()
+data class SendPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
+data class PaymentSent(val id: UUID, val paymentHash: ByteVector32, val paymentPreimage: ByteVector32, val recipientAmount: MilliSatoshi, val recipientNodeId: PublicKey, val timestamp: Long) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val remoteNodeId: PublicKey,
-    val watcher: ElectrumWatcher
-) {
+    val watcher: ElectrumWatcher,
+    scope: CoroutineScope
+) : CoroutineScope by scope {
     companion object {
         private val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
@@ -58,7 +58,8 @@ class Peer(
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
-    private val connectedChannel = ConflatedBroadcastChannel(false)
+    enum class Connection { CLOSED, ESTABLISHING, ESTABLISHED }
+    private val connectedChannel = ConflatedBroadcastChannel<Connection>(Connection.CLOSED)
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
     // channels map, indexed by channel id
@@ -69,80 +70,116 @@ class Peer(
     // pending incoming payments, indexed by payment hash
     private val pendingIncomingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
 
+    // pending outgoing payments, indexed by payment payment hash
+    private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
+
     private var theirInit: Init? = null
 
-    suspend fun connect(address: String, port: Int) {
-        logger.info { "connecting to {$remoteNodeId}@{$address}" }
-        val socket = socketBuilder.connect(address, port)
-        val priv = nodeParams.keyManager.nodeKey.privateKey
-        val pub = priv.publicKey()
-        val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
-        val (enc, dec, ck) = handshake(
-            keyPair,
-            remoteNodeId.value.toByteArray(),
-            { s -> socket.receiveFully(s) },
-            { b -> socket.send(b) })
-        val session = LightningSession(enc, dec, ck)
-
-        suspend fun receive(): ByteArray {
-            return session.receive { size -> val buffer = ByteArray(size); socket.receiveFully(buffer); buffer }
+    init {
+        val electrumChannel = Channel<ElectrumMessage>(2)
+        launch {
+            for(msg in electrumChannel) {
+                when(msg) {
+                    is ElectrumClientReady -> watcher.client.sendMessage(ElectrumHeaderSubscription(electrumChannel))
+                    is HeaderSubscriptionResponse -> send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                    else -> {}
+                }
+            }
         }
+        watcher.client.sendMessage(ElectrumStatusSubscription(electrumChannel))
+    }
 
-        suspend fun send(message: ByteArray) {
-            session.send(message) { data, flush -> socket.send(data, flush) }
-        }
+    fun connect(address: String, port: Int) {
+        launch {
+            logger.info { "connecting to {$remoteNodeId}@{$address}" }
+            connected = Connection.ESTABLISHING
+            val socket = try {
+                socketBuilder.connect(address, port)
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+                connected = Connection.CLOSED
+                return@launch
+            }
+            val priv = nodeParams.keyManager.nodeKey.privateKey
+            val pub = priv.publicKey()
+            val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
+            val (enc, dec, ck) = try {
+                handshake(
+                    keyPair,
+                    remoteNodeId.value.toByteArray(),
+                    { s -> socket.receiveFully(s) },
+                    { b -> socket.send(b) })
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+                connected = Connection.CLOSED
+                return@launch
+            }
+            val session = LightningSession(enc, dec, ck)
 
-        val features = Features(
+            suspend fun receive(): ByteArray {
+                return session.receive { size -> socket.receiveFully(size) }
+            }
+
+            suspend fun send(message: ByteArray) {
+                try {
+                    session.send(message) { data, flush -> socket.send(data, flush) }
+                } catch (ex: TcpSocket.IOException) {
+                    logger.warning { ex.message }
+                }
+            }
+
+            val features = Features(
                 setOf(
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
                 )
-        )
-        val init = Init(features.toByteArray().toByteVector())
-        println("sending init ${LightningMessage.encode(init)!!}")
-        send(LightningMessage.encode(init)!!)
+            )
+            val init = Init(features.toByteArray().toByteVector())
+            println("sending init ${LightningMessage.encode(init)!!}")
+            send(LightningMessage.encode(init)!!)
 
-        suspend fun doPing() {
-            val ping = Hex.decode("0012000a0004deadbeef")
-            while (true) {
-                delay(30000)
-                send(ping)
-            }
-        }
-
-        suspend fun listen() {
-            try {
-                while (true) {
-                    val received = receive()
-                    input.send(BytesReceived(received))
-                }
-            } finally {
-                connected = false
-            }
-        }
-
-        suspend fun respond() {
-            for (msg in output) {
-                send(msg)
-            }
-        }
-
-        coroutineScope {
-            launch { run() }
-            launch {
-                val sub = watcher.notifications.openSubscription()
-                sub.consumeEach {
-                    println("notification: $it")
-                    input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))
+            suspend fun doPing() {
+                val ping = Hex.decode("0012000a0004deadbeef")
+                while (isActive) {
+                    delay(30000)
+                    send(ping)
                 }
             }
-            launch { doPing() }
-            launch { respond() }
-            launch { listen() }
-        }
 
-        delay(1000 * 1000) // TODO: WTF ?
+            suspend fun listen() {
+                try {
+                    while (isActive) {
+                        val received = receive()
+                        input.send(BytesReceived(received))
+                    }
+                } catch (ex: TcpSocket.IOException) {
+                    logger.warning { ex.message }
+                } finally {
+                    connected = Connection.CLOSED
+                }
+            }
+
+            suspend fun respond() {
+                for (msg in output) {
+                    send(msg)
+                }
+            }
+
+            coroutineScope {
+                launch { run() }
+                launch {
+                    val sub = watcher.notifications.openSubscription()
+                    sub.consumeEach {
+                        println("notification: $it")
+                        input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))
+                    }
+                }
+                launch { doPing() }
+                launch { respond() }
+                launch { listen() }
+            }
+        }
     }
 
     suspend fun send(event: PeerEvent) {
@@ -224,7 +261,7 @@ class Peer(
                         msg is Init -> {
                             logger.info { "received $msg" }
                             theirInit = msg
-                            connected = true
+                            connected = Connection.ESTABLISHED
                         }
                         msg is Ping -> {
                             logger.info { "received $msg" }
@@ -327,6 +364,14 @@ class Peer(
                                         )
                                         listenerEventChannel.send(PaymentReceived(payment))
                                     }
+                                    it is ProcessFulfill && !pendingOutgoingPayments.containsKey(it.fulfill.paymentPreimage.sha256()) -> {
+                                        logger.warning { "received ${it.fulfill} } for which we don't have a payment hash" }
+                                    }
+                                    it is ProcessFulfill -> {
+                                        val payment = pendingOutgoingPayments[it.fulfill.paymentPreimage.sha256()]!!
+                                        logger.info { "received ${it.fulfill} } for payment $payment" }
+                                        listenerEventChannel.send(PaymentSent(payment.id, payment.paymentRequest.paymentHash!!, it.fulfill.paymentPreimage, payment.paymentRequest.amount!!, payment.paymentRequest.nodeId, currentTimestampMillis()))
+                                    }
                                     it is ProcessCommand -> input.send(
                                         WrappedChannelEvent(
                                             msg.channelId,
@@ -360,8 +405,8 @@ class Peer(
                     val pr = PaymentRequest(
                         "lnbcrt", event.amount, currentTimestampSeconds(), nodeParams.nodeId,
                         listOf(
-                            PaymentRequest.Companion.TaggedField.PaymentHash(event.paymentHash),
-                            PaymentRequest.Companion.TaggedField.Description("this is a kotlin test")
+                            PaymentRequest.TaggedField.PaymentHash(event.paymentHash),
+                            PaymentRequest.TaggedField.Description("this is a kotlin test")
                         ),
                         ByteVector.empty
                     ).sign(nodeParams.privateKey)
@@ -383,47 +428,43 @@ class Peer(
                     logger.info { "sending ${event.paymentRequest.amount} to ${event.paymentRequest.nodeId}" }
 
                     // find a channel with enough outgoing capacity
-                    channels.values.forEach {
-                        when (it) {
-                            is Normal -> logger.info { "channel ${it.channelId} available for send ${it.commitments.availableBalanceForSend()}" }
-                        }
-                    }
-                    val channel = channels.values.find { it is Normal && it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! } as Normal?
+                    channels.values
+                        .filterIsInstance<Normal>()
+                        .forEach { logger.info { "channel ${it.channelId} available for send ${it.commitments.availableBalanceForSend()}" } }
+                    val channel = channels.values
+                        .filterIsInstance<Normal>()
+                        .find { it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! }
                     if (channel == null) logger.error { "cannot find channel with enough capacity" } else {
-                        val normal = channel!!
-                        val paymentId = UUID.randomUUID()
-                        val expiryDelta = CltvExpiryDelta(18) // TODO: read value from payment request
-                        val expiry = expiryDelta.toCltvExpiry(normal.currentBlockHeight.toLong())
+                        val paymentId = event.id
+                        val expiryDelta = CltvExpiryDelta(35) // TODO: read value from payment request
+                        val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
                         val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
                         val finalPayload = when(isDirectPayment) {
                             true -> Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
                             false -> TODO("implement trampoline payment")
                         }
                         // one hop: this a direct payment to our peer
-                        val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, normal.channelUpdate))
-                        val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
-                        val (state1, actions) = normal.process(ExecuteCommand(cmd))
-                        channels = channels + (normal.channelId to state1)
+                        val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, channel.channelUpdate))
+                        val (cmd, _) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
+                        val (state1, actions) = channel.process(ExecuteCommand(cmd))
+                        channels = channels + (channel.channelId to state1)
                         send(actions)
-                        actions.forEach {
-                            when (it) {
-                                is ProcessCommand -> input.send(WrappedChannelEvent(normal.channelId, ExecuteCommand(it.command)))
-                            }
-                        }
-                        logger.info { "channel ${normal.channelId} new state $state1" }
+                        actions
+                            .filterIsInstance<ProcessCommand>()
+                            .forEach { input.send(WrappedChannelEvent(channel.channelId, ExecuteCommand(it.command))) }
+                        pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
+                        logger.info { "channel ${channel.channelId} new state $state1" }
                     }
                 }
                 event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
                     // this is for all channels
-                    channels.forEach {
-                        val (state1, actions) = it.value.process(event.channelEvent)
+                    channels.forEach { (key, value) ->
+                        val (state1, actions) = value.process(event.channelEvent)
                         send(actions)
-                        actions.forEach { action ->
-                            when (action) {
-                                is ProcessCommand -> input.send(WrappedChannelEvent(it.key, ExecuteCommand(action.command)))
-                            }
-                        }
-                        channels = channels + (it.key to state1)
+                        actions
+                            .filterIsInstance<ProcessCommand>()
+                            .forEach { input.send(WrappedChannelEvent(key, ExecuteCommand(it.command))) }
+                        channels = channels + (key to state1)
                     }
                 }
                 event is WrappedChannelEvent && !channels.containsKey(event.channelId) -> {

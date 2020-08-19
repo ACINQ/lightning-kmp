@@ -47,7 +47,7 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
                         }
                         continuation.resume(dispatch_data_get_size(data).convert())
                     }
-                    isComplete -> continuation.resumeWithException(TcpSocket.IOException.ConnectionClosed)
+                    isComplete -> continuation.resumeWithException(TcpSocket.IOException.ConnectionClosed())
                 }
             }
         }
@@ -85,14 +85,14 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
             nw_connection_set_queue(connection, dispatch_get_main_queue())
             var called = false
             nw_connection_set_state_changed_handler(connection) { state, error ->
-                when (state) {
-                    nw_connection_state_ready -> if (!called) {
-                        called = true
-                        continuation.resume(IosTcpSocket(connection))
-                    }
-                    nw_connection_state_failed -> if (!called) {
+                when {
+                    error != null -> if (!called) {
                         called = true
                         continuation.resumeWithException(error.toIOException())
+                    }
+                    state == nw_connection_state_ready -> if (!called) {
+                        called = true
+                        continuation.resume(IosTcpSocket(connection))
                     }
                 }
             }
@@ -103,8 +103,8 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 private fun nw_error_t.toIOException(): TcpSocket.IOException =
     when (nw_error_get_error_domain(this)) {
         nw_error_domain_posix -> when (nw_error_get_error_code(this)) {
-            ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused
-            ECONNRESET -> TcpSocket.IOException.ConnectionClosed
+            ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused()
+            ECONNRESET -> TcpSocket.IOException.ConnectionClosed()
             else -> TcpSocket.IOException.Unknown(this?.debugDescription)
         }
         nw_error_domain_dns -> TcpSocket.IOException.Unknown("DNS: ${this?.debugDescription}")

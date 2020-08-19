@@ -7,18 +7,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 
 
 @OptIn(ExperimentalStdlibApi::class)
 interface TcpSocket {
 
-    sealed class IOException(message: String?) : Error(message) {
-        object ConnectionRefused: IOException("Connection refused")
-        object ConnectionClosed: IOException("Connection closed")
-        object NoNetwork: IOException("No network available")
-        class Unknown(message: String?): IOException(message)
+    sealed class IOException(override val message: String) : Exception(message) {
+        class ConnectionRefused: IOException("Connection refused")
+        class ConnectionClosed: IOException("Connection closed")
+        class Unknown(message: String?): IOException(message ?: "Unknown")
     }
 
     suspend fun send(bytes: ByteArray?, flush: Boolean = true)
@@ -46,15 +47,13 @@ internal expect object PlatformSocketBuilder : TcpSocket.Builder
 suspend fun TcpSocket.receiveFully(size: Int): ByteArray =
     ByteArray(size).also { receiveFully(it) }
 
-@OptIn(ExperimentalCoroutinesApi::class)
-fun TcpSocket.receiveChannel(scope: CoroutineScope, maxChunkSize: Int = 8192) : ReceiveChannel<ByteArray> =
-    scope.produce {
-        val buffer = ByteArray(maxChunkSize)
-        while (isActive) {
+fun TcpSocket.linesFlow(): Flow<String> =
+    flow {
+        val buffer = ByteArray(8192)
+        while (true) {
             val size = receiveAvailable(buffer)
-            send(buffer.subArray(size))
+            emit(buffer.subArray(size))
         }
     }
-
-fun TcpSocket.linesFlow(scope: CoroutineScope) =
-    receiveChannel(scope).consumeAsFlow().decodeToString().splitByLines()
+        .decodeToString()
+        .splitByLines()

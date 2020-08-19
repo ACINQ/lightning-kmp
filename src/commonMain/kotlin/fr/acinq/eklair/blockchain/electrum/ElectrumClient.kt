@@ -247,7 +247,13 @@ class ElectrumClient(
                 logger.verbose { "Execute action: $action" }
                 when (action) {
                     is ConnectionAttempt -> connectionJob = connect()
-                    is SendRequest -> socket.send(action.request.encodeToByteArray())
+                    is SendRequest -> {
+                        try {
+                            socket.send(action.request.encodeToByteArray())
+                        } catch (ex: TcpSocket.IOException) {
+                            logger.warning { ex.message }
+                        }
+                    }
                     is SendHeader -> action.requestor.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> action.requestor?.send(action.response) ?: sendMessage(action.response)
                     is BroadcastHeaderSubscription -> headerSubscriptionList.forEach { channel ->
@@ -290,13 +296,13 @@ class ElectrumClient(
             socket = TcpSocket.Builder().connect(host, port, tls)
             logger.info { "Connected to electrumx instance" }
             eventChannel.send(Connected)
-            socket.linesFlow(this).collect {
+            socket.linesFlow().collect {
                 logger.verbose { "Electrum response received: $it" }
                 val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                 eventChannel.send(ReceivedResponse(electrumResponse))
             }
         } catch (ex: TcpSocket.IOException) {
-            logger.error(ex)
+            logger.warning { ex.message }
             eventChannel.send(Disconnected)
         }
     }
