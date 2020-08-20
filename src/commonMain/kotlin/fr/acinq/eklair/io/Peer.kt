@@ -206,6 +206,11 @@ class Peer(
         }
     }
 
+    private fun store(actions: List<ChannelAction>) {
+        val state = actions.filterIsInstance<StoreState>().last().data as HasCommitments
+
+
+    }
     private suspend fun handshake(
         ourKeys: Pair<ByteArray, ByteArray>,
         theirPubkey: ByteArray,

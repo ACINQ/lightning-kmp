@@ -6,6 +6,7 @@ import fr.acinq.eklair.Eclair.randomBytes32
 import fr.acinq.eklair.Eclair.randomKey
 import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEventConfirmed
+import fr.acinq.eklair.channel.TestsHelper.reachNormal
 import fr.acinq.eklair.crypto.ShaChain
 import fr.acinq.eklair.payment.relay.Origin
 import fr.acinq.eklair.transactions.CommitmentSpec
@@ -22,72 +23,6 @@ import kotlin.test.assertTrue
 
 class CommitmentsTests {
     val logger = LoggerFactory.default.newLogger(Logger.Tag(CommitmentSpecTestsCommon::class))
-
-    fun reachNormal(): Pair<Normal, Normal> {
-        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
-        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
-        val channelFlags = 0.toByte()
-        val channelVersion = ChannelVersion.STANDARD
-        val aliceInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
-        val bobInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
-        var ra = alice.process(
-            InitFunder(
-                ByteVector32.Zeroes,
-                TestConstants.fundingSatoshis,
-                TestConstants.pushMsat,
-                TestConstants.feeratePerKw,
-                TestConstants.feeratePerKw,
-                TestConstants.Alice.channelParams,
-                bobInit,
-                channelFlags,
-                channelVersion
-            )
-        )
-        alice = ra.first
-        assertTrue { alice is WaitForAcceptChannel }
-        var rb = bob.process(InitFundee(ByteVector32.Zeroes, TestConstants.Bob.channelParams, aliceInit))
-        bob = rb.first
-        assertTrue { bob is WaitForOpenChannel }
-
-        val open = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<OpenChannel>().first()
-        rb = bob.process(MessageReceived(open))
-        bob = rb.first
-        val accept = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<AcceptChannel>().first()
-        ra = alice.process(MessageReceived(accept))
-        alice = ra.first
-        val makeFundingTx = ra.second.filterIsInstance<MakeFundingTx>().first()
-        val fundingTx = Transaction(
-            version = 2,
-            txIn = listOf(),
-            txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)),
-            lockTime = 0
-        )
-        ra = alice.process(MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
-        alice = ra.first
-        val created = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingCreated>().first()
-        rb = bob.process(MessageReceived(created))
-        bob = rb.first
-        val signedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingSigned>().first()
-        ra = alice.process(MessageReceived(signedBob))
-        alice = ra.first
-        val watchConfirmed = ra.second.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>().first()
-
-        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
-        alice = ra.first
-        val fundingLockedAlice = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
-
-        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
-        bob = rb.first
-        val fundingLockedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
-
-        ra = alice.process(MessageReceived(fundingLockedBob))
-        alice = ra.first
-
-        rb = bob.process(MessageReceived(fundingLockedAlice))
-        bob = rb.first
-
-        return Pair(alice as Normal, bob as Normal)
-    }
 
     @Test
     fun `reach normal state`() {
