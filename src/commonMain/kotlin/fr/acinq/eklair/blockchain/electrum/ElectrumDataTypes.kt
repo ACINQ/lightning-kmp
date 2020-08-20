@@ -19,14 +19,10 @@ import kotlinx.serialization.json.*
  * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
  */
 sealed class ElectrumMessage
-sealed class ElectrumClientState : ElectrumMessage()
-object ElectrumClientReady : ElectrumClientState()
-object ElectrumClientClosed : ElectrumClientState()
-sealed class ElectrumSubscription(val listener: SendChannel<ElectrumMessage>) : ElectrumMessage()
-class ElectrumStatusSubscription(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
-class ElectrumHeaderSubscription(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
-class UnsubscribeListener(listener: SendChannel<ElectrumMessage>) : ElectrumSubscription(listener)
-data class SendElectrumRequest(val electrumRequest: ElectrumRequest, val requestor: SendChannel<ElectrumMessage>? = null) : ElectrumMessage()
+sealed class ElectrumSubscription : ElectrumMessage()
+object AskForStatusUpdate : ElectrumSubscription()
+object AskForHeaderSubscriptionUpdate : ElectrumSubscription()
+data class SendElectrumRequest(val electrumRequest: ElectrumRequest) : ElectrumMessage()
 
 /**
  * [ElectrumClient] requests / responses

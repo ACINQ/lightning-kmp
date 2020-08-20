@@ -19,10 +19,9 @@ class ElectrumClientStateTest {
             assertTrue(actions[1] is SendRequest)
         }
 
-        WaitingForConnection.process(RegisterStatusListener(Channel())).let { (newState, actions) ->
+        WaitingForConnection.process(AskForStatus).let { (newState, actions) ->
             assertEquals(WaitingForConnection, newState)
-            assertEquals(1, actions.size)
-            assertTrue(actions[0] is AddStatusListener)
+            assertTrue { actions.isEmpty() }
         }
 
         assertFails { WaitingForConnection.process(Start) }
@@ -31,21 +30,19 @@ class ElectrumClientStateTest {
     @Test
     fun `WaitingForTip state`() {
         // TODO
-        WaitingForTip.process(RegisterStatusListener(Channel())).let { (newState, actions) ->
+        WaitingForTip.process(AskForStatus).let { (newState, actions) ->
             assertEquals(WaitingForTip, newState)
-            assertEquals(1, actions.size)
-            assertTrue(actions[0] is AddStatusListener)
+            assertTrue(actions.isEmpty())
         }
     }
 
     @Test
     fun `ClientRunning state`() {
         // TODO
-        ClientRunning(0, testBlockHeader).process(RegisterStatusListener(Channel())).let { (newState, actions) ->
+        ClientRunning(0, testBlockHeader).process(AskForStatus).let { (newState, actions) ->
             assertTrue(newState is ClientRunning)
-            assertEquals(2, actions.size)
-            assertTrue(actions[0] is AddStatusListener)
-            assertTrue(actions[1] is BroadcastStatus)
+            assertEquals(1, actions.size)
+            assertTrue(actions[0] is BroadcastStatus)
         }
     }
 
@@ -57,10 +54,9 @@ class ElectrumClientStateTest {
             assertTrue(actions[0] is ConnectionAttempt)
         }
 
-        ClientClosed.process(RegisterStatusListener(Channel())).let { (newState, actions) ->
+        ClientClosed.process(AskForStatus).let { (newState, actions) ->
             assertEquals(ClientClosed, newState)
-            assertEquals(1, actions.size)
-            assertTrue { actions[0] is AddStatusListener }
+            assertTrue(actions.isEmpty())
         }
 
         assertFails { ClientClosed.process(Connected) }
@@ -72,20 +68,11 @@ class ElectrumClientStateTest {
             ClientRunning(0, testBlockHeader), WaitingForVersion, WaitingForTip, ClientClosed
         )
         states.forEach { state ->
-            state.process(UnregisterListener(Channel())).let { (newState, actions) ->
-                assertEquals(state, newState)
-                assertEquals(3, actions.size)
-                assertTrue { actions[0] is RemoveStatusListener }
-                assertTrue { actions[1] is RemoveHeaderListener }
-                assertTrue { actions[2] is RemoveScriptHashListener }
-            }
-
             state.process(Disconnected).let { (newState, actions) ->
                 assertEquals(ClientClosed, newState)
-                assertEquals(3, actions.size)
+                assertEquals(2, actions.size)
                 assertTrue { actions[0] is BroadcastStatus }
                 assertTrue { actions[1] is Shutdown }
-                assertTrue { actions[2] is Restart }
             }
         }
     }

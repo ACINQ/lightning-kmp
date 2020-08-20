@@ -2,9 +2,7 @@ package fr.acinq.eklair.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eklair.*
-import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
-import fr.acinq.eklair.blockchain.WatchEventConfirmed
 import fr.acinq.eklair.blockchain.electrum.*
 import fr.acinq.eklair.channel.*
 import fr.acinq.eklair.crypto.noise.*
@@ -20,6 +18,7 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.flow.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
@@ -58,8 +57,8 @@ class Peer(
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
-    enum class Connection { CLOSED, ESTABLISHING, ESTABLISHED }
-    private val connectedChannel = ConflatedBroadcastChannel<Connection>(Connection.CLOSED)
+
+    private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
     // channels map, indexed by channel id
@@ -76,17 +75,20 @@ class Peer(
     private var theirInit: Init? = null
 
     init {
-        val electrumChannel = Channel<ElectrumMessage>(2)
+        val electrumConnectionChannel = watcher.client.openConnectionSubscription()
+        val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
-            for(msg in electrumChannel) {
-                when(msg) {
-                    is ElectrumClientReady -> watcher.client.sendMessage(ElectrumHeaderSubscription(electrumChannel))
-                    is HeaderSubscriptionResponse -> send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
-                    else -> {}
+            electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
+                .collect { msg ->
+                    send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
                 }
+        }
+        launch {
+            electrumConnectionChannel.consumeAsFlow().filter { it == Connection.ESTABLISHED }.collect {
+                watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
         }
-        watcher.client.sendMessage(ElectrumStatusSubscription(electrumChannel))
+        watcher.client.sendMessage(AskForStatusUpdate)
     }
 
     fun connect(address: String, port: Int) {
