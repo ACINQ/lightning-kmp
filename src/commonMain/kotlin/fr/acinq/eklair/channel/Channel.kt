@@ -185,9 +185,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     }
 }
 
-/**
- * this class is not serializable because it is not meant to be persisted
- */
+@Serializable
 data class Offline(val state: ChannelState) : ChannelState() {
     override val staticParams: StaticParams
         get() = state.staticParams
@@ -225,9 +223,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
     }
 }
 
-/**
- * this class is not serializable because it is not meant to be persisted
- */
+@Serializable
 data class Syncing(val state: ChannelState) : ChannelState() {
     override val staticParams: StaticParams
         get() = state.staticParams
@@ -359,6 +355,7 @@ data class Syncing(val state: ChannelState) : ChannelState() {
     }
 }
 
+@Serializable
 data class WaitForRemotePublishFutureComitment(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
