@@ -678,12 +678,13 @@ data class UpdateFee(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class ChannelReestablish(
-    override val channelId: ByteVector32,
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     val nextLocalCommitmentNumber: Long,
     val nextRemoteRevocationNumber: Long,
-    val yourLastCommitmentSecret: PrivateKey,
-    val myCurrentPerCommitmentPoint: PublicKey
+    @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
+    @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey
 ) : HasChannelId, LightningSerializable<ChannelReestablish> {
     override fun serializer(): LightningSerializer<ChannelReestablish> = ChannelReestablish
 
