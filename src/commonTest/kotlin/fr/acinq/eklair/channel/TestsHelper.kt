@@ -13,9 +13,9 @@ import fr.acinq.eklair.wire.*
 import kotlin.test.assertTrue
 
 object TestsHelper {
-    fun reachNormal(): Pair<Normal, Normal> {
-        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
-        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(0, Block.RegtestGenesisBlock.header))
+    fun reachNormal(currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
+        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
+        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
         val channelFlags = 0.toByte()
         val channelVersion = ChannelVersion.STANDARD
         val aliceInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
@@ -23,7 +23,7 @@ object TestsHelper {
         var ra = alice.process(
             InitFunder(
                 ByteVector32.Zeroes,
-                TestConstants.fundingSatoshis,
+                fundingAmount,
                 TestConstants.pushMsat,
                 TestConstants.feeratePerKw,
                 TestConstants.feeratePerKw,
@@ -62,11 +62,11 @@ object TestsHelper {
         alice = ra.first
         val watchConfirmed = ra.second.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>().first()
 
-        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
+        ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         alice = ra.first
         val fundingLockedAlice = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
 
-        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, 144, 1, fundingTx)))
+        rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         bob = rb.first
         val fundingLockedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
 

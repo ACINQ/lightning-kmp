@@ -2,12 +2,12 @@ package fr.acinq.eklair.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eklair.*
-import fr.acinq.eklair.blockchain.WatchConfirmed
 import fr.acinq.eklair.blockchain.WatchEvent
-import fr.acinq.eklair.blockchain.WatchEventConfirmed
 import fr.acinq.eklair.blockchain.electrum.*
 import fr.acinq.eklair.channel.*
+import fr.acinq.eklair.channel.Connected
 import fr.acinq.eklair.crypto.noise.*
+import fr.acinq.eklair.db.ChannelsDb
 import fr.acinq.eklair.payment.OutgoingPacket
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.router.ChannelHop
@@ -20,6 +20,7 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.serialization.Serializable
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
@@ -45,6 +46,7 @@ class Peer(
     val nodeParams: NodeParams,
     val remoteNodeId: PublicKey,
     val watcher: ElectrumWatcher,
+    val channelsDb: ChannelsDb,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
@@ -73,7 +75,16 @@ class Peer(
     // pending outgoing payments, indexed by payment payment hash
     private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
 
+    private val features = Features(
+        setOf(
+            ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+        )
+    )
+    private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
+    private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
 
     init {
         val electrumChannel = Channel<ElectrumMessage>(2)
@@ -81,12 +92,24 @@ class Peer(
             for(msg in electrumChannel) {
                 when(msg) {
                     is ElectrumClientReady -> watcher.client.sendMessage(ElectrumHeaderSubscription(electrumChannel))
-                    is HeaderSubscriptionResponse -> send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                    is HeaderSubscriptionResponse -> {
+                        currentTip = Pair(msg.height, msg.header)
+                        send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                    }
                     else -> {}
                 }
             }
         }
         watcher.client.sendMessage(ElectrumStatusSubscription(electrumChannel))
+
+        channelsDb.listLocalChannels().forEach {
+            logger.info { "restoring $it" }
+            val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+            val (state1, actions) = state.process(Restore(it as ChannelState))
+            launch { send(actions) }
+            channels = channels + (it.channelId to state1)
+        }
+        logger.info { "restored channels: $channels" }
     }
 
     fun connect(address: String, port: Int) {
@@ -127,17 +150,8 @@ class Peer(
                     logger.warning { ex.message }
                 }
             }
-
-            val features = Features(
-                setOf(
-                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                )
-            )
-            val init = Init(features.toByteArray().toByteVector())
-            println("sending init ${LightningMessage.encode(init)!!}")
-            send(LightningMessage.encode(init)!!)
+            println("sending init ${LightningMessage.encode(ourInit)!!}")
+            send(LightningMessage.encode(ourInit)!!)
 
             suspend fun doPing() {
                 val ping = Hex.decode("0012000a0004deadbeef")
@@ -206,11 +220,21 @@ class Peer(
         }
     }
 
-    private fun store(actions: List<ChannelAction>) {
-        val state = actions.filterIsInstance<StoreState>().last().data as HasCommitments
-
-
+    /**
+     * sometimes channel actions include "self" command (such as CMD_SIGN)
+     */
+    private suspend fun sendToSelf(channelId: ByteVector32, actions: List<ChannelAction>) {
+        actions.filterIsInstance<ProcessCommand>().forEach { input.send(WrappedChannelEvent(channelId, ExecuteCommand(it.command))) }
     }
+
+    private fun store(actions: List<ChannelAction>) {
+        val actions1 = actions.filterIsInstance<StoreState>()
+        if (actions1.isEmpty()) return
+        val state = actions1.last().data
+        logger.info { "storing $state" }
+        channelsDb.addOrUpdateChannel(state as HasCommitments)
+    }
+
     private suspend fun handshake(
         ourKeys: Pair<ByteArray, ByteArray>,
         theirPubkey: ByteArray,
@@ -267,6 +291,13 @@ class Peer(
                             logger.info { "received $msg" }
                             theirInit = msg
                             connected = Connection.ESTABLISHED
+                            logger.info {  "before channels: $channels" }
+                            channels = channels.mapValues { entry ->
+                                val (state1, actions) = entry.value.process(Connected(ourInit, theirInit!!))
+                                send(actions)
+                                state1
+                            }
+                            logger.info {  "after channels: $channels" }
                         }
                         msg is Ping -> {
                             logger.info { "received $msg" }
@@ -332,6 +363,8 @@ class Peer(
                             channels = channels + (msg.temporaryChannelId to state1)
                             logger.info { "channel ${msg.temporaryChannelId} new state $state1" }
                             send(actions)
+                            store(actions)
+                            sendToSelf(msg.temporaryChannelId, actions)
                             actions.forEach {
                                 when (it) {
                                     is ChannelIdSwitch -> {
@@ -352,6 +385,8 @@ class Peer(
                             channels = channels + (msg.channelId to state1)
                             logger.info { "channel ${msg.channelId} new state $state1" }
                             send(actions)
+                            store(actions)
+                            sendToSelf(msg.channelId, actions)
                             actions.forEach {
                                 when {
                                     it is ProcessAdd && !pendingIncomingPayments.containsKey(it.add.paymentHash) -> {
@@ -377,15 +412,6 @@ class Peer(
                                         logger.info { "received ${it.fulfill} } for payment $payment" }
                                         listenerEventChannel.send(PaymentSent(payment.id, payment.paymentRequest.paymentHash!!, it.fulfill.paymentPreimage, payment.paymentRequest.amount!!, payment.paymentRequest.nodeId, currentTimestampMillis()))
                                     }
-                                    it is ProcessCommand -> input.send(
-                                        WrappedChannelEvent(
-                                            msg.channelId,
-                                            ExecuteCommand(it.command)
-                                        )
-                                    )
-                                    it !is SendMessage -> {
-                                        logger.warning { "ignoring $it" }
-                                    }
                                 }
                             }
                         }
@@ -399,6 +425,8 @@ class Peer(
                     val state = channels[event.watch.channelId]!!
                     val (state1, actions) = state.process(fr.acinq.eklair.channel.WatchReceived(event.watch))
                     send(actions)
+                    store(actions)
+                    sendToSelf(event.watch.channelId, actions)
                     channels = channels + (event.watch.channelId to state1)
                     logger.info { "channel ${event.watch.channelId} new state $state1" }
                 } // event is WatchReceived
@@ -454,9 +482,8 @@ class Peer(
                         val (state1, actions) = channel.process(ExecuteCommand(cmd))
                         channels = channels + (channel.channelId to state1)
                         send(actions)
-                        actions
-                            .filterIsInstance<ProcessCommand>()
-                            .forEach { input.send(WrappedChannelEvent(channel.channelId, ExecuteCommand(it.command))) }
+                        store(actions)
+                        sendToSelf(channel.channelId, actions)
                         pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
                         logger.info { "channel ${channel.channelId} new state $state1" }
                     }
@@ -466,9 +493,8 @@ class Peer(
                     channels.forEach { (key, value) ->
                         val (state1, actions) = value.process(event.channelEvent)
                         send(actions)
-                        actions
-                            .filterIsInstance<ProcessCommand>()
-                            .forEach { input.send(WrappedChannelEvent(key, ExecuteCommand(it.command))) }
+                        store(actions)
+                        sendToSelf(key, actions)
                         channels = channels + (key to state1)
                     }
                 }
@@ -480,13 +506,8 @@ class Peer(
                     val (state1, actions) = state.process(event.channelEvent)
                     channels = channels + (event.channelId to state1)
                     send(actions)
-                    actions.forEach {
-                        when (it) {
-                            is ProcessCommand -> input.send(WrappedChannelEvent(event.channelId, ExecuteCommand(it.command)))
-                            else -> {
-                            }
-                        }
-                    }
+                    store(actions)
+                    sendToSelf(event.channelId, actions)
                 }
             }
         }

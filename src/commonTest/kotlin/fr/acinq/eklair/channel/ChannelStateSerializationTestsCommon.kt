@@ -1,6 +1,6 @@
 package fr.acinq.eklair.channel
 
-import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
+import fr.acinq.eklair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.wire.Tlv
 import fr.acinq.eklair.wire.UpdateMessage
@@ -15,7 +15,7 @@ class ChannelStateSerializationTestsCommon {
         include(Tlv.serializationModule)
         include(KeyManager.serializationModule)
         include(UpdateMessage.serializationModule)
-        include(TestFeeEstimator.testSerializationModule)
+        include(ConstantFeeEstimator.testSerializationModule)
     }
 
     val cbor = Cbor {

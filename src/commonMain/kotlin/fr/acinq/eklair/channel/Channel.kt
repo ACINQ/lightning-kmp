@@ -193,6 +193,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
         get() = state.currentTip
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "offline processing $event" }
         return when {
             event is Connected && state is HasCommitments -> {
                 val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
@@ -208,12 +209,13 @@ data class Offline(val state: ChannelState) : ChannelState() {
                 )
 
                 // TODO: update local/remote connection-local global/local features
+                logger.info { "syncing $state" }
                 Pair(Syncing(state), listOf(SendMessage(channelReestablish)))
             }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
-                Pair(newState, listOf())
+                Pair(Offline(newState), listOf())
             }
             else -> {
                 logger.warning { "unhandled event $event ins state ${this::class}" }
@@ -231,6 +233,7 @@ data class Syncing(val state: ChannelState) : ChannelState() {
         get() = state.currentTip
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "syncing processing $event" }
         return when {
             event is MessageReceived && event.message is ChannelReestablish ->
                 when {
@@ -333,6 +336,8 @@ data class Syncing(val state: ChannelState) : ChannelState() {
                                 }
 
                                 // TODO: update fees if needed
+                                logger.info { "switching to $state" }
+                                println("switching to $state")
                                 Pair(state.copy(commitments = commitments1), actions)
                             }
                         }

@@ -8,7 +8,7 @@ import kotlinx.serialization.modules.subclass
 
 
 @Serializable
-data class TestFeeEstimator(var currentFeerates: Long = 750) : FeeEstimator {
+data class ConstantFeeEstimator(var currentFeerates: Long = 750) : FeeEstimator {
 
 
     override fun getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates)

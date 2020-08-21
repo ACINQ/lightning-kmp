@@ -1,17 +1,16 @@
 package fr.acinq.eklair
 
 import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.blockchain.electrum.*
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
-import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
+import fr.acinq.eklair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eklair.channel.ChannelState
-import fr.acinq.eklair.channel.NewBlock
 import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.crypto.LocalKeyManager
+import fr.acinq.eklair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eklair.io.*
 import fr.acinq.eklair.payment.PaymentRequest
 import fr.acinq.eklair.utils.UUID
@@ -19,7 +18,6 @@ import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
 import fr.acinq.eklair.wire.Tlv
 import fr.acinq.eklair.wire.UpdateMessage
-import io.ktor.http.ContentType.Application.Cbor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -29,8 +27,8 @@ import kotlinx.serialization.decodeFromHexString
 import kotlinx.serialization.encodeToHexString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
+import java.sql.DriverManager
 import kotlin.concurrent.thread
-import kotlin.coroutines.coroutineContext
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
@@ -49,7 +47,7 @@ object Node {
         dustLimit = 100.sat,
         onChainFeeConf = OnChainFeeConf(
             feeTargets = FeeTargets(6, 2, 2, 6),
-            feeEstimator = TestFeeEstimator(10000),
+            feeEstimator = ConstantFeeEstimator(10000),
             maxFeerateMismatch = 1.5,
             closeOnOfflineMismatch = true,
             updateFeeMinDiffRatio = 0.1
@@ -90,7 +88,7 @@ object Node {
         include(KeyManager.serializationModule)
         include(UpdateMessage.serializationModule)
 
-        include(TestFeeEstimator.testSerializationModule)
+        include(ConstantFeeEstimator.testSerializationModule)
     }
 
     private val json = Json {
@@ -109,6 +107,8 @@ object Node {
         val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
         val commandChannel = Channel<List<String>>(2)
+
+        Class.forName("org.sqlite.JDBC")
 
         suspend fun connectLoop(peer: Peer) {
             peer.openConnectedSubscription().consumeEach {
@@ -144,7 +144,7 @@ object Node {
                 when (tokens.first()) {
                     "connect" -> {
                         println("connecting")
-                        GlobalScope.launch { peer.connect("localhost", 48001) }
+                        GlobalScope.launch { peer.connect("localhost", 29735) }
                     }
                     "receive" -> {
                         val paymentPreimage = ByteVector32(tokens[1])
@@ -178,7 +178,8 @@ object Node {
         runBlocking {
             val electrum = ElectrumClient("localhost", 51001, null, this).apply { start() }
             val watcher = ElectrumWatcher(electrum, this).apply { start() }
-            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, this)
+            val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:/home/fabrice/channels.db"))
+            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
 
             launch { readLoop(peer) }
             launch { connectLoop(peer) }
