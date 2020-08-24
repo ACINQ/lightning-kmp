@@ -171,7 +171,7 @@ class Peer(
             coroutineScope {
                 launch { run() }
                 launch {
-                    val sub = watcher.notifications.openSubscription()
+                    val sub = watcher.openNotificationsSubscription()
                     sub.consumeEach {
                         println("notification: $it")
                         input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))

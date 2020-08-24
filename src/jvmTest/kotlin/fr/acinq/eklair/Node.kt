@@ -176,8 +176,8 @@ object Node {
         thread(isDaemon = true, block = ::writeLoop)
 
         runBlocking {
-            val electrum = ElectrumClient("localhost", 51001, null, this).apply { start() }
-            val watcher = ElectrumWatcher(electrum, this).apply { start() }
+            val electrum = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+            val watcher = ElectrumWatcher(electrum, this)
             val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, this)
 
             launch { readLoop(peer) }

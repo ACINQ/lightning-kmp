@@ -42,8 +42,6 @@ internal object ConnectionAttempt : ElectrumClientAction()
 internal data class SendRequest(val request: String): ElectrumClientAction()
 internal data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction()
 internal data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction()
-internal data class BroadcastHeaderSubscription(val headerSubscriptionResponse: HeaderSubscriptionResponse): ElectrumClientAction()
-internal data class BroadcastScriptHashSubscription(val response: ScriptHashSubscriptionResponse): ElectrumClientAction()
 internal data class BroadcastStatus(val connection: Connection): ElectrumClientAction()
 internal object StartPing : ElectrumClientAction()
 internal object Shutdown : ElectrumClientAction()
@@ -102,7 +100,7 @@ internal object WaitingForTip : ClientState() {
                         when (val response = parseJsonResponse(HeaderSubscription, rpcResponse.value)) {
                             is HeaderSubscriptionResponse -> newState {
                                 state = ClientRunning(height = response.height, tip = response.header)
-                                actions = listOf(BroadcastStatus(Connection.ESTABLISHED), BroadcastHeaderSubscription(response))
+                                actions = listOf(BroadcastStatus(Connection.ESTABLISHED), SendResponse(response))
                             }
                             else -> returnState()
                         }
@@ -129,9 +127,9 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
            is Either.Left -> when (val electrumResponse = response.value) {
                is HeaderSubscriptionResponse -> newState {
                    state = copy(height = electrumResponse.height, tip = electrumResponse.header)
-                   actions = listOf(BroadcastHeaderSubscription(electrumResponse))
+                   actions = listOf(SendResponse(electrumResponse))
                }
-               is ScriptHashSubscriptionResponse -> returnState(BroadcastScriptHashSubscription(electrumResponse))
+               is ScriptHashSubscriptionResponse -> returnState(SendResponse(electrumResponse))
                else -> returnState()
            }
            is Either.Right -> {
@@ -210,10 +208,9 @@ class ElectrumClient(
             field = value
         }
 
-    fun start() {
+    init {
         logger.info { "Start Electrum Client" }
         launch { run() }
-        launch { eventChannel.send(Start) }
     }
 
     private suspend fun run() {
@@ -226,7 +223,7 @@ class ElectrumClient(
             actions.forEach { action ->
                 logger.verbose { "Execute action: $action" }
                 when (action) {
-                    is ConnectionAttempt -> connectionJob = connect()
+                    is ConnectionAttempt -> connectionJob = establishConnection()
                     is SendRequest -> {
                         try {
                             socket.send(action.request.encodeToByteArray())
@@ -235,22 +232,24 @@ class ElectrumClient(
                         }
                     }
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
-                    is SendResponse -> {
-                        sendMessage(action.response)
-                        notificationsChannel.send(action.response)
-                    }
-                    is BroadcastHeaderSubscription -> notificationsChannel.send(action.headerSubscriptionResponse)
-                    is BroadcastScriptHashSubscription -> notificationsChannel.send(action.response)
+                    is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> connectionChannel.send(action.connection)
                     StartPing -> pingJob = pingScheduler()
-                    is Shutdown -> disconnect()
+                    is Shutdown -> closeConnection()
                 }
             }
         }
     }
 
+    fun connect() {
+        launch { eventChannel.send(Start) }
+    }
+    fun disconnect() {
+        launch { eventChannel.send(Disconnected) }
+    }
+
     private var connectionJob: Job? = null
-    private fun connect() = launch {
+    private fun establishConnection() = launch {
         try {
             logger.info { "Attempt connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socket = TcpSocket.Builder().connect(host, port, tls)
@@ -267,7 +266,7 @@ class ElectrumClient(
         }
     }
 
-    private fun disconnect() {
+    private fun closeConnection() {
         pingJob?.cancel()
         connectionJob?.cancel()
         if (this::socket.isInitialized) socket.close()
@@ -281,7 +280,7 @@ class ElectrumClient(
                  is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                  is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                  is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
-                 is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(message)))
+//                 is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(message)))
              }
          }
     }
@@ -297,8 +296,12 @@ class ElectrumClient(
 
     fun stop() {
         logger.info { "Stop Electrum Client" }
-        disconnect()
-        eventChannel.close()
+        closeConnection()
+        // Cancel broadcast channels
+        notificationsChannel.cancel()
+        connectionChannel.cancel()
+        // Cancel event channel
+        eventChannel.cancel()
     }
 
     companion object {
