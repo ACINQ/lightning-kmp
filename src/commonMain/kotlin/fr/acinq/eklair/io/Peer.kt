@@ -102,14 +102,16 @@ class Peer(
         }
         watcher.client.sendMessage(ElectrumStatusSubscription(electrumChannel))
 
-        channelsDb.listLocalChannels().forEach {
-            logger.info { "restoring $it" }
-            val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
-            val (state1, actions) = state.process(Restore(it as ChannelState))
-            launch { send(actions) }
-            channels = channels + (it.channelId to state1)
+        launch {
+            channelsDb.listLocalChannels().forEach {
+                logger.info { "restoring $it" }
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                val (state1, actions) = state.process(Restore(it as ChannelState))
+                send(actions)
+                channels = channels + (it.channelId to state1)
+            }
+            logger.info { "restored channels: $channels" }
         }
-        logger.info { "restored channels: $channels" }
     }
 
     fun connect(address: String, port: Int) {
@@ -227,7 +229,7 @@ class Peer(
         actions.filterIsInstance<ProcessCommand>().forEach { input.send(WrappedChannelEvent(channelId, ExecuteCommand(it.command))) }
     }
 
-    private fun store(actions: List<ChannelAction>) {
+    private suspend fun store(actions: List<ChannelAction>) {
         val actions1 = actions.filterIsInstance<StoreState>()
         if (actions1.isEmpty()) return
         val state = actions1.last().data

@@ -5,15 +5,15 @@ import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.channel.HasCommitments
 
 interface ChannelsDb {
-    fun addOrUpdateChannel(state: HasCommitments): Unit
+    suspend fun addOrUpdateChannel(state: HasCommitments)
 
-    fun removeChannel(channelId: ByteVector32): Unit
+    suspend fun removeChannel(channelId: ByteVector32)
 
-    fun listLocalChannels(): List<HasCommitments>
+    suspend fun listLocalChannels(): List<HasCommitments>
 
-    fun addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
+    suspend fun addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
 
-    fun listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): List<Pair<ByteVector32, CltvExpiry>>
+    suspend fun listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): List<Pair<ByteVector32, CltvExpiry>>
 
     fun close()
 }

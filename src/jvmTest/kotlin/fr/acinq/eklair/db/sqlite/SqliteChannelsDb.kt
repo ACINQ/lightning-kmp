@@ -9,6 +9,8 @@ import fr.acinq.eklair.crypto.KeyManager
 import fr.acinq.eklair.db.ChannelsDb
 import fr.acinq.eklair.wire.Tlv
 import fr.acinq.eklair.wire.UpdateMessage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
@@ -72,69 +74,79 @@ class SqliteChannelsDb(val sqlite: Connection): ChannelsDb {
         return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
     }
     
-    override fun addOrUpdateChannel(state: HasCommitments): Unit {
-        val data = serialize(state)
-        using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
-            update.setBytes(1, data)
-            update.setBytes(2, state.channelId.toByteArray())
-            if (update.executeUpdate() == 0) {
-                using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement ->
-                    statement.setBytes(1, state.channelId.toByteArray())
-                    statement.setBytes(2, data)
-                    statement.executeUpdate()
+    override suspend fun addOrUpdateChannel(state: HasCommitments) {
+        withContext(Dispatchers.IO) {
+            val data = serialize(state)
+            using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
+                update.setBytes(1, data)
+                update.setBytes(2, state.channelId.toByteArray())
+                if (update.executeUpdate() == 0) {
+                    using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement ->
+                        statement.setBytes(1, state.channelId.toByteArray())
+                        statement.setBytes(2, data)
+                        statement.executeUpdate()
+                    }
                 }
             }
         }
     }
 
-    override fun removeChannel(channelId: ByteVector32): Unit {
-        using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement ->
-            statement.setBytes(1, channelId.toByteArray())
-            statement.executeUpdate()
-        }
-
-        using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement ->
-            statement.setBytes(1, channelId.toByteArray())
-            statement.executeUpdate()
-        }
-
-        using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement ->
-            statement.setBytes(1, channelId.toByteArray())
-            statement.executeUpdate()
-        }
-    }
-
-    override fun listLocalChannels(): List<HasCommitments> {
-        return using(sqlite.createStatement()) { statement ->
-            val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-            val result = ArrayList<HasCommitments>()
-            while (rs.next()) {
-                result.add(deserialize(rs.getBytes("data")))
+    override suspend fun removeChannel(channelId: ByteVector32) {
+        withContext(Dispatchers.IO) {
+            using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement ->
+                statement.setBytes(1, channelId.toByteArray())
+                statement.executeUpdate()
             }
-            result
-        }
-    }
 
-    override fun addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit {
-        using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement ->
-            statement.setBytes(1, channelId.toByteArray())
-            statement.setLong(2, commitmentNumber)
-            statement.setBytes(3, paymentHash.toByteArray())
-            statement.setLong(4, cltvExpiry.toLong())
-            statement.executeUpdate()
-        }
-    }
-
-    override fun listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): List<Pair<ByteVector32, CltvExpiry>> {
-        return using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement ->
-            statement.setBytes(1, channelId.toByteArray())
-            statement.setLong(2, commitmentNumber)
-            val rs = statement.executeQuery()
-            val result = ArrayList<Pair<ByteVector32, CltvExpiry>>()
-            while (rs.next()) {
-                result.add(Pair(ByteVector32(rs.getBytes("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry"))))
+            using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement ->
+                statement.setBytes(1, channelId.toByteArray())
+                statement.executeUpdate()
             }
-            result
+
+            using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement ->
+                statement.setBytes(1, channelId.toByteArray())
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override suspend fun listLocalChannels(): List<HasCommitments> {
+        return withContext(Dispatchers.IO) {
+            using(sqlite.createStatement()) { statement ->
+                val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
+                val result = ArrayList<HasCommitments>()
+                while (rs.next()) {
+                    result.add(deserialize(rs.getBytes("data")))
+                }
+                result
+            }
+        }
+    }
+
+    override suspend fun addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit {
+        withContext(Dispatchers.IO) {
+            using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement ->
+                statement.setBytes(1, channelId.toByteArray())
+                statement.setLong(2, commitmentNumber)
+                statement.setBytes(3, paymentHash.toByteArray())
+                statement.setLong(4, cltvExpiry.toLong())
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override suspend fun listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): List<Pair<ByteVector32, CltvExpiry>> {
+        return withContext(Dispatchers.IO) {
+            using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement ->
+                statement.setBytes(1, channelId.toByteArray())
+                statement.setLong(2, commitmentNumber)
+                val rs = statement.executeQuery()
+                val result = ArrayList<Pair<ByteVector32, CltvExpiry>>()
+                while (rs.next()) {
+                    result.add(Pair(ByteVector32(rs.getBytes("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry"))))
+                }
+                result
+            }
         }
     }
 

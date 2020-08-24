@@ -21,6 +21,7 @@ import fr.acinq.eklair.wire.UpdateMessage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromHexString
@@ -95,6 +96,7 @@ object Node {
         serializersModule = serializationModules
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     private val cbor = Cbor {
         serializersModule = serializationModules
     }
@@ -178,7 +180,7 @@ object Node {
         runBlocking {
             val electrum = ElectrumClient("localhost", 51001, null, this).apply { start() }
             val watcher = ElectrumWatcher(electrum, this).apply { start() }
-            val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:/home/fabrice/channels.db"))
+            val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:/tmp/eklair-node-channels.db"))
             val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
 
             launch { readLoop(peer) }
