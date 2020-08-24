@@ -207,30 +207,6 @@ class ElectrumWatcherIntegrationTest {
         client.stop()
     }
 
-//    @OptIn(ExperimentalTime::class)
-//    @Test
-//    fun `N times`() {
-//        val list = mutableListOf<Pair<Exception?, Duration>>()
-//        repeat(100) {
-//            var result: Exception? = null
-//            val time = measureTime {
-//                try {
-//                    `watch for mempool transactions (txs in mempool before we set the watch)`()
-//                } catch (e: Exception) { result =e }
-//            }
-//            list.add(result to time)
-//        }
-//        println(
-//            """ SUCCESS : ${list.count { it.first == null }}"""
-//        )
-//        println(
-//            """ FAILURE : ${list.count { it.first != null }}
-//            Exceptions=${
-//                list.filter { it.first != null }.map { it.first }.distinct()
-//            }"""
-//        )
-//    }
-
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
         val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }

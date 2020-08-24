@@ -196,10 +196,10 @@ class ElectrumClient(
 
     private val eventChannel: Channel<ClientEvent> = Channel(Channel.BUFFERED)
 
-    private val connectionChannel = ConflatedBroadcastChannel(Connection.CLOSED)
+    private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
     private val notificationsChannel = BroadcastChannel<ElectrumMessage>(Channel.BUFFERED)
 
-    fun openConnectionSubscription() = connectionChannel.openSubscription()
+    fun openConnectedSubscription() = connectedChannel.openSubscription()
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
     private var state: ClientState = ClientClosed
@@ -233,7 +233,7 @@ class ElectrumClient(
                     }
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
-                    is BroadcastStatus -> connectionChannel.send(action.connection)
+                    is BroadcastStatus -> connectedChannel.send(action.connection)
                     StartPing -> pingJob = pingScheduler()
                     is Shutdown -> closeConnection()
                 }
@@ -280,7 +280,7 @@ class ElectrumClient(
                  is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                  is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                  is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
-//                 is ElectrumResponse -> eventChannel.send(ReceivedResponse(Either.Left(message)))
+                 else -> error("sendMessage does not support message: $message")
              }
          }
     }
@@ -299,7 +299,7 @@ class ElectrumClient(
         closeConnection()
         // Cancel broadcast channels
         notificationsChannel.cancel()
-        connectionChannel.cancel()
+        connectedChannel.cancel()
         // Cancel event channel
         eventChannel.cancel()
     }

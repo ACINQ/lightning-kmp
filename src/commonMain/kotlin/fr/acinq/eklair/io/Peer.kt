@@ -75,7 +75,7 @@ class Peer(
     private var theirInit: Init? = null
 
     init {
-        val electrumConnectionChannel = watcher.client.openConnectionSubscription()
+        val electrumConnectedChannel = watcher.client.openConnectedSubscription()
         val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
             electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
@@ -84,7 +84,7 @@ class Peer(
                 }
         }
         launch {
-            electrumConnectionChannel.consumeAsFlow().filter { it == Connection.ESTABLISHED }.collect {
+            electrumConnectedChannel.consumeAsFlow().filter { it == Connection.ESTABLISHED }.collect {
                 watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
         }

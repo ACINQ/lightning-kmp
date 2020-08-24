@@ -3,15 +3,12 @@ package fr.acinq.eklair.blockchain.electrum
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
-import fr.acinq.eklair.blockchain.WatchEventConfirmed
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.utils.Connection
 import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.consume
-import kotlinx.coroutines.channels.consumeEach
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -41,14 +38,14 @@ class ElectrumClientIntegrationTest {
 
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
         val client = ElectrumClient("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES, this).apply { connect() }
-        val connectionStateChannel = client.openConnectionSubscription()
+        val connectedChannel = client.openConnectedSubscription()
         client.sendMessage(AskForStatusUpdate)
 
-        val state1 = connectionStateChannel.receive()
+        val state1 = connectedChannel.receive()
         assertTrue { state1 == Connection.CLOSED }
-        val state2 = connectionStateChannel.receive()
+        val state2 = connectedChannel.receive()
         assertTrue { state2 == Connection.ESTABLISHING }
-        val state3 = connectionStateChannel.receive()
+        val state3 = connectedChannel.receive()
         assertTrue { state3 == Connection.ESTABLISHED }
 
         return client

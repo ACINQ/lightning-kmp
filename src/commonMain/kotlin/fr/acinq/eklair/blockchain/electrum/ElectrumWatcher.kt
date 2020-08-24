@@ -37,14 +37,6 @@ private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
 private data class NotifyWatch(val watchEvent: WatchEvent) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
-private data class RelayWatch(val watch: Watch) : WatcherAction()
-private data class RelayWatchConfirmed(
-    val parentTxid: ByteVector32,
-    val parentPublicKeyScript: ByteVector,
-    val minDepth: Long,
-    val bitcoinParentTxConfirmed: BITCOIN_PARENT_TX_CONFIRMED
-) : WatcherAction()
-private data class RelayGetTxWithMeta(val request: GetTxWithMeta) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
@@ -84,11 +76,10 @@ private data class WatcherDisconnected(
             is ReceivedMessage -> when (val message = event.message) {
                 is HeaderSubscriptionResponse -> {
                     newState {
-                        state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx))
+                        state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx, watches = watches))
                         actions = buildList {
-                            watches.forEach { add(RelayWatch(it)) }
                             publishQueue.forEach { add(PublishAsapAction(it)) }
-                            getTxQueue.forEach { add(RelayGetTxWithMeta(it)) }
+                            getTxQueue.forEach { add(AskForTransaction(it.txid, it.response)) }
                         }
                     }
                 }
@@ -292,7 +283,10 @@ private data class WatcherRunning(
                         val parentTxid = tx.txIn[0].outPoint.txid
                         logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                        returnState(RelayWatchConfirmed(parentTxid, parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx)))
+                        receiveWatch(
+                            WatchConfirmed(ByteVector32.Zeroes, parentTxid,
+                                parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+                        )
                     }
                     cltvTimeout > blockCount -> {
                         logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
@@ -309,28 +303,7 @@ private data class WatcherRunning(
                     }
                 }
             }
-            is ReceiveWatch -> when (val watch = event.watch) {
-                in watches -> returnState()
-                is WatchSpent -> {
-                    val (_, txid, outputIndex, publicKeyScript, _) = watch
-                    val scriptHash = computeScriptHash(publicKeyScript)
-                    logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
-                    newState {
-                        state = copy(watches = watches + watch)
-                        actions = listOf(RegisterToScriptHashNotification(scriptHash))
-                    }
-                }
-                is WatchConfirmed -> {
-                    val (_, txid, publicKeyScript, _, _) = watch
-                    val scriptHash = computeScriptHash(publicKeyScript)
-                    logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
-                    newState {
-                        state = copy(watches = watches + watch)
-                        actions = listOf(RegisterToScriptHashNotification(scriptHash))
-                    }
-                }
-                else -> returnState()
-            }
+            is ReceiveWatch -> receiveWatch(event.watch)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
                     // TODO to be tested
@@ -367,6 +340,29 @@ private data class WatcherRunning(
             }
             else -> unhandled(event)
         }
+
+    private fun receiveWatch(watch: Watch) = when (watch) {
+        in watches -> returnState()
+        is WatchSpent -> {
+            val (_, txid, outputIndex, publicKeyScript, _) = watch
+            val scriptHash = computeScriptHash(publicKeyScript)
+            logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
+            newState {
+                state = copy(watches = watches + watch)
+                actions = listOf(RegisterToScriptHashNotification(scriptHash))
+            }
+        }
+        is WatchConfirmed -> {
+            val (_, txid, publicKeyScript, _, _) = watch
+            val scriptHash = computeScriptHash(publicKeyScript)
+            logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
+            newState {
+                state = copy(watches = watches + watch)
+                actions = listOf(RegisterToScriptHashNotification(scriptHash))
+            }
+        }
+        else -> returnState()
+    }
 }
 
 private fun WatcherState.unhandled(message: WatcherEvent) : Pair<WatcherState, List<WatcherAction>> =
@@ -382,7 +378,6 @@ private fun newState(newState: WatcherState) = WatcherStateBuilder().apply { sta
 
 private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList()): Pair<WatcherState, List<WatcherAction>> = this to actions
 private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
-private fun WatcherState.returnState(vararg actions: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(*actions)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): CoroutineScope by scope {
@@ -393,14 +388,14 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     private val watchChannel = Channel<Watch>(Channel.BUFFERED)
     private val watchEventChannel = Channel<WatchEvent>(Channel.BUFFERED)
 
-    private val clientConnectionSubscription = client.openConnectionSubscription()
+    private val clientConnectedSubscription = client.openConnectedSubscription()
     private val clientNotificationsSubscription = client.openNotificationsSubscription()
 
     private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
         launch { watchChannel.consumeEach { send(it) } }
         launch { watchEventChannel.consumeEach { send(it) } }
-        launch { clientConnectionSubscription.consumeEach { send(it) } }
+        launch { clientConnectedSubscription.consumeEach { send(it) } }
         launch { clientNotificationsSubscription.consumeEach { send(it) } }
     }
 
@@ -446,14 +441,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                             )
                             is NotifyWatch -> notificationsChannel.send(action.watchEvent)
                             is NotifyTxWithMeta -> TODO("implement this")
-                            is RelayWatch -> eventChannel.send(ReceiveWatch(action.watch))
-                            is RelayWatchConfirmed -> {
-                                eventChannel.send(ReceiveWatch(
-                                    WatchConfirmed(ByteVector32.Zeroes, action.parentTxid,
-                                        action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
-                                ))
-                            }
-                            is RelayGetTxWithMeta -> eventChannel.send(GetTxWithMetaEvent(action.request))
                         }
                     }
                 }
@@ -488,7 +475,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     fun stop() {
         logger.info { "Stop Electrum Watcher" }
         // Cancel subscriptions
-        clientConnectionSubscription.cancel()
+        clientConnectedSubscription.cancel()
         clientNotificationsSubscription.cancel()
         // Cancel broadcast channel
         notificationsChannel.cancel()
