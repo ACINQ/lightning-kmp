@@ -50,8 +50,9 @@ class ElectrumClientStateTest {
     fun `ClientClosed state`() {
         ClientClosed.process(Start).let { (newState, actions) ->
             assertEquals(WaitingForConnection, newState)
-            assertEquals(1, actions.size)
-            assertTrue(actions[0] is ConnectionAttempt)
+            assertEquals(2, actions.size)
+            assertTrue(actions[0] is BroadcastStatus)
+            assertTrue(actions[1] is ConnectionAttempt)
         }
 
         ClientClosed.process(AskForStatus).let { (newState, actions) ->

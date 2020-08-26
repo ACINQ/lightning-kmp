@@ -59,7 +59,6 @@ class ElectrumWatcherIntegrationTest {
             assertEquals(tx.txid, confirmed.tx.txid)
         }
 
-        listener.cancel()
         watcher.stop()
         client.stop()
     }
@@ -202,7 +201,6 @@ class ElectrumWatcherIntegrationTest {
             assertEquals(spendingTx.txid, msg.tx.txid)
         }
 
-        listener.cancel()
         watcher.stop()
         client.stop()
     }

@@ -8,13 +8,11 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
 import fr.acinq.eklair.transactions.Scripts
 import fr.acinq.eklair.utils.Connection
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.launch
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.absoluteValue
@@ -405,9 +403,10 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
             field = value
         }
 
+    private var runJob: Job? = null
     init {
-        logger.info { "Start Electrum Watcher" }
-        launch { run() }
+        logger.info { "Init Electrum Watcher" }
+        runJob = launch { run() }
         launch { eventChannel.send(StartWatcher) }
     }
 
@@ -420,8 +419,9 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                     val (newState, actions) = state.process(input)
                     state = newState
 
-                    logger.info { "Execute actions: $actions" }
                     actions.forEach { action ->
+                        yield()
+                        logger.verbose { "Execute action: $action" }
                         when (action) {
                             is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
                             is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
@@ -477,6 +477,8 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         // Cancel subscriptions
         clientConnectedSubscription.cancel()
         clientNotificationsSubscription.cancel()
+        // Cancel event consumer
+        runJob?.cancel()
         // Cancel broadcast channel
         notificationsChannel.cancel()
         // Cancel event channels

@@ -49,13 +49,12 @@ internal object Shutdown : ElectrumClientAction()
 /**
  * [ElectrumClient] State
  *
- * +--> Disconnected -> WaitForVersion ----+
- * |    ^          |                       |
- * |    +-Restart<-+                       |
- * |                                       |
- * +------ Running <----- WaitForTip <-----+
- *         ^     |
- *         +-----+
+ * +--> ClientClosed ----> WaitingForConnection ----+
+ * |                                                |
+ * |                                                |
+ * +-- Running <-- WaitForTip <--- WaitForVersion --+
+ *     ^     |
+ *     +-----+
  *
  */
 internal sealed class ClientState {
@@ -78,7 +77,7 @@ internal object WaitingForVersion : ClientState() {
                 when (parseJsonResponse(version, event.response.value)) {
                     is ServerVersionResponse -> newState {
                         state = WaitingForTip
-                        actions = listOf(BroadcastStatus(Connection.ESTABLISHING), SendRequest(HeaderSubscription.asJsonRPCRequest()))
+                        actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
                     }
                     is ServerError -> newState {
                         state = ClientClosed
@@ -157,7 +156,7 @@ internal object ClientClosed : ClientState() {
         when(event) {
             Start -> newState {
                 state = WaitingForConnection
-                actions = listOf(ConnectionAttempt)
+                actions = listOf(BroadcastStatus(Connection.ESTABLISHING), ConnectionAttempt)
             }
             else -> unhandled(event)
         }
@@ -208,9 +207,10 @@ class ElectrumClient(
             field = value
         }
 
+    var runJob: Job? = null
     init {
-        logger.info { "Start Electrum Client" }
-        launch { run() }
+        logger.info { "Init Electrum Client" }
+        runJob = launch { run() }
     }
 
     private suspend fun run() {
@@ -221,6 +221,7 @@ class ElectrumClient(
             state = newState
 
             actions.forEach { action ->
+                yield()
                 logger.verbose { "Execute action: $action" }
                 when (action) {
                     is ConnectionAttempt -> connectionJob = establishConnection()
@@ -242,7 +243,8 @@ class ElectrumClient(
     }
 
     fun connect() {
-        launch { eventChannel.send(Start) }
+        if (state == ClientClosed) launch { eventChannel.send(Start) }
+        else logger.warning { "ElectrumClient is already running $this" }
     }
     fun disconnect() {
         launch { eventChannel.send(Disconnected) }
@@ -297,9 +299,11 @@ class ElectrumClient(
     fun stop() {
         logger.info { "Stop Electrum Client" }
         closeConnection()
+        // Cancel event consumer
+        runJob?.cancel()
         // Cancel broadcast channels
-        notificationsChannel.cancel()
         connectedChannel.cancel()
+        notificationsChannel.cancel()
         // Cancel event channel
         eventChannel.cancel()
     }
