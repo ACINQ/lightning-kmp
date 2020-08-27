@@ -7,13 +7,12 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScrip
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.eklair.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
 import fr.acinq.eklair.transactions.Scripts
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import fr.acinq.eklair.utils.Connection
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.launch
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.absoluteValue
@@ -25,24 +24,17 @@ data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
 private class ReceiveWatch(val watch: Watch) : WatcherEvent()
 private class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
 private class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
+private class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
 private sealed class WatcherAction
-private object RegisterToElectrumStatus : WatcherAction()
-private object RegisterToHeaderNotification : WatcherAction()
+private object AskForClientStatusUpdate : WatcherAction()
+private object AskForHeaderUpdate : WatcherAction()
 private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : WatcherAction()
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
 private data class NotifyWatch(val watchEvent: WatchEvent) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
-private data class RelayWatch(val watch: Watch) : WatcherAction()
-private data class RelayWatchConfirmed(
-    val parentTxid: ByteVector32,
-    val parentPublicKeyScript: ByteVector,
-    val minDepth: Long,
-    val bitcoinParentTxConfirmed: BITCOIN_PARENT_TX_CONFIRMED
-) : WatcherAction()
-private data class RelayGetTxWithMeta(val request: GetTxWithMeta) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
@@ -74,16 +66,18 @@ private data class WatcherDisconnected(
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when(event) {
-            is StartWatcher -> returnState(action = RegisterToElectrumStatus)
+            is StartWatcher -> returnState(action = AskForClientStatusUpdate)
+            is ClientStateUpdate -> {
+                    if (event.connection == Connection.ESTABLISHED) returnState(AskForHeaderUpdate)
+                    else returnState()
+            }
             is ReceivedMessage -> when (val message = event.message) {
-                is ElectrumClientReady -> returnState(action = RegisterToHeaderNotification)
                 is HeaderSubscriptionResponse -> {
                     newState {
-                        state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx))
+                        state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx, watches = watches))
                         actions = buildList {
-                            watches.forEach { add(RelayWatch(it)) }
                             publishQueue.forEach { add(PublishAsapAction(it)) }
-                            getTxQueue.forEach { add(RelayGetTxWithMeta(it)) }
+                            getTxQueue.forEach { add(AskForTransaction(it.txid, it.response)) }
                         }
                     }
                 }
@@ -270,13 +264,6 @@ private data class WatcherRunning(
                             actions = notifyWatchConfirmedList
                         }
                     }
-                    message is ElectrumClientClosed -> newState(
-                        WatcherDisconnected(
-                            watches = watches,
-                            publishQueue = sent.map { PublishAsap(it) },
-                            block2tx = block2tx
-                        )
-                    )
                     else -> returnState()
                 }
             }
@@ -294,7 +281,10 @@ private data class WatcherRunning(
                         val parentTxid = tx.txIn[0].outPoint.txid
                         logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                        returnState(RelayWatchConfirmed(parentTxid, parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx)))
+                        receiveWatch(
+                            WatchConfirmed(ByteVector32.Zeroes, parentTxid,
+                                parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+                        )
                     }
                     cltvTimeout > blockCount -> {
                         logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
@@ -311,28 +301,7 @@ private data class WatcherRunning(
                     }
                 }
             }
-            is ReceiveWatch -> when (val watch = event.watch) {
-                in watches -> returnState()
-                is WatchSpent -> {
-                    val (_, txid, outputIndex, publicKeyScript, _) = watch
-                    val scriptHash = computeScriptHash(publicKeyScript)
-                    logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
-                    newState {
-                        state = copy(watches = watches + watch)
-                        actions = listOf(RegisterToScriptHashNotification(scriptHash))
-                    }
-                }
-                is WatchConfirmed -> {
-                    val (_, txid, publicKeyScript, _, _) = watch
-                    val scriptHash = computeScriptHash(publicKeyScript)
-                    logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
-                    newState {
-                        state = copy(watches = watches + watch)
-                        actions = listOf(RegisterToScriptHashNotification(scriptHash))
-                    }
-                }
-                else -> returnState()
-            }
+            is ReceiveWatch -> receiveWatch(event.watch)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
                     // TODO to be tested
@@ -358,8 +327,40 @@ private data class WatcherRunning(
                 }
                 else -> unhandled(event)
             }
+            is ClientStateUpdate -> {
+                if (event.connection == Connection.CLOSED) newState(
+                    WatcherDisconnected(
+                        watches = watches,
+                        publishQueue = sent.map { PublishAsap(it) },
+                        block2tx = block2tx
+                    )
+                ) else returnState()
+            }
             else -> unhandled(event)
         }
+
+    private fun receiveWatch(watch: Watch) = when (watch) {
+        in watches -> returnState()
+        is WatchSpent -> {
+            val (_, txid, outputIndex, publicKeyScript, _) = watch
+            val scriptHash = computeScriptHash(publicKeyScript)
+            logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
+            newState {
+                state = copy(watches = watches + watch)
+                actions = listOf(RegisterToScriptHashNotification(scriptHash))
+            }
+        }
+        is WatchConfirmed -> {
+            val (_, txid, publicKeyScript, _, _) = watch
+            val scriptHash = computeScriptHash(publicKeyScript)
+            logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
+            newState {
+                state = copy(watches = watches + watch)
+                actions = listOf(RegisterToScriptHashNotification(scriptHash))
+            }
+        }
+        else -> returnState()
+    }
 }
 
 private fun WatcherState.unhandled(message: WatcherEvent) : Pair<WatcherState, List<WatcherAction>> =
@@ -375,21 +376,25 @@ private fun newState(newState: WatcherState) = WatcherStateBuilder().apply { sta
 
 private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList()): Pair<WatcherState, List<WatcherAction>> = this to actions
 private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
-private fun WatcherState.returnState(vararg actions: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(*actions)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): CoroutineScope by scope {
-    val notifications = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
+    private val notificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
+    fun openNotificationsSubscription() = notificationsChannel.openSubscription()
+
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
     private val watchChannel = Channel<Watch>(Channel.BUFFERED)
     private val watchEventChannel = Channel<WatchEvent>(Channel.BUFFERED)
-    private val electrumMessageChannel = Channel<ElectrumMessage>(Channel.BUFFERED)
+
+    private val clientConnectedSubscription = client.openConnectedSubscription()
+    private val clientNotificationsSubscription = client.openNotificationsSubscription()
 
     private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
         launch { watchChannel.consumeEach { send(it) } }
         launch { watchEventChannel.consumeEach { send(it) } }
-        launch { electrumMessageChannel.consumeEach { send(it) } }
+        launch { clientConnectedSubscription.consumeEach { send(it) } }
+        launch { clientNotificationsSubscription.consumeEach { send(it) } }
     }
 
     private var state: WatcherState = WatcherDisconnected()
@@ -397,6 +402,13 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
             if (value != field) logger.info { "Updated State: $field -> $value" }
             field = value
         }
+
+    private var runJob: Job? = null
+    init {
+        logger.info { "Init Electrum Watcher" }
+        runJob = launch { run() }
+        launch { eventChannel.send(StartWatcher) }
+    }
 
     private suspend fun run() {
         input.consumeEach { input ->
@@ -407,53 +419,46 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                     val (newState, actions) = state.process(input)
                     state = newState
 
-                    logger.info { "Execute actions: $actions" }
                     actions.forEach { action ->
+                        yield()
+                        logger.verbose { "Execute action: $action" }
                         when (action) {
-                            RegisterToElectrumStatus -> client.sendMessage(
-                                ElectrumStatusSubscription(electrumMessageChannel)
-                            )
-                            RegisterToHeaderNotification -> client.sendMessage(
-                                ElectrumHeaderSubscription(electrumMessageChannel)
-                            )
+                            is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
+                            is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
                             is RegisterToScriptHashNotification -> client.sendElectrumRequest(
-                                ScriptHashSubscription(action.scriptHash), electrumMessageChannel
+                                ScriptHashSubscription(action.scriptHash)
                             )
                             is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.publishAsap))
-                            is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx), null)
+                            is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
                             is AskForScriptHashHistory -> client.sendElectrumRequest(
-                                GetScriptHashHistory(action.scriptHash), electrumMessageChannel
+                                GetScriptHashHistory(action.scriptHash)
                             )
                             is AskForTransaction -> client.sendElectrumRequest(
-                                GetTransaction(action.txid, action.contextOpt), electrumMessageChannel
+                                GetTransaction(action.txid, action.contextOpt)
                             )
                             is AskForMerkle -> client.sendElectrumRequest(
-                                GetMerkle(action.txId, action.txheight, action.tx), electrumMessageChannel
+                                GetMerkle(action.txId, action.txheight, action.tx)
                             )
-                            is NotifyWatch -> notifications.send(action.watchEvent)
+                            is NotifyWatch -> notificationsChannel.send(action.watchEvent)
                             is NotifyTxWithMeta -> TODO("implement this")
-                            is RelayWatch -> eventChannel.send(ReceiveWatch(action.watch))
-                            is RelayWatchConfirmed -> {
-                                eventChannel.send(ReceiveWatch(
-                                    WatchConfirmed(ByteVector32.Zeroes, action.parentTxid,
-                                        action.parentPublicKeyScript, action.minDepth, action.bitcoinParentTxConfirmed)
-                                ))
-                            }
-                            is RelayGetTxWithMeta -> eventChannel.send(GetTxWithMetaEvent(action.request))
                         }
                     }
                 }
                 is Watch -> {
                     logger.verbose { "Watch received: $input" }
-                    if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatch(input))
+                    eventChannel.send(ReceiveWatch(input))
                 }
                 is WatchEvent -> {
                     logger.verbose { "WatchEvent received: $input" }
-                    if (!eventChannel.isClosedForSend) eventChannel.send(ReceiveWatchEvent(input))
+                    eventChannel.send(ReceiveWatchEvent(input))
                 }
                 is ElectrumMessage -> {
                     logger.verbose { "Electrum message received: $input" }
-                    if (!eventChannel.isClosedForSend) eventChannel.send(ReceivedMessage(input))
+                    eventChannel.send(ReceivedMessage(input))
+                }
+                is Connection -> {
+                    logger.verbose { "Electrum client connection changed: $input" }
+                    eventChannel.send(ClientStateUpdate(input))
                 }
             }
         }
@@ -467,18 +472,19 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         launch { watchChannel.send(watch) }
     }
 
-    fun start() {
-        logger.info { "Start Electrum Watcher" }
-        launch { run() }
-        launch { eventChannel.send(StartWatcher) }
-    }
-
     fun stop() {
-//        client.sendMessage(UnsubscribeListener(electrumMessageChannel))// TODO?
-        electrumMessageChannel.close()
-        watchEventChannel.close()
-        watchChannel.close()
-        eventChannel.close()
+        logger.info { "Stop Electrum Watcher" }
+        // Cancel subscriptions
+        clientConnectedSubscription.cancel()
+        clientNotificationsSubscription.cancel()
+        // Cancel event consumer
+        runJob?.cancel()
+        // Cancel broadcast channel
+        notificationsChannel.cancel()
+        // Cancel event channels
+        watchEventChannel.cancel()
+        watchChannel.cancel()
+        eventChannel.cancel()
         input.cancel()
     }
 

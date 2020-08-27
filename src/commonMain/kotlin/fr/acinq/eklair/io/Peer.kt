@@ -21,6 +21,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.flow.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
@@ -60,8 +61,8 @@ class Peer(
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
-    enum class Connection { CLOSED, ESTABLISHING, ESTABLISHED }
-    private val connectedChannel = ConflatedBroadcastChannel<Connection>(Connection.CLOSED)
+
+    private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
     // channels map, indexed by channel id
@@ -87,31 +88,20 @@ class Peer(
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
 
     init {
-        val electrumChannel = Channel<ElectrumMessage>(2)
+        val electrumConnectedChannel = watcher.client.openConnectedSubscription()
+        val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
-            for(msg in electrumChannel) {
-                when(msg) {
-                    is ElectrumClientReady -> watcher.client.sendMessage(ElectrumHeaderSubscription(electrumChannel))
-                    is HeaderSubscriptionResponse -> {
-                        currentTip = Pair(msg.height, msg.header)
-                        send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
-                    }
-                    else -> {}
+            electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
+                .collect { msg ->
+                    send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
                 }
-            }
         }
-        watcher.client.sendMessage(ElectrumStatusSubscription(electrumChannel))
-
         launch {
-            channelsDb.listLocalChannels().forEach {
-                logger.info { "restoring $it" }
-                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
-                val (state1, actions) = state.process(Restore(it as ChannelState))
-                send(actions)
-                channels = channels + (it.channelId to state1)
+            electrumConnectedChannel.consumeAsFlow().filter { it == Connection.ESTABLISHED }.collect {
+                watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
-            logger.info { "restored channels: $channels" }
         }
+        watcher.client.sendMessage(AskForStatusUpdate)
     }
 
     fun connect(address: String, port: Int) {
@@ -185,7 +175,7 @@ class Peer(
             coroutineScope {
                 launch { run() }
                 launch {
-                    val sub = watcher.notifications.openSubscription()
+                    val sub = watcher.openNotificationsSubscription()
                     sub.consumeEach {
                         println("notification: $it")
                         input.send(WrappedChannelEvent(it.channelId, fr.acinq.eklair.channel.WatchReceived(it)))

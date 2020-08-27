@@ -15,7 +15,6 @@ repositories {
     maven("https://dl.bintray.com/kotlin/kotlinx")
     maven("https://dl.bintray.com/kotlin/ktor")
     maven("https://dl.bintray.com/kodein-framework/kodein-dev")
-    maven("https://dl.bintray.com/kodein-framework/Kodein-Log")
     maven("https://dl.bintray.com/acinq/libs")
     google()
     jcenter()

@@ -124,8 +124,8 @@ object Node {
                     val cborHex = cbor.encodeToHexString(mapSerializer, it)
                     println("CBOR: $cborHex")
                     println("JSON: ${json.encodeToString(mapSerializer, it)}")
-                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
-                    println("Serialization resistance: ${it == dec}")
+//                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
+//                    println("Serialization resistance: ${it == dec}")
                 }
             } catch (ex: Throwable) {
                 ex.printStackTrace()
@@ -178,8 +178,8 @@ object Node {
         thread(isDaemon = true, block = ::writeLoop)
 
         runBlocking {
-            val electrum = ElectrumClient("localhost", 51001, null, this).apply { start() }
-            val watcher = ElectrumWatcher(electrum, this).apply { start() }
+            val electrum = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+            val watcher = ElectrumWatcher(electrum, this)
             val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:/tmp/eklair-node-channels.db"))
             val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
 
