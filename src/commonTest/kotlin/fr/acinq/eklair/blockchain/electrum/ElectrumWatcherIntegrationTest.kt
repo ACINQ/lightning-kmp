@@ -8,20 +8,15 @@ import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.computeScrip
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.utils.currentTimestampSeconds
 import fr.acinq.eklair.utils.runTest
-import fr.acinq.eklair.utils.runTrying
 import fr.acinq.eklair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.consume
+import kotlin.test.*
+import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
+import kotlin.time.measureTime
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class)
 class ElectrumWatcherIntegrationTest {
@@ -41,13 +36,13 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for confirmed transactions`() = runTest {
-        val client = ElectrumClient("localhost", 51001, null, this).apply { start() }
-        val watcher = ElectrumWatcher(client, this).apply { start() }
+        val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+        val watcher = ElectrumWatcher(client, this)
 
         val (address,_) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
-        val listener = watcher.notifications.openSubscription()
+        val listener = watcher.openNotificationsSubscription()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -63,22 +58,22 @@ class ElectrumWatcherIntegrationTest {
             val confirmed = listener.receive() as WatchEventConfirmed
             assertEquals(tx.txid, confirmed.tx.txid)
         }
-        listener.cancel()
+
         watcher.stop()
         client.stop()
     }
 
     @Test
     fun `watch for confirmed transactions created while being offline`() = runTest {
-        val client = ElectrumClient("localhost", 51001, null, this).apply { start() }
-        val watcher = ElectrumWatcher(client, this).apply { start() }
+        val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+        val watcher = ElectrumWatcher(client, this)
 
         val (address,_) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
         bitcoincli.generateBlocks(5)
 
-        val listener = watcher.notifications.openSubscription()
+        val listener = watcher.openNotificationsSubscription()
         watcher.watch(WatchConfirmed(
             ByteVector32.Zeroes,
             tx.txid,
@@ -98,8 +93,8 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for spent transactions`() = runTest {
-        val client = ElectrumClient("localhost", 51001, null, this).apply { start() }
-        val watcher = ElectrumWatcher(client, this).apply { start() }
+        val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+        val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -130,7 +125,7 @@ class ElectrumWatcherIntegrationTest {
             signedTx
         }
 
-        val listener = watcher.notifications.openSubscription()
+        val listener = watcher.openNotificationsSubscription()
         watcher.watch(WatchSpent(
             ByteVector32.Zeroes,
             tx.txid,
@@ -148,15 +143,15 @@ class ElectrumWatcherIntegrationTest {
             val msg = listener.receive() as WatchEventSpent
             assertEquals(spendingTx.txid, msg.tx.txid)
         }
-        listener.cancel()
+
         watcher.stop()
         client.stop()
     }
 
     @Test
     fun `watch for spent transactions while being offline`() = runTest {
-        val client = ElectrumClient("localhost", 51001, null, this).apply { start() }
-        val watcher = ElectrumWatcher(client, this).apply { start() }
+        val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+        val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -192,7 +187,7 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        val listener = watcher.notifications.openSubscription()
+        val listener = watcher.openNotificationsSubscription()
         watcher.watch(WatchSpent(
             ByteVector32.Zeroes,
             tx.txid,
@@ -205,20 +200,15 @@ class ElectrumWatcherIntegrationTest {
             val msg = listener.receive() as WatchEventSpent
             assertEquals(spendingTx.txid, msg.tx.txid)
         }
-        listener.cancel()
+
         watcher.stop()
         client.stop()
     }
 
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
-        val client = ElectrumClient("localhost", 51001, null, this).apply { start() }
-        val watcher = ElectrumWatcher(client, this).apply { start() }
-
-        val statusListener = Channel<ElectrumMessage>()
-        client.sendMessage(ElectrumStatusSubscription(statusListener))
-        val status = statusListener.receive()
-        assertTrue(status is ElectrumClientReady)
+        val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+        val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -231,18 +221,19 @@ class ElectrumWatcherIntegrationTest {
 
         // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
         withTimeout(30_000) {
-            while (true) {
-                val getHistoryListener = Channel<ElectrumMessage>()
-                client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript)), getHistoryListener))
+            val getHistoryListener = client.openNotificationsSubscription()
 
-                val (_, history) = getHistoryListener.receive() as GetScriptHashHistoryResponse
-                if (history.map { it.tx_hash }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) break
-
-                delay(5_000)
+            client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript))))
+            getHistoryListener.consume {
+                val msg = this.receive()
+                if (msg is GetScriptHashHistoryResponse) {
+                    val (_, history) = msg
+                    if (history.map { it.tx_hash }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) this.cancel()
+                }
             }
         }
 
-        val listener = watcher.notifications.openSubscription()
+        val listener = watcher.openNotificationsSubscription()
         watcher.watch(WatchConfirmed(
             ByteVector32.Zeroes,
             tx2.txid,
@@ -252,30 +243,25 @@ class ElectrumWatcherIntegrationTest {
         ))
 
         withTimeout(TIMEOUT) {
-            val confirmed = listener.receive() as WatchEventConfirmed
-            assertEquals(tx2.txid, confirmed.tx.txid)
+            val watchEvent = listener.receive()
+            assertTrue(watchEvent is WatchEventConfirmed)
+            assertEquals(tx2.txid, watchEvent.tx.txid)
         }
 
-        statusListener.close()
         watcher.stop()
         client.stop()
     }
 
     @Test
     fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
-        val client = ElectrumClient("localhost", 51001, null, this).apply { start() }
-        val watcher = ElectrumWatcher(client, this).apply { start() }
-
-        val statusListener = Channel<ElectrumMessage>()
-        client.sendMessage(ElectrumStatusSubscription(statusListener))
-        val status = statusListener.receive()
-        assertTrue(status is ElectrumClientReady)
+        val client = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+        val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
         val (tx1, tx2) = bitcoincli.createUnspentTxChain(tx, privateKey)
 
-        val listener = watcher.notifications.openSubscription()
+        val listener = watcher.openNotificationsSubscription()
         watcher.watch(WatchConfirmed(
             ByteVector32.Zeroes,
             tx2.txid,
@@ -290,8 +276,9 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(tx2, sentTx2)
 
         withTimeout(TIMEOUT) {
-            val confirmed = listener.receive() as WatchEventConfirmed
-            assertEquals(tx2.txid, confirmed.tx.txid)
+            val watchEvent = listener.receive()
+            assertTrue(watchEvent is WatchEventConfirmed)
+            assertEquals(tx2.txid, watchEvent.tx.txid)
         }
 
         watcher.stop()
@@ -301,8 +288,8 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `get transaction`() = runTest {
         // Run on a production server
-        val electrumClient = ElectrumClient("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES, this).apply { start() }
-        val electrumWatcher = ElectrumWatcher(electrumClient, this).apply { start() }
+        val electrumClient = ElectrumClient("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES, this).apply { connect() }
+        val electrumWatcher = ElectrumWatcher(electrumClient, this)
 
         delay(1_000) // Wait for the electrum client to be ready
 
