@@ -39,6 +39,7 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
+data class SendingPayment(val id: UUID, val paymentHash: ByteVector32, val recipientAmount: MilliSatoshi, val recipientNodeId: PublicKey, val timestamp: Long) : PeerListenerEvent()
 data class PaymentSent(val id: UUID, val paymentHash: ByteVector32, val paymentPreimage: ByteVector32, val recipientAmount: MilliSatoshi, val recipientNodeId: PublicKey, val timestamp: Long) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
@@ -478,6 +479,8 @@ class Peer(
                         sendToSelf(channel.channelId, actions)
                         pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
                         logger.info { "channel ${channel.channelId} new state $state1" }
+
+                        listenerEventChannel.send(SendingPayment(paymentId, event.paymentRequest.paymentHash, event.paymentRequest.amount, event.paymentRequest.nodeId, event.paymentRequest.timestamp))
                     }
                 }
                 event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
