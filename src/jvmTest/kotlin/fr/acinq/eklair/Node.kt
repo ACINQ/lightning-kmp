@@ -151,7 +151,7 @@ object Node {
                     "receive" -> {
                         val paymentPreimage = ByteVector32(tokens[1])
                         val amount = MilliSatoshi(tokens[2].toLong())
-                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100)))
+                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100), "this is a kotlin test"))
                     }
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])

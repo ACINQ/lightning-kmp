@@ -29,7 +29,7 @@ import org.kodein.log.LoggerFactory
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry) : PeerEvent() {
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry, val description: String) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
@@ -39,8 +39,8 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
-data class SendingPayment(val id: UUID, val paymentHash: ByteVector32, val recipientAmount: MilliSatoshi, val recipientNodeId: PublicKey, val timestamp: Long) : PeerListenerEvent()
-data class PaymentSent(val id: UUID, val paymentHash: ByteVector32, val paymentPreimage: ByteVector32, val recipientAmount: MilliSatoshi, val recipientNodeId: PublicKey, val timestamp: Long) : PeerListenerEvent()
+data class SendingPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
+data class PaymentSent(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -403,7 +403,7 @@ class Peer(
                                     it is ProcessFulfill -> {
                                         val payment = pendingOutgoingPayments[it.fulfill.paymentPreimage.sha256()]!!
                                         logger.info { "received ${it.fulfill} } for payment $payment" }
-                                        listenerEventChannel.send(PaymentSent(payment.id, payment.paymentRequest.paymentHash!!, it.fulfill.paymentPreimage, payment.paymentRequest.amount!!, payment.paymentRequest.nodeId, currentTimestampMillis()))
+                                        listenerEventChannel.send(PaymentSent(payment.id, payment.paymentRequest))
                                     }
                                 }
                             }
@@ -432,7 +432,7 @@ class Peer(
                         "lnbcrt", event.amount, currentTimestampSeconds(), nodeParams.nodeId,
                         listOf(
                             PaymentRequest.TaggedField.PaymentHash(event.paymentHash),
-                            PaymentRequest.TaggedField.Description("this is a kotlin test")
+                            PaymentRequest.TaggedField.Description(event.description)
                         ),
                         ByteVector.empty
                     ).sign(nodeParams.privateKey)
@@ -480,7 +480,7 @@ class Peer(
                         pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
                         logger.info { "channel ${channel.channelId} new state $state1" }
 
-                        listenerEventChannel.send(SendingPayment(paymentId, event.paymentRequest.paymentHash, event.paymentRequest.amount, event.paymentRequest.nodeId, event.paymentRequest.timestamp))
+                        listenerEventChannel.send(SendingPayment(paymentId, event.paymentRequest))
                     }
                 }
                 event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
