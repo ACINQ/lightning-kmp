@@ -15,7 +15,7 @@ interface Tlv {
     val tag: Long
 
     companion object {
-        val serializationModule = SerializersModule {
+        val serializersModule = SerializersModule {
             polymorphic(Tlv::class) {
                 subclass(ChannelTlv.UpfrontShutdownScript.serializer())
                 subclass(ChannelTlv.ChannelVersionTlv.serializer())

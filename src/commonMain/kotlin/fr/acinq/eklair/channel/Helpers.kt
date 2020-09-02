@@ -98,6 +98,57 @@ object Helpers {
         is Upstream.TrampolineRelayed -> Origin.TrampolineRelayed(c.upstream.adds.map { Pair(it.channelId, it.id) }) // this is a relayed payment to an outgoing node
     }
 
+    /**
+     * Tells whether or not their expected next remote commitment number matches with our data
+     *
+     * @return
+     *         - true if parties are in sync or remote is behind
+     *         - false if we are behind
+     */
+    fun checkLocalCommit(commitments: Commitments, nextRemoteRevocationNumber: Long): Boolean {
+        return when {
+            // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+            commitments.localCommit.index == nextRemoteRevocationNumber -> true
+            // we are in sync
+            commitments.localCommit.index == nextRemoteRevocationNumber + 1 -> true
+            // remote is behind: we return true because things are fine on our side
+            commitments.localCommit.index > nextRemoteRevocationNumber + 1 -> true
+            // we are behind
+            else -> false
+        }
+    }
+
+    /**
+     * Tells whether or not their expected next local commitment number matches with our data
+     *
+     * @return
+     *         - true if parties are in sync or remote is behind
+     *         - false if we are behind
+     */
+    fun checkRemoteCommit(commitments: Commitments, nextLocalCommitmentNumber: Long): Boolean {
+        return when {
+            commitments.remoteNextCommitInfo.isLeft ->
+                when {
+                    // we just sent a new commit_sig but they didn't receive it
+                    nextLocalCommitmentNumber == commitments.remoteNextCommitInfo.left!!.nextRemoteCommit.index -> true
+                    // we just sent a new commit_sig, they have received it but we haven't received their revocation
+                    nextLocalCommitmentNumber == (commitments.remoteNextCommitInfo.left!!.nextRemoteCommit.index + 1) -> true
+                    // they are behind
+                    nextLocalCommitmentNumber < commitments.remoteNextCommitInfo.left!!.nextRemoteCommit.index -> true
+                    else -> false
+                }
+            commitments.remoteNextCommitInfo.isRight ->
+                when {
+                    // they have acknowledged the last commit_sig we sent
+                    nextLocalCommitmentNumber == (commitments.remoteCommit.index + 1) -> true
+                    // they are behind
+                    nextLocalCommitmentNumber < (commitments.remoteCommit.index + 1) -> true
+                    else -> false
+                }
+            else -> false
+        }
+    }
+
     object Funding {
 
         fun makeFundingInputInfo(

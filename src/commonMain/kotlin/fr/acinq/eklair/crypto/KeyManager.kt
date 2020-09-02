@@ -122,7 +122,7 @@ interface KeyManager {
 
         fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey) : KeyPath = channelKeyPath(fundingPubKey.publicKey)
 
-        val serializationModule = SerializersModule {
+        val serializersModule = SerializersModule {
             polymorphic(KeyManager::class) {
                 subclass(LocalKeyManager.serializer())
             }

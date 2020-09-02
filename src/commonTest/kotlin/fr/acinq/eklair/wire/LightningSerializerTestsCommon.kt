@@ -3,10 +3,13 @@ package fr.acinq.eklair.wire
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.CltvExpiryDelta
 import fr.acinq.eklair.utils.msat
 import fr.acinq.eklair.utils.sat
+import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.*
+import kotlin.math.exp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -255,7 +258,18 @@ class LightningSerializerTestsCommon {
             val reEncoded = AcceptChannel.write(decoded)
             assertEquals(it.key, ByteVector(reEncoded))
         }
-
     }
 
+    @Test
+    fun `encode - decode channel_reestablish`() {
+        val channelReestablish = ChannelReestablish(
+            ByteVector32("c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c"),
+            242842,42,
+            PrivateKey.fromHex("34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55"),
+            PublicKey.fromHex("02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867")
+        )
+        val encoded = LightningMessage.encode(channelReestablish)!!
+        val expected = "0088c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c000000000003b49a000000000000002a34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b5502bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867"
+        assertEquals(expected, Hex.encode(encoded))
+    }
 }

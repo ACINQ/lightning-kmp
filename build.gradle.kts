@@ -57,6 +57,7 @@ kotlin {
             implementation(ktor("network"))
             implementation(ktor("network-tls"))
             implementation("org.slf4j:slf4j-api:1.7.29")
+            api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
         compilations["test"].kotlinOptions.jvmTarget = "1.8"
         compilations["test"].defaultSourceSet.dependencies {

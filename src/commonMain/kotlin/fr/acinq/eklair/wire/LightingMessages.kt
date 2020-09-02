@@ -6,8 +6,6 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.*
-import fr.acinq.eklair.crypto.KeyManager
-import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.*
 import fr.acinq.eklair.utils.leftPaddedCopyOf
 import fr.acinq.eklair.utils.or
@@ -33,6 +31,7 @@ interface LightningMessage {
             val code = LightningSerializer.u16(stream)
             return when (code.toLong()) {
                 Init.tag -> Init.read(stream)
+                ChannelReestablish.tag -> ChannelReestablish.read(stream)
                 Error.tag -> Error.read(stream)
                 Ping.tag -> Ping.read(stream)
                 Pong.tag -> Pong.read(stream)
@@ -85,7 +84,7 @@ interface HasTimestamp : LightningMessage {
 
 interface UpdateMessage : LightningMessage {
     companion object {
-        val serializationModule = SerializersModule {
+        val serializersModule = SerializersModule {
             polymorphic(UpdateMessage::class) {
                 subclass(UpdateAddHtlc.serializer())
                 subclass(UpdateFailHtlc.serializer())
@@ -679,12 +678,13 @@ data class UpdateFee(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
 data class ChannelReestablish(
-    override val channelId: ByteVector32,
-    val nextCommitmentNumber: Long,
-    val nextRevocationNumber: Long,
-    val yourLastCommitmentSecret: PrivateKey,
-    val myCurrentPerCommitmentPoint: PublicKey
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    val nextLocalCommitmentNumber: Long,
+    val nextRemoteRevocationNumber: Long,
+    @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
+    @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey
 ) : HasChannelId, LightningSerializable<ChannelReestablish> {
     override fun serializer(): LightningSerializer<ChannelReestablish> = ChannelReestablish
 
@@ -704,8 +704,8 @@ data class ChannelReestablish(
 
         override fun write(message: ChannelReestablish, out: Output) {
             writeBytes(message.channelId, out)
-            writeU64(message.nextCommitmentNumber, out)
-            writeU64(message.nextRevocationNumber, out)
+            writeU64(message.nextLocalCommitmentNumber, out)
+            writeU64(message.nextRemoteRevocationNumber, out)
             writeBytes(message.yourLastCommitmentSecret.value, out)
             writeBytes(message.myCurrentPerCommitmentPoint.value, out)
         }

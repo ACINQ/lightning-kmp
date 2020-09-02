@@ -3,7 +3,7 @@ package fr.acinq.eklair
 import fr.acinq.bitcoin.*
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
-import fr.acinq.eklair.blockchain.fee.TestFeeEstimator
+import fr.acinq.eklair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eklair.channel.LocalParams
 import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.PeerChannels
@@ -37,7 +37,7 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  TestFeeEstimator(10000),
+                feeEstimator =  ConstantFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
@@ -100,7 +100,7 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  TestFeeEstimator(10000),
+                feeEstimator =  ConstantFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1

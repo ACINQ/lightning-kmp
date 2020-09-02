@@ -8,7 +8,7 @@ import kotlinx.serialization.modules.subclass
 
 
 @Serializable
-data class TestFeeEstimator(var currentFeerates: Long = 750) : FeeEstimator {
+data class ConstantFeeEstimator(var currentFeerates: Long = 750) : FeeEstimator {
 
 
     override fun getFeeratePerKb(target: Int): Long = feerateKw2KB(currentFeerates)
@@ -16,7 +16,7 @@ data class TestFeeEstimator(var currentFeerates: Long = 750) : FeeEstimator {
     override fun getFeeratePerKw(target: Int): Long = currentFeerates
 
     companion object {
-        val testSerializationModule = SerializersModule {
+        val testSerializersModule = SerializersModule {
             polymorphic(FeeEstimator::class) {
                 subclass(serializer())
             }
