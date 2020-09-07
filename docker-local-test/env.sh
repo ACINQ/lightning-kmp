@@ -13,7 +13,7 @@ else
     exit 1
 fi
 
-function create_network {
+function net_create {
   docker network create \
     --driver=bridge \
     --subnet=172.20.0.0/16 \
@@ -22,7 +22,11 @@ function create_network {
     eklair-net
 }
 
-function create_containers {
+function net_remove {
+  docker network rm eklair-net
+}
+
+function btc_create {
   docker create \
     --name bitcoind \
     --net eklair-net \
@@ -47,7 +51,21 @@ function create_containers {
   sleep 2
   ./gen-blocks.sh 150
   docker stop bitcoind
+}
 
+function btc_start {
+  docker start bitcoind
+}
+
+function btc_stop {
+  docker stop bitcoind
+}
+
+function btc_remove {
+  docker rm bitcoind
+}
+
+function elx_create {
   docker create \
     --name electrumx \
     --net eklair-net \
@@ -57,7 +75,21 @@ function create_containers {
     -p 51001:50001 \
     -p 51002:50002 \
     acinq/electrumx
+}
 
+function elx_start {
+  docker start electrumx
+}
+
+function elx_stop {
+  docker stop electrumx
+}
+
+function elx_remove {
+  docker rm electrumx
+}
+
+function ecl_create {
   docker build \
     --build-arg user=$USER \
     --build-arg uid=$(id -u) \
@@ -73,64 +105,107 @@ function create_containers {
     -it eclair-gui
 }
 
-function start_background() {
-  docker start bitcoind electrumx
-}
-
-function stop_background() {
-  docker stop electrumx bitcoind
-}
-
-function run_ui() {
+function ecl_run {
   ${preUICommand}
   docker start -a eclair
 }
 
-function remove_containers() {
-  docker rm electrumx bitcoind eclair
+function ecl_remove {
+  docker rm eclair
 }
 
-function remove_network() {
-  docker network rm eklair-net
+function show_help {
+  echo "Commands:"
+  echo ""
+  echo "  net-create  Creates network"
+  echo "  net-remove  Removes network (needs all containers to be removed)"
+  echo ""
+  echo "  btc-create  Creates and configure Bitcoind (needs network to be created)"
+  echo "  btc-start   Starts Bitcoind"
+  echo "  btc-stop    Stops Bitcoind"
+  echo "  btc-remove  Removes Bitcoind"
+  echo ""
+  echo "  elx-create  Creates ElectrumX (needs network to be created)"
+  echo "  elx-start   Starts ElectrumX"
+  echo "  elx-stop    Stops ElectrumX"
+  echo "  elx-remove  Removes ElectrumX"
+  echo ""
+  echo "  ecl-create  Builds and creates Eclair-UI (needs network to be created)"
+  echo "  ecl-run     Runs Eclair-UI attached to the console"
+  echo "  ecl-remove  Removes Eclair-UI"
+  echo ""
+  echo "  help        Shows this help"
+  echo ""
+  echo ""
+  echo "Shortcuts:"
+  echo ""
+  echo "  all-create  net-create btc-create elx-create ecl-create"
+  echo "  all-remove  ecl-remove elx-remove btc-remove net-remove"
+  echo ""
+  echo "  run         btc-start elx-start ecl-run elx-stop btc-stop"
+  echo "  clean-run   all-remove all-create run"
 }
 
-function show_help() {
-  echo "Valid commands:"
-  echo "  create     Creates and configure all 3 containers (Bitcoind, ElectrumX & Eclair)"
-  echo "  bgstart    Starts background service containers (Bitcoind & ElectrumX)"
-  echo "  bgstop     Stops background service containers (Bitcoind & ElectrumX)"
-  echo "  ui         Starts UI container (Eclair)"
-  echo "  clean      Removes all 3 containers (Bitcoind, ElectrumX & Eclair)"
-  echo "  run-once   Equivalent to 'clean create bgstart ui bgstop clean'"
-}
-
-function run() {
+function cmd {
   for i in "$@"
   do
     case $i in
-      create)
-        create_network
-        create_containers
+      net-create)
+        net_create
         ;;
-      bgstart)
-        start_background
+      net-remove)
+        net_remove
         ;;
-      bgstop)
-        stop_background
+      btc-create)
+        btc_create
         ;;
-      ui)
-        run_ui
+      btc-start)
+        btc_start
         ;;
-      clean)
-        remove_containers
-        remove_network
+      btc-stop)
+        btc_stop
         ;;
-      run-once)
-        run clean create bgstart ui bgstop clean
+      btc-remove)
+        btc_remove
+        ;;
+      elx-create)
+        elx_create
+        ;;
+      elx-start)
+        elx_start
+        ;;
+      elx-stop)
+        elx_stop
+        ;;
+      elx-remove)
+        elx_remove
+        ;;
+      ecl-create)
+        ecl_create
+        ;;
+      ecl-run)
+        ecl_run
+        ;;
+      ecl-remove)
+        ecl_remove
         ;;
       help)
         show_help
         ;;
+
+      all-create)
+        cmd net-create btc-create elx-create ecl-create
+        ;;
+      all-remove)
+        cmd ecl-remove elx-remove btc-remove net-remove
+        ;;
+      run)
+        cmd btc-start elx-start ecl-run elx-stop btc-stop
+        ;;
+      clean-run)
+        cmd all-remove all-create run
+        ;;
+
       *)
         echo "Unknown command $1"
         show_help
@@ -142,5 +217,5 @@ function run() {
 if [ "$1" == "" ]; then
   show_help
 else
-  run $*
+  cmd $*
 fi

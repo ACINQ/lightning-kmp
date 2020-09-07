@@ -151,13 +151,13 @@ Electrum integration test environment + tasks configuration
  */
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir.resolve("docker-local-test")
-    commandLine("bash", "env.sh", "clean", "create", "bgstart")
+    commandLine("bash", "env.sh", "all-remove", "net-create", "btc-create", "elx-create", "btc-start", "elx-start")
     doLast {
         gradle.buildFinished {
             exec {
                 println("Cleaning up dockers...")
                 workingDir = projectDir.resolve("docker-local-test")
-                commandLine("bash", "env.sh", "bgstop", "clean")
+                commandLine("bash", "env.sh", "elx-stop", "btc-stop", "all-remove")
             }
         }
     }
