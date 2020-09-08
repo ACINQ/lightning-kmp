@@ -21,6 +21,7 @@ import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.decodeFromHexString
 import kotlinx.serialization.encodeToHexString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
@@ -117,8 +118,8 @@ object Node {
                     val cborHex = cbor.encodeToHexString(mapSerializer, it)
                     println("CBOR: $cborHex")
                     println("JSON: ${json.encodeToString(mapSerializer, it)}")
-//                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
-//                    println("Serialization resistance: ${it == dec}")
+                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
+                    println("Serialization resistance: ${it == dec}")
                 }
             } catch (ex: Throwable) {
                 ex.printStackTrace()
