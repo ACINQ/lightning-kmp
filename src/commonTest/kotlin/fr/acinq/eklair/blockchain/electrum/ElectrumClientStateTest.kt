@@ -1,7 +1,8 @@
 package fr.acinq.eklair.blockchain.electrum
 
 import fr.acinq.bitcoin.BlockHeader
-import kotlinx.coroutines.channels.Channel
+import fr.acinq.eklair.io.TcpSocket
+import fr.acinq.eklair.utils.ServerAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -24,7 +25,7 @@ class ElectrumClientStateTest {
             assertTrue { actions.isEmpty() }
         }
 
-        assertFails { WaitingForConnection.process(Start) }
+        assertFails { WaitingForConnection.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))) }
     }
 
     @Test
@@ -48,7 +49,7 @@ class ElectrumClientStateTest {
 
     @Test
     fun `ClientClosed state`() {
-        ClientClosed.process(Start).let { (newState, actions) ->
+        ClientClosed.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))).let { (newState, actions) ->
             assertEquals(WaitingForConnection, newState)
             assertEquals(2, actions.size)
             assertTrue(actions[0] is BroadcastStatus)

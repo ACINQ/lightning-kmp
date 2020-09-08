@@ -7,10 +7,7 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.eklair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eklair.io.TcpSocket
 import fr.acinq.eklair.io.linesFlow
-import fr.acinq.eklair.utils.Connection
-import fr.acinq.eklair.utils.Either
-import fr.acinq.eklair.utils.JsonRPCResponse
-import fr.acinq.eklair.utils.toByteVector32
+import fr.acinq.eklair.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
@@ -26,7 +23,7 @@ import org.kodein.log.LoggerFactory
     Events
  */
 internal sealed class ClientEvent
-internal object Start : ClientEvent()
+internal data class Start(val serverAddress: ServerAddress) : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
@@ -38,7 +35,7 @@ internal object AskForHeader : ClientEvent()
     Actions
  */
 internal sealed class ElectrumClientAction
-internal object ConnectionAttempt : ElectrumClientAction()
+internal data class ConnectionAttempt(val serverAddress: ServerAddress) : ElectrumClientAction()
 internal data class SendRequest(val request: String): ElectrumClientAction()
 internal data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction()
 internal data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction()
@@ -154,9 +151,12 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
 internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when(event) {
-            Start -> newState {
+            is Start -> newState {
                 state = WaitingForConnection
-                actions = listOf(BroadcastStatus(Connection.ESTABLISHING), ConnectionAttempt)
+                actions = listOf(
+                    BroadcastStatus(Connection.ESTABLISHING),
+                    ConnectionAttempt(event.serverAddress)
+                )
             }
             else -> unhandled(event)
         }
@@ -184,9 +184,6 @@ private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientSt
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
-    private val host: String,
-    private val port: Int,
-    private val tls: TcpSocket.TLS?,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 
@@ -224,7 +221,7 @@ class ElectrumClient(
                 yield()
                 logger.verbose { "Execute action: $action" }
                 when (action) {
-                    is ConnectionAttempt -> connectionJob = establishConnection()
+                    is ConnectionAttempt -> connectionJob = establishConnection(action.serverAddress)
                     is SendRequest -> {
                         try {
                             socket.send(action.request.encodeToByteArray())
@@ -242,8 +239,8 @@ class ElectrumClient(
         }
     }
 
-    fun connect() {
-        if (state == ClientClosed) launch { eventChannel.send(Start) }
+    fun connect(serverAddress: ServerAddress) {
+        if (state == ClientClosed) launch { eventChannel.send(Start(serverAddress)) }
         else logger.warning { "ElectrumClient is already running $this" }
     }
     fun disconnect() {
@@ -251,8 +248,9 @@ class ElectrumClient(
     }
 
     private var connectionJob: Job? = null
-    private fun establishConnection() = launch {
+    private fun establishConnection(serverAddress: ServerAddress) = launch {
         try {
+            val (host, port, tls) = serverAddress
             logger.info { "Attempt connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socket = TcpSocket.Builder().connect(host, port, tls)
             logger.info { "Connected to electrumx instance" }
