@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.utils.Connection
-import fr.acinq.eklair.utils.ServerAddress
+import fr.acinq.eclair.utils.ServerAddress
 import fr.acinq.eclair.utils.runTest
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex

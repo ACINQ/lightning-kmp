@@ -6,7 +6,7 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eclair.io.TcpSocket
-import fr.acinq.eklair.utils.ServerAddress
+import fr.acinq.eclair.utils.ServerAddress
 import fr.acinq.eclair.utils.currentTimestampSeconds
 import fr.acinq.eclair.utils.runTest
 import fr.acinq.eclair.utils.sat

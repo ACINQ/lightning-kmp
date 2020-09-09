@@ -1,6 +1,8 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.eclair.io.TcpSocket
+import fr.acinq.eclair.utils.ServerAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails

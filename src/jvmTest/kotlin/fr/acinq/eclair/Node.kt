@@ -13,7 +13,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eklair.utils.ServerAddress
+import fr.acinq.eclair.utils.ServerAddress
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
