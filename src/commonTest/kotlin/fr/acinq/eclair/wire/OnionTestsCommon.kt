@@ -21,7 +21,7 @@ class OnionTestsCommon {
             ), ByteVector32("65f21f9190c70217774a6fbaaa7d63ad64199f4664813b955cff954949076dcf")
         )
 
-        val serializer = OnionRoutingPacketSerializer(1300)
+        val serializer = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength)
         val decoded = serializer.read(bin)
         assertEquals(decoded, expected)
 
