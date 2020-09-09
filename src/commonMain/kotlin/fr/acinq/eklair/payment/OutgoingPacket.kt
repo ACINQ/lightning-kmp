@@ -1,6 +1,5 @@
 package fr.acinq.eklair.payment
 
-import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eklair.CltvExpiry
@@ -14,7 +13,6 @@ import fr.acinq.eklair.router.ChannelHop
 import fr.acinq.eklair.router.Hop
 import fr.acinq.eklair.router.NodeHop
 import fr.acinq.eklair.wire.*
-import fr.acinq.secp256k1.Hex
 
 object OutgoingPacket {
 
@@ -25,15 +23,16 @@ object OutgoingPacket {
         require(nodes.size == payloads.size)
         val sessionKey = Eclair.randomKey()
         val payloadsBin = payloads
-        .map {
-            when(it) {
-                // TODO: implement this
-                is FinalPayload -> FinalPayload.write(it)
-                else -> TODO("payload serialization not implemented")
+            .map {
+                when (it) {
+                    // TODO: implement this
+                    is FinalPayload -> FinalPayload.write(it)
+                    else -> TODO("payload serialization not implemented")
+                }
             }
-        }
         return Sphinx.create(sessionKey, nodes, payloadsBin, associatedData, payloadLength)
     }
+
     /**
      * Build the onion payloads for each hop.
      *
@@ -45,9 +44,8 @@ object OutgoingPacket {
      *         - a sequence of payloads that will be used to build the onion
      */
     fun buildPayloads(hops: List<Hop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PerHopPayload>> {
-        return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf(finalPayload))) {
-            triple, hop ->
-            val payload = when(hop) {
+        return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf(finalPayload))) { triple, hop ->
+            val payload = when (hop) {
                 // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
                 is ChannelHop -> RelayLegacyPayload(hop.lastUpdate.shortChannelId, triple.first, triple.second)
                 is NodeHop -> NodeRelayPayload.create(triple.first, triple.second, hop.nextNodeId)
@@ -81,7 +79,7 @@ object OutgoingPacket {
      * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
      */
     fun buildCommand(upstream: Upstream, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, List<Pair<ByteVector32, PublicKey>>> {
-        val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, 1300)
+        val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, OnionRoutingPacket.PaymentPacketLength)
         return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true), onion.sharedSecrets)
     }
 }

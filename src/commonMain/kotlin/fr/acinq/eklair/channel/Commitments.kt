@@ -36,16 +36,24 @@ import org.kodein.log.Logger
 import kotlin.experimental.and
 
 // @formatter:off
-@Serializable data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
+@Serializable
+data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
     val all: List<UpdateMessage> get() = proposed + signed + acked
 }
-@Serializable data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
+
+@Serializable
+data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
 data class Changes(val ourChanges: LocalChanges, val theirChanges: RemoteChanges)
-@Serializable data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64)
-@Serializable data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
-@Serializable data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
-@Serializable data class RemoteCommit(val index: Long, val spec: CommitmentSpec, @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey)
-@Serializable data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
+@Serializable
+data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64)
+@Serializable
+data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
+@Serializable
+data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
+@Serializable
+data class RemoteCommit(val index: Long, val spec: CommitmentSpec, @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey)
+@Serializable
+data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
 // @formatter:on
 
 /**
@@ -84,7 +92,7 @@ data class Commitments(
         val thisCommitAdds = localCommit.spec.htlcs.outgoings().filter(::expired).toSet() +
                 remoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
 
-        return when(remoteNextCommitInfo) {
+        return when (remoteNextCommitInfo) {
             is Either.Left -> thisCommitAdds + remoteNextCommitInfo.value.nextRemoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
             is Either.Right -> thisCommitAdds
         }
@@ -329,9 +337,8 @@ data class Commitments(
                 Try.Failure(UnknownHtlcId(channelId, cmd.id))
             }
             else -> {
-                // we need the shared secret to build the error packet
-                // TODO: is it ok to hardcode the payload length here ?
-                val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, 1300)
+                // we need to decrypt the payment onion to obtain the shared secret to build the error packet
+                val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength)
                 when (result) {
                     is Either.Right -> {
                         val reason = when (cmd.reason) {
@@ -438,7 +445,7 @@ data class Commitments(
             val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint) }
 
             // NB: IN/OUT htlcs are inverted because this is the remote commit
-            log.info { "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=${spec.htlcs.outgoings().map { it.id } .joinToString(",")} htlc_out=${spec.htlcs.incomings().map { it.id }.joinToString(",")} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}" }
+            log.info { "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=${spec.htlcs.outgoings().map { it.id }.joinToString(",")} htlc_out=${spec.htlcs.incomings().map { it.id }.joinToString(",")} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}" }
 
             // don't sign if they don't get paid
             val commitSig = CommitSig(
@@ -459,7 +466,8 @@ data class Commitments(
                     )
                 ),
                 localChanges = localChanges.copy(proposed = emptyList(), signed = localChanges.proposed),
-                remoteChanges = remoteChanges.copy(acked = emptyList(), signed = remoteChanges.acked))
+                remoteChanges = remoteChanges.copy(acked = emptyList(), signed = remoteChanges.acked)
+            )
             Pair(commitments1, commitSig)
         }
     }
@@ -539,7 +547,8 @@ data class Commitments(
         val localCommit1 = LocalCommit(
             index = localCommit.index + 1,
             spec,
-            publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
+            publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs)
+        )
         val ourChanges1 = localChanges.copy(acked = emptyList())
         val theirChanges1 = remoteChanges.copy(proposed = emptyList(), acked = remoteChanges.acked + remoteChanges.proposed)
         val commitments1 = copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
@@ -559,7 +568,7 @@ data class Commitments(
         val originChannels1 = originChannels - completedOutgoingHtlcs
         val actions: MutableList<ChannelAction> = ArrayList<ChannelAction>().toMutableList()
         remoteChanges.signed.forEach {
-            when(it) {
+            when (it) {
                 is UpdateAddHtlc -> actions += ProcessAdd(it)
                 is UpdateFailHtlc -> actions += ProcessFail(it)
                 is UpdateFailMalformedHtlc -> actions += ProcessFailMalformed(it)
@@ -572,7 +581,8 @@ data class Commitments(
             remoteCommit = theirNextCommit,
             remoteNextCommitInfo = Either.Right(revocation.nextPerCommitmentPoint),
             remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommit.index),
-            originChannels = originChannels1)
+            originChannels = originChannels1
+        )
         return Try.Success(Pair(commitments1, actions.toList()))
     }
 
@@ -622,7 +632,6 @@ data class Commitments(
             }
         }
 
-
         fun revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index)
 
         fun revocationHash(seed: ByteVector32, index: Long): ByteVector32 = ByteVector32(sha256(revocationPreimage(seed, index)))
@@ -669,7 +678,7 @@ data class Commitments(
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
         }
 
-        fun msg2String(msg: LightningMessage): String = when(msg) {
+        fun msg2String(msg: LightningMessage): String = when (msg) {
             is UpdateAddHtlc -> "add-${msg.id}"
             is UpdateFulfillHtlc -> "ful-${msg.id}"
             is UpdateFailHtlc -> "fail-${msg.id}"

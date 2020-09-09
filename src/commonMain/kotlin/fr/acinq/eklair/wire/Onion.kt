@@ -8,7 +8,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eklair.CltvExpiry
 import fr.acinq.eklair.MilliSatoshi
 import fr.acinq.eklair.ShortChannelId
-import fr.acinq.eklair.crypto.sphinx.PacketAndSecrets
 import fr.acinq.eklair.io.ByteVector32KSerializer
 import fr.acinq.eklair.io.ByteVectorKSerializer
 import fr.acinq.eklair.io.PublicKeyKSerializer
@@ -23,12 +22,15 @@ data class OnionRoutingPacket(
     @Serializable(with = ByteVectorKSerializer::class) val publicKey: ByteVector,
     @Serializable(with = ByteVectorKSerializer::class) val payload: ByteVector,
     @Serializable(with = ByteVector32KSerializer::class) val hmac: ByteVector32
-)
+) {
+    companion object {
+        const val PaymentPacketLength = 1300
+        const val TrampolinePacketLength = 400
+    }
+}
 
 /**
- * @param payloadLength payload length:
- *  - 1300 for standard onion packets used in update_add_htlc
- *  - 400 for trampoline onion packets used inside standard onion packets
+ * @param payloadLength length of the onion-encrypted payload.
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSerializer<OnionRoutingPacket>() {
@@ -52,7 +54,7 @@ class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSe
     }
 }
 
-@OptIn(kotlin.ExperimentalUnsignedTypes::class)
+@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 sealed class OnionTlv : Tlv {
     /** Amount to forward to the next node. */
@@ -123,13 +125,6 @@ sealed class OnionTlv : Tlv {
     }
 }
 
-sealed class PacketType {
-    abstract fun buildOnion(nodes: List<PublicKey>, payloads: List<PerHopPayload>, associatedData: ByteVector32): PacketAndSecrets
-}
-
-sealed class PaymentPacket : PacketType()
-sealed class TrampolinePacket : PacketType()
-
 sealed class PerHopPayload
 
 sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload> {
@@ -140,14 +135,14 @@ sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload>
 
     override fun serializer(): LightningSerializer<FinalPayload> = FinalPayload
 
-    companion object: LightningSerializer<FinalPayload>() {
+    companion object : LightningSerializer<FinalPayload>() {
         override val tag: Long
             get() = TODO("Not yet implemented")
 
         override fun read(input: Input): FinalPayload {
             // TODO: handle other types of payloads
             val realm = byte(input)
-            require(realm == 0){ "invalid realm "}
+            require(realm == 0) { "invalid realm " }
             bytes(input, 8)
             val amount = MilliSatoshi(u64(input))
             val expiry = CltvExpiry(u32(input).toLong())
@@ -173,7 +168,7 @@ data class FinalLegacyPayload(override val amount: MilliSatoshi, override val ex
 
 data class RelayLegacyPayload(val outgoingChannelId: ShortChannelId, val amountToForward: MilliSatoshi, val outgoingCltv: CltvExpiry) : PerHopPayload()
 
-@OptIn(kotlin.ExperimentalUnsignedTypes::class)
+@OptIn(ExperimentalUnsignedTypes::class)
 data class FinalTlvPayload(val records: TlvStream<OnionTlv>) : FinalPayload() {
     override val amount = records.get<OnionTlv.AmountToForward>()!!.amount
     override val expiry = records.get<OnionTlv.OutgoingCltv>()!!.cltv
