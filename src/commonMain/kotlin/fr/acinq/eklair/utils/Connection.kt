@@ -1,4 +1,3 @@
-package fr.acinq.eklair.utils
 
 import fr.acinq.eklair.io.TcpSocket
 

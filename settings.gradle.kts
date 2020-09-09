@@ -1,4 +1,4 @@
-rootProject.name="eklair"
+rootProject.name="eclair-kmp"
 
 pluginManagement {
     repositories {
