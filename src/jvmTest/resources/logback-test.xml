@@ -7,7 +7,7 @@
         </encoder>
     </appender>
     <!--appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>eklair.log</file>
+        <file>eclair-kmp.log</file>
         <append>false</append>
         <encoder>
             <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>

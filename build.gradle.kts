@@ -7,7 +7,7 @@ plugins {
     `maven-publish`
 }
 
-group = "fr.acinq.eklair"
+group = "fr.acinq.eclair"
 version = "snapshot"
 
 repositories {
@@ -24,13 +24,13 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
     fun ktor(module: String, version: String = "1.4.0") = "io.ktor:ktor-$module:$version"
-    val secp256k1Version = "0.3.0"
+    val secp256k1Version = "0.4.0"
     val serializationVersion = "1.0.0-RC"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoink:bitcoink:0.5.0")
-            api("fr.acinq.secp256k1:secp256k1:$secp256k1Version")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.6.0")
+            api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.5.0")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9-native-mt")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
@@ -67,7 +67,7 @@ kotlin {
                 currentOs.isWindows -> "mingw"
                 else -> error("UnsupportedmOS $currentOs")
             }
-            implementation("fr.acinq.secp256k1:secp256k1-jni-jvm-$target:$secp256k1Version")
+            implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm-$target:$secp256k1Version")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             implementation("ch.qos.logback:logback-classic:1.2.3")
