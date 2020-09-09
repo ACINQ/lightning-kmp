@@ -21,7 +21,6 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.max
 
-
 interface LightningMessage {
     companion object {
         val logger = LoggerFactory.default.newLogger(Logger.Tag(LightningMessage::class))
@@ -74,6 +73,7 @@ interface LightningMessage {
         }
     }
 }
+
 interface HtlcMessage : LightningMessage
 interface SetupMessage : LightningMessage
 interface RoutingMessage : LightningMessage
@@ -152,7 +152,7 @@ data class Init(@Serializable(with = ByteVectorKSerializer::class) val features:
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
-data class Error(override val channelId: ByteVector32, val data: ByteVector) :  SetupMessage, HasChannelId, LightningSerializable<Error> {
+data class Error(override val channelId: ByteVector32, val data: ByteVector) : SetupMessage, HasChannelId, LightningSerializable<Error> {
     fun toAscii(): String = data.toByteArray().decodeToString()
 
     override fun serializer(): LightningSerializer<Error> = Error
@@ -484,7 +484,7 @@ data class UpdateAddHtlc(
             val amount = MilliSatoshi(u64(input))
             val paymentHash = ByteVector32(bytes(input, 32))
             val expiry = CltvExpiry(u32(input).toLong())
-            val onion = OnionRoutingPacketSerializer(1300).read(input)
+            val onion = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).read(input)
             return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion)
         }
 
@@ -494,7 +494,7 @@ data class UpdateAddHtlc(
             writeU64(message.amountMsat.toLong(), out)
             writeBytes(message.paymentHash, out)
             writeU32(message.cltvExpiry.toLong().toInt(), out)
-            OnionRoutingPacketSerializer(1300).write(message.onionRoutingPacket, out)
+            OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(message.onionRoutingPacket, out)
         }
     }
 }

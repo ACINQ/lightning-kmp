@@ -1,9 +1,12 @@
 package fr.acinq.eklair
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Script
+import fr.acinq.eklair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eklair.blockchain.fee.FeeTargets
 import fr.acinq.eklair.blockchain.fee.OnChainFeeConf
-import fr.acinq.eklair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eklair.channel.LocalParams
 import fr.acinq.eklair.crypto.LocalKeyManager
 import fr.acinq.eklair.io.PeerChannels
@@ -17,7 +20,7 @@ object TestConstants {
     val fundingSatoshis = 1000000.sat
     val pushMsat = 200000000.msat
     val feeratePerKw = 10000L
-    val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(1300)), ByteVector32.Zeroes)
+    val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
     object Alice {
         val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
@@ -37,7 +40,7 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  ConstantFeeEstimator(10000),
+                feeEstimator = ConstantFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
@@ -100,7 +103,7 @@ object TestConstants {
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator =  ConstantFeeEstimator(10000),
+                feeEstimator = ConstantFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
