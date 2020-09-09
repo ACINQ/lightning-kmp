@@ -12,12 +12,15 @@ import fr.acinq.eklair.utils.runTest
 import fr.acinq.eklair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.consume
-import kotlin.test.*
-import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
-import kotlin.time.measureTime
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class)
 class ElectrumWatcherIntegrationTest {
@@ -37,7 +40,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for confirmed transactions`() = runTest {
-        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address,_) = bitcoincli.getNewAddress()
@@ -66,7 +69,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for confirmed transactions created while being offline`() = runTest {
-        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address,_) = bitcoincli.getNewAddress()
@@ -94,7 +97,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for spent transactions`() = runTest {
-        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -151,7 +154,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for spent transactions while being offline`() = runTest {
-        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -208,7 +211,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
-        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -255,7 +258,7 @@ class ElectrumWatcherIntegrationTest {
 
     @Test
     fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
-        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -289,7 +292,7 @@ class ElectrumWatcherIntegrationTest {
     @Test
     fun `get transaction`() = runTest {
         // Run on a production server
-        val electrumClient = ElectrumClient( this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
+        val electrumClient = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
         val electrumWatcher = ElectrumWatcher(electrumClient, this)
 
         delay(1_000) // Wait for the electrum client to be ready

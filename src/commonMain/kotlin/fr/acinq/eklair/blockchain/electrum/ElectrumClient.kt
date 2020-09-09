@@ -184,6 +184,7 @@ private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientSt
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
+    private val socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 
@@ -252,7 +253,7 @@ class ElectrumClient(
         try {
             val (host, port, tls) = serverAddress
             logger.info { "Attempt connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socket = TcpSocket.Builder().connect(host, port, tls)
+            socket = socketBuilder.connect(host, port, tls)
             logger.info { "Connected to electrumx instance" }
             eventChannel.send(Connected)
             socket.linesFlow().collect {
