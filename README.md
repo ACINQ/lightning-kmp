@@ -49,7 +49,7 @@ This app use the `jvm()` implementation of the kotlin/native `common` module
 
 ## iOS
 
-Use the following command in order to build the "**eklair**" framework:
+Use the following command in order to build the "**eclair-kmp**" framework:
 `./gradlew :common:createFatFramework`
 
 You can also prevent the Android counterpart to be built in case the environment is not set:

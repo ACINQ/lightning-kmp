@@ -19,17 +19,17 @@ function net_create {
     --subnet=172.20.0.0/16 \
     --ip-range=172.20.0.0/24 \
     --gateway=172.20.0.254 \
-    eklair-net
+    eclair-net
 }
 
 function net_remove {
-  docker network rm eklair-net
+  docker network rm eclair-net
 }
 
 function btc_create {
   docker create \
     --name bitcoind \
-    --net eklair-net \
+    --net eclair-net \
     -p 18443:18443 \
     -p 18444:18444 \
     -p 29000:29000 \
@@ -68,7 +68,7 @@ function btc_remove {
 function elx_create {
   docker create \
     --name electrumx \
-    --net eklair-net \
+    --net eclair-net \
     -e DAEMON_URL=http://foo:bar@bitcoind:18443 \
     -e COIN=BitcoinSegwit \
     -e NET=regtest \
@@ -98,7 +98,7 @@ function ecl_create {
 
   docker create \
     --name eclair \
-    --net eklair-net \
+    --net eclair-net \
     -e DISPLAY=$displayAddr \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -p 48001:48001 \

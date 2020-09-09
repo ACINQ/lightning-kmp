@@ -1,4 +1,4 @@
-package = fr.acinq.eklair.io.ios_network_framework
+package = fr.acinq.eclair.io.ios_network_framework
 language = Objective-C
 
 ---
