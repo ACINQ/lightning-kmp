@@ -13,6 +13,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.descriptors.element
 import kotlinx.serialization.descriptors.mapSerialDescriptor
+import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.xor
@@ -128,9 +129,12 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
             var lastIndex: Long? = null
 
             val compositeDecoder = decoder.beginStructure(descriptor)
-            when (compositeDecoder.decodeElementIndex(descriptor)) {
-                0 -> knownHashes = compositeDecoder.decodeSerializableElement(descriptor, 0, mapSerializer).mapKeys { it.key.toBooleanList() }
-                1 -> lastIndex = compositeDecoder.decodeLongElement(descriptor, 1)
+            loop@ while (true) {
+                when (compositeDecoder.decodeElementIndex(descriptor)) {
+                    CompositeDecoder.DECODE_DONE -> break@loop
+                    0 -> knownHashes = compositeDecoder.decodeSerializableElement(descriptor, 0, mapSerializer).mapKeys { it.key.toBooleanList() }
+                    1 -> lastIndex = compositeDecoder.decodeLongElement(descriptor, 1)
+                }
             }
             compositeDecoder.endStructure(descriptor)
 
