@@ -8,10 +8,14 @@ import fr.acinq.eclair.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedS
 import fr.acinq.eclair.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.eclair.crypto.sphinx.Sphinx.peekPayloadLength
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.Try
+import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
+import kotlin.test.assertTrue
 
 class SphinxTestsCommon {
     private val privKeys = listOf(
@@ -281,5 +285,184 @@ class SphinxTestsCommon {
         val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), trampolinePayloads)
         assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.map { it.first })
+    }
+
+    @Test
+    fun `create packet with invalid payload`() {
+        // In this test vector, the payload length (encoded as a bigsize in the first bytes) isn't equal to the actual
+        // payload length.
+        val invalidPayloads = listOf(
+            Hex.decode("fd2a0101234567"),
+            Hex.decode("000000000000000000000000000000000000000000000000000000000000000000")
+        )
+        assertFails { Sphinx.create(sessionKey, publicKeys.take(2), invalidPayloads, associatedData, OnionRoutingPacket.PaymentPacketLength) }
+    }
+
+    @Test
+    fun `encode - decode failure onion`() {
+        val testCases = listOf(
+            Pair(InvalidOnionKey(ByteVector32("2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a")), "41a824e2d630111669fa3e52b600a518f369691909b4e89205dc624ee17ed2c10022c0062a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a00de000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            Pair(IncorrectOrUnknownPaymentDetails(42.msat, 1105), "5eb766da1b2f45b4182e064dacd8da9eca2c9a33f0dce363ff308e9bdb3ee4e3000e400f000000000000002a0000045100f20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+        )
+        testCases.forEach {
+            val decoded = FailurePacket.decode(Hex.decode(it.second), ByteVector32.Zeroes)
+            assertEquals(Try.Success(it.first), decoded)
+            val encoded = FailurePacket.encode(it.first, ByteVector32.Zeroes)
+            assertEquals(it.second, Hex.encode(encoded))
+        }
+    }
+
+    @Test
+    fun `decode backwards-compatible IncorrectOrUnknownPaymentDetails`() {
+        val testCases = listOf(
+            // Without any data.
+            Pair(IncorrectOrUnknownPaymentDetails(0.msat, 0), "0d83b55dd5a6086e4033c3659125ed1ff436964ce0e67ed5a03bddb16a9a10410002400f00fe0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            // With an amount but no height.
+            Pair(IncorrectOrUnknownPaymentDetails(42.msat, 0), "ba6e122b2941619e2106e8437bf525356ffc8439ac3b2245f68546e298a08cc6000a400f000000000000002a00f6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            // With amount and height.
+            Pair(IncorrectOrUnknownPaymentDetails(42.msat, 1105), "5eb766da1b2f45b4182e064dacd8da9eca2c9a33f0dce363ff308e9bdb3ee4e3000e400f000000000000002a0000045100f20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+        )
+        testCases.forEach {
+            val decoded = FailurePacket.decode(Hex.decode(it.second), ByteVector32.Zeroes)
+            assertEquals(Try.Success(it.first), decoded)
+        }
+    }
+
+    @Test
+    fun `decode invalid failure onion packet`() {
+        val testCases = listOf(
+            // Invalid failure message.
+            "fd2f3eb163dacfa7fe2ec1a7dc73c33438e7ca97c561475cf0dc96dc15a75039 0020 c005 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a 00e0 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            // Invalid mac.
+            "0000000000000000000000000000000000000000000000000000000000000000 0022 c006 2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a 00de 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            // Padding too small.
+            "7bfb2aa46218240684f623322ae48af431d06986c82e210bb0cee83c7ddb2ba8 0002 4001 0002 0000",
+            // Padding too big.
+            "6f9e2c0e44b3692dac37523c6ff054cc9b26ecab1a78ed6906a46848bffc2bd5 0002 4001 00ff 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        )
+        testCases.forEach {
+            assertTrue(FailurePacket.decode(Hex.decode(it), ByteVector32.Zeroes).isFailure)
+        }
+    }
+
+    @Test
+    fun `decrypt failure onion`() {
+        val expected = DecryptedFailurePacket(publicKeys.first(), InvalidOnionKey(ByteVector32.One))
+        val sharedSecrets = listOf(
+            ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"),
+            ByteVector32("0202020202020202020202020202020202020202020202020202020202020202"),
+            ByteVector32("0303030303030303030303030303030303030303030303030303030303030303"),
+        )
+
+        val packet1 = FailurePacket.create(sharedSecrets.first(), expected.failureMessage)
+        assertEquals(292, packet1.size)
+        val decrypted1 = FailurePacket.decrypt(packet1, listOf(Pair(sharedSecrets[0], publicKeys[0])))
+        assertEquals(Try.Success(expected), decrypted1)
+
+        val packet2 = FailurePacket.wrap(packet1, sharedSecrets[1])
+        assertEquals(292, packet2.size)
+        val decrypted2 = FailurePacket.decrypt(packet2, listOf(1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
+        assertEquals(Try.Success(expected), decrypted2)
+
+        val packet3 = FailurePacket.wrap(packet2, sharedSecrets[2])
+        assertEquals(292, packet3.size)
+        val decrypted3 = FailurePacket.decrypt(packet3, listOf(2, 1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
+        assertEquals(Try.Success(expected), decrypted3)
+    }
+
+    @Test
+    fun `decrypt invalid failure onion`() {
+        val sharedSecrets = listOf(
+            ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"),
+            ByteVector32("0202020202020202020202020202020202020202020202020202020202020202"),
+            ByteVector32("0303030303030303030303030303030303030303030303030303030303030303"),
+        )
+        val packet = FailurePacket.wrap(
+            FailurePacket.wrap(
+                FailurePacket.create(sharedSecrets.first(), InvalidOnionKey(ByteVector32.One)),
+                sharedSecrets[1]
+            ),
+            sharedSecrets[2]
+        )
+        assertTrue(FailurePacket.decrypt(packet, listOf(0, 2, 1).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }).isFailure)
+    }
+
+    @Test
+    fun `last node replies with a failure message (reference test vector)`() {
+        val testCases = listOf(
+            Pair(OnionRoutingPacket.PaymentPacketLength, referenceFixedSizePayloads),
+            Pair(OnionRoutingPacket.PaymentPacketLength, referenceVariableSizePayloads),
+            Pair(OnionRoutingPacket.PaymentPacketLength, variableSizePayloadsFull),
+            Pair(OnionRoutingPacket.TrampolinePacketLength, trampolinePayloads),
+        )
+        testCases.forEach {
+            // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
+            // origin builds the onion packet
+            val packetLength = it.first
+            val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, it.second.map { p -> p.toByteArray() }, associatedData, packetLength)
+
+            // each node parses and forwards the packet
+            // node #0
+            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, packetLength).right!!
+            // node #1
+            val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, packetLength).right!!
+            // node #2
+            val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, packetLength).right!!
+            // node #3
+            val decrypted3 = Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, packetLength).right!!
+            // node #4
+            val decrypted4 = Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, packetLength).right!!
+            assertTrue(decrypted4.isLastPacket)
+
+            // node #4 want to reply with an error message
+            val error4 = FailurePacket.create(decrypted4.sharedSecret, TemporaryNodeFailure)
+            assertEquals(Hex.encode(error4), "a5e6bd0c74cb347f10cce367f949098f2457d14c046fd8a22cb96efb30b0fdcda8cb9168b50f2fd45edd73c1b0c8b33002df376801ff58aaa94000bf8a86f92620f343baef38a580102395ae3abf9128d1047a0736ff9b83d456740ebbb4aeb3aa9737f18fb4afb4aa074fb26c4d702f42968888550a3bded8c05247e045b866baef0499f079fdaeef6538f31d44deafffdfd3afa2fb4ca9082b8f1c465371a9894dd8c243fb4847e004f5256b3e90e2edde4c9fb3082ddfe4d1e734cacd96ef0706bf63c9984e22dc98851bcccd1c3494351feb458c9c6af41c0044bea3c47552b1d992ae542b17a2d0bba1a096c78d169034ecb55b6e3a7263c26017f033031228833c1daefc0dedb8cf7c3e37c9c37ebfe42f3225c326e8bcfd338804c145b16e34e4")
+            // error sent back to 3, 2, 1 and 0
+            val error3 = FailurePacket.wrap(error4, decrypted3.sharedSecret)
+            assertEquals(Hex.encode(error3), "c49a1ce81680f78f5f2000cda36268de34a3f0a0662f55b4e837c83a8773c22aa081bab1616a0011585323930fa5b9fae0c85770a2279ff59ec427ad1bbff9001c0cd1497004bd2a0f68b50704cf6d6a4bf3c8b6a0833399a24b3456961ba00736785112594f65b6b2d44d9f5ea4e49b5e1ec2af978cbe31c67114440ac51a62081df0ed46d4a3df295da0b0fe25c0115019f03f15ec86fabb4c852f83449e812f141a9395b3f70b766ebbd4ec2fae2b6955bd8f32684c15abfe8fd3a6261e52650e8807a92158d9f1463261a925e4bfba44bd20b166d532f0017185c3a6ac7957adefe45559e3072c8dc35abeba835a8cb01a71a15c736911126f27d46a36168ca5ef7dccd4e2886212602b181463e0dd30185c96348f9743a02aca8ec27c0b90dca270")
+            val error2 = FailurePacket.wrap(error3, decrypted2.sharedSecret)
+            assertEquals(Hex.encode(error2), "a5d3e8634cfe78b2307d87c6d90be6fe7855b4f2cc9b1dfb19e92e4b79103f61ff9ac25f412ddfb7466e74f81b3e545563cdd8f5524dae873de61d7bdfccd496af2584930d2b566b4f8d3881f8c043df92224f38cf094cfc09d92655989531524593ec6d6caec1863bdfaa79229b5020acc034cd6deeea1021c50586947b9b8e6faa83b81fbfa6133c0af5d6b07c017f7158fa94f0d206baf12dda6b68f785b773b360fd0497e16cc402d779c8d48d0fa6315536ef0660f3f4e1865f5b38ea49c7da4fd959de4e83ff3ab686f059a45c65ba2af4a6a79166aa0f496bf04d06987b6d2ea205bdb0d347718b9aeff5b61dfff344993a275b79717cd815b6ad4c0beb568c4ac9c36ff1c315ec1119a1993c4b61e6eaa0375e0aaf738ac691abd3263bf937e3")
+            val error1 = FailurePacket.wrap(error2, decrypted1.sharedSecret)
+            assertEquals(Hex.encode(error1), "aac3200c4968f56b21f53e5e374e3a2383ad2b1b6501bbcc45abc31e59b26881b7dfadbb56ec8dae8857add94e6702fb4c3a4de22e2e669e1ed926b04447fc73034bb730f4932acd62727b75348a648a1128744657ca6a4e713b9b646c3ca66cac02cdab44dd3439890ef3aaf61708714f7375349b8da541b2548d452d84de7084bb95b3ac2345201d624d31f4d52078aa0fa05a88b4e20202bd2b86ac5b52919ea305a8949de95e935eed0319cf3cf19ebea61d76ba92532497fcdc9411d06bcd4275094d0a4a3c5d3a945e43305a5a9256e333e1f64dbca5fcd4e03a39b9012d197506e06f29339dfee3331995b21615337ae060233d39befea925cc262873e0530408e6990f1cbd233a150ef7b004ff6166c70c68d9f8c853c1abca640b8660db2921")
+            val error0 = FailurePacket.wrap(error1, decrypted0.sharedSecret)
+            assertEquals(Hex.encode(error0), "9c5add3963fc7f6ed7f148623c84134b5647e1306419dbe2174e523fa9e2fbed3a06a19f899145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366067d88c50f7e829138fde4f78d39b5b5802f1b92a8a820865af5cc79f9f30bc3f461c66af95d13e5e1f0381c184572a91dee1c849048a647a1158cf884064deddbf1b0b88dfe2f791428d0ba0f6fb2f04e14081f69165ae66d9297c118f0907705c9c4954a199bae0bb96fad763d690e7daa6cfda59ba7f2c8d11448b604d12d")
+            // origin parses error packet and can see that it comes from node #4
+            val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
+            assertEquals(Try.Success(DecryptedFailurePacket(publicKeys[4], TemporaryNodeFailure)), decrypted)
+        }
+    }
+
+    @Test
+    fun `intermediate node replies with a failure message (reference test vector)`() {
+        val testCases = listOf(
+            Pair(OnionRoutingPacket.PaymentPacketLength, referenceFixedSizePayloads),
+            Pair(OnionRoutingPacket.PaymentPacketLength, referenceVariableSizePayloads),
+            Pair(OnionRoutingPacket.PaymentPacketLength, variableSizePayloadsFull),
+            Pair(OnionRoutingPacket.TrampolinePacketLength, trampolinePayloads),
+        )
+        testCases.forEach {
+            // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
+            // origin builds the onion packet
+            val packetLength = it.first
+            val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, it.second.map { p -> p.toByteArray() }, associatedData, packetLength)
+
+            // each node parses and forwards the packet
+            // node #0
+            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, packetLength).right!!
+            // node #1
+            val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, packetLength).right!!
+            // node #2
+            val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, packetLength).right!!
+
+            // node #2 want to reply with an error message
+            val error2 = FailurePacket.create(decrypted2.sharedSecret, InvalidRealm)
+            // error sent back to 1 and 0
+            val error1 = FailurePacket.wrap(error2, decrypted1.sharedSecret)
+            val error0 = FailurePacket.wrap(error1, decrypted0.sharedSecret)
+
+            // origin parses error packet and can see that it comes from node #2
+            val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
+            assertEquals(Try.Success(DecryptedFailurePacket(publicKeys[2], InvalidRealm)), decrypted)
+        }
     }
 }

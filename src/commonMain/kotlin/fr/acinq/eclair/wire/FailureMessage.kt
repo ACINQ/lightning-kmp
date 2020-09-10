@@ -31,7 +31,7 @@ sealed class FailureMessage {
             return ChannelUpdate.read(LightningSerializer.bytes(stream, len - 2))
         }
 
-        fun decode(input: ByteArray): FailureMessage? {
+        fun decode(input: ByteArray): FailureMessage {
             val stream = ByteArrayInput(input)
             return when (val code = LightningSerializer.u16(stream)) {
                 InvalidRealm.code -> InvalidRealm
