@@ -357,7 +357,7 @@ data class Commitments(
 
     fun sendFailMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): Try<Pair<Commitments, UpdateFailMalformedHtlc>> {
         // BADONION bit must be set in failure_code
-        if ((cmd.failureCode and FailureMessageCodecs.BADONION) == 0) return Try.Failure(InvalidFailureCode(channelId))
+        if ((cmd.failureCode and FailureMessage.BADONION) == 0) return Try.Failure(InvalidFailureCode(channelId))
         val htlc = getIncomingHtlcCrossSigned(cmd.id) ?: return Try.Failure(UnknownHtlcId(channelId, cmd.id))
         return when {
             alreadyProposed(localChanges.proposed, htlc.id) -> {
@@ -379,7 +379,7 @@ data class Commitments(
 
     fun receiveFailMalformed(fail: UpdateFailMalformedHtlc): Try<Triple<Commitments, Origin, UpdateAddHtlc>> {
         // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
-        if ((fail.failureCode and FailureMessageCodecs.BADONION) == 0) return Try.Failure(InvalidFailureCode(channelId))
+        if ((fail.failureCode and FailureMessage.BADONION) == 0) return Try.Failure(InvalidFailureCode(channelId))
         val htlc = getOutgoingHtlcCrossSigned(fail.id) ?: return Try.Failure(UnknownHtlcId(channelId, fail.id))
         return runTrying { Triple(addRemoteProposal(fail), originChannels[fail.id]!!, htlc) }
     }
