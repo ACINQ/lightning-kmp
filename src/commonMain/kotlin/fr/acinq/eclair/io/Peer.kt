@@ -105,6 +105,17 @@ class Peer(
                 watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
         }
+        launch {
+            channelsDb.listLocalChannels().forEach {
+                logger.info { "restoring $it" }
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                val (state1, actions) = state.process(Restore(it as ChannelState))
+                send(actions)
+                channels = channels + (it.channelId to state1)
+            }
+            logger.info { "restored channels: $channels" }
+        }
+
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
