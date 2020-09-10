@@ -13,6 +13,7 @@ import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.utils.ServerAddress
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
@@ -173,7 +174,7 @@ object Node {
         thread(isDaemon = true, block = ::writeLoop)
 
         runBlocking {
-            val electrum = ElectrumClient("localhost", 51001, null, this).apply { connect() }
+            val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
             val watcher = ElectrumWatcher(electrum, this)
             val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:/tmp/eclair-kmp-node-channels.db"))
             val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
