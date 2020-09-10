@@ -1082,11 +1082,15 @@ data class Normal(
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
                                 }
-                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
+                                val newState = this.copy(commitments = result.result.first)
+                                var actions = listOf<ChannelAction>(
+                                    SendMessage(result.result.second),
+                                    StoreState(newState)
+                                )
                                 if (result.result.first.localHasChanges()) {
                                     actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
-                                Pair(this.copy(commitments = result.result.first), actions)
+                                Pair(newState, actions)
                             }
                         }
                     }
