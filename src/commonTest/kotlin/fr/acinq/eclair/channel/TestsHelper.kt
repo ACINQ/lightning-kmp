@@ -39,13 +39,17 @@ object TestsHelper {
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
 
-        val open = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<OpenChannel>().first()
+        val open = findOutgoingMessage<OpenChannel>(ra.second)
         rb = bob.process(MessageReceived(open))
         bob = rb.first
-        val accept = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<AcceptChannel>().first()
+        val accept = findOutgoingMessage<AcceptChannel>(rb.second)
         ra = alice.process(MessageReceived(accept))
         alice = ra.first
-        val makeFundingTx = ra.second.filterIsInstance<MakeFundingTx>().first()
+        val makeFundingTx = run {
+            val candidates = ra.second.filterIsInstance<MakeFundingTx>()
+            if (candidates.isEmpty()) throw IllegalArgumentException("cannot find MakeFundingTx")
+            candidates.first()
+        }
         val fundingTx = Transaction(
             version = 2,
             txIn = listOf(),
@@ -54,21 +58,25 @@ object TestsHelper {
         )
         ra = alice.process(MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
         alice = ra.first
-        val created = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingCreated>().first()
+        val created = findOutgoingMessage<FundingCreated>(ra.second)
         rb = bob.process(MessageReceived(created))
         bob = rb.first
-        val signedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingSigned>().first()
+        val signedBob = findOutgoingMessage<FundingSigned>(rb.second)
         ra = alice.process(MessageReceived(signedBob))
         alice = ra.first
-        val watchConfirmed = ra.second.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>().first()
+        val watchConfirmed = run {
+            val candidates = ra.second.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>()
+            if (candidates.isEmpty()) throw IllegalArgumentException("cannot find WatchConfirmed")
+            candidates.first()
+        }
 
         ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         alice = ra.first
-        val fundingLockedAlice = ra.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
+        val fundingLockedAlice = findOutgoingMessage<FundingLocked>(ra.second)
 
         rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         bob = rb.first
-        val fundingLockedBob = rb.second.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().first()
+        val fundingLockedBob = findOutgoingMessage<FundingLocked>(rb.second)
 
         ra = alice.process(MessageReceived(fundingLockedBob))
         alice = ra.first
@@ -79,11 +87,17 @@ object TestsHelper {
         return Pair(alice as Normal, bob as Normal)
     }
 
+    inline fun <reified T : LightningMessage> findOutgoingMessage(input: List<ChannelAction>): LightningMessage {
+        val candidates = input.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
+        if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
+        return candidates.first()
+    }
+
     fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = Eclair.randomBytes32(), upstream: Upstream = Upstream.Local(UUID.randomUUID())): Pair<ByteVector32, CMD_ADD_HTLC> {
         val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
-        val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId(144,0,0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
+        val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
         val cmd = OutgoingPacket.buildCommand(upstream, paymentHash, listOf(ChannelHop(dummyKey, destination, dummyUpdate)), FinalLegacyPayload(amount, expiry)).first.copy(commit = false)
         return Pair(paymentPreimage, cmd)
     }

@@ -531,7 +531,7 @@ data class WaitForFundingCreated(
                         val result = Transactions.checkSpendable(signedLocalCommitTx)
                         if (result.isFailure) {
                             // TODO: implement error handling
-                            logger.error { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
+                            logger.error((result as Try.Failure).error) { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
                             Pair(this, listOf())
                         } else {
                             val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, fundingPubKey)
