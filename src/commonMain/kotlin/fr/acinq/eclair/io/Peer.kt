@@ -32,7 +32,7 @@ import org.kodein.log.LoggerFactory
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry, val description: String) : PeerEvent() {
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
