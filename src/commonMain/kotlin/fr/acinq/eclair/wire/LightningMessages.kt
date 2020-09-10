@@ -45,6 +45,7 @@ interface LightningMessage {
                 UpdateFailHtlc.tag -> UpdateFailHtlc.read(stream)
                 UpdateFailMalformedHtlc.tag -> UpdateFailMalformedHtlc.read(stream)
                 UpdateFulfillHtlc.tag -> UpdateFulfillHtlc.read(stream)
+                ChannelUpdate.tag -> ChannelUpdate.read(stream)
                 else -> {
                     logger.warning { "cannot decode ${Hex.encode(input)}" }
                     null
@@ -802,11 +803,49 @@ data class ChannelUpdate(
             get() = 258L
 
         override fun read(input: Input): ChannelUpdate {
-            TODO()
+            val signature = ByteVector64(bytes(input, 64))
+            val chainHash = ByteVector32(bytes(input, 32))
+            val shortChannelId = ShortChannelId(u64(input))
+            val timestamp = u32(input).toLong()
+            val messageFlags = byte(input).toByte()
+            val channelFlags = byte(input).toByte()
+            val cltvExpiryDelta = CltvExpiryDelta(u16(input))
+            val htlcMinimumMsat = MilliSatoshi(u64(input))
+            val feeBaseMsat = MilliSatoshi(u32(input).toLong())
+            val feeProportionalMillionths = u32(input).toLong()
+            val htlcMaximumMsat = if ((messageFlags.toInt() and 1) != 0) MilliSatoshi(u64(input)) else null
+            val unknownBytes = if (input.availableBytes > 0) bytes(input, input.availableBytes).toByteVector() else ByteVector.empty
+            return ChannelUpdate(
+                signature,
+                chainHash,
+                shortChannelId,
+                timestamp,
+                messageFlags,
+                channelFlags,
+                cltvExpiryDelta,
+                htlcMinimumMsat,
+                feeBaseMsat,
+                feeProportionalMillionths,
+                htlcMaximumMsat,
+                unknownBytes
+            )
         }
 
         override fun write(message: ChannelUpdate, out: Output) {
-            TODO()
+            writeBytes(message.signature, out)
+            writeBytes(message.chainHash, out)
+            writeU64(message.shortChannelId.toLong(), out)
+            writeU32(message.timestamp.toInt(), out)
+            writeByte(message.messageFlags.toInt(), out)
+            writeByte(message.channelFlags.toInt(), out)
+            writeU16(message.cltvExpiryDelta.toInt(), out)
+            writeU64(message.htlcMinimumMsat.toLong(), out)
+            writeU32(message.feeBaseMsat.toLong().toInt(), out)
+            writeU32(message.feeProportionalMillionths.toInt(), out)
+            if (message.htlcMaximumMsat != null) {
+                writeU64(message.htlcMaximumMsat.toLong(), out)
+            }
+            writeBytes(message.unknownFields, out)
         }
     }
 
@@ -819,18 +858,18 @@ data class Shutdown(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
     @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector? = null
-) : ChannelMessage, HasChannelId, LightningSerializable<FundingLocked> {
-    override fun serializer(): LightningSerializer<FundingLocked> = FundingLocked
+) : ChannelMessage, HasChannelId, LightningSerializable<Shutdown> {
+    override fun serializer(): LightningSerializer<Shutdown> = Shutdown
 
-    companion object : LightningSerializer<FundingLocked>() {
+    companion object : LightningSerializer<Shutdown>() {
         override val tag: Long
             get() = 36L
 
-        override fun read(input: Input): FundingLocked {
+        override fun read(input: Input): Shutdown {
             TODO()
         }
 
-        override fun write(message: FundingLocked, out: Output) {
+        override fun write(message: Shutdown, out: Output) {
             TODO()
         }
     }
