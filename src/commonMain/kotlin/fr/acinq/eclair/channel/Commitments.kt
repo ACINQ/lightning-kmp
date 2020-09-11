@@ -504,10 +504,11 @@ data class Commitments(
 
         // no need to compute htlc sigs if commit sig doesn't check out
         val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
-        val check = Transactions.checkSpendable(signedCommitTx)
-        if (check.isFailure) {
-            log.error((check as Try.Failure).error) { "remote signature $commit is invalid" }
-            throw InvalidCommitmentSignature(channelId, signedCommitTx.tx)
+        when (val check = Transactions.checkSpendable(signedCommitTx)) {
+            is Try.Failure -> {
+                log.error(check.error) { "remote signature $commit is invalid" }
+                throw InvalidCommitmentSignature(channelId, signedCommitTx.tx)
+            }
         }
 
         val sortedHtlcTxs: List<TransactionWithInputInfo> = (htlcTimeoutTxs + htlcSuccessTxs).sortedBy { it.input.outPoint.index }

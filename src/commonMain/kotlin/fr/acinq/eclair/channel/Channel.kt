@@ -528,69 +528,71 @@ data class WaitForFundingCreated(
                             localSigOfLocalTx,
                             event.message.signature
                         )
-                        val result = Transactions.checkSpendable(signedLocalCommitTx)
-                        if (result.isFailure) {
-                            // TODO: implement error handling
-                            logger.error((result as Try.Failure).error) { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
-                            Pair(this, listOf())
-                        } else {
-                            val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, fundingPubKey)
-                            val channelId = Eclair.toLongId(event.message.fundingTxid, event.message.fundingOutputIndex)
-                            // watch the funding tx transaction
-                            val commitInput = firstCommitTx.localCommitTx.input
-                            val fundingSigned = FundingSigned(
-                                channelId = channelId,
-                                signature = localSigOfRemoteTx
-                            )
-                            val commitments = Commitments(
-                                channelVersion,
-                                localParams,
-                                remoteParams,
-                                channelFlags,
-                                LocalCommit(0, firstCommitTx.localSpec, PublishableTxs(signedLocalCommitTx, listOf())),
-                                RemoteCommit(
-                                    0,
-                                    firstCommitTx.remoteSpec,
-                                    firstCommitTx.remoteCommitTx.tx.txid,
-                                    remoteFirstPerCommitmentPoint
-                                ),
-                                LocalChanges(listOf(), listOf(), listOf()),
-                                RemoteChanges(listOf(), listOf(), listOf()),
-                                localNextHtlcId = 0L,
-                                remoteNextHtlcId = 0L,
-                                originChannels = mapOf(),
-                                remoteNextCommitInfo = Either.Right(Eclair.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
-                                commitInput,
-                                ShaChain.init,
-                                channelId = channelId
-                            )
-                            //context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
-                            //context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
-                            // NB: we don't send a ChannelSignatureSent for the first commit
-                            logger.info { "waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
-                            // phoenix channels have a zero mindepth for funding tx
-                            val fundingMinDepth =
-                                if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else Helpers.minDepthForFunding(
-                                    staticParams.nodeParams,
-                                    fundingAmount
+                        when(val result = Transactions.checkSpendable(signedLocalCommitTx)) {
+                            is Try.Failure -> {
+                                // TODO: implement error handling
+                                logger.error(result.error) { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
+                                Pair(this, listOf())
+                            }
+                            is Try.Success -> {
+                                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, fundingPubKey)
+                                val channelId = Eclair.toLongId(event.message.fundingTxid, event.message.fundingOutputIndex)
+                                // watch the funding tx transaction
+                                val commitInput = firstCommitTx.localCommitTx.input
+                                val fundingSigned = FundingSigned(
+                                    channelId = channelId,
+                                    signature = localSigOfRemoteTx
                                 )
-                            val watchSpent = WatchSpent(
-                                channelId,
-                                commitInput.outPoint.txid,
-                                commitInput.outPoint.index.toInt(),
-                                commitments.commitInput.txOut.publicKeyScript,
-                                BITCOIN_FUNDING_SPENT
-                            ) // TODO: should we wait for an acknowledgment from the watcher?
-                            val watchConfirmed = WatchConfirmed(
-                                channelId,
-                                commitInput.outPoint.txid,
-                                commitments.commitInput.txOut.publicKeyScript,
-                                fundingMinDepth.toLong(),
-                                BITCOIN_FUNDING_DEPTHOK
-                            )
-                            val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
-                            val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
-                            Pair(nextState, actions)
+                                val commitments = Commitments(
+                                    channelVersion,
+                                    localParams,
+                                    remoteParams,
+                                    channelFlags,
+                                    LocalCommit(0, firstCommitTx.localSpec, PublishableTxs(signedLocalCommitTx, listOf())),
+                                    RemoteCommit(
+                                        0,
+                                        firstCommitTx.remoteSpec,
+                                        firstCommitTx.remoteCommitTx.tx.txid,
+                                        remoteFirstPerCommitmentPoint
+                                    ),
+                                    LocalChanges(listOf(), listOf(), listOf()),
+                                    RemoteChanges(listOf(), listOf(), listOf()),
+                                    localNextHtlcId = 0L,
+                                    remoteNextHtlcId = 0L,
+                                    originChannels = mapOf(),
+                                    remoteNextCommitInfo = Either.Right(Eclair.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
+                                    commitInput,
+                                    ShaChain.init,
+                                    channelId = channelId
+                                )
+                                //context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
+                                //context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
+                                // NB: we don't send a ChannelSignatureSent for the first commit
+                                logger.info { "waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
+                                // phoenix channels have a zero mindepth for funding tx
+                                val fundingMinDepth =
+                                    if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else Helpers.minDepthForFunding(
+                                        staticParams.nodeParams,
+                                        fundingAmount
+                                    )
+                                val watchSpent = WatchSpent(
+                                    channelId,
+                                    commitInput.outPoint.txid,
+                                    commitInput.outPoint.index.toInt(),
+                                    commitments.commitInput.txOut.publicKeyScript,
+                                    BITCOIN_FUNDING_SPENT
+                                ) // TODO: should we wait for an acknowledgment from the watcher?
+                                val watchConfirmed = WatchConfirmed(
+                                    channelId,
+                                    commitInput.outPoint.txid,
+                                    commitments.commitInput.txOut.publicKeyScript,
+                                    fundingMinDepth.toLong(),
+                                    BITCOIN_FUNDING_DEPTHOK
+                                )
+                                val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                                val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
+                                Pair(nextState, actions)
+                            }
                         }
                     }
                     else -> {
