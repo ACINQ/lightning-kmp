@@ -306,7 +306,7 @@ class SphinxTestsCommon {
         )
         testCases.forEach {
             val decoded = FailurePacket.decode(Hex.decode(it.second), ByteVector32.Zeroes)
-            assertEquals(Try.Success(it.first), decoded)
+            assertEquals(it.first, decoded.get())
             val encoded = FailurePacket.encode(it.first, ByteVector32.Zeroes)
             assertEquals(it.second, Hex.encode(encoded))
         }
@@ -324,7 +324,7 @@ class SphinxTestsCommon {
         )
         testCases.forEach {
             val decoded = FailurePacket.decode(Hex.decode(it.second), ByteVector32.Zeroes)
-            assertEquals(Try.Success(it.first), decoded)
+            assertEquals(it.first, decoded.get())
         }
     }
 
@@ -357,17 +357,17 @@ class SphinxTestsCommon {
         val packet1 = FailurePacket.create(sharedSecrets.first(), expected.failureMessage)
         assertEquals(292, packet1.size)
         val decrypted1 = FailurePacket.decrypt(packet1, listOf(Pair(sharedSecrets[0], publicKeys[0])))
-        assertEquals(Try.Success(expected), decrypted1)
+        assertEquals(expected, decrypted1.get())
 
         val packet2 = FailurePacket.wrap(packet1, sharedSecrets[1])
         assertEquals(292, packet2.size)
         val decrypted2 = FailurePacket.decrypt(packet2, listOf(1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
-        assertEquals(Try.Success(expected), decrypted2)
+        assertEquals(expected, decrypted2.get())
 
         val packet3 = FailurePacket.wrap(packet2, sharedSecrets[2])
         assertEquals(292, packet3.size)
         val decrypted3 = FailurePacket.decrypt(packet3, listOf(2, 1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
-        assertEquals(Try.Success(expected), decrypted3)
+        assertEquals(expected, decrypted3.get())
     }
 
     @Test
@@ -428,7 +428,7 @@ class SphinxTestsCommon {
             assertEquals(Hex.encode(error0), "9c5add3963fc7f6ed7f148623c84134b5647e1306419dbe2174e523fa9e2fbed3a06a19f899145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366067d88c50f7e829138fde4f78d39b5b5802f1b92a8a820865af5cc79f9f30bc3f461c66af95d13e5e1f0381c184572a91dee1c849048a647a1158cf884064deddbf1b0b88dfe2f791428d0ba0f6fb2f04e14081f69165ae66d9297c118f0907705c9c4954a199bae0bb96fad763d690e7daa6cfda59ba7f2c8d11448b604d12d")
             // origin parses error packet and can see that it comes from node #4
             val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
-            assertEquals(Try.Success(DecryptedFailurePacket(publicKeys[4], TemporaryNodeFailure)), decrypted)
+            assertEquals(DecryptedFailurePacket(publicKeys[4], TemporaryNodeFailure), decrypted.get())
         }
     }
 
@@ -462,7 +462,7 @@ class SphinxTestsCommon {
 
             // origin parses error packet and can see that it comes from node #2
             val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
-            assertEquals(Try.Success(DecryptedFailurePacket(publicKeys[2], InvalidRealm)), decrypted)
+            assertEquals(DecryptedFailurePacket(publicKeys[2], InvalidRealm), decrypted.get())
         }
     }
 }
