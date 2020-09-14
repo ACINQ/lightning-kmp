@@ -480,7 +480,7 @@ class Peer(
                         val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
                         val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
                         val finalPayload = when(isDirectPayment) {
-                            true -> Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
+                            true -> FinalPayload.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
                             false -> TODO("implement trampoline payment")
                         }
                         // one hop: this a direct payment to our peer

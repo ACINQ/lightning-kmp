@@ -6,21 +6,21 @@ import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.wire.ChannelUpdate
 
-interface Hop {
-    /** @return the id of the start node. */
-    val nodeId: PublicKey
+sealed class Hop {
+    /** The id of the start node. */
+    abstract val nodeId: PublicKey
 
-    /** @return the id of the end node. */
-    val nextNodeId: PublicKey
+    /** The id of the end node. */
+    abstract val nextNodeId: PublicKey
 
     /**
      * @param amount amount to be forwarded.
      * @return total fee required by the current hop.
      */
-    fun fee(amount: MilliSatoshi): MilliSatoshi
+    abstract fun fee(amount: MilliSatoshi): MilliSatoshi
 
-    /** @return cltv delta required by the current hop. */
-    val cltvExpiryDelta: CltvExpiryDelta
+    /** Cltv delta required by the current hop. */
+    abstract val cltvExpiryDelta: CltvExpiryDelta
 }
 
 /**
@@ -30,9 +30,8 @@ interface Hop {
  * @param nextNodeId id of the end node.
  * @param lastUpdate last update of the channel used for the hop.
  */
-data class ChannelHop(override val nodeId: PublicKey, override val nextNodeId: PublicKey, val lastUpdate: ChannelUpdate) : Hop {
+data class ChannelHop(override val nodeId: PublicKey, override val nextNodeId: PublicKey, val lastUpdate: ChannelUpdate) : Hop() {
     override val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
-
     override fun fee(amount: MilliSatoshi): MilliSatoshi = Eclair.nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
 }
 
@@ -46,7 +45,6 @@ data class ChannelHop(override val nodeId: PublicKey, override val nextNodeId: P
  * @param cltvExpiryDelta cltv expiry delta.
  * @param fee             total fee for that hop.
  */
-data class NodeHop(override val nodeId: PublicKey, override val nextNodeId: PublicKey, override val cltvExpiryDelta: CltvExpiryDelta, val fee: MilliSatoshi) : Hop {
+data class NodeHop(override val nodeId: PublicKey, override val nextNodeId: PublicKey, override val cltvExpiryDelta: CltvExpiryDelta, val fee: MilliSatoshi) : Hop() {
     override fun fee(amount: MilliSatoshi): MilliSatoshi = fee
 }
-

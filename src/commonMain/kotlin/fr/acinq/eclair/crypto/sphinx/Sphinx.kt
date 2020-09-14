@@ -156,7 +156,7 @@ object Sphinx {
      *         failure messages upstream.
      *         or a BadOnion error containing the hash of the invalid onion.
      */
-    fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket, packetLength: Int): Either<BadOnion, DecryptedPacket> = when (packet.version) {
+    fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket, packetLength: Int): Either<FailureMessage, DecryptedPacket> = when (packet.version) {
         0 -> {
             when (val result = runTrying { PublicKey(packet.publicKey) }) {
                 is Try.Success -> {
