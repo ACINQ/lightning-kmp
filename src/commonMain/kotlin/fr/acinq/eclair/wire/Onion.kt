@@ -34,6 +34,8 @@ data class OnionRoutingPacket(
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSerializer<OnionRoutingPacket>() {
+    override val tag: Long get() = TODO("Not used")
+
     override fun read(input: Input): OnionRoutingPacket {
         return OnionRoutingPacket(
             byte(input),
@@ -42,9 +44,6 @@ class OnionRoutingPacketSerializer(private val payloadLength: Int) : LightningSe
             bytes(input, 32).toByteVector32()
         )
     }
-
-    override val tag: Long
-        get() = TODO("Not used")
 
     override fun write(message: OnionRoutingPacket, out: Output) {
         writeByte(message.version, out)
@@ -60,22 +59,19 @@ sealed class OnionTlv : Tlv {
     /** Amount to forward to the next node. */
     @Serializable
     data class AmountToForward(val amount: MilliSatoshi) : OnionTlv() {
-        override val tag: Long
-            get() = 2L
+        override val tag: Long get() = 2L
     }
 
     /** CLTV value to use for the HTLC offered to the next node. */
     @Serializable
     data class OutgoingCltv(val cltv: CltvExpiry) : OnionTlv() {
-        override val tag: Long
-            get() = 4L
+        override val tag: Long get() = 4L
     }
 
     /** Id of the channel to use to forward a payment to the next node. */
     @Serializable
     data class OutgoingChannelId(val shortChannelId: ShortChannelId) : OnionTlv() {
-        override val tag: Long
-            get() = 6L
+        override val tag: Long get() = 6L
     }
 
     /**
@@ -86,8 +82,7 @@ sealed class OnionTlv : Tlv {
      */
     @Serializable
     data class PaymentData(@Serializable(with = ByteVector32KSerializer::class) val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
-        override val tag: Long
-            get() = 8L
+        override val tag: Long get() = 8L
     }
 
     /**
@@ -96,15 +91,13 @@ sealed class OnionTlv : Tlv {
      */
     @Serializable
     data class InvoiceFeatures(@Serializable(with = ByteVectorKSerializer::class) val features: ByteVector) : OnionTlv() {
-        override val tag: Long
-            get() = 66097L
+        override val tag: Long get() = 66097L
     }
 
     /** Id of the next node. */
     @Serializable
     data class OutgoingNodeId(@Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey) : OnionTlv() {
-        override val tag: Long
-            get() = 66098L
+        override val tag: Long get() = 66098L
     }
 
     /**
@@ -113,15 +106,13 @@ sealed class OnionTlv : Tlv {
      */
     @Serializable
     data class InvoiceRoutingInfo(val extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>) : OnionTlv() {
-        override val tag: Long
-            get() = 66099L
+        override val tag: Long get() = 66099L
     }
 
     /** An encrypted trampoline onion packet. */
     @Serializable
     data class TrampolineOnion(val packet: OnionRoutingPacket) : OnionTlv() {
-        override val tag: Long
-            get() = 66100L
+        override val tag: Long get() = 66100L
     }
 }
 
@@ -136,13 +127,43 @@ sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload>
     override fun serializer(): LightningSerializer<FinalPayload> = FinalPayload
 
     companion object : LightningSerializer<FinalPayload>() {
-        override val tag: Long
-            get() = TODO("Not yet implemented")
+        override val tag: Long get() = TODO("Not used")
 
         override fun read(input: Input): FinalPayload {
             // TODO: handle other types of payloads
+            return FinalLegacyPayload.read(input)
+        }
+
+        override fun write(message: FinalPayload, out: Output) {
+            when (message) {
+                is FinalLegacyPayload -> FinalLegacyPayload.write(message, out)
+                is FinalTlvPayload -> TODO("implement")
+            }
+        }
+
+        fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32? = null, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload {
+            return when {
+                paymentSecret == null && userCustomTlvs.isNotEmpty() -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry)), userCustomTlvs))
+                paymentSecret == null -> FinalLegacyPayload(amount, expiry)
+                else -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
+            }
+        }
+
+        fun createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: List<OnionTlv> = listOf(), userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload =
+            FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount)) + additionalTlvs, userCustomTlvs))
+    }
+}
+
+data class FinalLegacyPayload(override val amount: MilliSatoshi, override val expiry: CltvExpiry) : FinalPayload() {
+    override val paymentSecret: ByteVector32? = null
+    override val totalAmount = amount
+
+    companion object : LightningSerializer<FinalLegacyPayload>() {
+        override val tag: Long get() = TODO("Not used")
+
+        override fun read(input: Input): FinalLegacyPayload {
             val realm = byte(input)
-            require(realm == 0) { "invalid realm " }
+            require(realm == 0) { "invalid realm: $realm" }
             bytes(input, 8)
             val amount = MilliSatoshi(u64(input))
             val expiry = CltvExpiry(u32(input).toLong())
@@ -150,8 +171,7 @@ sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload>
             return FinalLegacyPayload(amount, expiry)
         }
 
-        override fun write(message: FinalPayload, out: Output) {
-            // TODO: handle other types of payloads
+        override fun write(message: FinalLegacyPayload, out: Output) {
             writeByte(0, out) // realm is always 0
             writeBytes(ByteArray(8), out)
             writeU64(message.amount.toLong(), out)
@@ -161,12 +181,31 @@ sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload>
     }
 }
 
-data class FinalLegacyPayload(override val amount: MilliSatoshi, override val expiry: CltvExpiry) : FinalPayload() {
-    override val paymentSecret = null
-    override val totalAmount = amount
-}
+data class RelayLegacyPayload(val outgoingChannelId: ShortChannelId, val amountToForward: MilliSatoshi, val outgoingCltv: CltvExpiry) : PerHopPayload(), LightningSerializable<RelayLegacyPayload> {
+    override fun serializer(): LightningSerializer<RelayLegacyPayload> = RelayLegacyPayload
 
-data class RelayLegacyPayload(val outgoingChannelId: ShortChannelId, val amountToForward: MilliSatoshi, val outgoingCltv: CltvExpiry) : PerHopPayload()
+    companion object : LightningSerializer<RelayLegacyPayload>() {
+        override val tag: Long get() = TODO("Not used")
+
+        override fun read(input: Input): RelayLegacyPayload {
+            val realm = byte(input)
+            require(realm == 0) { "invalid realm " }
+            val shortChannelId = ShortChannelId(u64(input))
+            val amount = MilliSatoshi(u64(input))
+            val expiry = CltvExpiry(u32(input).toLong())
+            bytes(input, 12)
+            return RelayLegacyPayload(shortChannelId, amount, expiry)
+        }
+
+        override fun write(message: RelayLegacyPayload, out: Output) {
+            writeByte(0, out) // realm is always 0
+            writeU64(message.outgoingChannelId.toLong(), out)
+            writeU64(message.amountToForward.toLong(), out)
+            writeU32(message.outgoingCltv.toLong().toInt(), out)
+            writeBytes(ByteArray(12), out)
+        }
+    }
+}
 
 @OptIn(ExperimentalUnsignedTypes::class)
 data class FinalTlvPayload(val records: TlvStream<OnionTlv>) : FinalPayload() {
@@ -194,15 +233,5 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
 
     companion object {
         fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) = NodeRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.OutgoingNodeId(nextNodeId))))
-    }
-}
-
-object Onion {
-    fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32? = null, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload {
-        return when {
-            paymentSecret == null && userCustomTlvs.isNotEmpty() -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry)), userCustomTlvs))
-            paymentSecret == null -> FinalLegacyPayload(amount, expiry)
-            else -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
-        }
     }
 }
