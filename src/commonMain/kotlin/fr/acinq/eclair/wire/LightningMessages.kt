@@ -25,6 +25,11 @@ interface LightningMessage {
     companion object {
         val logger = LoggerFactory.default.newLogger(Logger.Tag(LightningMessage::class))
 
+        /**
+         * @param input a single, complete message (typically received over the transport layer)
+         * there is a very strong assumption that framing has been take care of and that there are no missing or extra bytes
+         * whatever we don't read will simply be ignored, as per the BOLTs
+         */
         fun decode(input: ByteArray): LightningMessage? {
             val stream = ByteArrayInput(input)
             val code = LightningSerializer.u16(stream)
@@ -414,7 +419,7 @@ data class FundingCreated(
 data class FundingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector? = null
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
 ) : ChannelMessage, HasChannelId, LightningSerializable<FundingSigned> {
     override fun serializer(): LightningSerializer<FundingSigned> = FundingSigned
 
@@ -425,13 +430,15 @@ data class FundingSigned(
         override fun read(input: Input): FundingSigned {
             return FundingSigned(
                 ByteVector32(bytes(input, 32)),
-                ByteVector64(bytes(input, 64))
+                ByteVector64(bytes(input, 64)),
+                ByteVector(bytes(input, input.availableBytes))
             )
         }
 
         override fun write(message: FundingSigned, out: Output) {
             writeBytes(message.channelId, out)
             writeBytes(message.signature, out)
+            writeBytes(message.channelData, out)
         }
     }
 }
@@ -596,7 +603,8 @@ data class UpdateFailMalformedHtlc(
 data class CommitSig(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>
+    val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>,
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
 ) : HtlcMessage, HasChannelId, LightningSerializable<CommitSig> {
     override fun serializer(): LightningSerializer<CommitSig> = CommitSig
 
@@ -612,7 +620,7 @@ data class CommitSig(
             for (i in 1..numHtlcs) {
                 htlcSigs += ByteVector64(bytes(input, 64))
             }
-            return CommitSig(channelId, sig, htlcSigs.toList())
+            return CommitSig(channelId, sig, htlcSigs.toList(), ByteVector(bytes(input, input.availableBytes)))
         }
 
         override fun write(message: CommitSig, out: Output) {
@@ -620,6 +628,7 @@ data class CommitSig(
             writeBytes(message.signature, out)
             writeU16(message.htlcSignatures.size, out)
             message.htlcSignatures.forEach { writeBytes(it, out) }
+            writeBytes(message.channelData, out)
         }
     }
 }
@@ -628,7 +637,8 @@ data class CommitSig(
 data class RevokeAndAck(
     override val channelId: ByteVector32,
     val perCommitmentSecret: PrivateKey,
-    val nextPerCommitmentPoint: PublicKey
+    val nextPerCommitmentPoint: PublicKey,
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
 ) : HtlcMessage, HasChannelId, LightningSerializable<RevokeAndAck> {
     override fun serializer(): LightningSerializer<RevokeAndAck> = RevokeAndAck
 
@@ -640,7 +650,8 @@ data class RevokeAndAck(
             return RevokeAndAck(
                 ByteVector32(bytes(input, 32)),
                 PrivateKey(bytes(input, 32)),
-                PublicKey(bytes(input, 33))
+                PublicKey(bytes(input, 33)),
+                ByteVector(bytes(input, input.availableBytes))
             )
         }
 
@@ -648,6 +659,7 @@ data class RevokeAndAck(
             writeBytes(message.channelId, out)
             writeBytes(message.perCommitmentSecret.value, out)
             writeBytes(message.nextPerCommitmentPoint.value, out)
+            writeBytes(message.channelData, out)
         }
     }
 }
@@ -685,7 +697,8 @@ data class ChannelReestablish(
     val nextLocalCommitmentNumber: Long,
     val nextRemoteRevocationNumber: Long,
     @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
-    @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey
+    @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey,
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
 ) : HasChannelId, LightningSerializable<ChannelReestablish> {
     override fun serializer(): LightningSerializer<ChannelReestablish> = ChannelReestablish
 
@@ -699,7 +712,8 @@ data class ChannelReestablish(
                 u64(input),
                 u64(input),
                 PrivateKey(bytes(input, 32)),
-                PublicKey(bytes(input, 33))
+                PublicKey(bytes(input, 33)),
+                ByteVector(bytes(input, input.availableBytes))
             )
         }
 
@@ -709,6 +723,7 @@ data class ChannelReestablish(
             writeU64(message.nextRemoteRevocationNumber, out)
             writeBytes(message.yourLastCommitmentSecret.value, out)
             writeBytes(message.myCurrentPerCommitmentPoint.value, out)
+            writeBytes(message.channelData, out)
         }
     }
 }
@@ -857,7 +872,7 @@ data class ChannelUpdate(
 data class Shutdown(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector? = null
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
 ) : ChannelMessage, HasChannelId, LightningSerializable<Shutdown> {
     override fun serializer(): LightningSerializer<Shutdown> = Shutdown
 
@@ -866,12 +881,49 @@ data class Shutdown(
             get() = 36L
 
         override fun read(input: Input): Shutdown {
-            TODO()
+            return Shutdown(
+                ByteVector32(bytes(input, 32)),
+                ByteVector(bytes(input, u16(input))),
+                ByteVector(bytes(input, input.availableBytes))
+            )
         }
 
         override fun write(message: Shutdown, out: Output) {
-            TODO()
+            writeBytes(message.channelId, out)
+            writeU16(message.scriptPubKey.size(), out)
+            writeBytes(message.channelData, out)
         }
     }
 }
 
+@OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
+data class ClosingSigned(
+    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Serializable(with = SatoshiKSerializer::class) val feeSatoshis: Satoshi,
+    @Serializable(with = ByteVector64KSerializer::class)val signature: ByteVector64,
+    @Serializable(with = ByteVectorKSerializer::class)val channelData: ByteVector = ByteVector.empty) : ChannelMessage, HasChannelId, LightningSerializable<ClosingSigned> {
+    override fun serializer(): LightningSerializer<ClosingSigned> = ClosingSigned
+
+    companion object : LightningSerializer<ClosingSigned>() {
+        override val tag: Long
+            get() = 39L
+
+        override fun read(input: Input): ClosingSigned {
+            return ClosingSigned(
+                ByteVector32(bytes(input, 32)),
+                Satoshi(u64(input)),
+                ByteVector64(bytes(input, 64)),
+                ByteVector(bytes(input, input.availableBytes))
+            )
+        }
+
+        override fun write(message: ClosingSigned, out: Output) {
+            writeBytes(message.channelId, out)
+            writeU64(message.feeSatoshis.toLong(), out)
+            writeBytes(message.signature, out)
+            writeBytes(message.channelData, out)
+        }
+    }
+
+}
