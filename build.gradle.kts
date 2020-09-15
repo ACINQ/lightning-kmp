@@ -16,8 +16,8 @@ repositories {
     maven("https://dl.bintray.com/kotlin/ktor")
     maven("https://dl.bintray.com/kodein-framework/kodein-dev")
     maven("https://dl.bintray.com/acinq/libs")
-    google()
     jcenter()
+    google()
 }
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
@@ -111,7 +111,6 @@ kotlin {
         languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
     }
 }
-
 
 // Disable cross compilation
 afterEvaluate {
