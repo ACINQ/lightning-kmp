@@ -159,6 +159,8 @@ data class Init(@Serializable(with = ByteVectorKSerializer::class) val features:
 
 @OptIn(ExperimentalUnsignedTypes::class)
 data class Error(override val channelId: ByteVector32, val data: ByteVector) : SetupMessage, HasChannelId, LightningSerializable<Error> {
+    constructor(channelId: ByteVector32, message: String?) : this(channelId, ByteVector(message?.encodeToByteArray() ?: ByteArray(0)))
+
     fun toAscii(): String = data.toByteArray().decodeToString()
 
     override fun serializer(): LightningSerializer<Error> = Error

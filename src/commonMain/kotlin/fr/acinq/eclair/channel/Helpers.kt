@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
@@ -17,7 +18,6 @@ import fr.acinq.eclair.wire.OpenChannel
 import kotlin.math.abs
 
 object Helpers {
-
     fun getChannelVersion(open: OpenChannel): ChannelVersion {
         return open.tlvStream.get<ChannelTlv.ChannelVersionTlv>()
             ?.channelVersion
@@ -211,4 +211,21 @@ object Helpers {
     fun isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
         feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
 
+    fun encrypt(key: ByteVector32, state: HasCommitments): ByteArray {
+        val bin = HasCommitments.serialize(state)
+        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
+        // See https://en.wikipedia.org/wiki/Birthday_attack
+        val nonce = Crypto.sha256(bin).take(12).toByteArray()
+        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
+        return ciphertext + nonce + tag
+    }
+
+    fun decrypt(key: ByteVector32, data: ByteArray): HasCommitments {
+        // nonce is 12B, tag is 16B
+        val ciphertext = data.dropLast(12 + 16)
+        val nonce = data.takeLast(12 + 16).take(12)
+        val tag = data.takeLast(16)
+        val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
+        return HasCommitments.deserialize(plaintext)
+    }
 }
