@@ -1,9 +1,12 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.crypto.assertArrayEquals
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector
@@ -24,12 +27,38 @@ class LightningSerializerTestsCommon {
     fun publicKey(fill: Byte) = point(fill)
 
     @Test
+    fun `encode - decode uint64`() {
+        val testCases = mapOf(
+            0UL to Hex.decode("00 00 00 00 00 00 00 00"),
+            42UL to Hex.decode("00 00 00 00 00 00 00 2a"),
+            6211610197754262546UL to Hex.decode("56 34 12 90 78 56 34 12"),
+            17293822569102704638UL to Hex.decode("ef ff ff ff ff ff ff fe"),
+            17293822569102704639UL to Hex.decode("ef ff ff ff ff ff ff ff"),
+            18446744073709551614UL to Hex.decode("ff ff ff ff ff ff ff fe"),
+            18446744073709551615UL to Hex.decode("ff ff ff ff ff ff ff ff")
+        )
+
+        testCases.forEach {
+            val out = ByteArrayOutput()
+            LightningSerializer.writeU64(it.key.toLong(), out)
+            assertArrayEquals(it.value, out.toByteArray())
+            val decoded = LightningSerializer.u64(ByteArrayInput(it.value))
+            assertEquals(it.key, decoded.toULong())
+        }
+    }
+
+    @Test
     fun `bigsize serialization`() {
         val raw = """[
     {
         "name": "zero",
         "value": 0,
         "bytes": "00"
+    },
+    {
+        "name": "one byte value",
+        "value": 42,
+        "bytes": "2a"
     },
     {
         "name": "one byte high",
@@ -42,6 +71,16 @@ class LightningSerializerTestsCommon {
         "bytes": "fd00fd"
     },
     {
+        "name": "two byte value",
+        "value": 255,
+        "bytes": "fd00ff"
+    },
+    {
+        "name": "two byte value",
+        "value": 550,
+        "bytes": "fd0226"
+    },
+    {
         "name": "two byte high",
         "value": 65535,
         "bytes": "fdffff"
@@ -50,6 +89,11 @@ class LightningSerializerTestsCommon {
         "name": "four byte low",
         "value": 65536,
         "bytes": "fe00010000"
+    },
+    {
+        "name": "four byte value",
+        "value": 998000,
+        "bytes": "fe000f3a70"
     },
     {
         "name": "four byte high",
@@ -130,12 +174,17 @@ class LightningSerializerTestsCommon {
 
         val items = Json.parseToJsonElement(raw)
         items.jsonArray.forEach {
-            val name = it.jsonObject["name"]?.jsonPrimitive?.content
-            val bytes = it.jsonObject["bytes"]?.jsonPrimitive?.content
-            val value = it.jsonObject["value"]?.jsonPrimitive?.content
-            println(name)
-            println(value)
-            println(bytes)
+            val name = it.jsonObject["name"]?.jsonPrimitive?.content!!
+            val bytes = Hex.decode(it.jsonObject["bytes"]?.jsonPrimitive?.content!!)
+            val value = it.jsonObject["value"]?.jsonPrimitive?.content?.toULong()!!
+            if (it.jsonObject["exp_error"] != null) {
+                assertFails(name) { LightningSerializer.bigSize(ByteArrayInput(bytes)) }
+            } else {
+                assertEquals(value, LightningSerializer.bigSize(ByteArrayInput(bytes)).toULong(), name)
+                val out = ByteArrayOutput()
+                LightningSerializer.writeBigSize(value.toLong(), out)
+                assertArrayEquals(bytes, out.toByteArray())
+            }
         }
     }
 
