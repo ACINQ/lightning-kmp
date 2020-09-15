@@ -2,6 +2,7 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.io.ByteVectorKSerializer
@@ -58,23 +59,22 @@ data class GenericTlv(override val tag: Long, @Serializable(with = ByteVectorKSe
         }
 
         override fun write(message: GenericTlv, out: Output) {
-            writeBigSize(message.tag.toLong(), out)
+            writeBigSize(message.tag, out)
             writeBigSize(message.value.size().toLong(), out)
             writeBytes(message.value, out)
         }
 
-        override val tag: Long
-            get() = 0L
+        override val tag: Long get() = TODO("unused")
     }
 }
 
 /**
+ * @param lengthPrefixed if true, the first bytes contain the total length of the serialized stream.
  * @param serializers custom serializers. The will be used to decode TLV values (and not the entire TLV including its tag and length)
  */
 @OptIn(ExperimentalUnsignedTypes::class)
-class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerializer<T>>) : LightningSerializer<TlvStream<T>>() {
-    override val tag: Long
-        get() = 0L
+class TlvStreamSerializer<T : Tlv>(val lengthPrefixed: Boolean, val serializers: Map<Long, LightningSerializer<T>>) : LightningSerializer<TlvStream<T>>() {
+    override val tag: Long get() = 0L
 
     /**
      * @param input input stream
@@ -82,11 +82,23 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
      * - if there is a serializer for the TLV's tag, we use it to decode the TLV value and add it to the stream's record
      * - otherwise we add the raw TLV to the stream's unknown TLVs as a GenericTLV
      */
-    override fun read(input: Input): TlvStream<T> {
+    override fun read(input: Input): TlvStream<T> = if (lengthPrefixed) {
+        val len = bigSize(input)
+        readTlvs(ByteArrayInput(bytes(input, len)))
+    } else {
+        readTlvs(input)
+    }
+
+    private fun readTlvs(input: Input): TlvStream<T> {
         val records = ArrayList<T>()
         val unknown = ArrayList<GenericTlv>()
+        var previousTag: Long? = null
         while (input.availableBytes > 0) {
             val tag = bigSize(input)
+            if (previousTag != null) {
+                require(tag > previousTag) { "tlvstream is not sorted by tags" }
+            }
+            previousTag = tag
             val length = bigSize(input)
             val data = bytes(input, length)
             val dataStream = ByteArrayInput(data)
@@ -102,7 +114,17 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
      * @param message TLV stream
      * @param out output stream to write the TLV stream to
      */
-    override fun write(message: TlvStream<T>, out: Output) {
+    override fun write(message: TlvStream<T>, out: Output) = if (lengthPrefixed) {
+        val tmp = ByteArrayOutput()
+        writeTlvs(message, tmp)
+        val b = tmp.toByteArray()
+        writeBigSize(b.size.toLong(), out)
+        writeBytes(b, out)
+    } else {
+        writeTlvs(message, out)
+    }
+
+    private fun writeTlvs(message: TlvStream<T>, out: Output) {
         val map = ArrayList<Pair<Long, ByteArray>>()
         // first, serialize all TLVs
         message.records.forEach { map.add(Pair(it.tag, serializers[it.tag]!!.write(it))) }
@@ -113,7 +135,7 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
 
         // then write the results
         map1.forEach {
-            writeBigSize(it.first.toLong(), out)
+            writeBigSize(it.first, out)
             writeBigSize(it.second.size.toLong(), out)
             writeBytes(it.second, out)
         }
@@ -132,10 +154,15 @@ class TlvStreamSerializer<T : Tlv>(val serializers: Map<Long, LightningSerialize
 @Serializable
 data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
     init {
-        val tags = records.map { it.tag }
+        val tags = records.map { it.tag } + unknown.map { it.tag }
         require(tags.size == tags.toSet().size) { "tlvstream contains duplicate tags" }
     }
 
+    /**
+     * @tparam R input type parameter, must be a subtype of the main TLV type
+     * @return the TLV record of type that matches the input type parameter if any (there can be at most one, since BOLTs specify
+     *         that TLV records are supposed to be unique)
+     */
     inline fun <reified R : T> get(): R? {
         for (r in records) {
             if (r is R) return r
@@ -143,13 +170,7 @@ data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv
         return null
     }
 
-    /**
-     *
-     * @tparam R input type parameter, must be a subtype of the main TLV type
-     * @return the TLV record of type that matches the input type parameter if any (there can be at most one, since BOLTs specify
-     *         that TLV records are supposed to be unique)
-     */
     companion object {
-        fun <T : Tlv> empty() = TlvStream<T>(listOf<T>(), listOf<GenericTlv>())
+        fun <T : Tlv> empty() = TlvStream(listOf<T>(), listOf())
     }
 }

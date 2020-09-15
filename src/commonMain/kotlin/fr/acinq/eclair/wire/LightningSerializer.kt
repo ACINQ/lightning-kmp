@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.eclair.utils.leftPaddedCopyOf
 import fr.acinq.secp256k1.Hex
 import kotlin.jvm.JvmStatic
 
@@ -76,15 +77,32 @@ abstract class LightningSerializer<T> {
         @JvmStatic
         fun writeByte(input: Int, out: Output): Unit = out.write(input and 0xff)
 
+        @JvmStatic
         fun u16(input: Input): Int {
             val bin = ByteArray(2)
             readStrict(input, bin, bin.size)
             return Pack.int16BE(bin, 0).toUShort().toInt()
         }
 
+        @JvmStatic
         fun writeU16(input: Int, output: Output) = output.write(Pack.writeInt16BE(input.toShort()))
 
         // Todo: should be unsigned
+        @JvmStatic
+        fun tu16(input: Input): Int {
+            require(input.availableBytes <= 2) { "truncated integer is too long" }
+            return tu64(input).toInt()
+        }
+
+        @JvmStatic
+        fun writeTU16(input: Int, output: Output) {
+            val tmpOut = ByteArrayOutput()
+            writeU16(input, tmpOut)
+            writeBytes(tmpOut.toByteArray().takeLast(truncatedLength(input.toLong())).toByteArray(), output)
+        }
+
+        // Todo: should be unsigned
+        @JvmStatic
         fun u32(input: Input): Int {
             val bin = ByteArray(4)
             readStrict(input, bin, bin.size)
@@ -92,9 +110,25 @@ abstract class LightningSerializer<T> {
         }
 
         // Todo: should be unsigned
+        @JvmStatic
         fun writeU32(input: Int, output: Output) = output.write(Pack.writeInt32BE(input))
 
         // Todo: should be unsigned
+        @JvmStatic
+        fun tu32(input: Input): Int {
+            require(input.availableBytes <= 4) { "truncated integer is too long" }
+            return tu64(input).toInt()
+        }
+
+        @JvmStatic
+        fun writeTU32(input: Int, output: Output) {
+            val tmpOut = ByteArrayOutput()
+            writeU32(input, tmpOut)
+            writeBytes(tmpOut.toByteArray().takeLast(truncatedLength(input.toLong())).toByteArray(), output)
+        }
+
+        // Todo: should be unsigned
+        @JvmStatic
         fun u64(input: Input): Long {
             val bin = ByteArray(8)
             readStrict(input, bin, bin.size)
@@ -102,7 +136,42 @@ abstract class LightningSerializer<T> {
         }
 
         // Todo: should be unsigned
+        @JvmStatic
         fun writeU64(input: Long, output: Output) = output.write(Pack.writeInt64BE(input))
+
+        /**
+         * Compute the length a truncated integer should have, depending on its value.
+         * See https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#fundamental-types
+         */
+        private fun truncatedLength(input: Long): Int = when {
+            input < 0x01 -> 0
+            input < 0x0100 -> 1
+            input < 0x010000 -> 2
+            input < 0x01000000 -> 3
+            input < 0x0100000000L -> 4
+            input < 0x010000000000L -> 5
+            input < 0x01000000000000L -> 6
+            input < 0x0100000000000000L -> 7
+            else -> 8
+        }
+
+        // Todo: should be unsigned
+        @JvmStatic
+        fun tu64(input: Input): Long {
+            require(input.availableBytes <= 8) { "truncated integer is too long" }
+            val bin = ByteArray(input.availableBytes)
+            input.read(bin, 0, bin.size)
+            val l = Pack.int64BE(bin.leftPaddedCopyOf(8))
+            require(bin.size == truncatedLength(l)) { "truncated integer is not minimally-encoded" }
+            return l
+        }
+
+        @JvmStatic
+        fun writeTU64(input: Long, output: Output) {
+            val tmpOut = ByteArrayOutput()
+            writeU64(input, tmpOut)
+            writeBytes(tmpOut.toByteArray().takeLast(truncatedLength(input)).toByteArray(), output)
+        }
 
         @JvmStatic
         fun bigSize(input: Input): Long {
@@ -111,26 +180,23 @@ abstract class LightningSerializer<T> {
                 first < 0xfd -> first.toLong()
                 first == 0xfd -> {
                     val l = u16(input).toLong()
-                    if (l < 0xfd) {
-                        throw IllegalArgumentException("non-canonical encoding for varint $l")
-                    } else {
-                        l
+                    when {
+                        l < 0xfd -> throw IllegalArgumentException("non-canonical encoding for varint $l")
+                        else -> l
                     }
                 }
                 first == 0xfe -> {
                     val l = u32(input).toUInt().toLong()
-                    if (l < 0x10000) {
-                        throw IllegalArgumentException("non-canonical encoding for varint $l")
-                    } else {
-                        l
+                    when {
+                        l < 0x10000 -> throw IllegalArgumentException("non-canonical encoding for varint $l")
+                        else -> l
                     }
                 }
                 first == 0xff -> {
                     val l = u64(input).toULong()
-                    if (l < 0x100000000U) {
-                        throw IllegalArgumentException("non-canonical encoding for varint $l")
-                    } else {
-                        l.toLong()
+                    when {
+                        l < 0x100000000U -> throw IllegalArgumentException("non-canonical encoding for varint $l")
+                        else -> l.toLong()
                     }
                 }
                 else -> {
@@ -163,7 +229,7 @@ abstract class LightningSerializer<T> {
             val blob = ByteArray(size)
             if (size > 0) {
                 val count = input.read(blob, 0, blob.size)
-                require(count >= size)
+                require(count >= size) { "unexpected EOF" }
             }
             return blob
         }
