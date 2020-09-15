@@ -386,23 +386,31 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
-    private val watchChannel = Channel<Watch>(Channel.BUFFERED)
-    private val watchEventChannel = Channel<WatchEvent>(Channel.BUFFERED)
 
     private val clientConnectedSubscription = client.openConnectedSubscription()
     private val clientNotificationsSubscription = client.openNotificationsSubscription()
 
     private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
-        launch { watchChannel.consumeEach { send(it) } }
-        launch { watchEventChannel.consumeEach { send(it) } }
-        launch { clientConnectedSubscription.consumeEach { send(it) } }
-        launch { clientNotificationsSubscription.consumeEach { send(it) } }
+        launch {
+            clientConnectedSubscription.consumeEach {
+                logger.verbose { "Electrum client connection changed: $it" }
+                eventChannel.send(ClientStateUpdate(it))
+            }
+        }
+        launch {
+            clientNotificationsSubscription.consumeEach {
+                logger.verbose { "Electrum message received: $it" }
+                eventChannel.send(ReceivedMessage(it))
+            }
+        }
     }
 
     private var state: WatcherState = WatcherDisconnected()
         set(value) {
-            if (value != field) logger.info { "Updated State: $field -> $value" }
+            if (value != field) logger.info { """Updated State 
+                |prev: $field 
+                |new:  $value""".trimMargin() }
             field = value
         }
 
@@ -415,53 +423,34 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     private suspend fun run() {
         input.consumeEach { input ->
-            when(input) {
-                is WatcherEvent -> {
-                    logger.info { "Event received: $input" }
+            logger.info { "Event received: $input" }
 
-                    val (newState, actions) = state.process(input)
-                    state = newState
+            val (newState, actions) = state.process(input)
+            state = newState
 
-                    actions.forEach { action ->
-                        yield()
-                        logger.verbose { "Execute action: $action" }
-                        when (action) {
-                            is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
-                            is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
-                            is RegisterToScriptHashNotification -> client.sendElectrumRequest(
-                                ScriptHashSubscription(action.scriptHash)
-                            )
-                            is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.publishAsap))
-                            is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
-                            is AskForScriptHashHistory -> client.sendElectrumRequest(
-                                GetScriptHashHistory(action.scriptHash)
-                            )
-                            is AskForTransaction -> client.sendElectrumRequest(
-                                GetTransaction(action.txid, action.contextOpt)
-                            )
-                            is AskForMerkle -> client.sendElectrumRequest(
-                                GetMerkle(action.txId, action.txheight, action.tx)
-                            )
-                            is NotifyWatch -> notificationsChannel.send(action.watchEvent)
-                            is NotifyTxWithMeta -> TODO("implement this")
-                        }
-                    }
-                }
-                is Watch -> {
-                    logger.verbose { "Watch received: $input" }
-                    eventChannel.send(ReceiveWatch(input))
-                }
-                is WatchEvent -> {
-                    logger.verbose { "WatchEvent received: $input" }
-                    eventChannel.send(ReceiveWatchEvent(input))
-                }
-                is ElectrumMessage -> {
-                    logger.verbose { "Electrum message received: $input" }
-                    eventChannel.send(ReceivedMessage(input))
-                }
-                is Connection -> {
-                    logger.verbose { "Electrum client connection changed: $input" }
-                    eventChannel.send(ClientStateUpdate(input))
+            actions.forEach { action ->
+                yield()
+                logger.verbose { "Execute action: $action" }
+                when (action) {
+                    is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
+                    is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
+                    is RegisterToScriptHashNotification -> client.sendElectrumRequest(
+                        ScriptHashSubscription(action.scriptHash)
+                    )
+                    is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.tx))
+                    is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
+                    is AskForScriptHashHistory -> client.sendElectrumRequest(
+                        GetScriptHashHistory(action.scriptHash)
+                    )
+                    is AskForTransaction -> client.sendElectrumRequest(
+                        GetTransaction(action.txid, action.contextOpt)
+                    )
+                    is AskForMerkle -> client.sendElectrumRequest(
+                        GetMerkle(action.txId, action.txheight, action.tx)
+                    )
+                    is NotifyWatch -> notificationsChannel.send(action.watchEvent)
+//                    is SelfNotifyWatch -> eventChannel.send(ReceiveWatchEvent(action.watchEvent))
+                    is NotifyTxWithMeta -> TODO("implement this")
                 }
             }
         }
@@ -472,7 +461,10 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     fun watch(watch: Watch) {
-        launch { watchChannel.send(watch) }
+        launch {
+            logger.verbose { "Watch received: $watch" }
+            eventChannel.send(ReceiveWatch(watch))
+        }
     }
 
     fun stop() {
@@ -485,10 +477,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         // Cancel broadcast channel
         notificationsChannel.cancel()
         // Cancel event channels
-        watchEventChannel.cancel()
-        watchChannel.cancel()
         eventChannel.cancel()
-        input.cancel()
     }
 
     companion object {
