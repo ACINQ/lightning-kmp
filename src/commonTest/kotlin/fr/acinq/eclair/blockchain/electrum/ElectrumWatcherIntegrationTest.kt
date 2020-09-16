@@ -6,25 +6,20 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eclair.io.TcpSocket
-import fr.acinq.eclair.utils.ServerAddress
-import fr.acinq.eclair.utils.currentTimestampSeconds
-import fr.acinq.eclair.utils.runTest
-import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consume
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.*
+import kotlin.test.*
+import kotlin.time.ExperimentalTime
+import kotlin.time.minutes
+import kotlin.time.seconds
 
-@OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class)
+@OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest {
-    private val TIMEOUT = 60_000L // Must be lower
+    private val TIMEOUT = 10.minutes // Must be lower
 
     private val bitcoincli = BitcoindService()
 
@@ -34,7 +29,6 @@ class ElectrumWatcherIntegrationTest {
             while(fr.acinq.eclair.utils.runTrying { bitcoincli.getNetworkInfo() }.isFailure && count++ < 5) {
                 delay(1000)
             }
-            bitcoincli.generateBlocks(150)
         }
     }
 
@@ -224,7 +218,7 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(tx2, sentTx2)
 
         // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
-        withTimeout(30_000) {
+        withTimeout(TIMEOUT) {
             val getHistoryListener = client.openNotificationsSubscription()
 
             client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript))))
@@ -285,6 +279,159 @@ class ElectrumWatcherIntegrationTest {
             assertEquals(tx2.txid, watchEvent.tx.txid)
         }
 
+        watcher.stop()
+        client.stop()
+    }
+
+    @Test
+    fun `publish transactions with relative and absolute delays`()  = runTest {
+        val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val watcher = ElectrumWatcher(client, this)
+        val watcherNotifications = watcher.openNotificationsSubscription()
+
+        val blockCount =
+            client.openNotificationsSubscription().receiveAsFlow()
+                .filterIsInstance<HeaderSubscriptionResponse>()
+
+        suspend fun awaitForBlockCount(height: Int) {
+            withTimeout(3.minutes) { blockCount.first { it.height >= height } }
+        }
+
+        val initialBlockCount = bitcoincli.getBlockCount()
+        var nextBlockCount = initialBlockCount // 150
+
+        val (_, privateKey) = bitcoincli.getNewAddress()
+
+        // tx1 has an absolute delay but no relative delay
+        val fundTx = bitcoincli.fundTransaction(
+            Transaction(
+                version = 2,
+                txIn = emptyList(),
+                txOut = listOf(TxOut(150000.sat, Script.pay2wpkh(privateKey.publicKey()))),
+                lockTime = (initialBlockCount + 5).toLong()
+            ), true, 1.sat
+        )
+        val tx1 = bitcoincli.signTransaction(fundTx)
+
+        watcher.send(PublishAsapEvent(tx1))
+
+        bitcoincli.generateBlocks(4)
+        nextBlockCount += 4 // 154
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            bitcoincli.getRawMempool().let {
+                assertTrue { it.isEmpty() }
+            }
+        }
+
+        bitcoincli.generateBlocks(1)
+        nextBlockCount += 1 // 155
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            do {
+                val mempool = bitcoincli.getRawMempool()
+                if (mempool.isNotEmpty()) {
+                    assertEquals(1, mempool.size)
+                    assertEquals(tx1.txid.toHex(), mempool.first())
+                }
+                delay(1.seconds)
+            } while (mempool.isEmpty())
+        }
+
+        // tx2 has a relative delay but no absolute delay
+        val tx2 = bitcoincli.createSpendP2WPKH(
+            parentTx = tx1,
+            privateKey = privateKey,
+            to = privateKey.publicKey(),
+            fee = 10000.sat,
+            sequence = 2,
+            lockTime = 0
+        )
+
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx1, 1, BITCOIN_FUNDING_DEPTHOK))
+        watcher.send(PublishAsapEvent(tx2))
+
+        bitcoincli.generateBlocks(1)
+        nextBlockCount += 1 // 156
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            val watchEvent = watcherNotifications.receive()
+            assertTrue(watchEvent is WatchEventConfirmed)
+            assertEquals(tx1.txid, watchEvent.tx.txid)
+        }
+
+        bitcoincli.generateBlocks(2)
+        nextBlockCount += 2 // 158
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            do {
+                val mempool = bitcoincli.getRawMempool()
+                if (mempool.isNotEmpty()) {
+                    assertEquals(1, mempool.size)
+                    assertEquals(tx2.txid.toHex(), mempool.first())
+                }
+                delay(1.seconds)
+            } while (mempool.isEmpty())
+        }
+
+        // tx3 has both relative and absolute delays
+        val tx3 = bitcoincli.createSpendP2WPKH(
+            parentTx = tx2,
+            privateKey = privateKey,
+            to = privateKey.publicKey(),
+            10000.sat,
+            sequence = 1,
+            lockTime = (bitcoincli.getBlockCount() + 5).toLong())
+
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx2, 1, BITCOIN_FUNDING_DEPTHOK))
+        watcher.watch(WatchSpent(ByteVector32.Zeroes, tx2, 0, BITCOIN_FUNDING_SPENT))
+        watcher.send(PublishAsapEvent(tx3))
+
+        bitcoincli.generateBlocks(1)
+        nextBlockCount += 1 // 159
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            val watchEvent = watcherNotifications.receive()
+            assertTrue(watchEvent is WatchEventConfirmed)
+            assertEquals(tx2.txid, watchEvent.tx.txid)
+        }
+
+//        // after 1 block, the relative delay is elapsed, but not the absolute delay
+        bitcoincli.generateBlocks(1)
+        nextBlockCount += 1 // 160
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            val mempool = bitcoincli.getRawMempool()
+            assertTrue { mempool.isEmpty() }
+        }
+
+        bitcoincli.generateBlocks(3)
+        nextBlockCount += 3 // 163
+
+        awaitForBlockCount(nextBlockCount)
+        withTimeout(TIMEOUT) {
+            val watchEvent = watcherNotifications.receive()
+            assertTrue(watchEvent is WatchEventSpent)
+            assertTrue(watchEvent.event is BITCOIN_FUNDING_SPENT)
+            assertEquals(tx3.txid, watchEvent.tx.txid)
+
+            do {
+                val mempool = bitcoincli.getRawMempool()
+                if (mempool.isNotEmpty()) {
+                    assertEquals(1, mempool.size)
+                    assertEquals(tx3.txid.toHex(), mempool.first())
+                }
+                delay(1.seconds)
+            } while (mempool.isEmpty())
+        }
+
+        watcherNotifications.cancel()
         watcher.stop()
         client.stop()
     }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.channels.produce
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.absoluteValue
+import kotlin.math.max
 
 sealed class WatcherEvent
 private object StartWatcher: WatcherEvent()
@@ -36,7 +37,7 @@ private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : WatcherAction()
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
-private data class NotifyWatch(val watchEvent: WatchEvent, val selfNotification: Boolean = false) : WatcherAction()
+private data class NotifyWatch(val watchEvent: WatchEvent, val broadcastNotification: Boolean = true) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
 private data class PublishAsapAction(val tx: Transaction) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
@@ -196,7 +197,7 @@ private data class WatcherRunning(
                                                         dummyTxIndex,
                                                         tx
                                                     ),
-                                                    selfNotification = w.internalNotification
+                                                    broadcastNotification = w.channelNotification
                                                 )
                                             )
                                             watchConfirmedTriggered.add(w)
@@ -277,7 +278,7 @@ private data class WatcherRunning(
                                     logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
                                     NotifyWatch(
                                         watchEvent = WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx),
-                                        selfNotification = w.internalNotification
+                                        broadcastNotification = w.channelNotification
                                     )
                                 }
                         } ?: emptyList()
@@ -292,8 +293,7 @@ private data class WatcherRunning(
             }
             is GetTxWithMetaEvent -> returnState(AskForTransaction(event.request.txid, event.request))
             is PublishAsapEvent -> {
-                // TODO to be tested
-                val tx = event.publishAsap.tx
+                val tx = event.tx
                 val blockCount = height
                 val cltvTimeout = Scripts.cltvTimeout(tx)
                 val csvTimeout = Scripts.csvTimeout(tx)
@@ -307,7 +307,7 @@ private data class WatcherRunning(
                         setupWatch(
                                 watch = WatchConfirmed(ByteVector32.Zeroes, parentTxid,
                                     parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx),
-                                internalNotification = true
+                                channelNotification = false
                             )
                         )
                     }
@@ -329,26 +329,29 @@ private data class WatcherRunning(
             is ReceiveWatch -> setupWatch(event.watch)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
-                    // TODO to be tested
-                    val tx = watchEvent.tx
-                    val blockHeight = watchEvent.blockHeight
-                    logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
-                    val blockCount = height
-                    val csvTimeout = Scripts.csvTimeout(tx)
-                    val absTimeout = blockHeight + csvTimeout
-                    if (absTimeout > blockCount) {
-                        logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)" }
-                        val updatedBlock2tx = block2tx.toMutableMap()
-                        updatedBlock2tx[absTimeout] = block2tx.getOrElse(absTimeout) { listOf(tx) }
-                        newState(copy(block2tx = updatedBlock2tx))
-                    } else {
-                        logger.info { "publishing tx=$tx" }
-                        newState {
-                            state = copy(sent = sent + tx)
-                            actions = listOf(BroadcastTxAction(tx))
+                    if (event.watchEvent.event !is BITCOIN_PARENT_TX_CONFIRMED) returnState()
+                    else {
+                        val bitcoinEvent = event.watchEvent.event as BITCOIN_PARENT_TX_CONFIRMED
+                        val tx = bitcoinEvent.childTx
+                        val blockHeight = watchEvent.blockHeight
+                        logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
+                        val blockCount = height
+                        val cltvTimeout = Scripts.cltvTimeout(tx)
+                        val csvTimeout = Scripts.csvTimeout(tx)
+                        val absTimeout = max(blockHeight + csvTimeout, cltvTimeout)
+                        if (absTimeout > blockCount) {
+                            logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)" }
+                            val updatedBlock2tx = block2tx.toMutableMap()
+                            updatedBlock2tx[absTimeout] = block2tx.getOrElse(absTimeout) { emptyList() } + tx
+                            newState(copy(block2tx = updatedBlock2tx))
+                        } else {
+                            logger.info { "publishing tx=$tx" }
+                            newState {
+                                state = copy(sent = sent + tx)
+                                actions = listOf(BroadcastTxAction(tx))
+                            }
                         }
                     }
-                    returnState()
                 }
                 else -> unhandled(event)
             }
@@ -471,10 +474,10 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                         GetMerkle(action.txId, action.txheight, action.tx)
                     )
                     is NotifyWatch -> {
-                        if (action.selfNotification)
-                            eventChannel.send(ReceiveWatchEvent(action.watchEvent))
-                        else
+                        if (action.broadcastNotification)
                             notificationsChannel.send(action.watchEvent)
+                        else
+                            eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
                     is NotifyTxWithMeta -> TODO("implement this")
                 }
