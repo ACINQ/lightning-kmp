@@ -2,12 +2,19 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.assertArrayEquals
+import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.utils.msat
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
+import kotlin.test.assertNull
 
 class OnionTestsCommon {
     @Test
@@ -30,6 +37,23 @@ class OnionTestsCommon {
     }
 
     @Test
+    fun `encode - decode fixed-size (legacy) relay per-hop payload`() {
+        val testCases = mapOf(
+            RelayLegacyPayload(ShortChannelId(0), MilliSatoshi(0), CltvExpiry(0)) to Hex.decode("00 0000000000000000 0000000000000000 00000000 000000000000000000000000"),
+            RelayLegacyPayload(ShortChannelId(42), MilliSatoshi(142000), CltvExpiry(500000)) to Hex.decode("00 000000000000002a 0000000000022ab0 0007a120 000000000000000000000000"),
+            RelayLegacyPayload(ShortChannelId(561), MilliSatoshi(1105), CltvExpiry(1729)) to Hex.decode("00 0000000000000231 0000000000000451 000006c1 000000000000000000000000")
+        )
+
+        testCases.forEach {
+            val expected = it.key
+            val decoded = RelayLegacyPayload.read(it.value)
+            assertEquals(expected, decoded)
+            val encoded = RelayLegacyPayload.write(decoded)
+            assertArrayEquals(it.value, encoded)
+        }
+    }
+
+    @Test
     fun `encode - decode fixed-size (legacy) final per-hop payload`() {
         val testCases = mapOf(
             FinalLegacyPayload(MilliSatoshi(0), CltvExpiry(0)) to Hex.decode("00 0000000000000000 0000000000000000 00000000 000000000000000000000000"),
@@ -44,6 +68,154 @@ class OnionTestsCommon {
             assertEquals(decoded.totalAmount, decoded.amount)
             val encoded = FinalPayload.write(decoded)
             assertArrayEquals(it.value, encoded)
+        }
+    }
+
+    @Test
+    fun `encode - decode variable-length (tlv) node relay per-hop payload`() {
+        val nodeId = PublicKey(Hex.decode("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+        val expected = NodeRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.OutgoingNodeId(nodeId))))
+        val bin = Hex.decode("2e 02020231 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
+
+        val decoded = NodeRelayPayload.read(bin)
+        assertEquals(expected, decoded)
+        assertEquals(decoded.amountToForward, 561.msat)
+        assertEquals(decoded.totalAmount, 561.msat)
+        assertEquals(decoded.outgoingCltv, CltvExpiry(42))
+        assertEquals(decoded.outgoingNodeId, nodeId)
+        assertNull(decoded.paymentSecret)
+        assertNull(decoded.invoiceFeatures)
+        assertNull(decoded.invoiceRoutingInfo)
+
+        val encoded = NodeRelayPayload.write(expected)
+        assertArrayEquals(bin, encoded)
+    }
+
+    @Test
+    fun `encode - decode variable-length (tlv) node relay to legacy per-hop payload`() {
+        val nodeId = PublicKey(Hex.decode("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+        val features = ByteVector("0a")
+        val node1 = PublicKey(Hex.decode("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))
+        val node2 = PublicKey(Hex.decode("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))
+        val node3 = PublicKey(Hex.decode("02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
+        val routingHints = listOf(
+            listOf(PaymentRequest.TaggedField.ExtraHop(node1, ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(144))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(node2, ShortChannelId(2), 20.msat, 150, CltvExpiryDelta(12)), PaymentRequest.TaggedField.ExtraHop(node3, ShortChannelId(3), 30.msat, 200, CltvExpiryDelta(24)))
+        )
+        val expected = NodeRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.PaymentData(ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 1105.msat), OnionTlv.InvoiceFeatures(features), OnionTlv.OutgoingNodeId(nodeId), OnionTlv.InvoiceRoutingInfo(routingHints))))
+        val bin = Hex.decode("fa 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 fe00010231010a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 fe000102339b01036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e200000000000000010000000a00000064009002025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce148600000000000000020000001400000096000c02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee00000000000000030000001e000000c80018")
+
+        val decoded = NodeRelayPayload.read(bin)
+        assertEquals(decoded, expected)
+        assertEquals(decoded.amountToForward, 561.msat)
+        assertEquals(decoded.totalAmount, 1105.msat)
+        assertEquals(decoded.paymentSecret, ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+        assertEquals(decoded.outgoingCltv, CltvExpiry(42))
+        assertEquals(decoded.outgoingNodeId, nodeId)
+        assertEquals(decoded.invoiceFeatures, features)
+        assertEquals(decoded.invoiceRoutingInfo, routingHints)
+
+        val encoded = NodeRelayPayload.write(expected)
+        assertArrayEquals(bin, encoded)
+    }
+
+    @Test
+    fun `encode - decode variable-length (tlv) final per-hop payload`() {
+        val testCases = mapOf(
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)))) to Hex.decode("07 02020231 04012a"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.PaymentData(ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 0.msat))) to Hex.decode("29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.PaymentData(ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 1105.msat))) to Hex.decode("2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.PaymentData(ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 4294967295L.msat))) to Hex.decode("2d 02020231 04012a 0824eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619ffffffff"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.PaymentData(ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 4294967296L.msat))) to Hex.decode("2e 02020231 04012a 0825eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190100000000"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.PaymentData(ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 1099511627775L.msat))) to Hex.decode("2e 02020231 04012a 0825eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619ffffffffff"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.OutgoingChannelId(ShortChannelId(1105)))) to Hex.decode("11 02020231 04012a 06080000000000000451"),
+            TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42))), listOf(GenericTlv(65535, ByteVector("06c1")))) to Hex.decode("0d 02020231 04012a fdffff0206c1"),
+            TlvStream<OnionTlv>(
+                listOf(
+                    OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42)), OnionTlv.TrampolineOnion(
+                        OnionRoutingPacket(
+                            0,
+                            ByteVector("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"),
+                            ByteVector("cff34152f3a36e52ca94e74927203a560392b9cc7ce3c45809c6be52166c24a595716880f95f178bf5b30ca63141f74db6e92795c6130877cfdac3d4bd3087ee73c65d627ddd709112a848cc99e303f3706509aa43ba7c8a88cba175fccf9a8f5016ef06d3b935dbb15196d7ce16dc1a7157845566901d7b2197e52cab4ce487014b14816e5805f9fcacb4f8f88b8ff176f1b94f6ce6b00bc43221130c17d20ef629db7c5f7eafaa166578c720619561dd14b3277db557ec7dcdb793771aef0f2f667cfdbeae3ac8d331c5994779dffb31e5fc0dbdedc0c592ca6d21c18e47fe3528d6975c19517d7e2ea8c5391cf17d0fe30c80913ed887234ccb48808f7ef9425bcd815c3b586210979e3bb286ef2851bf9ce04e28c40a203df98fd648d2f1936fd2f1def0e77eecb277229b4b682322371c0a1dbfcd723a991993df8cc1f2696b84b055b40a1792a29f710295a18fbd351b0f3ff34cd13941131b8278ba79303c89117120eea691738a9954908195143b039dbeed98f26a92585f3d15cf742c953799d3272e0545e9b744be9d3b4c"),
+                            ByteVector32("bb079bfc4b35190eee9f59a1d7b41ba2f773179f322dafb4b1af900c289ebd6c")
+                        )
+                    )
+                )
+            ) to Hex.decode("fd01e1 02020231 04012a fe00010234fd01d20002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619cff34152f3a36e52ca94e74927203a560392b9cc7ce3c45809c6be52166c24a595716880f95f178bf5b30ca63141f74db6e92795c6130877cfdac3d4bd3087ee73c65d627ddd709112a848cc99e303f3706509aa43ba7c8a88cba175fccf9a8f5016ef06d3b935dbb15196d7ce16dc1a7157845566901d7b2197e52cab4ce487014b14816e5805f9fcacb4f8f88b8ff176f1b94f6ce6b00bc43221130c17d20ef629db7c5f7eafaa166578c720619561dd14b3277db557ec7dcdb793771aef0f2f667cfdbeae3ac8d331c5994779dffb31e5fc0dbdedc0c592ca6d21c18e47fe3528d6975c19517d7e2ea8c5391cf17d0fe30c80913ed887234ccb48808f7ef9425bcd815c3b586210979e3bb286ef2851bf9ce04e28c40a203df98fd648d2f1936fd2f1def0e77eecb277229b4b682322371c0a1dbfcd723a991993df8cc1f2696b84b055b40a1792a29f710295a18fbd351b0f3ff34cd13941131b8278ba79303c89117120eea691738a9954908195143b039dbeed98f26a92585f3d15cf742c953799d3272e0545e9b744be9d3b4cbb079bfc4b35190eee9f59a1d7b41ba2f773179f322dafb4b1af900c289ebd6c")
+        )
+
+        testCases.forEach {
+            val expected = it.key
+            val decoded = FinalPayload.read(it.value)
+            assertEquals(decoded, FinalTlvPayload(expected))
+            assertEquals(decoded.amount, 561.msat)
+            assertEquals(decoded.expiry, CltvExpiry(42))
+
+            val encoded = FinalPayload.write(FinalTlvPayload(expected))
+            assertArrayEquals(it.value, encoded)
+        }
+    }
+
+    @Test
+    fun `encode - decode variable-length (tlv) final per-hop payload with custom user records`() {
+        val tlvs = TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42))), listOf(GenericTlv(5432123457L, ByteVector("16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828"))))
+        val bin = Hex.decode("31 02020231 04012a ff0000000143c7a0412016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")
+
+        val encoded = FinalPayload.write(FinalTlvPayload(tlvs))
+        assertArrayEquals(bin, encoded)
+        assertEquals(FinalTlvPayload(tlvs), FinalPayload.read(bin))
+    }
+
+    @Test
+    fun `decode multi-part final per-hop payload`() {
+        val notMultiPart = FinalPayload.read(Hex.decode("07 02020231 04012a"))
+        assertEquals(notMultiPart.totalAmount, 561.msat)
+        assertNull(notMultiPart.paymentSecret)
+
+        val multiPart = FinalPayload.read(Hex.decode("2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451"))
+        assertEquals(multiPart.amount, 561.msat)
+        assertEquals(multiPart.expiry, CltvExpiry(42))
+        assertEquals(multiPart.totalAmount, 1105.msat)
+        assertEquals(multiPart.paymentSecret, ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+
+        val multiPartNoTotalAmount = FinalPayload.read(Hex.decode("29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+        assertEquals(multiPartNoTotalAmount.amount, 561.msat)
+        assertEquals(multiPartNoTotalAmount.expiry, CltvExpiry(42))
+        assertEquals(multiPartNoTotalAmount.totalAmount, 561.msat)
+        assertEquals(multiPartNoTotalAmount.paymentSecret, ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+    }
+
+    @Test
+    @OptIn(ExperimentalUnsignedTypes::class)
+    fun `decode variable-length (tlv) final per-hop payload missing information`() {
+        val testCases = listOf(
+            Hex.decode("03 04012a"), // missing amount
+            Hex.decode("04 02020231") // missing cltv
+        )
+
+        testCases.forEach {
+            assertFails { FinalPayload.read(it) }
+        }
+    }
+
+    @Test
+    fun `decode invalid per-hop payload`() {
+        val testCases = listOf(
+            // Invalid fixed-size (legacy) payload.
+            Hex.decode("00 000000000000002a 000000000000002a"), // invalid length
+            // Invalid variable-length (tlv) payload.
+            Hex.decode("00"), // empty payload is missing required information
+            Hex.decode("01"), // invalid length
+            Hex.decode("01 0000"), // invalid length
+            Hex.decode("04 0000 2a00"), // unknown even types
+            Hex.decode("04 0000 0000"), // duplicate types
+            Hex.decode("04 0100 0000") // unordered types
+        )
+
+        testCases.forEach {
+            assertFails { RelayLegacyPayload.read(it) }
+            assertFails { NodeRelayPayload.read(it) }
+            assertFails { FinalPayload.read(it) }
         }
     }
 }
