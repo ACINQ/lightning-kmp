@@ -3,7 +3,6 @@ package fr.acinq.eclair.blockchain.bitcoind
 import fr.acinq.bitcoin.Base58
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.utils.*
 import io.ktor.client.*
 import io.ktor.client.features.auth.*
@@ -11,14 +10,9 @@ import io.ktor.client.features.auth.providers.*
 import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
-import org.kodein.log.frontend.simplePrintFrontend
-import org.kodein.log.newLogger
 
 class BitcoinJsonRPCClient(
     private val user: String = "foo",
@@ -141,8 +135,7 @@ data class SendRawTransaction(val tx: Transaction) : BitcoindRequest(tx.toString
 }
 data class SendRawTransactionResponse(val txid: String) : BitcoindResponse()
 
-data class Options(val lockUnspents: Boolean, val fee: Double)
-data class FundTransaction(val tx: String, val options: Options) : BitcoindRequest(tx, options) {
+data class FundTransaction(val tx: String, val lockUnspents: Boolean, val fee: Double) : BitcoindRequest() {
     override val method: String = "fundrawtransaction"
     override fun parseResponse(rpcResponse: JsonRPCResponse): FundTransactionResponse =
         FundTransactionResponse(
@@ -153,15 +146,15 @@ data class FundTransaction(val tx: String, val options: Options) : BitcoindReque
 
     override fun asJsonRPCRequest(id: Int): String {
         return buildJsonObject {
-            put("id", id)
+            put("id", 0)
+            put("jsonrpc", "2.0")
             put("method", method)
             putJsonArray("params") {
                 add(tx)
-//                addJsonObject {
-//                    put("name", "options")
-//                    put("feeRate", options.fee)
-//                    put("lockUnspents", 1)
-//                }
+                addJsonObject {
+                    put("feeRate", fee)
+                    put("lockUnspents", lockUnspents)
+                }
             }
         }.toString()
     }

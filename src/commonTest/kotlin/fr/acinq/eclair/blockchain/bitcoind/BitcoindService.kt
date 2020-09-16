@@ -45,7 +45,7 @@ class BitcoindService {
     suspend fun fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Satoshi): Transaction {
         val response = client.sendRequest<FundTransactionResponse>(FundTransaction(
             Hex.encode(Transaction.write(tx)),
-            Options(lockUnspents, (feeRatePerKw.sat * 4.0).pow(-8))
+            lockUnspents, (feeRatePerKw.sat * 4).toDouble() * 0.00000001
         ))
         return Transaction.read(response.hex)
     }

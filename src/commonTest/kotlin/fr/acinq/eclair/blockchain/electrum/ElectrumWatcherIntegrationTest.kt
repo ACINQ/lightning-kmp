@@ -310,7 +310,7 @@ class ElectrumWatcherIntegrationTest {
                 txIn = emptyList(),
                 txOut = listOf(TxOut(150000.sat, Script.pay2wpkh(privateKey.publicKey()))),
                 lockTime = (initialBlockCount + 5).toLong()
-            ), true, 1.sat
+            ), true, 250.sat
         )
         val tx1 = bitcoincli.signTransaction(fundTx)
 
