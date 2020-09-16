@@ -107,13 +107,7 @@ internal object WaitingForTip : ClientState() {
         }
 }
 
-internal data class ClientRunning(val height: Int, val tip: BlockHeader) : ClientState() {
-    /**
-     * Unique ID to match response with origin request
-     */
-    private var currentRequestId = 0
-    val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()
-
+internal data class ClientRunning(val height: Int, val tip: BlockHeader, val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()) : ClientState() {
    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
        is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
        is AskForHeader -> returnState(SendHeader(height, tip))
@@ -142,7 +136,7 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
    }
 
     private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
-        val newRequestId = currentRequestId++
+        val newRequestId = requests.maxOfOrNull { it.key + 1 } ?: 0
         requests[newRequestId] = electrumRequest
         return SendRequest(electrumRequest.asJsonRPCRequest(newRequestId))
     }
@@ -201,7 +195,9 @@ class ElectrumClient(
 
     private var state: ClientState = ClientClosed
         set(value) {
-            if (value != field) logger.info { "Updated State: $field -> $value" }
+            if (value != field) logger.info { """Updated State: 
+                |prev: $field
+                |new:  $value""".trimMargin() }
             field = value
         }
 
