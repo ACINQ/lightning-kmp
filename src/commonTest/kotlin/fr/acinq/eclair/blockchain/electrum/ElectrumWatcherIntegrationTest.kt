@@ -20,7 +20,7 @@ import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest {
-    private val TIMEOUT = 10.minutes // Must be lower
+    private val TIMEOUT = 5.minutes // Must be lower
 
     private val bitcoincli = BitcoindService()
 
@@ -295,7 +295,7 @@ class ElectrumWatcherIntegrationTest {
                 .filterIsInstance<HeaderSubscriptionResponse>()
 
         suspend fun awaitForBlockCount(height: Int) {
-            withTimeout(3.minutes) { blockCount.first { it.height >= height } }
+            withTimeout(5.minutes) { blockCount.first { it.height >= height } }
         }
 
         val initialBlockCount = bitcoincli.getBlockCount()
