@@ -123,13 +123,9 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader, val req
                else -> returnState()
            }
            is Either.Right -> {
-               returnState(
-                   buildList {
-                       requests[response.value.id]?.let { originRequest ->
-                           add(SendResponse(parseJsonResponse(originRequest, response.value)))
-                       }
-                   }
-               )
+               requests[response.value.id]?.takeUnless { it is Ping }?.let { originRequest ->
+                   returnState(SendResponse(parseJsonResponse(originRequest, response.value)))
+               } ?: returnState()
            }
        }
        else -> unhandled(event)
