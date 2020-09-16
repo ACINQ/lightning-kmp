@@ -97,6 +97,7 @@ class Peer(
         launch {
             electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
+                    currentTip = msg.height to msg.header
                     send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
                 }
         }
