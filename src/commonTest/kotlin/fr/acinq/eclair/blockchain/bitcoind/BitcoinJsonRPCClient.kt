@@ -32,7 +32,6 @@ class BitcoinJsonRPCClient(
     private val serviceUri = "$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
 
     private val httpClient = HttpClient {
-//        expectSuccess = false
         install(JsonFeature) {
             serializer = KotlinxSerializer()
         }
@@ -46,10 +45,10 @@ class BitcoinJsonRPCClient(
 
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
-            logger.info { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
+            logger.verbose { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
             body = request.asJsonRPCRequest()
         }
-        logger.info { "Receive bitcoind response: $rpcResponse" }
+        logger.verbose { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T
     }
