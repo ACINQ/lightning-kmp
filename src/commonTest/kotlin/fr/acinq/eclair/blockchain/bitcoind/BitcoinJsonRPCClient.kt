@@ -55,7 +55,7 @@ class BitcoinJsonRPCClient(
     }
 
     companion object {
-        private val logger = LoggerFactory(simplePrintFrontend).newLogger<BitcoinJsonRPCClient>()
+        private val logger = LoggerFactory.default.newLogger(Logger.Tag(BitcoinJsonRPCClient::class))
     }
 }
 
