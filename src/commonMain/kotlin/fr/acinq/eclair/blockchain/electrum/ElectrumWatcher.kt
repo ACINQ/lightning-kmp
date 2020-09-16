@@ -22,12 +22,12 @@ import kotlin.math.absoluteValue
 
 sealed class WatcherEvent
 private object StartWatcher: WatcherEvent()
-private class PublishAsapEvent(val publishAsap: PublishAsap) : WatcherEvent()
+public class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
 data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
-private class ReceiveWatch(val watch: Watch) : WatcherEvent()
-private class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
-private class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
-private class ClientStateUpdate(val connection: Connection) : WatcherEvent()
+public class ReceiveWatch(val watch: Watch) : WatcherEvent()
+public class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
+public class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
+public class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
 private sealed class WatcherAction
 private object AskForClientStatusUpdate : WatcherAction()
@@ -38,7 +38,7 @@ private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
 private data class NotifyWatch(val watchEvent: WatchEvent, val selfNotification: Boolean = false) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
-private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
+private data class PublishAsapAction(val tx: Transaction) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
 /**
@@ -79,7 +79,7 @@ private data class WatcherDisconnected(
                     newState {
                         state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx, watches = watches))
                         actions = buildList {
-                            publishQueue.forEach { add(PublishAsapAction(it)) }
+                            publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.response)) }
                         }
                     }
@@ -88,7 +88,7 @@ private data class WatcherDisconnected(
             }
             is ReceiveWatch -> newState(copy(watches = watches + event.watch))
             is PublishAsapEvent -> {
-                newState(copy(publishQueue = publishQueue + event.publishAsap))
+                newState(copy(publishQueue = publishQueue + PublishAsap(event.tx)))
             }
             is GetTxWithMetaEvent -> {
                 newState(copy(getTxQueue = getTxQueue + (event.request)))
@@ -120,22 +120,28 @@ private data class WatcherRunning(
                         }
 
                         val toPublish = block2tx.filterKeys { it <= newHeight }
-                        val publishAsapActions = toPublish.values.flatten().map { PublishAsapAction(PublishAsap(it)) }
+                        val broadcastTxActions = toPublish.values.flatten().map { BroadcastTxAction(it) }
 
                         newState {
-                            state = copy(height = newHeight, tip = newTip, block2tx = block2tx - toPublish.keys)
-                            actions = scriptHashesActions + publishAsapActions
+                            state = copy(
+                                height = newHeight,
+                                tip = newTip,
+                                block2tx = block2tx - toPublish.keys,
+                                sent = sent + toPublish.values.flatten()
+                            )
+                            actions = scriptHashesActions + broadcastTxActions
                         }
                     }
                     message is ScriptHashSubscriptionResponse -> {
                         val (scriptHash, status) = message
 
+                        val existingStatus = scriptHashStatus[scriptHash]
+
                         newState {
                             state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
                             actions = buildList {
-                                val s = scriptHashStatus[scriptHash]
                                 when {
-                                    s == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
+                                    existingStatus == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
                                     status.isEmpty() -> logger.verbose { "empty status for scriptHash=$scriptHash" }
                                     else -> add(AskForScriptHashHistory(scriptHash))
                                 }
@@ -209,7 +215,7 @@ private data class WatcherRunning(
                                 logger.info {
                                     """Tx notification for ${tx.txid}
                                     |txIn: ${tx.txIn}
-                                    |txOut: ${tx.txIn}
+                                    |txOut: ${tx.txOut}
                                     |watches: $watches
                                     |NotifyWatchSpentList: $notifyWatchSpentList
                                     |NotifyWatchConfirmedList: $notifyWatchConfirmedList
@@ -224,27 +230,39 @@ private data class WatcherRunning(
                                 }
                             }
                             is GetTxWithMeta -> {
-                                message.contextOpt.response.complete(GetTxWithMetaResponse(message.tx.txid, message.tx, tip.time))
+                                message.contextOpt.response.complete(
+                                    GetTxWithMetaResponse(
+                                        message.tx.txid,
+                                        message.tx,
+                                        tip.time
+                                    )
+                                )
                                 returnState()
-                            }
-                            message is BroadcastTransactionResponse -> {
-                                val (tx, errorOpt) = message
-                                when  {
-                                    errorOpt == null -> {
-                                        logger.info { "broadcast succeeded for txid=${tx.txid} tx=$tx" }
-                                    }
-                                    errorOpt is Error && errorOpt.message?.contains("transaction already in block chain") == true -> {
-                                        logger.info { "broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)" }
-                                    }
-                                    else -> logger.error {"broadcast failed for txid=${tx.txid} tx=$tx with error=$errorOpt"}
-                                }
-                                newState(copy(sent = ArrayDeque(sent - tx)))
                             }
                             else -> returnState()
                         }
                     }
+                    message is BroadcastTransactionResponse -> {
+                        val (tx, errorOpt) = message
+                        when {
+                            errorOpt == null -> {
+                                logger.info { "broadcast succeeded for txid=${tx.txid} tx=$tx" }
+                            }
+                            errorOpt.message.contains("transaction already in block chain") -> {
+                                logger.info { "broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)" }
+                            }
+                            else -> logger.error { "broadcast failed for txid=${tx.txid} tx=$tx with error=$errorOpt" }
+                        }
+                        newState(copy(sent = ArrayDeque(sent - tx)))
+                    }
                     message is ServerError && message.request is GetTransaction && message.request.contextOpt is GetTxWithMeta -> {
-                        message.request.contextOpt.response.complete(GetTxWithMetaResponse(message.request.txid, null, tip.time))
+                        message.request.contextOpt.response.complete(
+                            GetTxWithMetaResponse(
+                                message.request.txid,
+                                null,
+                                tip.time
+                            )
+                        )
                         returnState()
                     }
                     message is GetMerkleResponse -> {
@@ -296,7 +314,7 @@ private data class WatcherRunning(
                     cltvTimeout > blockCount -> {
                         logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
                         val updatedBlock2tx = block2tx.toMutableMap()
-                        updatedBlock2tx[cltvTimeout] = block2tx.getOrElse(cltvTimeout) { listOf(tx) }
+                        updatedBlock2tx[cltvTimeout] = block2tx.getOrElse(cltvTimeout) { emptyList() } + tx
                         newState(copy(block2tx = updatedBlock2tx))
                     }
                     else -> {
