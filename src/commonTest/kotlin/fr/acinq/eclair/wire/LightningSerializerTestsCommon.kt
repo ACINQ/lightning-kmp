@@ -1,12 +1,12 @@
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -236,7 +236,7 @@ class LightningSerializerTestsCommon {
         }
     }
 
-    @Test 
+    @Test
     fun `encode - decode accept_channel`() {
         val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1.sat, 1L, 1.sat, 1.msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
         // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
@@ -246,11 +246,11 @@ class LightningSerializerTestsCommon {
         val defaultEncoded = ByteVector("000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a")
         val testCases = mapOf(
             defaultEncoded to defaultAccept, // legacy encoding without upfront_shutdown_script
-        defaultEncoded + ByteVector("0000") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))), // empty upfront_shutdown_script
-        defaultEncoded + ByteVector("0004 01abcdef") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("01abcdef"))))), // non-empty upfront_shutdown_script
-        defaultEncoded + ByteVector("0000 0102002a 030102") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)), listOf(GenericTlv(1L, ByteVector("002a")), GenericTlv(3L, ByteVector("02"))))), // empty upfront_shutdown_script + unknown odd tlv records
-        defaultEncoded + ByteVector("0002 1234 0303010203") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203"))))), // non-empty upfront_shutdown_script + unknown odd tlv records
-        defaultEncoded + ByteVector("0303010203 05020123") to defaultAccept.copy(tlvStream = TlvStream(listOf(), listOf(GenericTlv(3L, ByteVector("010203")), GenericTlv(5L, ByteVector("0123"))))) // no upfront_shutdown_script + unknown odd tlv records
+            defaultEncoded + ByteVector("0000") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))), // empty upfront_shutdown_script
+            defaultEncoded + ByteVector("0004 01abcdef") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("01abcdef"))))), // non-empty upfront_shutdown_script
+            defaultEncoded + ByteVector("0000 0102002a 030102") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)), listOf(GenericTlv(1L, ByteVector("002a")), GenericTlv(3L, ByteVector("02"))))), // empty upfront_shutdown_script + unknown odd tlv records
+            defaultEncoded + ByteVector("0002 1234 0303010203") to defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203"))))), // non-empty upfront_shutdown_script + unknown odd tlv records
+            defaultEncoded + ByteVector("0303010203 05020123") to defaultAccept.copy(tlvStream = TlvStream(listOf(), listOf(GenericTlv(3L, ByteVector("010203")), GenericTlv(5L, ByteVector("0123"))))) // no upfront_shutdown_script + unknown odd tlv records
         )
 
         testCases.forEach {
@@ -266,12 +266,77 @@ class LightningSerializerTestsCommon {
     fun `encode - decode channel_reestablish`() {
         val channelReestablish = ChannelReestablish(
             ByteVector32("c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c"),
-            242842,42,
+            242842,
+            42,
             PrivateKey.fromHex("34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55"),
             PublicKey.fromHex("02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867")
         )
         val encoded = LightningMessage.encode(channelReestablish)!!
         val expected = "0088c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c000000000003b49a000000000000002a34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b5502bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867"
         assertEquals(expected, Hex.encode(encoded))
+    }
+
+    @Test
+    fun `encode - decode channel_update`() {
+        val channelUpdate = ChannelUpdate(
+            Eclair.randomBytes64(),
+            Eclair.randomBytes32(),
+            ShortChannelId(561),
+            1105,
+            0,
+            1,
+            CltvExpiryDelta(144),
+            100.msat,
+            0.msat,
+            10,
+            null
+        )
+        val encoded = LightningMessage.encode(channelUpdate)!!
+        val decoded = LightningMessage.decode(encoded)
+        assertEquals(channelUpdate, decoded)
+    }
+
+    @Test
+    fun `decode channel_update with htlc_maximum_msat`() {
+        // this was generated by c-lightning
+        val encoded = ByteVector("010258fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792306226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f0005a100000200005bc75919010100060000000000000001000000010000000a000000003a699d00")
+        val decoded = LightningMessage.decode(encoded.toByteArray())!!
+        val expected = ChannelUpdate(
+            ByteVector64("58fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf17923"),
+            ByteVector32("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+            ShortChannelId(0x5a10000020000L),
+            1539791129,
+            1,
+            1,
+            CltvExpiryDelta(6),
+            1.msat,
+            1.msat,
+            10,
+            980000000.msat
+        )
+        assertEquals(expected, decoded)
+        val reEncoded = LightningMessage.encode(decoded)!!.toByteVector()
+        assertEquals(encoded, reEncoded)
+    }
+
+    @Test
+    fun `encode - decode channel_update with unknown trailing bytes`() {
+        val channelUpdate = ChannelUpdate(
+            Eclair.randomBytes64(),
+            Eclair.randomBytes32(),
+            ShortChannelId(561),
+            1105,
+            0,
+            1,
+            CltvExpiryDelta(144),
+            0.msat,
+            10.msat,
+            10,
+            null,
+            ByteVector("010203")
+        )
+        val encoded = LightningMessage.encode(channelUpdate)!!
+        val decoded = LightningMessage.decode(encoded)
+        assertEquals(channelUpdate, decoded)
     }
 }

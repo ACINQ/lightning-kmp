@@ -32,7 +32,7 @@ import org.kodein.log.LoggerFactory
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi, val expiry: CltvExpiry, val description: String) : PeerEvent() {
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
@@ -105,6 +105,17 @@ class Peer(
                 watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
         }
+        launch {
+            channelsDb.listLocalChannels().forEach {
+                logger.info { "restoring $it" }
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                val (state1, actions) = state.process(Restore(it as ChannelState))
+                send(actions)
+                channels = channels + (it.channelId to state1)
+            }
+            logger.info { "restored channels: $channels" }
+        }
+
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
@@ -469,7 +480,7 @@ class Peer(
                         val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
                         val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
                         val finalPayload = when(isDirectPayment) {
-                            true -> Onion.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
+                            true -> FinalPayload.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
                             false -> TODO("implement trampoline payment")
                         }
                         // one hop: this a direct payment to our peer

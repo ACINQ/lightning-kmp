@@ -25,9 +25,9 @@ object OutgoingPacket {
         val payloadsBin = payloads
             .map {
                 when (it) {
-                    // TODO: implement this
+                    is RelayLegacyPayload -> RelayLegacyPayload.write(it)
+                    is NodeRelayPayload -> TODO("payload serialization not implemented")
                     is FinalPayload -> FinalPayload.write(it)
-                    else -> TODO("payload serialization not implemented")
                 }
             }
         return Sphinx.create(sessionKey, nodes, payloadsBin, associatedData, payloadLength)
@@ -44,14 +44,13 @@ object OutgoingPacket {
      *         - a sequence of payloads that will be used to build the onion
      */
     fun buildPayloads(hops: List<Hop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PerHopPayload>> {
-        return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf(finalPayload))) { triple, hop ->
+        return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PerHopPayload>(finalPayload))) { triple, hop ->
             val payload = when (hop) {
                 // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
                 is ChannelHop -> RelayLegacyPayload(hop.lastUpdate.shortChannelId, triple.first, triple.second)
                 is NodeHop -> NodeRelayPayload.create(triple.first, triple.second, hop.nextNodeId)
-                else -> throw IllegalArgumentException("unsupported hop $hop")
             }
-            return Triple(triple.first + hop.fee(triple.first), triple.second + hop.cltvExpiryDelta, listOf(payload) + triple.third)
+            Triple(triple.first + hop.fee(triple.first), triple.second + hop.cltvExpiryDelta, listOf(payload) + triple.third)
         }
     }
 

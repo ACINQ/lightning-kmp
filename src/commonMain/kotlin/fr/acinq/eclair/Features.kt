@@ -6,7 +6,6 @@ import fr.acinq.eclair.utils.leftPaddedCopyOf
 import fr.acinq.eclair.utils.or
 import kotlinx.serialization.Serializable
 
-
 enum class FeatureSupport {
     Mandatory {
         override fun toString() = "mandatory"
@@ -77,7 +76,7 @@ sealed class Feature {
     @Serializable
     object BasicMultiPartPayment : Feature() {
         override val rfcName get() = "basic_mpp"
-        override val mandatory get()  = 16
+        override val mandatory get() = 16
     }
 
     @Serializable
@@ -124,24 +123,6 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
         forEach { buf.setRight(it) }
         return buf.bytes
     }
-
-    /**
-     * Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
-     * off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
-     * We use a long enough mask to account for future features.
-     * TODO: remove that once eclair-mobile is patched.
-     */
-    fun maskFeaturesForEclairMobile(): Features =
-        Features(
-            activated = activated.filterTo(HashSet()) {
-                when (it.feature) {
-                    is Feature.PaymentSecret -> false
-                    is Feature.BasicMultiPartPayment -> false
-                    else -> true
-                }
-            },
-            unknown = unknown
-        )
 
     companion object {
         val empty = Features(emptySet())
@@ -212,7 +193,6 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
 //            }
 //        }
 
-
         // Features may depend on other features, as specified in Bolt 9.
         private val featuresDependency: Map<Feature, List<Feature>> = mapOf(
             Feature.ChannelRangeQueriesExtended to listOf(Feature.ChannelRangeQueries),
@@ -228,7 +208,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
         fun validateFeatureGraph(features: Features): FeatureException? {
             featuresDependency.forEach { (feature, dependencies) ->
                 if (features.hasFeature(feature)) {
-                    val missing = dependencies.filter { it: Feature -> !features.hasFeature(it) }
+                    val missing = dependencies.filter { !features.hasFeature(it) }
                     if (missing.isNotEmpty()) {
                         return FeatureException("$feature is set but is missing a dependency (${missing.joinToString(" and ")})")
                     }

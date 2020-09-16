@@ -1,13 +1,17 @@
 package fr.acinq.eclair.crypto.sphinx
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Script.tail
 import fr.acinq.bitcoin.crypto.HMac
 import fr.acinq.bitcoin.crypto.Sha256
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.eclair.crypto.ChaCha20
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import fr.acinq.eclair.wire.OnionRoutingPacket
+import fr.acinq.secp256k1.Hex
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
 
 /**
  * Decrypting an onion packet yields a payload for the current node and the encrypted packet for the next node.
@@ -152,7 +156,7 @@ object Sphinx {
      *         failure messages upstream.
      *         or a BadOnion error containing the hash of the invalid onion.
      */
-    fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket, packetLength: Int): Either<BadOnion, DecryptedPacket> = when (packet.version) {
+    fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket, packetLength: Int): Either<FailureMessage, DecryptedPacket> = when (packet.version) {
         0 -> {
             when (val result = runTrying { PublicKey(packet.publicKey) }) {
                 is Try.Success -> {
@@ -265,10 +269,45 @@ object Sphinx {
  */
 data class DecryptedFailurePacket(val originNode: PublicKey, val failureMessage: FailureMessage)
 
+/**
+ * An onion-encrypted failure packet from an intermediate node:
+ * +----------------+----------------------------------+-----------------+----------------------+-----+
+ * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+ * +----------------+----------------------------------+-----------------+----------------------+-----+
+ * with failure message length + pad length = 256
+ */
 object FailurePacket {
+
+    private val logger = LoggerFactory.default.newLogger(Logger.Tag(FailurePacket::class))
 
     private const val MaxPayloadLength = 256
     private const val PacketLength = Sphinx.MacLength + MaxPayloadLength + 2 + 2
+
+    fun encode(failure: FailureMessage, macKey: ByteVector32): ByteArray {
+        val out = ByteArrayOutput()
+        val failureMessageBin = FailureMessage.encode(failure)
+        require(failureMessageBin.size <= MaxPayloadLength) { "encoded failure message overflows onion" }
+        LightningSerializer.writeU16(failureMessageBin.size, out)
+        LightningSerializer.writeBytes(failureMessageBin, out)
+        val padLen = MaxPayloadLength - failureMessageBin.size
+        LightningSerializer.writeU16(padLen, out)
+        LightningSerializer.writeBytes(ByteArray(padLen), out)
+        val packet = out.toByteArray()
+        return Sphinx.mac(macKey.toByteArray(), packet).toByteArray() + packet
+    }
+
+    fun decode(input: ByteArray, macKey: ByteVector32): Try<FailureMessage> {
+        if (input.size != PacketLength) {
+            return Try.Failure(IllegalArgumentException("invalid error packet length: ${Hex.encode(input)}"))
+        }
+        val mac = input.take(32).toByteArray().toByteVector32()
+        val payload = input.drop(32).toByteArray()
+        if (Sphinx.mac(macKey.toByteArray(), payload) != mac) {
+            return Try.Failure(IllegalArgumentException("invalid error packet mac: ${Hex.encode(input)}"))
+        }
+        val stream = ByteArrayInput(payload)
+        return runTrying { FailureMessage.decode(LightningSerializer.bytes(stream, LightningSerializer.u16(stream))) }
+    }
 
     /**
      * Create a failure packet that will be returned to the sender.
@@ -280,9 +319,9 @@ object FailurePacket {
      * @param failure      failure message.
      * @return a failure packet that can be sent to the destination node.
      */
-    fun create(sharedSecret: ByteVector32, @Suppress("UNUSED_PARAMETER") failure: FailureMessage): ByteArray {
-//        val um = Sphinx.generateKey("um", sharedSecret)
-        val packet = ByteArray(PacketLength)// TODO: implement FailureMessage serialization FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
+    fun create(sharedSecret: ByteVector32, failure: FailureMessage): ByteArray {
+        val um = Sphinx.generateKey("um", sharedSecret)
+        val packet = encode(failure, um)
         return wrap(packet, sharedSecret)
     }
 
@@ -295,7 +334,7 @@ object FailurePacket {
      */
     fun wrap(packet: ByteArray, sharedSecret: ByteVector32): ByteArray {
         if (packet.size != PacketLength) {
-            // TODO logger.warn(s"invalid error packet length ${packet.length}, must be $PacketLength (malicious or buggy downstream node)")
+            logger.warning { "invalid error packet length ${packet.size}, must be $PacketLength (malicious or buggy downstream node)" }
         }
         val key = Sphinx.generateKey("ammag", sharedSecret)
         val stream = Sphinx.generateStream(key, PacketLength)
@@ -314,18 +353,22 @@ object FailurePacket {
      * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
      *         decrypted, Failure otherwise.
      */
-    fun decrypt(packet: ByteArray, sharedSecrets: List<Pair<ByteVector32, PublicKey>>): DecryptedFailurePacket {
+    fun decrypt(packet: ByteArray, sharedSecrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
         require(packet.size == PacketLength) { "invalid error packet length ${packet.size}, must be $PacketLength" }
 
-        // TODO: implement this properly
-        fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): DecryptedFailurePacket {
-            if (secrets.isEmpty())
-                throw IllegalArgumentException("couldn't parse error packet=$packet with sharedSecrets=$secrets")
-            else {
-                val (_, pubkey) = secrets.first()
-//                val packet1 = wrap(packet, secret)
-//                val um = Sphinx.generateKey("um", secret)
-                return DecryptedFailurePacket(pubkey, InvalidRealm)
+        fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
+            return if (secrets.isEmpty()) {
+                val ex = IllegalArgumentException("couldn't parse error packet=$packet with sharedSecrets=$secrets")
+                logger.warning(ex)
+                Try.Failure(ex)
+            } else {
+                val (secret, pubkey) = secrets.first()
+                val packet1 = wrap(packet, secret)
+                val um = Sphinx.generateKey("um", secret)
+                when (val error = decode(packet1, um)) {
+                    is Try.Failure -> loop(packet1, secrets.tail())
+                    is Try.Success -> Try.Success(DecryptedFailurePacket(pubkey, error.result))
+                }
             }
         }
 
