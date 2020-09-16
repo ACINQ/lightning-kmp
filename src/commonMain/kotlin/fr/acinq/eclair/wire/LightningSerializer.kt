@@ -180,28 +180,20 @@ abstract class LightningSerializer<T> {
                 first < 0xfd -> first.toLong()
                 first == 0xfd -> {
                     val l = u16(input).toLong()
-                    when {
-                        l < 0xfd -> throw IllegalArgumentException("non-canonical encoding for varint $l")
-                        else -> l
-                    }
+                    require(l >= 0xfd) { "non-canonical encoding for varint $l" }
+                    l
                 }
                 first == 0xfe -> {
                     val l = u32(input).toUInt().toLong()
-                    when {
-                        l < 0x10000 -> throw IllegalArgumentException("non-canonical encoding for varint $l")
-                        else -> l
-                    }
+                    require(l >= 0x10000) { "non-canonical encoding for varint $l" }
+                    l
                 }
                 first == 0xff -> {
                     val l = u64(input).toULong()
-                    when {
-                        l < 0x100000000U -> throw IllegalArgumentException("non-canonical encoding for varint $l")
-                        else -> l.toLong()
-                    }
+                    require(l >= 0x100000000U) { "non-canonical encoding for varint $l" }
+                    l.toLong()
                 }
-                else -> {
-                    throw IllegalArgumentException("invalid first byte $first for varint type")
-                }
+                else -> throw IllegalArgumentException("invalid first byte $first for varint type")
             }
         }
 
