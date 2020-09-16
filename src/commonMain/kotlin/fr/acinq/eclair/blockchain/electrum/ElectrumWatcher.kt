@@ -36,7 +36,7 @@ private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : WatcherAction()
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
-private data class NotifyWatch(val watchEvent: WatchEvent) : WatcherAction()
+private data class NotifyWatch(val watchEvent: WatchEvent, val selfNotification: Boolean = false) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
 private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
@@ -183,13 +183,14 @@ private data class WatcherRunning(
                                             val (dummyHeight, dummyTxIndex) = makeDummyShortChannelId(w.txId)
                                             notifyWatchConfirmedList.add(
                                                 NotifyWatch(
-                                                    WatchEventConfirmed(
-                                                        ByteVector32.Zeroes, // TODO!
+                                                    watchEvent = WatchEventConfirmed(
+                                                        w.channelId,
                                                         BITCOIN_FUNDING_DEPTHOK,
                                                         dummyHeight,
                                                         dummyTxIndex,
                                                         tx
-                                                    )
+                                                    ),
+                                                    selfNotification = w.internalNotification
                                                 )
                                             )
                                             watchConfirmedTriggered.add(w)
@@ -254,12 +255,13 @@ private data class WatcherRunning(
                             .filter { it.txId == txid && confirmations >= it.minDepth }
 
                         val notifyWatchConfirmedList = tx?.let {
-                            triggered.map { w ->
-                                logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
-                                NotifyWatch(
-                                    WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx)
-                                )
-                            }
+                             triggered.map { w ->
+                                    logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
+                                    NotifyWatch(
+                                        watchEvent = WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx),
+                                        selfNotification = w.internalNotification
+                                    )
+                                }
                         } ?: emptyList()
 
                         newState {
@@ -284,9 +286,11 @@ private data class WatcherRunning(
                         val parentTxid = tx.txIn[0].outPoint.txid
                         logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                        receiveWatch(
-                            WatchConfirmed(ByteVector32.Zeroes, parentTxid,
-                                parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+                        setupWatch(
+                                watch = WatchConfirmed(ByteVector32.Zeroes, parentTxid,
+                                    parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx),
+                                internalNotification = true
+                            )
                         )
                     }
                     cltvTimeout > blockCount -> {
@@ -304,7 +308,7 @@ private data class WatcherRunning(
                     }
                 }
             }
-            is ReceiveWatch -> receiveWatch(event.watch)
+            is ReceiveWatch -> setupWatch(event.watch)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
                     // TODO to be tested
@@ -342,7 +346,7 @@ private data class WatcherRunning(
             else -> unhandled(event)
         }
 
-    private fun receiveWatch(watch: Watch) = when (watch) {
+    private fun setupWatch(watch: Watch) = when (watch) {
         in watches -> returnState()
         is WatchSpent -> {
             val (_, txid, outputIndex, publicKeyScript, _) = watch
@@ -448,8 +452,12 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                     is AskForMerkle -> client.sendElectrumRequest(
                         GetMerkle(action.txId, action.txheight, action.tx)
                     )
-                    is NotifyWatch -> notificationsChannel.send(action.watchEvent)
-//                    is SelfNotifyWatch -> eventChannel.send(ReceiveWatchEvent(action.watchEvent))
+                    is NotifyWatch -> {
+                        if (action.selfNotification)
+                            eventChannel.send(ReceiveWatchEvent(action.watchEvent))
+                        else
+                            notificationsChannel.send(action.watchEvent)
+                    }
                     is NotifyTxWithMeta -> TODO("implement this")
                 }
             }

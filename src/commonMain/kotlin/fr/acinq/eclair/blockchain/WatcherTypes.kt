@@ -32,7 +32,8 @@ data class WatchConfirmed(
     val txId: ByteVector32,
     val publicKeyScript: ByteVector,
     val minDepth: Long,
-    override val event: BitcoinEvent
+    override val event: BitcoinEvent,
+    val internalNotification: Boolean = false
 ) : Watch() {
     // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
     // we support both p2pkh and p2wpkh scripts
