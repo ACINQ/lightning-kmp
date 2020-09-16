@@ -51,7 +51,11 @@ sealed class FailureMessage {
                 IncorrectCltvExpiry.code -> IncorrectCltvExpiry(CltvExpiry(LightningSerializer.u32(stream).toLong()), readChannelUpdate(stream))
                 ExpiryTooSoon.code -> ExpiryTooSoon(readChannelUpdate(stream))
                 TrampolineExpiryTooSoon.code -> TrampolineExpiryTooSoon
-                IncorrectOrUnknownPaymentDetails.code -> IncorrectOrUnknownPaymentDetails(MilliSatoshi(LightningSerializer.u64(stream)), LightningSerializer.u32(stream).toLong())
+                IncorrectOrUnknownPaymentDetails.code -> {
+                    val amount = if (stream.availableBytes > 0) MilliSatoshi(LightningSerializer.u64(stream)) else MilliSatoshi(0)
+                    val blockHeight = if (stream.availableBytes > 0) LightningSerializer.u32(stream).toLong() else 0L
+                    IncorrectOrUnknownPaymentDetails(amount, blockHeight)
+                }
                 FinalIncorrectCltvExpiry.code -> FinalIncorrectCltvExpiry(CltvExpiry(LightningSerializer.u32(stream).toLong()))
                 FinalIncorrectHtlcAmount.code -> FinalIncorrectHtlcAmount(MilliSatoshi(LightningSerializer.u64(stream)))
                 ChannelDisabled.code -> ChannelDisabled(LightningSerializer.byte(stream).toByte(), LightningSerializer.byte(stream).toByte(), readChannelUpdate(stream))

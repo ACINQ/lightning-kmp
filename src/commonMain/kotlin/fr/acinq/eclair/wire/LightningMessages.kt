@@ -134,7 +134,7 @@ data class Init(@Serializable(with = ByteVectorKSerializer::class) val features:
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
             serializers.put(InitTlv.Networks.tag, InitTlv.Networks.Companion as LightningSerializer<InitTlv>)
-            val serializer = TlvStreamSerializer<InitTlv>(serializers)
+            val serializer = TlvStreamSerializer<InitTlv>(false, serializers)
             val tlvs = serializer.read(input)
             return Init(features, tlvs)
         }
@@ -146,7 +146,7 @@ data class Init(@Serializable(with = ByteVectorKSerializer::class) val features:
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
             serializers.put(InitTlv.Networks.tag.toLong(), InitTlv.Networks.Companion as LightningSerializer<InitTlv>)
-            val serializer = TlvStreamSerializer<InitTlv>(serializers)
+            val serializer = TlvStreamSerializer<InitTlv>(false, serializers)
             serializer.write(message.tlvs, out)
         }
     }
@@ -268,7 +268,7 @@ data class OpenChannel(
                 PublicKey(bytes(input, 33)),
                 PublicKey(bytes(input, 33)),
                 byte(input).toByte(),
-                TlvStreamSerializer<ChannelTlv>(serializers).read(input)
+                TlvStreamSerializer<ChannelTlv>(false, serializers).read(input)
             )
         }
 
@@ -297,7 +297,7 @@ data class OpenChannel(
             writeBytes(message.htlcBasepoint.value, out)
             writeBytes(message.firstPerCommitmentPoint.value, out)
             writeByte(message.channelFlags.toInt(), out)
-            TlvStreamSerializer<ChannelTlv>(serializers).write(message.tlvStream, out)
+            TlvStreamSerializer<ChannelTlv>(false, serializers).write(message.tlvStream, out)
         }
     }
 }
@@ -349,7 +349,7 @@ data class AcceptChannel(
                 PublicKey(bytes(input, 33)),
                 PublicKey(bytes(input, 33)),
                 PublicKey(bytes(input, 33)),
-                TlvStreamSerializer<ChannelTlv>(serializers).read(input)
+                TlvStreamSerializer<ChannelTlv>(false, serializers).read(input)
             )
         }
 
@@ -372,7 +372,7 @@ data class AcceptChannel(
             writeBytes(message.delayedPaymentBasepoint.value, out)
             writeBytes(message.htlcBasepoint.value, out)
             writeBytes(message.firstPerCommitmentPoint.value, out)
-            TlvStreamSerializer<ChannelTlv>(serializers).write(message.tlvStream, out)
+            TlvStreamSerializer<ChannelTlv>(false, serializers).write(message.tlvStream, out)
         }
     }
 }
