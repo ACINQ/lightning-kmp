@@ -142,7 +142,7 @@ object Node {
                 when (tokens.first()) {
                     "connect" -> {
                         println("connecting")
-                        GlobalScope.launch { peer.connect("localhost", 29735) }
+                        GlobalScope.launch { peer.connect("localhost", 48001) }
                     }
                     "receive" -> {
                         val paymentPreimage = ByteVector32(tokens[1])
