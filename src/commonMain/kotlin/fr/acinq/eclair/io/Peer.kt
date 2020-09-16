@@ -117,6 +117,8 @@ class Peer(
             logger.info { "restored channels: $channels" }
         }
 
+        launch { run() }
+
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
@@ -189,7 +191,6 @@ class Peer(
             }
 
             coroutineScope {
-                launch { run() }
                 launch {
                     val sub = watcher.openNotificationsSubscription()
                     sub.consumeEach {
@@ -199,7 +200,9 @@ class Peer(
                 }
                 launch { doPing() }
                 launch { respond() }
-                launch { listen() }
+
+                listen()
+                cancel()
             }
         }
     }
