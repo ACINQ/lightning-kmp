@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.withContext
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
+import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
 import java.security.cert.X509Certificate
@@ -21,8 +22,14 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 
     override suspend fun send(bytes: ByteArray?, flush: Boolean) =
         withContext(Dispatchers.IO) {
-            if (bytes != null) writeChannel.writeFully(bytes, 0, bytes.size)
-            if (flush) writeChannel.flush()
+            try {
+                if (bytes != null) writeChannel.writeFully(bytes, 0, bytes.size)
+                if (flush) writeChannel.flush()
+            } catch (ex: java.io.IOException) {
+                throw TcpSocket.IOException.ConnectionClosed()
+            } catch (t: Throwable) {
+                throw TcpSocket.IOException.Unknown(t.message)
+            }
         }
 
     private suspend fun <R> receive(read: suspend () -> R): R =
