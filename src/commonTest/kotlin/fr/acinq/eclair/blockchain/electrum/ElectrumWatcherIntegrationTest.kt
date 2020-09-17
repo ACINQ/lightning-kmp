@@ -146,6 +146,63 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
+    fun `watch for spent transactions before client is connected`() = runTest {
+        val client = ElectrumClient(TcpSocket.Builder(),this)
+        val watcher = ElectrumWatcher(client, this)
+
+        val (address, privateKey) = bitcoincli.getNewAddress()
+        val tx = bitcoincli.sendToAddress(address, 1.0)
+
+        // find the output for the address we generated and create a tx that spends it
+        val pos= tx.txOut.indexOfFirst {
+            it.publicKeyScript == Script.write(Script.pay2wpkh(privateKey.publicKey())).byteVector()
+        }
+        assertTrue(pos != -1)
+
+        val tmp = Transaction(version = 2,
+            txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
+            txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = Script.pay2wpkh(privateKey.publicKey()))),
+            lockTime = 0)
+
+        val sig = Transaction.signInput(
+            tmp,
+            0,
+            Script.pay2pkh(privateKey.publicKey()),
+            SIGHASH_ALL,
+            tx.txOut[pos].amount,
+            SigVersion.SIGVERSION_WITNESS_V0,
+            privateKey
+        ).byteVector()
+
+        val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
+        Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        val listener = watcher.openNotificationsSubscription()
+        watcher.watch(WatchSpent(
+            ByteVector32.Zeroes,
+            tx.txid,
+            pos,
+            tx.txOut[pos].publicKeyScript,
+            BITCOIN_FUNDING_SPENT
+        ))
+
+        // send raw tx
+        val sentTx = bitcoincli.sendRawTransaction(spendingTx)
+        assertEquals(spendingTx, sentTx)
+        bitcoincli.generateBlocks(2)
+
+        client.connect(ServerAddress("localhost", 51001, null))
+
+        withTimeout(TIMEOUT) {
+            val msg = listener.receive() as WatchEventSpent
+            assertEquals(spendingTx.txid, msg.tx.txid)
+        }
+
+        watcher.stop()
+        client.stop()
+    }
+
+    @Test
     fun `watch for spent transactions while being offline`() = runTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
