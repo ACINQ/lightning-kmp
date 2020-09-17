@@ -376,24 +376,6 @@ private data class WatcherRunning(
             state = copy(watches = watches + watch)
             actions = actions + registerToScriptHash(watch)
         }
-//        is WatchSpent -> {
-//            val (_, txid, outputIndex, publicKeyScript, _) = watch
-//            val scriptHash = computeScriptHash(publicKeyScript)
-//            logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
-//            newState {
-//                state = copy(watches = watches + watch)
-//                actions = listOf(RegisterToScriptHashNotification(scriptHash))
-//            }
-//        }
-//        is WatchConfirmed -> {
-//            val (_, txid, publicKeyScript, _, _) = watch
-//            val scriptHash = computeScriptHash(publicKeyScript)
-//            logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
-//            newState {
-//                state = copy(watches = watches + watch)
-//                actions = listOf(RegisterToScriptHashNotification(scriptHash))
-//            }
-//        }
     }
 }
 
