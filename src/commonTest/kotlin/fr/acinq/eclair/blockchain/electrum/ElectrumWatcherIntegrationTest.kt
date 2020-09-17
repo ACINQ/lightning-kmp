@@ -104,25 +104,23 @@ class ElectrumWatcherIntegrationTest {
         }
         assertTrue(pos != -1)
 
-        val spendingTx = kotlin.run {
-            val tmp = Transaction(version = 2,
-                txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
-                txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = Script.pay2wpkh(privateKey.publicKey()))),
-                lockTime = 0)
+        val tmp = Transaction(version = 2,
+            txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
+            txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = Script.pay2wpkh(privateKey.publicKey()))),
+            lockTime = 0)
 
-            val sig = Transaction.signInput(
-                tmp,
-                0,
-                Script.pay2pkh(privateKey.publicKey()),
-                SIGHASH_ALL,
-                tx.txOut[pos].amount,
-                SigVersion.SIGVERSION_WITNESS_V0,
-                privateKey
-            ).byteVector()
-            val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
-            Transaction.correctlySpends(signedTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            signedTx
-        }
+        val sig = Transaction.signInput(
+            tmp,
+            0,
+            Script.pay2pkh(privateKey.publicKey()),
+            SIGHASH_ALL,
+            tx.txOut[pos].amount,
+            SigVersion.SIGVERSION_WITNESS_V0,
+            privateKey
+        ).byteVector()
+
+        val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
+        Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val listener = watcher.openNotificationsSubscription()
         watcher.watch(WatchSpent(
@@ -284,7 +282,7 @@ class ElectrumWatcherIntegrationTest {
         client.stop()
     }
 
-    @Test
+    @Test @Ignore
     fun `publish transactions with relative and absolute delays`()  = runTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
