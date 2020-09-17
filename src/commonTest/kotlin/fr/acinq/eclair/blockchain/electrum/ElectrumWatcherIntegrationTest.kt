@@ -20,7 +20,7 @@ import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest {
-    private val TIMEOUT = 5.minutes // Must be lower
+    private val TIMEOUT = 20.seconds
 
     private val bitcoincli = BitcoindService()
 
@@ -283,25 +283,10 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `repeated publish tx`() {
-        repeat(10) {
-            try {
-                `publish transactions with relative and absolute delays`()
-            } catch (t: Throwable) {
-                fail("failed at attempt $it", t)
-            }
-        }
-    }
-
-    @Test
     fun `publish transactions with relative and absolute delays`()  = runTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
         val watcherNotifications = watcher.openNotificationsSubscription()
-
-//        val blockCount =
-//            client.openNotificationsSubscription().receiveAsFlow()
-//                .filterIsInstance<HeaderSubscriptionResponse>()
 
         suspend fun awaitForBlockCount(height: Int) {
             withTimeout(TIMEOUT) {
@@ -382,7 +367,6 @@ class ElectrumWatcherIntegrationTest {
         bitcoincli.getBlockCount()
         checkIfExistsInMempool(tx2)
 
-/*
         // tx3 has both relative and absolute delays
         val tx3 = bitcoincli.createSpendP2WPKH(
             parentTx = tx2,
@@ -405,7 +389,7 @@ class ElectrumWatcherIntegrationTest {
             assertEquals(tx2.txid, watchEvent.tx.txid)
         }
 
-//        // after 1 block, the relative delay is elapsed, but not the absolute delay
+        // after 1 block, the relative delay is elapsed, but not the absolute delay
         val currentBlock = bitcoincli.getBlockCount()
         bitcoincli.generateBlocks(1) // 160
         bitcoincli.getBlockCount()
@@ -422,7 +406,6 @@ class ElectrumWatcherIntegrationTest {
             assertEquals(tx3.txid, watchEvent.tx.txid)
         }
         checkIfExistsInMempool(tx3)
-*/
 
         watcherNotifications.cancel()
         watcher.stop()

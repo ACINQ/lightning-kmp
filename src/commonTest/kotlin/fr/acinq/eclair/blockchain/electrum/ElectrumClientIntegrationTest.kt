@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withTimeout
 import kotlin.test.*
+import kotlin.time.ExperimentalTime
+import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClientIntegrationTest {
@@ -210,8 +212,9 @@ class ElectrumClientIntegrationTest {
         client.stop()
     }
 
+    @OptIn(ExperimentalTime::class)
     private suspend inline fun <reified T : ElectrumMessage> ReceiveChannel<ElectrumMessage>.consumerCheckWithTimeout(crossinline assertion: (T) -> Unit = {}) {
-        withTimeout(10_000) {
+        withTimeout(10.seconds) {
             val msg = this@consumerCheckWithTimeout.consumeAsFlow().filterIsInstance<T>().firstOrNull()
             assertNotNull(msg)
             assertion(msg)
