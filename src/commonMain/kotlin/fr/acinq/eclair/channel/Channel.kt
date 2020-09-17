@@ -9,6 +9,7 @@ import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
@@ -970,7 +971,7 @@ data class Normal(
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
                         // TODO: handle shutdown in progress
-                        when (val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())) {
+                        when (val result = commitments.sendAdd(event.command, Origin.Local(event.command.id), currentBlockHeight.toLong())) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }

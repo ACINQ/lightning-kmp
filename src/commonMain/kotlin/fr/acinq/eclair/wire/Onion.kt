@@ -258,6 +258,10 @@ sealed class FinalPayload : PerHopPayload(), LightningSerializable<FinalPayload>
 
         fun createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: List<OnionTlv> = listOf(), userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload =
             FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount)) + additionalTlvs, userCustomTlvs))
+
+        /** Create a trampoline outer payload. */
+        fun createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload =
+            FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount), OnionTlv.TrampolineOnion(trampolinePacket))))
     }
 }
 
@@ -349,5 +353,14 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload(),
         override fun write(message: NodeRelayPayload, out: Output) = tlvSerializer.write(message.records, out)
 
         fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) = NodeRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.OutgoingNodeId(nextNodeId))))
+
+        /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
+        fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload {
+            val tlvs = mutableListOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.OutgoingNodeId(targetNodeId), OnionTlv.InvoiceFeatures(invoice.features ?: ByteVector.empty), OnionTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints }))
+            if (invoice.paymentSecret != null) {
+                tlvs.add(OnionTlv.PaymentData(invoice.paymentSecret, totalAmount))
+            }
+            return NodeRelayPayload(TlvStream(tlvs))
+        }
     }
 }

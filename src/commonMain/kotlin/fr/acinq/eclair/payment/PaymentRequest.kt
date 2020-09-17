@@ -23,6 +23,8 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
 
     val descriptionHash: ByteVector32? = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
 
+    val features: ByteVector? = tags.find { it is TaggedField.Features }?.run { (this as TaggedField.Features).bitmask }
+
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
     private fun rawData(): List<Int5> {
@@ -91,7 +93,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
 
         val prefixes = mapOf(Block.RegtestGenesisBlock.hash to "lnbcrt", Block.TestnetGenesisBlock.hash to "lntb", Block.LivenetGenesisBlock.hash to "lnbc")
 
-        fun decodeTimestamp(input: List<Int5>): Long = input.take(7).fold(0L) { a, b -> 32 * a + b }
+        private fun decodeTimestamp(input: List<Int5>): Long = input.take(7).fold(0L) { a, b -> 32 * a + b }
 
         fun encodeTimestamp(input: Long): List<Int5> {
             tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (acc.size == 7) acc.reversed() else loop(value / 32, acc + value.rem(32).toByte())
@@ -142,7 +144,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
             return pr
         }
 
-        fun decodeAmount(input: String): MilliSatoshi? {
+        private fun decodeAmount(input: String): MilliSatoshi? {
             val amount = when {
                 input.isEmpty() -> null
                 input.last() == 'p' -> MilliSatoshi(input.dropLast(1).toLong() / 10L)
@@ -213,7 +215,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         }
 
         /**
-         * Mode IOd
+         * Node Id
          *
          * @param nodeId node id (public key) of the payee
          */
@@ -330,7 +332,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         /**
          * Payment expiry (in seconds)
          *
-         * @param expiry payment expiry
+         * @param cltvExpiry payment expiry
          */
         data class MinFinalCltvExpiry(val cltvExpiry: Long) : TaggedField() {
             override val tag: Int5 = MinFinalCltvExpiry.tag
@@ -350,6 +352,17 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                     input.forEach { expiry = expiry * 32 + it }
                     return MinFinalCltvExpiry(expiry)
                 }
+            }
+        }
+
+        data class Features(val bitmask: ByteVector) : TaggedField() {
+            override val tag: Int5 = Features.tag
+            override fun encode(): List<Int5> {
+                TODO("Not yet implemented")
+            }
+
+            companion object {
+                const val tag: Int5 = 5
             }
         }
 
@@ -397,13 +410,14 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
                 fun decode(input: List<Int5>): RoutingInfo {
                     val stream = ByteArrayInput(Bech32.five2eight(input.toTypedArray(), 0))
                     val hints = ArrayList<ExtraHop>()
-                    while(stream.availableBytes >= 51) {
+                    while (stream.availableBytes >= 51) {
                         val hint = ExtraHop(
                             PublicKey(LightningSerializer.bytes(stream, 33)),
                             ShortChannelId(LightningSerializer.u64(stream)),
                             MilliSatoshi(LightningSerializer.u32(stream).toLong()),
                             LightningSerializer.u32(stream).toLong(),
-                            CltvExpiryDelta(LightningSerializer.u16(stream)))
+                            CltvExpiryDelta(LightningSerializer.u16(stream))
+                        )
                         hints.add(hint)
                     }
                     return RoutingInfo(hints)
@@ -424,5 +438,5 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         data class InvalidTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
             override fun encode(): List<Int5> = value.toList()
         }
-        }
+    }
 }
