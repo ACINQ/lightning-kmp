@@ -1,5 +1,9 @@
 package fr.acinq.eclair.channel
 
+import fr.acinq.eclair.ActivatedFeature
+import fr.acinq.eclair.Feature
+import fr.acinq.eclair.FeatureSupport
+import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector
@@ -11,9 +15,9 @@ import kotlin.test.assertTrue
 
 class NormalStateCommonTests {
     @Test
-    fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee`() {
+    fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
-        val (alice, bob) = reachNormal()
+         val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
         val (payment_preimage1, cmdAdd1) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd1))
         val add = actions.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<UpdateAddHtlc>().first()

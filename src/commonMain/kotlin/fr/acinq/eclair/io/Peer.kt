@@ -220,7 +220,7 @@ class Peer(
                 it is SendMessage -> {
                     val encoded = LightningMessage.encode(it.message)
                     encoded?.let { bin ->
-                        logger.info { "sending ${it.message}" }
+                        logger.info { "sending ${it.message} encoded as ${Hex.encode(bin)}" }
                         output.send(bin)
                     }
                 }
@@ -296,6 +296,7 @@ class Peer(
             when {
                 event is BytesReceived -> {
                     val msg = LightningMessage.decode(event.data)
+                    logger.info { "received $msg" }
                     when {
                         msg is Init -> {
                             logger.info { "received $msg" }
@@ -375,14 +376,9 @@ class Peer(
                             send(actions)
                             store(actions)
                             sendToSelf(msg.temporaryChannelId, actions)
-                            actions.forEach {
-                                when (it) {
-                                    is ChannelIdSwitch -> {
-                                        logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
-                                        channels = channels - it.oldChannelId + (it.newChannelId to state1)
-                                    }
-                                    else -> logger.warning { "ignoring $it" }
-                                }
+                            actions.filterIsInstance<ChannelIdSwitch>().forEach {
+                                logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
+                                channels = channels - it.oldChannelId + (it.newChannelId to state1)
                             }
                         }
                         msg is HasChannelId && !channels.containsKey(msg.channelId) -> {

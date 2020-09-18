@@ -108,14 +108,17 @@ sealed class ChannelState {
     /**
      * update outgoing messages to include an encrypted backup when necessary
      */
-    fun updateActions(actions: List<ChannelAction>) : List<ChannelAction> = actions.map {
-        when {
-            this is HasCommitments && it is SendMessage && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
-            this is HasCommitments && it is SendMessage && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
-            this is HasCommitments && it is SendMessage && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
-            this is HasCommitments && it is SendMessage && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
-            else -> it
+    fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
+        this is HasCommitments && this.isZeroReserve() -> actions.map {
+            when {
+                it is SendMessage && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                it is SendMessage && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                it is SendMessage && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                it is SendMessage && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                else -> it
+            }
         }
+        else -> actions
     }
 
     @Transient
@@ -127,9 +130,9 @@ interface HasCommitments {
     val channelId: ByteVector32
         get() = commitments.channelId
 
-    fun isZeroReserve(): Boolean = commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
+    fun isZeroReserve(): Boolean = commitments.isZeroReserve
 
-    fun isFunder() : Boolean = commitments.localParams.isFunder
+    fun isFunder(): Boolean = commitments.localParams.isFunder
 
     fun updateCommitments(input: Commitments): HasCommitments
 
@@ -158,9 +161,11 @@ interface HasCommitments {
             return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
         }
 
-        fun deserialize(bin: ByteArray) : HasCommitments {
+        fun deserialize(bin: ByteArray): HasCommitments {
             return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
         }
+
+        fun deserialize(bin: ByteVector): HasCommitments = deserialize(bin.toByteArray())
     }
 }
 
@@ -250,8 +255,8 @@ data class Offline(val state: ChannelState) : ChannelState() {
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
-        return when {
-            event is Connected -> {
+        return when (event) {
+            is Connected -> {
                 when {
                     state is WaitForRemotePublishFutureComitment -> {
                         // they already proved that we have an outdated commitment
@@ -264,11 +269,10 @@ data class Offline(val state: ChannelState) : ChannelState() {
                             nextState.updateActions(listOf(SendMessage(error)))
                         )
                     }
-                    state is HasCommitments && state.commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT) -> {
+                    state is HasCommitments && state.isZeroReserve() -> {
                         logger.info { "syncing $state, waiting fo their channelReestablish message" }
-                        Pair(
-                            Syncing(state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState, true),
-                            listOf())
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        Pair(Syncing(nextState, true), listOf())
                     }
                     state is HasCommitments -> {
                         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
@@ -284,29 +288,36 @@ data class Offline(val state: ChannelState) : ChannelState() {
                             state.commitments.remoteChannelData
                         )
                         logger.info { "syncing $state" }
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
                         Pair(
-                            Syncing(state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState, false),
-                            listOf(SendMessage(channelReestablish)))
+                            Syncing(nextState, false),
+                            nextState.updateActions(listOf(SendMessage(channelReestablish)))
+                        )
                     }
                     else -> {
-                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        logger.warning { "unhandled event $event in state ${this::class}" }
                         Pair(this, listOf())
                     }
                 }
             }
-            event is NewBlock -> {
+            is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
                 Pair(Offline(newState), listOf())
             }
             else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
+                logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
             }
         }
     }
 }
 
+/**
+ * waitForTheirReestablishMessage == true means that we want to wait until we've received their channel_reestablish message before
+ * we send ours (for example, to extract encrypted backup data from extra fields)
+ * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
+ */
 @Serializable
 data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
     override val staticParams: StaticParams
@@ -320,8 +331,47 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
             event is MessageReceived && event.message is ChannelReestablish ->
                 when {
                     waitForTheirReestablishMessage -> {
-                        // TODO: decrypt and restore the channel data that they may have included
-                        Pair(state, listOf())
+                        if (state !is HasCommitments) {
+                            logger.error { "waiting for their channel_reestablish message in a state  that is not valid" }
+                            return Pair(state, listOf())
+                        }
+                        val nextState = if (!event.message.channelData.isEmpty()) {
+                            logger.info { "channel_reestablish includes a peer backup" }
+                            when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {
+                                is Try.Success -> {
+                                    if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
+                                        logger.warning { "they have a more recent commitment, using it instead" }
+                                        decrypted.get()
+                                    } else {
+                                        logger.info { "ignoring their older backup" }
+                                        state
+                                    }
+                                }
+                                is Try.Failure -> {
+                                    logger.error(decrypted.error) { "ignoring unreadable channel data for channelId=${state.channelId}" }
+                                    state
+                                }
+                            }
+                        } else state
+
+                        val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, nextState.commitments.channelVersion)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, nextState.commitments.localCommit.index)
+
+                        val channelReestablish = ChannelReestablish(
+                            channelId = nextState.channelId,
+                            nextLocalCommitmentNumber = nextState.commitments.localCommit.index + 1,
+                            nextRemoteRevocationNumber = nextState.commitments.remoteCommit.index,
+                            yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                            nextState.commitments.remoteChannelData
+                        )
+                        val actions = listOf<ChannelAction>(
+                            SendMessage(channelReestablish)
+                        )
+                        // now apply their reestablish message to the restored state
+                        val (nextState1, actions1) = Syncing(nextState as ChannelState, waitForTheirReestablishMessage = false).process(event)
+                        Pair(nextState1, updateActions(actions + actions1))
                     }
                     state is WaitForFundingConfirmed -> {
                         val minDepth = if (state.commitments.localParams.isFunder) {
@@ -429,7 +479,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                         }
                     }
                     else -> {
-                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        logger.warning { "unhandled event $event in state ${this::class}" }
                         Pair(this, listOf())
                     }
                 }
@@ -439,7 +489,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                 Pair(Syncing(newState, waitForTheirReestablishMessage), listOf())
             }
             else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
+                logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
             }
         }
@@ -544,13 +594,13 @@ data class WaitForOpenChannel(
                         Pair(nextState, listOf(SendMessage(accept)))
                     }
                     else -> {
-                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        logger.warning { "unhandled event $event in state ${this::class}" }
                         Pair(this, listOf())
                     }
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
+                logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
             }
         }
@@ -643,11 +693,8 @@ data class WaitForFundingCreated(
                                 // NB: we don't send a ChannelSignatureSent for the first commit
                                 logger.info { "waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
                                 // phoenix channels have a zero mindepth for funding tx
-                                val fundingMinDepth =
-                                    if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else Helpers.minDepthForFunding(
-                                        staticParams.nodeParams,
-                                        fundingAmount
-                                    )
+                                val fundingMinDepth = if (commitments.isZeroReserve) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, fundingAmount)
+                                logger.info { "$channelId will wait for $fundingMinDepth confirmations" }
                                 val watchSpent = WatchSpent(
                                     channelId,
                                     commitInput.outPoint.txid,

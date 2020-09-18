@@ -13,13 +13,17 @@ import fr.acinq.eclair.wire.*
 import kotlin.test.assertTrue
 
 object TestsHelper {
-    fun reachNormal(currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
+    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
         var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
         var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
         val channelFlags = 0.toByte()
-        val channelVersion = ChannelVersion.STANDARD
-        val aliceInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
-        val bobInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
+        var aliceChannelParams = TestConstants.Alice.channelParams
+        var bobChannelParams = TestConstants.Bob.channelParams
+        if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+            aliceChannelParams = aliceChannelParams.copy(channelReserve = Satoshi(0))
+        }
+        val aliceInit = Init(ByteVector(aliceChannelParams.features.toByteArray()))
+        val bobInit = Init(ByteVector(bobChannelParams.features.toByteArray()))
         var ra = alice.process(
             InitFunder(
                 ByteVector32.Zeroes,
@@ -27,7 +31,7 @@ object TestsHelper {
                 TestConstants.pushMsat,
                 TestConstants.feeratePerKw,
                 TestConstants.feeratePerKw,
-                TestConstants.Alice.channelParams,
+                aliceChannelParams,
                 bobInit,
                 channelFlags,
                 channelVersion
@@ -35,7 +39,7 @@ object TestsHelper {
         )
         alice = ra.first
         assertTrue { alice is WaitForAcceptChannel }
-        var rb = bob.process(InitFundee(ByteVector32.Zeroes, TestConstants.Bob.channelParams, aliceInit))
+        var rb = bob.process(InitFundee(ByteVector32.Zeroes, bobChannelParams, aliceInit))
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
 

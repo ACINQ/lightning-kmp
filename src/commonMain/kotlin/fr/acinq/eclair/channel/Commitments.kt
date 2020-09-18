@@ -104,6 +104,8 @@ data class Commitments(
         }
     }
 
+    val isZeroReserve: Boolean = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
+
     /**
      * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
      * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
@@ -180,6 +182,12 @@ data class Commitments(
                 (balanceNoFees - commitFees - funderFeeReserve - htlcFees).coerceAtLeast(0.msat)
             }
         }
+    }
+
+    fun isMoreRecent(other: Commitments): Boolean {
+        return this.localCommit.index > other.localCommit.index ||
+                this.remoteCommit.index > other.remoteCommit.index ||
+                (this.remoteCommit.index == other.remoteCommit.index && this.remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight)
     }
 
     /**

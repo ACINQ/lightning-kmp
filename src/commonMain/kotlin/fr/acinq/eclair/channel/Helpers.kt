@@ -228,4 +228,8 @@ object Helpers {
         val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
         return HasCommitments.deserialize(plaintext)
     }
+
+    fun decrypt(key: PrivateKey, data: ByteArray): HasCommitments = decrypt(key.value, data)
+
+    fun decrypt(key: PrivateKey, data: ByteVector): HasCommitments = decrypt(key, data.toByteArray())
 }
