@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.Json
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import kotlin.time.ExperimentalTime
+import kotlin.time.seconds
 
 
 /*
@@ -107,17 +109,10 @@ internal object WaitingForTip : ClientState() {
         }
 }
 
-internal data class ClientRunning(val height: Int, val tip: BlockHeader) : ClientState() {
-    /**
-     * Unique ID to match response with origin request
-     */
-    private var currentRequestId = 0
-    val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()
-
+internal data class ClientRunning(val height: Int, val tip: BlockHeader, val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()) : ClientState() {
    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
        is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
        is AskForHeader -> returnState(SendHeader(height, tip))
-       is ElectrumRequest -> returnState(sendRequest(event))
        is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
        is ReceivedResponse -> when (val response = event.response) {
            is Either.Left -> when (val electrumResponse = response.value) {
@@ -129,20 +124,16 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader) : Clien
                else -> returnState()
            }
            is Either.Right -> {
-               returnState(
-                   buildList {
-                       requests[response.value.id]?.let { originRequest ->
-                           add(SendResponse(parseJsonResponse(originRequest, response.value)))
-                       }
-                   }
-               )
+               requests[response.value.id]?.takeUnless { it is Ping }?.let { originRequest ->
+                   returnState(SendResponse(parseJsonResponse(originRequest, response.value)))
+               } ?: returnState()
            }
        }
        else -> unhandled(event)
    }
 
     private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
-        val newRequestId = currentRequestId++
+        val newRequestId = requests.maxOfOrNull { it.key + 1 } ?: 0
         requests[newRequestId] = electrumRequest
         return SendRequest(electrumRequest.asJsonRPCRequest(newRequestId))
     }
@@ -182,7 +173,7 @@ private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder()
 private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
 private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(action)
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
     private val socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
@@ -201,7 +192,9 @@ class ElectrumClient(
 
     private var state: ClientState = ClientClosed
         set(value) {
-            if (value != field) logger.info { "Updated State: $field -> $value" }
+            if (value != field) logger.info { """Updated State: 
+                |prev: $field
+                |new:  $value""".trimMargin() }
             field = value
         }
 
@@ -223,13 +216,7 @@ class ElectrumClient(
                 logger.verbose { "Execute action: $action" }
                 when (action) {
                     is ConnectionAttempt -> connectionJob = establishConnection(action.serverAddress)
-                    is SendRequest -> {
-                        try {
-                            socket.send(action.request.encodeToByteArray())
-                        } catch (ex: TcpSocket.IOException) {
-                            logger.warning { ex.message }
-                        }
-                    }
+                    is SendRequest -> send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> connectedChannel.send(action.connection)
@@ -273,6 +260,14 @@ class ElectrumClient(
         if (this::socket.isInitialized) socket.close()
     }
 
+    private suspend fun send(message: ByteArray) {
+        try {
+            socket.send(message)
+        } catch (ex: TcpSocket.IOException) {
+            logger.warning { ex.message }
+        }
+    }
+
     fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
 
     fun sendMessage(message: ElectrumMessage) {
@@ -288,8 +283,8 @@ class ElectrumClient(
 
     private var pingJob: Job? = null
     private fun pingScheduler() = launch {
-        while (true) {
-            delay(30_000)
+        while (isActive) {
+            delay(30.seconds)
             logger.verbose { "Ping Electrum Server" }
             eventChannel.send(SendElectrumApiCall(Ping))
         }

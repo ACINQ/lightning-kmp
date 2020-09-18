@@ -46,8 +46,8 @@ fun Flow<String>.splitByLines(): Flow<String> =
 
         collect {
             buffer += it
-            val match = lineEnding.find(buffer)
-            if (match != null) {
+            while (true) {
+                val match = lineEnding.find(buffer) ?: break
                 emit(buffer.substring(0, match.range.first))
                 buffer = buffer.substring(match.range.last + 1)
             }

@@ -9,6 +9,7 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
+import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.Connection
 import kotlinx.coroutines.*
@@ -19,26 +20,28 @@ import kotlinx.coroutines.channels.produce
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.absoluteValue
+import kotlin.math.max
 
 sealed class WatcherEvent
 private object StartWatcher: WatcherEvent()
-private class PublishAsapEvent(val publishAsap: PublishAsap) : WatcherEvent()
+public class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
 data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
-private class ReceiveWatch(val watch: Watch) : WatcherEvent()
-private class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
-private class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
-private class ClientStateUpdate(val connection: Connection) : WatcherEvent()
+public class ReceiveWatch(val watch: Watch) : WatcherEvent()
+public class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
+public class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
+public class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
-private sealed class WatcherAction
+internal sealed class WatcherAction
 private object AskForClientStatusUpdate : WatcherAction()
 private object AskForHeaderUpdate : WatcherAction()
-private data class RegisterToScriptHashNotification(val scriptHash: ByteVector32) : WatcherAction()
+internal data class RegisterToScriptHashNotification(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : WatcherAction()
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
-private data class NotifyWatch(val watchEvent: WatchEvent) : WatcherAction()
+private data class NotifyWatch(val watchEvent: WatchEvent, val broadcastNotification: Boolean = true) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
-private data class PublishAsapAction(val publishAsap: PublishAsap) : WatcherAction()
+private data class SetWatchAction(val watch: Watch) : WatcherAction()
+private data class PublishAsapAction(val tx: Transaction) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
 /**
@@ -79,7 +82,8 @@ private data class WatcherDisconnected(
                     newState {
                         state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx, watches = watches))
                         actions = buildList {
-                            publishQueue.forEach { add(PublishAsapAction(it)) }
+                            watches.forEach { add(registerToScriptHash(it)) }
+                            publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.response)) }
                         }
                     }
@@ -88,7 +92,7 @@ private data class WatcherDisconnected(
             }
             is ReceiveWatch -> newState(copy(watches = watches + event.watch))
             is PublishAsapEvent -> {
-                newState(copy(publishQueue = publishQueue + event.publishAsap))
+                newState(copy(publishQueue = publishQueue + PublishAsap(event.tx)))
             }
             is GetTxWithMetaEvent -> {
                 newState(copy(getTxQueue = getTxQueue + (event.request)))
@@ -120,22 +124,28 @@ private data class WatcherRunning(
                         }
 
                         val toPublish = block2tx.filterKeys { it <= newHeight }
-                        val publishAsapActions = toPublish.values.flatten().map { PublishAsapAction(PublishAsap(it)) }
+                        val broadcastTxActions = toPublish.values.flatten().map { BroadcastTxAction(it) }
 
                         newState {
-                            state = copy(height = newHeight, tip = newTip, block2tx = block2tx - toPublish.keys)
-                            actions = scriptHashesActions + publishAsapActions
+                            state = copy(
+                                height = newHeight,
+                                tip = newTip,
+                                block2tx = block2tx - toPublish.keys,
+                                sent = sent + toPublish.values.flatten()
+                            )
+                            actions = scriptHashesActions + broadcastTxActions
                         }
                     }
                     message is ScriptHashSubscriptionResponse -> {
                         val (scriptHash, status) = message
 
+                        val existingStatus = scriptHashStatus[scriptHash]
+
                         newState {
                             state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
                             actions = buildList {
-                                val s = scriptHashStatus[scriptHash]
                                 when {
-                                    s == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
+                                    existingStatus == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
                                     status.isEmpty() -> logger.verbose { "empty status for scriptHash=$scriptHash" }
                                     else -> add(AskForScriptHashHistory(scriptHash))
                                 }
@@ -183,13 +193,14 @@ private data class WatcherRunning(
                                             val (dummyHeight, dummyTxIndex) = makeDummyShortChannelId(w.txId)
                                             notifyWatchConfirmedList.add(
                                                 NotifyWatch(
-                                                    WatchEventConfirmed(
-                                                        ByteVector32.Zeroes, // TODO!
+                                                    watchEvent = WatchEventConfirmed(
+                                                        w.channelId,
                                                         BITCOIN_FUNDING_DEPTHOK,
                                                         dummyHeight,
                                                         dummyTxIndex,
                                                         tx
-                                                    )
+                                                    ),
+                                                    broadcastNotification = w.channelNotification
                                                 )
                                             )
                                             watchConfirmedTriggered.add(w)
@@ -208,7 +219,7 @@ private data class WatcherRunning(
                                 logger.info {
                                     """Tx notification for ${tx.txid}
                                     |txIn: ${tx.txIn}
-                                    |txOut: ${tx.txIn}
+                                    |txOut: ${tx.txOut}
                                     |watches: $watches
                                     |NotifyWatchSpentList: $notifyWatchSpentList
                                     |NotifyWatchConfirmedList: $notifyWatchConfirmedList
@@ -223,27 +234,39 @@ private data class WatcherRunning(
                                 }
                             }
                             is GetTxWithMeta -> {
-                                message.contextOpt.response.complete(GetTxWithMetaResponse(message.tx.txid, message.tx, tip.time))
+                                message.contextOpt.response.complete(
+                                    GetTxWithMetaResponse(
+                                        message.tx.txid,
+                                        message.tx,
+                                        tip.time
+                                    )
+                                )
                                 returnState()
-                            }
-                            message is BroadcastTransactionResponse -> {
-                                val (tx, errorOpt) = message
-                                when  {
-                                    errorOpt == null -> {
-                                        logger.info { "broadcast succeeded for txid=${tx.txid} tx=$tx" }
-                                    }
-                                    errorOpt is Error && errorOpt.message?.contains("transaction already in block chain") == true -> {
-                                        logger.info { "broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)" }
-                                    }
-                                    else -> logger.error {"broadcast failed for txid=${tx.txid} tx=$tx with error=$errorOpt"}
-                                }
-                                newState(copy(sent = ArrayDeque(sent - tx)))
                             }
                             else -> returnState()
                         }
                     }
+                    message is BroadcastTransactionResponse -> {
+                        val (tx, errorOpt) = message
+                        when {
+                            errorOpt == null -> {
+                                logger.info { "broadcast succeeded for txid=${tx.txid} tx=$tx" }
+                            }
+                            errorOpt.message.contains("transaction already in block chain") -> {
+                                logger.info { "broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)" }
+                            }
+                            else -> logger.error { "broadcast failed for txid=${tx.txid} tx=$tx with error=$errorOpt" }
+                        }
+                        newState(copy(sent = ArrayDeque(sent - tx)))
+                    }
                     message is ServerError && message.request is GetTransaction && message.request.contextOpt is GetTxWithMeta -> {
-                        message.request.contextOpt.response.complete(GetTxWithMetaResponse(message.request.txid, null, tip.time))
+                        message.request.contextOpt.response.complete(
+                            GetTxWithMetaResponse(
+                                message.request.txid,
+                                null,
+                                tip.time
+                            )
+                        )
                         returnState()
                     }
                     message is GetMerkleResponse -> {
@@ -254,12 +277,13 @@ private data class WatcherRunning(
                             .filter { it.txId == txid && confirmations >= it.minDepth }
 
                         val notifyWatchConfirmedList = tx?.let {
-                            triggered.map { w ->
-                                logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
-                                NotifyWatch(
-                                    WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx)
-                                )
-                            }
+                             triggered.map { w ->
+                                    logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
+                                    NotifyWatch(
+                                        watchEvent = WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx),
+                                        broadcastNotification = w.channelNotification
+                                    )
+                                }
                         } ?: emptyList()
 
                         newState {
@@ -272,8 +296,7 @@ private data class WatcherRunning(
             }
             is GetTxWithMetaEvent -> returnState(AskForTransaction(event.request.txid, event.request))
             is PublishAsapEvent -> {
-                // TODO to be tested
-                val tx = event.publishAsap.tx
+                val tx = event.tx
                 val blockCount = height
                 val cltvTimeout = Scripts.cltvTimeout(tx)
                 val csvTimeout = Scripts.csvTimeout(tx)
@@ -284,15 +307,17 @@ private data class WatcherRunning(
                         val parentTxid = tx.txIn[0].outPoint.txid
                         logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                        receiveWatch(
-                            WatchConfirmed(ByteVector32.Zeroes, parentTxid,
-                                parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+                        setupWatch(
+                                watch = WatchConfirmed(ByteVector32.Zeroes, parentTxid,
+                                    parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx),
+                                channelNotification = false
+                            )
                         )
                     }
                     cltvTimeout > blockCount -> {
                         logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
                         val updatedBlock2tx = block2tx.toMutableMap()
-                        updatedBlock2tx[cltvTimeout] = block2tx.getOrElse(cltvTimeout) { listOf(tx) }
+                        updatedBlock2tx[cltvTimeout] = block2tx.getOrElse(cltvTimeout) { emptyList() } + tx
                         newState(copy(block2tx = updatedBlock2tx))
                     }
                     else -> {
@@ -304,29 +329,32 @@ private data class WatcherRunning(
                     }
                 }
             }
-            is ReceiveWatch -> receiveWatch(event.watch)
+            is ReceiveWatch -> setupWatch(event.watch)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
-                    // TODO to be tested
-                    val tx = watchEvent.tx
-                    val blockHeight = watchEvent.blockHeight
-                    logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
-                    val blockCount = height
-                    val csvTimeout = Scripts.csvTimeout(tx)
-                    val absTimeout = blockHeight + csvTimeout
-                    if (absTimeout > blockCount) {
-                        logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)" }
-                        val updatedBlock2tx = block2tx.toMutableMap()
-                        updatedBlock2tx[absTimeout] = block2tx.getOrElse(absTimeout) { listOf(tx) }
-                        newState(copy(block2tx = updatedBlock2tx))
-                    } else {
-                        logger.info { "publishing tx=$tx" }
-                        newState {
-                            state = copy(sent = sent + tx)
-                            actions = listOf(BroadcastTxAction(tx))
+                    if (event.watchEvent.event !is BITCOIN_PARENT_TX_CONFIRMED) returnState()
+                    else {
+                        val bitcoinEvent = event.watchEvent.event as BITCOIN_PARENT_TX_CONFIRMED
+                        val tx = bitcoinEvent.childTx
+                        val blockHeight = watchEvent.blockHeight
+                        logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
+                        val blockCount = height
+                        val cltvTimeout = Scripts.cltvTimeout(tx)
+                        val csvTimeout = Scripts.csvTimeout(tx)
+                        val absTimeout = max(blockHeight + csvTimeout, cltvTimeout)
+                        if (absTimeout > blockCount) {
+                            logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)" }
+                            val updatedBlock2tx = block2tx.toMutableMap()
+                            updatedBlock2tx[absTimeout] = block2tx.getOrElse(absTimeout) { emptyList() } + tx
+                            newState(copy(block2tx = updatedBlock2tx))
+                        } else {
+                            logger.info { "publishing tx=$tx" }
+                            newState {
+                                state = copy(sent = sent + tx)
+                                actions = listOf(BroadcastTxAction(tx))
+                            }
                         }
                     }
-                    returnState()
                 }
                 else -> unhandled(event)
             }
@@ -342,27 +370,12 @@ private data class WatcherRunning(
             else -> unhandled(event)
         }
 
-    private fun receiveWatch(watch: Watch) = when (watch) {
+    private fun setupWatch(watch: Watch) = when (watch) {
         in watches -> returnState()
-        is WatchSpent -> {
-            val (_, txid, outputIndex, publicKeyScript, _) = watch
-            val scriptHash = computeScriptHash(publicKeyScript)
-            logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
-            newState {
-                state = copy(watches = watches + watch)
-                actions = listOf(RegisterToScriptHashNotification(scriptHash))
-            }
+        else -> newState {
+            state = copy(watches = watches + watch)
+            actions = actions + registerToScriptHash(watch)
         }
-        is WatchConfirmed -> {
-            val (_, txid, publicKeyScript, _, _) = watch
-            val scriptHash = computeScriptHash(publicKeyScript)
-            logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
-            newState {
-                state = copy(watches = watches + watch)
-                actions = listOf(RegisterToScriptHashNotification(scriptHash))
-            }
-        }
-        else -> returnState()
     }
 }
 
@@ -386,23 +399,31 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
-    private val watchChannel = Channel<Watch>(Channel.BUFFERED)
-    private val watchEventChannel = Channel<WatchEvent>(Channel.BUFFERED)
 
     private val clientConnectedSubscription = client.openConnectedSubscription()
     private val clientNotificationsSubscription = client.openNotificationsSubscription()
 
     private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
-        launch { watchChannel.consumeEach { send(it) } }
-        launch { watchEventChannel.consumeEach { send(it) } }
-        launch { clientConnectedSubscription.consumeEach { send(it) } }
-        launch { clientNotificationsSubscription.consumeEach { send(it) } }
+        launch {
+            clientConnectedSubscription.consumeEach {
+                logger.verbose { "Electrum client connection changed: $it" }
+                eventChannel.send(ClientStateUpdate(it))
+            }
+        }
+        launch {
+            clientNotificationsSubscription.consumeEach {
+                logger.verbose { "Electrum message received: $it" }
+                eventChannel.send(ReceivedMessage(it))
+            }
+        }
     }
 
     private var state: WatcherState = WatcherDisconnected()
         set(value) {
-            if (value != field) logger.info { "Updated State: $field -> $value" }
+            if (value != field) logger.info { """Updated State 
+                |prev: $field 
+                |new:  $value""".trimMargin() }
             field = value
         }
 
@@ -415,53 +436,38 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     private suspend fun run() {
         input.consumeEach { input ->
-            when(input) {
-                is WatcherEvent -> {
-                    logger.info { "Event received: $input" }
+            logger.info { "Event received: $input" }
 
-                    val (newState, actions) = state.process(input)
-                    state = newState
+            val (newState, actions) = state.process(input)
+            state = newState
 
-                    actions.forEach { action ->
-                        yield()
-                        logger.verbose { "Execute action: $action" }
-                        when (action) {
-                            is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
-                            is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
-                            is RegisterToScriptHashNotification -> client.sendElectrumRequest(
-                                ScriptHashSubscription(action.scriptHash)
-                            )
-                            is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.publishAsap))
-                            is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
-                            is AskForScriptHashHistory -> client.sendElectrumRequest(
-                                GetScriptHashHistory(action.scriptHash)
-                            )
-                            is AskForTransaction -> client.sendElectrumRequest(
-                                GetTransaction(action.txid, action.contextOpt)
-                            )
-                            is AskForMerkle -> client.sendElectrumRequest(
-                                GetMerkle(action.txId, action.txheight, action.tx)
-                            )
-                            is NotifyWatch -> notificationsChannel.send(action.watchEvent)
-                            is NotifyTxWithMeta -> TODO("implement this")
-                        }
+            actions.forEach { action ->
+                yield()
+                logger.verbose { "Execute action: $action" }
+                when (action) {
+                    is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
+                    is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
+                    is RegisterToScriptHashNotification -> client.sendElectrumRequest(
+                        ScriptHashSubscription(action.scriptHash)
+                    )
+                    is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.tx))
+                    is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
+                    is AskForScriptHashHistory -> client.sendElectrumRequest(
+                        GetScriptHashHistory(action.scriptHash)
+                    )
+                    is AskForTransaction -> client.sendElectrumRequest(
+                        GetTransaction(action.txid, action.contextOpt)
+                    )
+                    is AskForMerkle -> client.sendElectrumRequest(
+                        GetMerkle(action.txId, action.txheight, action.tx)
+                    )
+                    is NotifyWatch -> {
+                        if (action.broadcastNotification)
+                            notificationsChannel.send(action.watchEvent)
+                        else
+                            eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
-                }
-                is Watch -> {
-                    logger.verbose { "Watch received: $input" }
-                    eventChannel.send(ReceiveWatch(input))
-                }
-                is WatchEvent -> {
-                    logger.verbose { "WatchEvent received: $input" }
-                    eventChannel.send(ReceiveWatchEvent(input))
-                }
-                is ElectrumMessage -> {
-                    logger.verbose { "Electrum message received: $input" }
-                    eventChannel.send(ReceivedMessage(input))
-                }
-                is Connection -> {
-                    logger.verbose { "Electrum client connection changed: $input" }
-                    eventChannel.send(ClientStateUpdate(input))
+                    is NotifyTxWithMeta -> TODO("implement this")
                 }
             }
         }
@@ -472,7 +478,10 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     fun watch(watch: Watch) {
-        launch { watchChannel.send(watch) }
+        launch {
+            logger.verbose { "Watch received: $watch" }
+            eventChannel.send(ReceiveWatch(watch))
+        }
     }
 
     fun stop() {
@@ -485,15 +494,30 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         // Cancel broadcast channel
         notificationsChannel.cancel()
         // Cancel event channels
-        watchEventChannel.cancel()
-        watchChannel.cancel()
         eventChannel.cancel()
-        input.cancel()
     }
 
     companion object {
         // TODO inject
         val logger = LoggerFactory.default.newLogger(Logger.Tag(ElectrumWatcher::class))
+
+        internal fun registerToScriptHash(watch: Watch) = when (watch) {
+            is WatchSpent -> {
+                val (_, txid, outputIndex, publicKeyScript, _) = watch
+                val scriptHash = computeScriptHash(publicKeyScript)
+                logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
+                RegisterToScriptHashNotification(scriptHash)
+            }
+            is WatchConfirmed -> {
+                val (_, txid, publicKeyScript, _, _) = watch
+                val scriptHash = computeScriptHash(publicKeyScript)
+                logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
+                RegisterToScriptHashNotification(scriptHash)
+            }
+            is WatchLost -> TODO("implement this?")
+        }
+
+
         internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {
             // we use a height of 0
             // - to make sure that the tx will be marked as "confirmed"
