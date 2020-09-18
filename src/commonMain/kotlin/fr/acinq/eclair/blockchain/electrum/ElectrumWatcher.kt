@@ -371,6 +371,7 @@ private data class WatcherRunning(
         }
 
     private fun setupWatch(watch: Watch) = when (watch) {
+        is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
         else -> newState {
             state = copy(watches = watches + watch)
