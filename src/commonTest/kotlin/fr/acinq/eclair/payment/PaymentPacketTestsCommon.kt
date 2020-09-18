@@ -256,6 +256,7 @@ class PaymentPacketTestsCommon {
             "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
                 PaymentRequest.TaggedField.PaymentHash(paymentHash),
                 PaymentRequest.TaggedField.PaymentSecret(paymentSecret),
+                PaymentRequest.TaggedField.DescriptionHash(randomBytes32()),
                 PaymentRequest.TaggedField.Features(invoiceFeatures.toByteArray().toByteVector()),
                 PaymentRequest.TaggedField.RoutingInfo(routingHints)
             ), ByteVector.empty
@@ -311,6 +312,7 @@ class PaymentPacketTestsCommon {
             "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
                 PaymentRequest.TaggedField.PaymentHash(paymentHash),
                 PaymentRequest.TaggedField.PaymentSecret(paymentSecret),
+                PaymentRequest.TaggedField.DescriptionHash(randomBytes32()),
                 PaymentRequest.TaggedField.RoutingInfo(routingHintOverflow)
             ), ByteVector.empty
         )
