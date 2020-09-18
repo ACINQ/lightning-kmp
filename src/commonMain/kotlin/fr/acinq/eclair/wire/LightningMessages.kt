@@ -433,14 +433,14 @@ data class FundingSigned(
             return FundingSigned(
                 ByteVector32(bytes(input, 32)),
                 ByteVector64(bytes(input, 64)),
-                ByteVector(bytes(input, input.availableBytes))
+                channelData(input).toByteVector()
             )
         }
 
         override fun write(message: FundingSigned, out: Output) {
             writeBytes(message.channelId, out)
             writeBytes(message.signature, out)
-            writeBytes(message.channelData, out)
+            writeChannelData(message.channelData.toByteArray(), out)
         }
     }
 }
@@ -622,7 +622,7 @@ data class CommitSig(
             for (i in 1..numHtlcs) {
                 htlcSigs += ByteVector64(bytes(input, 64))
             }
-            return CommitSig(channelId, sig, htlcSigs.toList(), ByteVector(bytes(input, input.availableBytes)))
+            return CommitSig(channelId, sig, htlcSigs.toList(), channelData(input).toByteVector())
         }
 
         override fun write(message: CommitSig, out: Output) {
@@ -630,7 +630,7 @@ data class CommitSig(
             writeBytes(message.signature, out)
             writeU16(message.htlcSignatures.size, out)
             message.htlcSignatures.forEach { writeBytes(it, out) }
-            writeBytes(message.channelData, out)
+            writeChannelData(message.channelData, out)
         }
     }
 }
@@ -653,7 +653,7 @@ data class RevokeAndAck(
                 ByteVector32(bytes(input, 32)),
                 PrivateKey(bytes(input, 32)),
                 PublicKey(bytes(input, 33)),
-                ByteVector(bytes(input, input.availableBytes))
+                channelData(input).toByteVector()
             )
         }
 
@@ -661,7 +661,7 @@ data class RevokeAndAck(
             writeBytes(message.channelId, out)
             writeBytes(message.perCommitmentSecret.value, out)
             writeBytes(message.nextPerCommitmentPoint.value, out)
-            writeBytes(message.channelData, out)
+            writeChannelData(message.channelData, out)
         }
     }
 }
@@ -715,7 +715,7 @@ data class ChannelReestablish(
                 u64(input),
                 PrivateKey(bytes(input, 32)),
                 PublicKey(bytes(input, 33)),
-                ByteVector(bytes(input, input.availableBytes))
+                channelData(input).toByteVector()
             )
         }
 
@@ -725,7 +725,7 @@ data class ChannelReestablish(
             writeU64(message.nextRemoteRevocationNumber, out)
             writeBytes(message.yourLastCommitmentSecret.value, out)
             writeBytes(message.myCurrentPerCommitmentPoint.value, out)
-            writeBytes(message.channelData, out)
+            writeChannelData(message.channelData, out)
         }
     }
 }
@@ -886,14 +886,14 @@ data class Shutdown(
             return Shutdown(
                 ByteVector32(bytes(input, 32)),
                 ByteVector(bytes(input, u16(input))),
-                ByteVector(bytes(input, input.availableBytes))
+                channelData(input).toByteVector()
             )
         }
 
         override fun write(message: Shutdown, out: Output) {
             writeBytes(message.channelId, out)
             writeU16(message.scriptPubKey.size(), out)
-            writeBytes(message.channelData, out)
+            writeChannelData(message.channelData, out)
         }
     }
 }
@@ -916,7 +916,7 @@ data class ClosingSigned(
                 ByteVector32(bytes(input, 32)),
                 Satoshi(u64(input)),
                 ByteVector64(bytes(input, 64)),
-                ByteVector(bytes(input, input.availableBytes))
+                channelData(input).toByteVector()
             )
         }
 
@@ -924,8 +924,7 @@ data class ClosingSigned(
             writeBytes(message.channelId, out)
             writeU64(message.feeSatoshis.toLong(), out)
             writeBytes(message.signature, out)
-            writeBytes(message.channelData, out)
+            writeChannelData(message.channelData, out)
         }
     }
-
 }

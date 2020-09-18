@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.utils.leftPaddedCopyOf
+import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlin.jvm.JvmStatic
 
@@ -270,6 +271,25 @@ abstract class LightningSerializer<T> {
         fun <T> writeCollection(seq: List<T>, output: Output, writer: (T, Output) -> Unit) {
             writeBigSize(seq.size.toLong(), output)
             seq.forEach { writer.invoke(it, output) }
+        }
+
+        private val channelDataMagic = Hex.decode("fe 47010000").toByteVector()
+
+        fun writeChannelData(msg: ByteArray, out: Output): Unit {
+            if (msg.isEmpty()) return
+            out.write(channelDataMagic.toByteArray())
+            writeBigSize(msg.size.toLong(), out)
+            writeBytes(msg, out)
+        }
+
+        fun writeChannelData(msg: ByteVector, out: Output) = writeChannelData(msg.toByteArray(), out)
+
+        fun channelData(input: Input) : ByteArray {
+            if (input.availableBytes <=5) return ByteArray(0)
+            val magic = bytes(input, 5)
+            if (!channelDataMagic.contentEquals(magic)) return ByteArray(0)
+            val length = bigSize(input)
+            return bytes(input, length)
         }
     }
 }
