@@ -46,8 +46,11 @@ sealed class ChannelTlv : Tlv {
             override val tag: Long
                 get() = 0x47000000L
 
+            // ChannelVersion is not a real TLV, it's missing a L field
+            override val willHandleLength = true
+
             override fun read(input: Input): ChannelVersionTlv {
-                val len = bigSize(input)
+                val len = 4 // len is missing, value is always 4 bytes
                 val buffer = bytes(input, len)
                 return ChannelVersionTlv(ChannelVersion(BitField.from(buffer)))
             }
