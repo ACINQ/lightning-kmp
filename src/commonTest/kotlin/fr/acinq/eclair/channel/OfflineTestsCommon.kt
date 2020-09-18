@@ -71,7 +71,7 @@ class OfflineTestsCommon {
     fun `re-send update and sig after first commitment`() {
         var (alice, bob) = TestsHelper.reachNormal()
         run {
-            val (alice1, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC(1000000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))))
+            val (alice1, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC(1000000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())))
             alice = alice1 as Normal
             val add = actions.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<UpdateAddHtlc>().first()
             val (bob1, actions2) = bob.process(MessageReceived(add))

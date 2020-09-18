@@ -29,18 +29,6 @@ import kotlinx.serialization.Serializable
        "Y8888P"   "Y88888P"  888       888 888       888 d88P     888 888    Y888 8888888P"   "Y8888P"
  */
 
-sealed class Upstream {
-    /** Our node is the origin of the payment. */
-    data class Local(val id: UUID) : Upstream()
-    /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-    data class Relayed(val add: UpdateAddHtlc) : Upstream()
-    /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
-    data class TrampolineRelayed(val adds: List<UpdateAddHtlc>) : Upstream() {
-        val amountIn: MilliSatoshi = adds.map { it.amountMsat }.sum()
-        val expiryIn: CltvExpiry = adds.map { it.cltvExpiry }.minOrNull()!!
-    }
-}
-
 sealed class Command
 sealed class HasHtlcId : Command() { abstract val id: Long }
 data class CMD_FULFILL_HTLC(override val id: Long, val r: ByteVector32, val commit: Boolean = false) : HasHtlcId()
@@ -51,7 +39,7 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
     }
 }
 data class CMD_FAIL_MALFORMED_HTLC(override val id: Long, val onionHash: ByteVector32, val failureCode: Int, val commit: Boolean = false) : HasHtlcId()
-data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val upstream: Upstream, val commit: Boolean = false, val previousFailures: List<AddHtlcFailed> = emptyList()) : Command()
+data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val id: UUID, val commit: Boolean = false, val previousFailures: List<AddHtlcFailed> = emptyList()) : Command()
 data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
 object CMD_SIGN : Command()
 data class CMD_CLOSE(val scriptPubKey: ByteVector?) : Command()
@@ -59,7 +47,6 @@ data class CMD_UPDATE_RELAY_FEE(val feeBase: MilliSatoshi, val feeProportionalMi
 object CMD_FORCECLOSE : Command()
 object CMD_GETSTATE : Command()
 object CMD_GETSTATEDATA : Command()
-
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
@@ -95,7 +82,6 @@ data class RemoteParams(
     @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
     val features: Features
 )
-
 
 @Serializable
 data class ChannelVersion(val bits: BitField) {

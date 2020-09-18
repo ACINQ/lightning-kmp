@@ -489,7 +489,7 @@ class Peer(
                         }
                         // one hop: this a direct payment to our peer
                         val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, channel.channelUpdate))
-                        val (cmd, _) = OutgoingPacket.buildCommand(Upstream.Local(paymentId), event.paymentRequest.paymentHash!!, hops, finalPayload)
+                        val (cmd, _) = OutgoingPacket.buildCommand(paymentId, event.paymentRequest.paymentHash!!, hops, finalPayload)
                         val (state1, actions) = channel.process(ExecuteCommand(cmd))
                         channels = channels + (channel.channelId to state1)
                         send(actions)
