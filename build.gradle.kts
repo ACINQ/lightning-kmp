@@ -163,12 +163,12 @@ val dockerTestEnv by tasks.creating(Exec::class) {
     }
 }
 
-val excludeIntegrationTests = project.findProperty("integrationTests") == "exclude"
+val includeIntegrationTests = project.findProperty("integrationTests") == "include"
 tasks.withType<AbstractTestTask> {
-    if (excludeIntegrationTests) {
-        filter.excludeTestsMatching("*IntegrationTest")
-    } else {
+    if (includeIntegrationTests) {
         dependsOn(dockerTestEnv)
+    } else {
+        filter.excludeTestsMatching("*IntegrationTest")
     }
 }
 
