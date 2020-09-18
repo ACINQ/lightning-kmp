@@ -23,6 +23,10 @@ abstract class LightningSerializer<T> {
 
     abstract val tag: Long
 
+    // set this to true if your serializer will handle reading/writing its own length
+    // this should * never * be needed, unless you added a TLV extension that is not a real TLV but rather a TV, which would be a protocol violation
+    open val willHandleLength: Boolean = false
+
     fun read(input: ByteArray): T = read(ByteArrayInput(input))
 
     /**
