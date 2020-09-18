@@ -11,6 +11,7 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.PaymentHandler
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.*
@@ -69,7 +70,7 @@ class Peer(
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
     // channels map, indexed by channel id
-    // note that a channel starts with a temporary id then switchs to its final id once the funding tx is known
+    // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     private var channels by channelsChannel
     private var connected by connectedChannel
 
@@ -78,6 +79,9 @@ class Peer(
 
     // pending outgoing payments, indexed by payment payment hash
     private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
+
+    // encapsulates logic for validating payments
+    private val paymentHandler = PaymentHandler(nodeParams)
 
     private val features = Features(
         setOf(
@@ -293,6 +297,16 @@ class Peer(
     private suspend fun run() {
         logger.info { "peer is active" }
         for (event in input) {
+            processEvent(event)
+        }
+    }
+
+    private suspend fun processEvent(event: PeerEvent) {
+
+        // Note: Yes, this needs its indentation fixed.
+        // But I wanted to do that in a separate commit.
+        // Otherwise it would be hard to follow the **logical** changes I made.
+
             when {
                 event is BytesReceived -> {
                     val msg = LightningMessage.decode(event.data)
@@ -399,20 +413,28 @@ class Peer(
                             sendToSelf(msg.channelId, actions)
                             actions.forEach {
                                 when {
-                                    it is ProcessAdd && !pendingIncomingPayments.containsKey(it.add.paymentHash) -> {
-                                        logger.warning { "received ${it.add} } for which we don't have a preimage" }
-                                    }
                                     it is ProcessAdd -> {
-                                        val payment = pendingIncomingPayments[it.add.paymentHash]!!
-                                        // TODO: check that we've been paid what we asked for
-                                        logger.info { "received ${it.add} for $payment" }
-                                        input.send(
-                                            WrappedChannelEvent(
-                                                msg.channelId,
-                                                ExecuteCommand(CMD_FULFILL_HTLC(it.add.id, payment.paymentPreimage, commit = true))
-                                            )
-                                        )
-                                        listenerEventChannel.send(PaymentReceived(payment))
+                                        val htlc = it.add
+                                        val invoice = pendingIncomingPayments[htlc.paymentHash]
+
+                                        if (invoice == null) {
+                                            logger.warning { "received ${htlc} } for which we don't have a preimage" }
+                                            return
+                                        }
+
+                                        val result = paymentHandler.processAdd(htlc, invoice)
+
+                                        if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED ||
+                                            result.status == PaymentHandler.ProcessedStatus.REJECTED)
+                                        {
+                                            pendingIncomingPayments.remove(htlc.paymentHash)
+                                        }
+                                        if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED) {
+                                            listenerEventChannel.send(PaymentReceived(invoice))
+                                        }
+                                        for (action in result.actions) {
+                                            input.send(action)
+                                        }
                                     }
                                     it is ProcessFulfill && !pendingOutgoingPayments.containsKey(it.fulfill.paymentPreimage.sha256()) -> {
                                         logger.warning { "received ${it.fulfill} } for which we don't have a payment hash" }
@@ -519,6 +541,5 @@ class Peer(
                     sendToSelf(event.channelId, actions)
                 }
             }
-        }
     }
 }
