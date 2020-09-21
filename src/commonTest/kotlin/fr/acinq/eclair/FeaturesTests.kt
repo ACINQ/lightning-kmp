@@ -13,17 +13,21 @@ class FeaturesTests {
         assertTrue(!Features(byteArrayOf(0x08)).hasFeature(Feature.InitialRoutingSync, FeatureSupport.Mandatory))
     }
 
-    @Test fun `'data_loss_protect' feature`() {
+    @Test
+    fun `'data_loss_protect' feature`() {
         assertTrue(Features(byteArrayOf(0x01)).hasFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory))
         assertTrue(Features(byteArrayOf(0x02)).hasFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional))
     }
 
-    @Test fun `'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features`() {
-        val features = Features(setOf(
-            ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
-            ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)
-        ))
+    @Test
+    fun `'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features`() {
+        val features = Features(
+            setOf(
+                ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
+                ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)
+            )
+        )
         assertTrue(features.toByteArray().contentEquals(byteArrayOf(0x01, 0x0a)))
         assertTrue(areSupported(features))
         assertTrue(features.hasFeature(Feature.OptionDataLossProtect))
@@ -31,14 +35,16 @@ class FeaturesTests {
         assertTrue(features.hasFeature(Feature.VariableLengthOnion))
     }
 
-    @Test fun `'variable_length_onion' feature`() {
+    @Test
+    fun `'variable_length_onion' feature`() {
         assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(Feature.VariableLengthOnion))
         assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))
         assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(Feature.VariableLengthOnion))
         assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))
     }
 
-    @Test fun `features dependencies`() {
+    @Test
+    fun `features dependencies`() {
         val testCases = mapOf(
             BitField.fromBin("                        ") to true,
             BitField.fromBin("                00000000") to true,
@@ -48,15 +54,15 @@ class FeaturesTests {
             BitField.fromBin("000000000000010000000000") to false,
             BitField.fromBin("000000000000100010000000") to true,
             BitField.fromBin("000000000000100001000000") to true,
-            // payment_secret depends on var_onion_optin, but we allow not setting it to be compatible with Phoenix
-            BitField.fromBin("000000001000000000000000") to true,
-            BitField.fromBin("000000000100000000000000") to true,
+            // payment_secret depends on var_onion_optin
+            BitField.fromBin("000000001000000000000000") to false,
+            BitField.fromBin("000000000100000000000000") to false,
             BitField.fromBin("000000000100001000000000") to true,
             // basic_mpp depends on payment_secret
             BitField.fromBin("000000100000000000000000") to false,
             BitField.fromBin("000000010000000000000000") to false,
-            BitField.fromBin("000000101000000000000000") to true, // we allow not setting var_onion_optin
-            BitField.fromBin("000000011000000000000000") to true, // we allow not setting var_onion_optin
+            BitField.fromBin("000000101000000000000000") to false,
+            BitField.fromBin("000000011000000000000000") to false,
             BitField.fromBin("000000011000001000000000") to true,
             BitField.fromBin("000000100100000100000000") to true
         )
@@ -72,7 +78,8 @@ class FeaturesTests {
         }
     }
 
-    @Test fun `features compatibility`() {
+    @Test
+    fun `features compatibility`() {
         assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional)))))
         assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory)))))
         assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional)))))
@@ -115,7 +122,8 @@ class FeaturesTests {
         }
     }
 
-    @Test fun `features to bytes`() {
+    @Test
+    fun `features to bytes`() {
         val testCases = mapOf(
             byteArrayOf() to Features.empty,
             byteArrayOf(0x01, 0x00) to Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
@@ -135,7 +143,7 @@ class FeaturesTests {
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)
                 ),
-                setOf(UnknownFeature(24), UnknownFeature(27) )
+                setOf(UnknownFeature(24), UnknownFeature(27))
             ),
             byteArrayOf(0x52, 0x00, 0x00, 0x00) to Features(
                 emptySet(),

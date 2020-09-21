@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.filterIsInstance
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
-
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
@@ -217,7 +216,7 @@ class Peer(
 
     private suspend fun send(actions: List<ChannelAction>) {
         actions.forEach {
-            when  {
+            when {
                 it is SendMessage -> {
                     val encoded = LightningMessage.encode(it.message)
                     encoded?.let { bin ->
@@ -302,13 +301,13 @@ class Peer(
                             logger.info { "received $msg" }
                             theirInit = msg
                             connected = Connection.ESTABLISHED
-                            logger.info {  "before channels: $channels" }
+                            logger.info { "before channels: $channels" }
                             channels = channels.mapValues { entry ->
                                 val (state1, actions) = entry.value.process(Connected(ourInit, theirInit!!))
                                 send(actions)
                                 state1
                             }
-                            logger.info {  "after channels: $channels" }
+                            logger.info { "after channels: $channels" }
                         }
                         msg is Ping -> {
                             logger.info { "received $msg" }
@@ -446,14 +445,11 @@ class Peer(
                 //
                 event is ReceivePayment -> {
                     logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
-                    val pr = PaymentRequest(
-                        "lnbcrt", event.amount, currentTimestampSeconds(), nodeParams.nodeId,
-                        listOf(
-                            PaymentRequest.TaggedField.PaymentHash(event.paymentHash),
-                            PaymentRequest.TaggedField.Description(event.description)
-                        ),
-                        ByteVector.empty
-                    ).sign(nodeParams.privateKey)
+                    val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional))
+                    if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
+                        invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
+                    }
+                    val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.privateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
                     logger.info { "payment request ${pr.write()}" }
                     pendingIncomingPayments[event.paymentHash] = event
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
@@ -483,7 +479,7 @@ class Peer(
                         val expiryDelta = CltvExpiryDelta(35) // TODO: read value from payment request
                         val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
                         val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
-                        val finalPayload = when(isDirectPayment) {
+                        val finalPayload = when (isDirectPayment) {
                             true -> FinalPayload.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
                             false -> TODO("implement trampoline payment")
                         }
