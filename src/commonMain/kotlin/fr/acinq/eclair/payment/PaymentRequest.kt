@@ -41,6 +41,8 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         else -> timestamp + expiry <= currentTimestampSeconds()
     }
 
+    private fun hrp() = prefix + encodeAmount(amount)
+
     private fun rawData(): List<Int5> {
         val data5 = ArrayList<Int5>()
         data5.addAll(encodeTimestamp(timestamp))
@@ -55,7 +57,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         return data5
     }
 
-    private fun signedData(): ByteArray {
+    private fun signedPreimage(): ByteArray {
         val stream = BitStream()
         rawData().forEach {
             val bits = toBits(it)
@@ -64,9 +66,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         return hrp().encodeToByteArray() + stream.getBytes()
     }
 
-    private fun hrp() = prefix + encodeAmount(amount)
-
-    fun hash(): ByteVector32 = Crypto.sha256(signedData()).toByteVector32()
+    private fun signedHash(): ByteVector32 = Crypto.sha256(signedPreimage()).toByteVector32()
 
     /**
      * Sign a payment request.
@@ -76,7 +76,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
      */
     fun sign(privateKey: PrivateKey): PaymentRequest {
         require(privateKey.publicKey() == nodeId) { "private key does not match node id" }
-        val msg = hash()
+        val msg = signedHash()
         val sig = Crypto.sign(msg, privateKey)
         val (pub1, _) = Crypto.recoverPublicKey(sig, msg.toByteArray())
         val recid = if (nodeId == pub1) 0.toByte() else 1.toByte()
@@ -197,7 +197,7 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
 
             loop(data.drop(7).dropLast(104))
             val pr = PaymentRequest(prefix, amount, timestamp, nodeId, tags, sigandrecid.toByteVector())
-            require(pr.signedData().contentEquals(tohash))
+            require(pr.signedPreimage().contentEquals(tohash))
             return pr
         }
 
