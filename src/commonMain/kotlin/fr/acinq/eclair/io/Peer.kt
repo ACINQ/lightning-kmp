@@ -41,9 +41,14 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
-data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
+data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
 data class SendingPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 data class PaymentSent(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
+
+data class IncomingPayment(
+    val paymentRequest: PaymentRequest,
+    val paymentPreimage: ByteVector32
+)
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -75,7 +80,7 @@ class Peer(
     private var connected by connectedChannel
 
     // pending incoming payments, indexed by payment hash
-    private val pendingIncomingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
+    private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
     // pending outgoing payments, indexed by payment payment hash
     private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
@@ -415,14 +420,9 @@ class Peer(
                                 when {
                                     it is ProcessAdd -> {
                                         val htlc = it.add
-                                        val invoice = pendingIncomingPayments[htlc.paymentHash]
+                                        val incomingPayment = pendingIncomingPayments[htlc.paymentHash]
 
-                                        if (invoice == null) {
-                                            logger.warning { "received ${htlc} } for which we don't have a preimage" }
-                                            return
-                                        }
-
-                                        val result = paymentHandler.processAdd(htlc, invoice)
+                                        val result = paymentHandler.processAdd(htlc, incomingPayment)
 
                                         if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED ||
                                             result.status == PaymentHandler.ProcessedStatus.REJECTED)
@@ -430,7 +430,8 @@ class Peer(
                                             pendingIncomingPayments.remove(htlc.paymentHash)
                                         }
                                         if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED) {
-                                            listenerEventChannel.send(PaymentReceived(invoice))
+                                            require(incomingPayment != null)
+                                            listenerEventChannel.send(PaymentReceived(incomingPayment))
                                         }
                                         for (action in result.actions) {
                                             input.send(action)
@@ -473,7 +474,7 @@ class Peer(
                     }
                     val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.privateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
                     logger.info { "payment request ${pr.write()}" }
-                    pendingIncomingPayments[event.paymentHash] = event
+                    pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 }
                 //

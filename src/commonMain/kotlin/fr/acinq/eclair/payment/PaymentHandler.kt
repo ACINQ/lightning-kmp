@@ -6,6 +6,7 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.*
+import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
@@ -34,48 +35,127 @@ class PaymentHandler(
 	 */
 	fun processAdd(
 		htlc: UpdateAddHtlc,
-		receive: ReceivePayment
+		incomingPayment: IncomingPayment?
 
 	): ProcessAddResult
 	{
-		// First we check to see if this is a multipart payment
+		// BOLT 04:
+		//
+		// - if the payment hash is unknown:
+		//   - MUST fail the HTLC.
+		//   - MUST return an incorrect_or_unknown_payment_details error.
 
-		val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)
-		val onion = decrypted.right
-		if ((onion != null) && (onion.totalAmount > onion.amount)) {
+		if (incomingPayment == null) {
+
+			logger.warning { "received ${htlc} } for which we don't have a preimage" }
+
+			val msg = IncorrectOrUnknownPaymentDetails(amount = MilliSatoshi(0), height = 0)
+			val action = actionForFailureMessage(msg, htlc)
+
+			return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
+		}
+
+		// Try to decrypt to onion
+		when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
+
+			is Either.Left -> { // Unable to decrypt onion
+
+				val failureMessage = decrypted.value
+				val action = actionForFailureMessage(failureMessage, htlc)
+
+				return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
+			}
+			is Either.Right -> {
+
+				val onion = decrypted.value
+				return processAdd(htlc, onion, incomingPayment)
+			}
+		}
+	}
+
+	private fun processAdd(
+		htlc: UpdateAddHtlc,
+		onion: FinalPayload,
+		incomingPayment: IncomingPayment
+
+	): ProcessAddResult
+	{
+		// BOLT 04:
+		//
+		// - if the payment_secret doesn't match the expected value for that payment_hash,
+		//   or the payment_secret is required and is not present:
+		//   - MUST fail the HTLC.
+		//   - MUST return an incorrect_or_unknown_payment_details error.
+		//
+		//   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
+
+		val paymentSecret_expected = incomingPayment.paymentRequest.paymentSecret
+		if (paymentSecret_expected != null) {
+
+			val paymentSecret_received = onion.paymentSecret
+			if (paymentSecret_received == null || paymentSecret_received != paymentSecret_expected) {
+
+				val msg = IncorrectOrUnknownPaymentDetails(amount = onion.amount, height = 0)
+				val action = actionForFailureMessage(msg, htlc)
+
+				return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
+			}
+		}
+
+		if (onion.totalAmount > onion.amount) {
 
 			// This is a multipart payment.
 			// Forward to alternative logic handler.
 
-			return processMpp(htlc, onion, receive)
+			return processMpp(htlc, onion, incomingPayment)
 		}
 
-		val actions = mutableListOf<PeerEvent>()
+		// BOLT 04:
+		//
+		// - if the amount paid is less than the amount expected:
+		//   - MUST fail the HTLC.
+		//   - MUST return an incorrect_or_unknown_payment_details error.
+		//
+		// - if the amount paid is more than twice the amount expected:
+		//   - SHOULD fail the HTLC.
+		//   - SHOULD return an incorrect_or_unknown_payment_details error.
+		//
+		//   Note: this allows the origin node to reduce information leakage by altering
+		//   the amount while not allowing for accidental gross overpayment.
 
-		// TODO: check that we've been paid what we asked for
-		logger.info { "received ${htlc} for ${receive}" }
-		actions.add(
-			WrappedChannelEvent(
-				htlc.channelId,
-				ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, receive.paymentPreimage, commit = true))
-			)
+		val amount_expected = incomingPayment.paymentRequest.amount
+		val amount_received = onion.amount
+
+		if (amount_expected != null) { // invoice amount may have been unspecified
+
+			if ((amount_received < amount_expected) || (amount_received > amount_expected * 2)) {
+
+				logger.warning { "received invalid amount: ${amount_received}, expected: ${amount_expected}" }
+
+				val msg = IncorrectOrUnknownPaymentDetails(amount = onion.amount, height = 0)
+				val action = actionForFailureMessage(msg, htlc)
+
+				return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
+			}
+		}
+
+		logger.info { "received ${htlc} for ${incomingPayment.paymentRequest}" }
+		val action = WrappedChannelEvent(
+			channelId = htlc.channelId,
+			channelEvent = ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, incomingPayment.paymentPreimage, commit = true))
 		)
 
-		return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = actions)
+		return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = listOf(action))
 	}
 
 	private fun processMpp(
 		htlc: UpdateAddHtlc,
 		onion: FinalPayload,
-		receive: ReceivePayment
+		incomingPayment: IncomingPayment
 
 	): ProcessAddResult
 	{
 		val actions = mutableListOf<PeerEvent>()
-
-		// Todo:
-		// - Verify that the htlc.paymentSecret matches our invoice.paymentSecret
-		// - if not, then we reject the htlc
 
 		// Add <htlc, onion> tuple to pending set.
 		//
@@ -107,17 +187,12 @@ class PaymentHandler(
 			for (part in parts) {
 
 				val msg = FinalIncorrectHtlcAmount(amount = mismatch_amount)
-				val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
+				actions += actionForFailureMessage(msg, htlc)
+			}
 
-				val cmd = CMD_FAIL_HTLC(
-					id = part.htlc.id,
-					reason = reason,
-					commit = true
-				)
-				val channelEvent = ExecuteCommand(command = cmd)
-				val wrapper = WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
-
-				actions.add(wrapper)
+			logger.warning {
+				"Discovered htlc set total_msat_mismatch."+
+				" Failing entire set with paymentHash = ${incomingPayment.paymentRequest.paymentHash}"
 			}
 
 			pending.remove(htlc.paymentHash)
@@ -149,7 +224,7 @@ class PaymentHandler(
 
 			val cmd = CMD_FULFILL_HTLC(
 				id = part.htlc.id,
-				r = receive.paymentPreimage,
+				r = incomingPayment.paymentPreimage,
 				commit = true
 			)
 			val channelEvent = ExecuteCommand(command = cmd)
@@ -160,5 +235,25 @@ class PaymentHandler(
 
 		pending.remove(htlc.paymentHash)
 		return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = actions)
+	}
+
+	private fun actionForFailureMessage(
+		msg: FailureMessage,
+		htlc: UpdateAddHtlc,
+		commit: Boolean = true
+
+	): WrappedChannelEvent
+	{
+		val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
+
+		val cmd = CMD_FAIL_HTLC(
+			id = htlc.id,
+			reason = reason,
+			commit = commit
+		)
+		val channelEvent = ExecuteCommand(command = cmd)
+		val wrapper = WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
+
+		return wrapper
 	}
 }
