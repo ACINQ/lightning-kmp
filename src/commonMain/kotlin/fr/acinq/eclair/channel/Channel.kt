@@ -255,8 +255,8 @@ data class Offline(val state: ChannelState) : ChannelState() {
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
-        return when (event) {
-            is Connected -> {
+        return when {
+            event is Connected -> {
                 when {
                     state is WaitForRemotePublishFutureComitment -> {
                         // they already proved that we have an outdated commitment
@@ -300,7 +300,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                     }
                 }
             }
-            is NewBlock -> {
+            event is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
                 Pair(Offline(newState), listOf())

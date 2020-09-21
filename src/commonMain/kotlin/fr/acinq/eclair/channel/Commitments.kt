@@ -104,7 +104,8 @@ data class Commitments(
         }
     }
 
-    val isZeroReserve: Boolean = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
+    val isZeroReserve: Boolean
+        get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
 
     /**
      * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
