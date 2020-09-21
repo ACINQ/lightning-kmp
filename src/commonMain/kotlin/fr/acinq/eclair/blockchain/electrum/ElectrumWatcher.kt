@@ -40,7 +40,6 @@ private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
 private data class NotifyWatch(val watchEvent: WatchEvent, val broadcastNotification: Boolean = true) : WatcherAction()
 private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
-private data class SetWatchAction(val watch: Watch) : WatcherAction()
 private data class PublishAsapAction(val tx: Transaction) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
@@ -82,7 +81,7 @@ private data class WatcherDisconnected(
                     newState {
                         state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx, watches = watches))
                         actions = buildList {
-                            watches.forEach { add(registerToScriptHash(it)) }
+                            watches.mapNotNull { registerToScriptHash(it) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.response)) }
                         }
@@ -374,7 +373,7 @@ private data class WatcherRunning(
         in watches -> returnState()
         else -> newState {
             state = copy(watches = watches + watch)
-            actions = actions + registerToScriptHash(watch)
+            actions = registerToScriptHash(watch)?.let { this.actions + it } ?: actions
         }
     }
 }
@@ -501,7 +500,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         // TODO inject
         val logger = LoggerFactory.default.newLogger(Logger.Tag(ElectrumWatcher::class))
 
-        internal fun registerToScriptHash(watch: Watch) = when (watch) {
+        internal fun registerToScriptHash(watch: Watch): WatcherAction? = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch
                 val scriptHash = computeScriptHash(publicKeyScript)
@@ -514,7 +513,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
                 logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
                 RegisterToScriptHashNotification(scriptHash)
             }
-            is WatchLost -> TODO("implement this?")
+            else -> null
         }
 
 
