@@ -91,7 +91,7 @@ object TestsHelper {
         return Pair(alice as Normal, bob as Normal)
     }
 
-    inline fun <reified T : LightningMessage> findOutgoingMessage(input: List<ChannelAction>): LightningMessage {
+    inline fun <reified T : LightningMessage> findOutgoingMessage(input: List<ChannelAction>): T {
         val candidates = input.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
         if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
         return candidates.first()
