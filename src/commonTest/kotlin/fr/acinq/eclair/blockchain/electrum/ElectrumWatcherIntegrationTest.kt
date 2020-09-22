@@ -3,19 +3,25 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.utils.ServerAddress
-import fr.acinq.eclair.utils.*
+import fr.acinq.eclair.utils.bitcoind.BitcoindService
+import fr.acinq.eclair.utils.currentTimestampSeconds
+import fr.acinq.eclair.utils.runTest
+import fr.acinq.eclair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.consume
-import kotlinx.coroutines.flow.*
-import kotlin.test.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
-import kotlin.time.minutes
 import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)

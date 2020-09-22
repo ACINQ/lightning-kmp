@@ -7,3 +7,8 @@ pluginManagement {
         jcenter()
     }
 }
+
+include(
+    ":",
+    ":utils:bitcoin-json-rpc"
+)
