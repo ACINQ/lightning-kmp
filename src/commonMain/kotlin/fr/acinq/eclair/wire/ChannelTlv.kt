@@ -37,6 +37,32 @@ sealed class ChannelTlv : Tlv {
     }
 
     @Serializable
+    data class ChannelVersionTlvLegacy(val channelVersion: ChannelVersion) : ChannelTlv(), LightningSerializable<ChannelVersionTlvLegacy> {
+        override fun serializer(): LightningSerializer<ChannelVersionTlvLegacy> = ChannelVersionTlvLegacy
+        override val tag: Long
+            get() = serializer().tag
+
+        companion object: LightningSerializer<ChannelVersionTlvLegacy>() {
+            override val tag: Long
+                get() = 0x47000000L
+
+            // ChannelVersion is not a real TLV, it's missing a L field
+            override val willHandleLength = true
+
+            override fun read(input: Input): ChannelVersionTlvLegacy {
+                val len = 4 // len is missing, value is always 4 bytes
+                val buffer = bytes(input, len)
+                return ChannelVersionTlvLegacy(ChannelVersion(BitField.from(buffer)))
+            }
+
+            override fun write(message: ChannelVersionTlvLegacy, out: Output) {
+                writeBigSize(4L, out)
+                writeBytes(message.channelVersion.bits.bytes, out)
+            }
+        }
+    }
+
+    @Serializable
     data class ChannelVersionTlv(val channelVersion: ChannelVersion) : ChannelTlv(), LightningSerializable<ChannelVersionTlv> {
         override fun serializer(): LightningSerializer<ChannelVersionTlv> = ChannelVersionTlv
         override val tag: Long
@@ -44,19 +70,18 @@ sealed class ChannelTlv : Tlv {
 
         companion object: LightningSerializer<ChannelVersionTlv>() {
             override val tag: Long
-                get() = 0x47000000L
+                get() = 0x47000001L
 
-            // ChannelVersion is not a real TLV, it's missing a L field
-            override val willHandleLength = true
+            override val willHandleLength = false
 
             override fun read(input: Input): ChannelVersionTlv {
-                val len = 4 // len is missing, value is always 4 bytes
+                val len = input.availableBytes
                 val buffer = bytes(input, len)
                 return ChannelVersionTlv(ChannelVersion(BitField.from(buffer)))
             }
 
             override fun write(message: ChannelVersionTlv, out: Output) {
-                TODO()
+                out.write(message.channelVersion.bits.bytes)
             }
         }
     }

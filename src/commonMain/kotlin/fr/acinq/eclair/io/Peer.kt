@@ -445,7 +445,7 @@ class Peer(
                     if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
                         invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
                     }
-                    val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.privateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
+                    val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
                     logger.info { "payment request ${pr.write()}" }
                     pendingIncomingPayments[event.paymentHash] = event
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
