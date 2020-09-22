@@ -55,7 +55,7 @@ class PaymentHandler(
 			return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
 		}
 
-		// Try to decrypt to onion
+		// Try to decrypt the onion
 		when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
 
 			is Either.Left -> { // Unable to decrypt onion
