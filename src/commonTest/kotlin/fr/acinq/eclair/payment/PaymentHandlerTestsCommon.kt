@@ -45,13 +45,7 @@ class PaymentHandlerTestsCommon {
 		)
 		val channelHop = ChannelHop(dummyKey, destination, dummyUpdate)
 
-		var tlvRecords = listOf<OnionTlv>(
-			OnionTlv.OutgoingCltv(cltv = expiry),
-			OnionTlv.AmountToForward(amount = amount),
-			OnionTlv.PaymentData(secret = paymentSecret, totalAmount = totalAmount)
-		)
-
-		val finalPayload = FinalTlvPayload(TlvStream(records = tlvRecords))
+val finalPayload = FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
 
 		val id = UUID.randomUUID()
 		val cmdAdd = OutgoingPacket.buildCommand(id, paymentHash, listOf(channelHop), finalPayload).first.copy(commit = false)
