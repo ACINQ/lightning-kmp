@@ -1,15 +1,20 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+
+data class IncomingPayment(
+	val paymentRequest: PaymentRequest,
+	val paymentPreimage: ByteVector32
+)
 
 class PaymentHandler(
 	val nodeParams: NodeParams
@@ -25,18 +30,23 @@ class PaymentHandler(
 
 	private val logger = LoggerFactory.default.newLogger(Logger.Tag(PaymentHandler::class))
 
-	private data class MppHtlc(val htlc: UpdateAddHtlc, val onion: FinalPayload)
-	private val pending = mutableMapOf<ByteVector32, Set<MppHtlc>>()
+	private data class FinalPacket(val htlc: UpdateAddHtlc, val onion: FinalPayload)
+	private val pending = mutableMapOf<ByteVector32, Set<FinalPacket>>()
 
 	private val privateKey get() = nodeParams.privateKey
 
 	/**
-	 * @return A triple
+	 * Processes an incoming htlc.
+	 * Before calling this, the htlc must be committed and acked by both sides.
+	 *
+	 * @return A result that indicates whether or not the packet was
+	 * accepted, rejected, or still pending (as the case may be for multipart payments).
+	 * Also includes the list of actions to be queued.
 	 */
 	fun processAdd(
 		htlc: UpdateAddHtlc,
-		incomingPayment: IncomingPayment?
-
+		incomingPayment: IncomingPayment?,
+		currentBlockHeight: Int
 	): ProcessAddResult
 	{
 		// BOLT 04:
@@ -47,28 +57,28 @@ class PaymentHandler(
 
 		if (incomingPayment == null) {
 
-			logger.warning { "received ${htlc} } for which we don't have a preimage" }
+			logger.warning { "received $htlc for which we don't have a preimage" }
 
-			val msg = IncorrectOrUnknownPaymentDetails(amount = MilliSatoshi(0), height = 0)
+			val msg = IncorrectOrUnknownPaymentDetails(htlc.amountMsat, currentBlockHeight.toLong())
 			val action = actionForFailureMessage(msg, htlc)
 
-			return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
+			return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
 		}
 
 		// Try to decrypt to onion
-		when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
+		return when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
 
 			is Either.Left -> { // Unable to decrypt onion
 
 				val failureMessage = decrypted.value
 				val action = actionForFailureMessage(failureMessage, htlc)
 
-				return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
+				ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
 			}
 			is Either.Right -> {
 
 				val onion = decrypted.value
-				return processAdd(htlc, onion, incomingPayment)
+				processAdd(htlc, onion, incomingPayment, currentBlockHeight)
 			}
 		}
 	}
@@ -76,8 +86,8 @@ class PaymentHandler(
 	private fun processAdd(
 		htlc: UpdateAddHtlc,
 		onion: FinalPayload,
-		incomingPayment: IncomingPayment
-
+		incomingPayment: IncomingPayment,
+		currentBlockHeight: Int
 	): ProcessAddResult
 	{
 		// BOLT 04:
@@ -89,17 +99,15 @@ class PaymentHandler(
 		//
 		//   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
 
-		val paymentSecret_expected = incomingPayment.paymentRequest.paymentSecret
-		if (paymentSecret_expected != null) {
+		val paymentSecretExpected = incomingPayment.paymentRequest.paymentSecret
+		val paymentSecretReceived = onion.paymentSecret
 
-			val paymentSecret_received = onion.paymentSecret
-			if (paymentSecret_received == null || paymentSecret_received != paymentSecret_expected) {
+		if (paymentSecretExpected != paymentSecretReceived) {
 
-				val msg = IncorrectOrUnknownPaymentDetails(amount = onion.amount, height = 0)
-				val action = actionForFailureMessage(msg, htlc)
+			val msg = IncorrectOrUnknownPaymentDetails(onion.amount, currentBlockHeight.toLong())
+			val action = actionForFailureMessage(msg, htlc)
 
-				return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
-			}
+			return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
 		}
 
 		if (onion.totalAmount > onion.amount) {
@@ -107,7 +115,7 @@ class PaymentHandler(
 			// This is a multipart payment.
 			// Forward to alternative logic handler.
 
-			return processMpp(htlc, onion, incomingPayment)
+			return processMpp(htlc, onion, incomingPayment, currentBlockHeight)
 		}
 
 		// BOLT 04:
@@ -123,23 +131,23 @@ class PaymentHandler(
 		//   Note: this allows the origin node to reduce information leakage by altering
 		//   the amount while not allowing for accidental gross overpayment.
 
-		val amount_expected = incomingPayment.paymentRequest.amount
-		val amount_received = onion.amount
+		val amountExpected = incomingPayment.paymentRequest.amount
+		val amountReceived = onion.amount
 
-		if (amount_expected != null) { // invoice amount may have been unspecified
+		if (amountExpected != null) { // invoice amount may have been unspecified
 
-			if ((amount_received < amount_expected) || (amount_received > amount_expected * 2)) {
+			if ((amountReceived < amountExpected) || (amountReceived > amountExpected * 2)) {
 
-				logger.warning { "received invalid amount: ${amount_received}, expected: ${amount_expected}" }
+				logger.warning { "received invalid amount: $amountReceived, expected: $amountExpected" }
 
-				val msg = IncorrectOrUnknownPaymentDetails(amount = onion.amount, height = 0)
+				val msg = IncorrectOrUnknownPaymentDetails(onion.amount, currentBlockHeight.toLong())
 				val action = actionForFailureMessage(msg, htlc)
 
-				return ProcessAddResult(status = PaymentHandler.ProcessedStatus.REJECTED, actions = listOf(action))
+				return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
 			}
 		}
 
-		logger.info { "received ${htlc} for ${incomingPayment.paymentRequest}" }
+		logger.info { "received $htlc for ${incomingPayment.paymentRequest}" }
 		val action = WrappedChannelEvent(
 			channelId = htlc.channelId,
 			channelEvent = ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, incomingPayment.paymentPreimage, commit = true))
@@ -151,8 +159,8 @@ class PaymentHandler(
 	private fun processMpp(
 		htlc: UpdateAddHtlc,
 		onion: FinalPayload,
-		incomingPayment: IncomingPayment
-
+		incomingPayment: IncomingPayment,
+		currentBlockHeight: Int
 	): ProcessAddResult
 	{
 		val actions = mutableListOf<PeerEvent>()
@@ -161,32 +169,28 @@ class PaymentHandler(
 		//
 		// NB: We need to update the `pending` map too. But we do that right before we return.
 
-		val updatedPendingSet = (pending[htlc.paymentHash] ?: setOf<MppHtlc>()) + MppHtlc(htlc, onion)
+		val updatedPendingSet = (pending[htlc.paymentHash] ?: setOf()) + FinalPacket(htlc, onion)
 
 		// Bolt 04:
 		// - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
 
 		val parts = updatedPendingSet.toTypedArray()
 
-		val total_msat: MilliSatoshi = parts[0].onion.totalAmount
-
-		var total_msat_mismatch = false
-		var mismatch_amount = MilliSatoshi(msat = 0)
+		val totalMsat: MilliSatoshi = parts[0].onion.totalAmount
+		var totalMsatMismatch = false
 
 		for (i in 1..parts.lastIndex) {
 
-			val part_total_amount = parts[i].onion.totalAmount
-			if (part_total_amount != total_msat) {
-				total_msat_mismatch = true
-				mismatch_amount = part_total_amount
+			if (parts[i].onion.totalAmount != totalMsat) {
+				totalMsatMismatch = true
 			}
 		}
 
-		if (total_msat_mismatch) {
+		if (totalMsatMismatch) {
 
-			for (part in parts) {
+			parts.forEach { part ->
 
-				val msg = FinalIncorrectHtlcAmount(amount = mismatch_amount)
+				val msg = FinalIncorrectHtlcAmount(amount = part.onion.totalAmount)
 				actions += actionForFailureMessage(msg, htlc)
 			}
 
@@ -203,13 +207,9 @@ class PaymentHandler(
 		// - if the total `amount_msat` of this HTLC set equals `total_msat`:
 		//   - SHOULD fulfill all HTLCs in the HTLC set
 
-		var cumulative_msat = MilliSatoshi(msat = 0)
+		val cumulativeMsat = parts.fold(MilliSatoshi(0)) { acc, part -> acc + part.onion.amount }
 
-		for (part in parts) {
-			cumulative_msat += part.onion.amount
-		}
-
-		if (cumulative_msat < total_msat) {
+		if (cumulativeMsat < totalMsat) {
 			// Still waiting for more payments
 			//
 			// Future Work: This is where we need to request a timer/timeout action
@@ -241,7 +241,6 @@ class PaymentHandler(
 		msg: FailureMessage,
 		htlc: UpdateAddHtlc,
 		commit: Boolean = true
-
 	): WrappedChannelEvent
 	{
 		val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
@@ -252,8 +251,6 @@ class PaymentHandler(
 			commit = commit
 		)
 		val channelEvent = ExecuteCommand(command = cmd)
-		val wrapper = WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
-
-		return wrapper
+		return WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
 	}
 }

@@ -3,19 +3,16 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.io.IncomingPayment
-import fr.acinq.eclair.io.ReceivePayment
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
-import fr.acinq.secp256k1.Hex
 import kotlin.test.*
 
 
-class MultiPartPaymentTestsCommon {
+class PaymentHandlerTestsCommon {
 
 	/**
 	 * Creates a multipart htlc, and wraps it in CMD_ADD_HTLC.
@@ -28,7 +25,6 @@ class MultiPartPaymentTestsCommon {
 		currentBlockHeight : Long,
 		paymentHash        : ByteVector32,
 		paymentSecret      : ByteVector32
-
 	): CMD_ADD_HTLC
 	{
 		val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
@@ -63,22 +59,6 @@ class MultiPartPaymentTestsCommon {
 		return cmdAdd
 	}
 
-	@Test
-	fun `Serialization of FinalTlvPayload`() {
-
-		// Test calling `OutgoingPacket.buildOnion()`,
-		// to ensure FinalTlvPayload is properly supported in that function.
-
-		makeMpp(
-			amount             = MilliSatoshi(100.sat),
-			totalAmount        = MilliSatoshi(200.sat),
-			destination        = TestConstants.Bob.nodeParams.nodeId,
-			currentBlockHeight = 0,
-			paymentHash        = Eclair.randomBytes32(),
-			paymentSecret      = Eclair.randomBytes32()
-		)
-	}
-
 	/**
 	 * Walks thru the following steps (assuming alice=sender, bob=receiver):
 	 *
@@ -94,7 +74,6 @@ class MultiPartPaymentTestsCommon {
 		sender     : ChannelState,
 		receiver   : ChannelState,
 		cmdAddHtlc : CMD_ADD_HTLC
-
 	): Triple<ChannelState, ChannelState, ProcessAdd>
 	{
 		var alice = sender
@@ -106,8 +85,6 @@ class MultiPartPaymentTestsCommon {
 		// Step 1 of 5:
 		//
 		// alice => update_add_htlc => bob
-		//
-		// alice.commitments.localCommitments.
 
 		processResult = alice.process(ExecuteCommand(cmdAddHtlc))
 
@@ -244,7 +221,6 @@ class MultiPartPaymentTestsCommon {
 		val nodeParams_bob = TestConstants.Bob.nodeParams
 
 		val privKey_alice = nodeParams_alice.privateKey
-		val privKey_bob = nodeParams_bob.privateKey
 
 		val paymentHandler_bob = PaymentHandler(nodeParams_bob)
 
@@ -285,8 +261,8 @@ class MultiPartPaymentTestsCommon {
 		//   - MessageReceived: ChannelEvent()
 		//
 		// After reachNormal():
-		// - alice has : 1_000_000 sat ?
-		// - bob has   :         0 sat ?
+		// - alice has : 1_000_000 sat
+		// - bob has   :         0 sat
 
 		val cmdAddHtlc_1 = makeMpp(
 			amount             = amount_1,
@@ -330,7 +306,8 @@ class MultiPartPaymentTestsCommon {
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
 				htlc = processAdd1.add,
-				incomingPayment = incomingPayment
+				incomingPayment = incomingPayment,
+				currentBlockHeight = bob.currentBlockHeight
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
@@ -363,7 +340,8 @@ class MultiPartPaymentTestsCommon {
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
 				htlc = processAdd2.add,
-				incomingPayment = incomingPayment
+				incomingPayment = incomingPayment,
+				currentBlockHeight = bob.currentBlockHeight
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
@@ -384,7 +362,6 @@ class MultiPartPaymentTestsCommon {
 		val nodeParams_bob = TestConstants.Bob.nodeParams
 
 		val privKey_alice = nodeParams_alice.privateKey
-		val privKey_bob = nodeParams_bob.privateKey
 
 		val paymentHandler_bob = PaymentHandler(nodeParams_bob)
 
@@ -471,7 +448,8 @@ class MultiPartPaymentTestsCommon {
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
 				htlc = processAdd1.add,
-				incomingPayment = incomingPayment
+				incomingPayment = incomingPayment,
+				currentBlockHeight = bob.currentBlockHeight
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
@@ -505,7 +483,8 @@ class MultiPartPaymentTestsCommon {
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
 				htlc = processAdd2.add,
-				incomingPayment = incomingPayment
+				incomingPayment = incomingPayment,
+				currentBlockHeight = bob.currentBlockHeight
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts

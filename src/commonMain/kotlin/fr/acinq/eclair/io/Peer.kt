@@ -10,6 +10,7 @@ import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.IncomingPayment
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.PaymentHandler
 import fr.acinq.eclair.payment.PaymentRequest
@@ -44,11 +45,6 @@ data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val reque
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
 data class SendingPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 data class PaymentSent(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
-
-data class IncomingPayment(
-    val paymentRequest: PaymentRequest,
-    val paymentPreimage: ByteVector32
-)
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -422,7 +418,7 @@ class Peer(
                                         val htlc = it.add
                                         val incomingPayment = pendingIncomingPayments[htlc.paymentHash]
 
-                                        val result = paymentHandler.processAdd(htlc, incomingPayment)
+                                        val result = paymentHandler.processAdd(htlc, incomingPayment, state1.currentBlockHeight)
 
                                         if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED ||
                                             result.status == PaymentHandler.ProcessedStatus.REJECTED)
