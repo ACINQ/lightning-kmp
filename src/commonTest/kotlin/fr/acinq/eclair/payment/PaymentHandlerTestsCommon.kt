@@ -390,10 +390,10 @@ class PaymentHandlerTestsCommon {
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
-assertEquals(setOf(
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(0, paymentPreimage, commit = true))),
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(1, paymentPreimage, commit = true))),
-            ), par.actions.toSet())
+			assertEquals(setOf(
+				WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(0, paymentPreimage, commit = true))),
+				WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(1, paymentPreimage, commit = true))),
+			), par.actions.toSet())
 		}
 	}
 
@@ -492,10 +492,10 @@ assertEquals(setOf(
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts
-assertEquals(setOf(
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, currentBlockHeight.toLong())), commit = true))),
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, currentBlockHeight.toLong())), commit = true))),
-            ), par.actions.toSet())
+			assertEquals(setOf(
+				WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, currentBlockHeight.toLong())), commit = true))),
+				WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, currentBlockHeight.toLong())), commit = true))),
+			), par.actions.toSet())
 		}
 	}
 }

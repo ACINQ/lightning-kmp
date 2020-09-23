@@ -191,7 +191,7 @@ class PaymentHandler(
 			parts.forEach { part ->
 
 				val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight.toLong())
-				actions += actionForFailureMessage(msg, htlc)
+				actions += actionForFailureMessage(msg, part.htlc)
 			}
 
 			logger.warning {
