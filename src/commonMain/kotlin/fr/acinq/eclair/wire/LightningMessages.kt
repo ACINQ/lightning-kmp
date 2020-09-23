@@ -51,6 +51,8 @@ interface LightningMessage {
                 UpdateFailMalformedHtlc.tag -> UpdateFailMalformedHtlc.read(stream)
                 UpdateFulfillHtlc.tag -> UpdateFulfillHtlc.read(stream)
                 ChannelUpdate.tag -> ChannelUpdate.read(stream)
+                Shutdown.tag -> Shutdown.read(stream)
+                ClosingSigned.tag -> ClosingSigned.read(stream)
                 else -> {
                     logger.warning { "cannot decode ${Hex.encode(input)}" }
                     null
@@ -880,7 +882,7 @@ data class Shutdown(
 
     companion object : LightningSerializer<Shutdown>() {
         override val tag: Long
-            get() = 36L
+            get() = 38L
 
         override fun read(input: Input): Shutdown {
             return Shutdown(

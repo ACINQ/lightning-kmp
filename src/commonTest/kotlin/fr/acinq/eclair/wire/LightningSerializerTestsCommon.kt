@@ -518,9 +518,10 @@ class LightningSerializerTestsCommon {
         //@formatter:on
 
         refs.forEach {
-            val foo = LightningMessage.decode(it.key.first)
-            println(foo)
-            println(it.value)
+            val decoded = LightningMessage.decode(it.key.first + it.key.second)
+            assertEquals(it.value, decoded)
+            val encoded = LightningMessage.encode(it.value)!!
+            assertArrayEquals(it.key.first, encoded)
         }
     }
 }

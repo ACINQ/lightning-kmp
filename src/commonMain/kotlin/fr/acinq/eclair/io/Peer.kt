@@ -159,7 +159,7 @@ class Peer(
                     logger.warning { ex.message }
                 }
             }
-            println("sending init ${LightningMessage.encode(ourInit)!!}")
+            logger.info { "sending init ${LightningMessage.encode(ourInit)!!}" }
             send(LightningMessage.encode(ourInit)!!)
 
             suspend fun doPing() {
