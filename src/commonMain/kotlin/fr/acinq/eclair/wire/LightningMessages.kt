@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
+import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.leftPaddedCopyOf
 import fr.acinq.eclair.utils.or
@@ -245,6 +246,10 @@ data class OpenChannel(
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash, LightningSerializable<OpenChannel> {
+    val channelVersion: ChannelVersion?
+        get() = tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion
+            ?: tlvStream.get<ChannelTlv.ChannelVersionTlvLegacy>()?.channelVersion
+
     override fun serializer(): LightningSerializer<OpenChannel> = OpenChannel
 
     companion object : LightningSerializer<OpenChannel>() {
@@ -257,6 +262,8 @@ data class OpenChannel(
             serializers.put(ChannelTlv.UpfrontShutdownScript.tag, ChannelTlv.UpfrontShutdownScript.Companion as LightningSerializer<ChannelTlv>)
             @Suppress("UNCHECKED_CAST")
             serializers.put(ChannelTlv.ChannelVersionTlv.tag, ChannelTlv.ChannelVersionTlv.Companion as LightningSerializer<ChannelTlv>)
+            @Suppress("UNCHECKED_CAST")
+            serializers.put(ChannelTlv.ChannelVersionTlvLegacy.tag, ChannelTlv.ChannelVersionTlvLegacy.Companion as LightningSerializer<ChannelTlv>)
 
             return OpenChannel(
                 ByteVector32(bytes(input, 32)),
@@ -905,8 +912,9 @@ data class Shutdown(
 data class ClosingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = SatoshiKSerializer::class) val feeSatoshis: Satoshi,
-    @Serializable(with = ByteVector64KSerializer::class)val signature: ByteVector64,
-    @Serializable(with = ByteVectorKSerializer::class)val channelData: ByteVector = ByteVector.empty) : ChannelMessage, HasChannelId, LightningSerializable<ClosingSigned> {
+    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
+    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
+) : ChannelMessage, HasChannelId, LightningSerializable<ClosingSigned> {
     override fun serializer(): LightningSerializer<ClosingSigned> = ClosingSigned
 
     companion object : LightningSerializer<ClosingSigned>() {

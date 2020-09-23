@@ -364,6 +364,37 @@ class Peer(
                             channels = channels + (msg.temporaryChannelId to state2)
                             logger.info { "new state for ${msg.temporaryChannelId}: $state2" }
                         }
+                        msg is ChannelReestablish && !channels.containsKey(msg.channelId) -> {
+                            if (msg.channelData.isEmpty()) {
+                                send(listOf(SendMessage(Error(msg.channelId, "unknown channel"))))
+                            } else {
+                                when (val decrypted = runTrying { Helpers.decrypt(nodeParams.nodePrivateKey, msg.channelData) }) {
+                                    is Try.Success -> {
+                                        logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
+                                        val backup = decrypted.result
+                                        val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                                        val (state1, actions1) = state.process(Restore(backup as ChannelState))
+                                        send(actions1)
+                                        store(actions1)
+                                        sendToSelf(msg.channelId, actions1)
+
+                                        val (state2, actions2) = state1.process(Connected(ourInit, theirInit!!))
+                                        send(actions2)
+                                        store(actions2)
+                                        sendToSelf(msg.channelId, actions2)
+
+                                        val (state3, actions3) = state2.process(MessageReceived(msg))
+                                        send(actions3)
+                                        store(actions3)
+                                        sendToSelf(msg.channelId, actions3)
+                                        channels = channels + (msg.channelId to state3)
+                                    }
+                                    is Try.Failure -> {
+                                        logger.error(decrypted.error) { "failed to restore channelId=${msg.channelId}" }
+                                    }
+                                }
+                            }
+                        }
                         msg is HasTemporaryChannelId && !channels.containsKey(msg.temporaryChannelId) -> {
                             logger.error { "received $msg for unknown temporary channel ${msg.temporaryChannelId}" }
                             send(listOf(SendMessage(Error(msg.temporaryChannelId, "unknown channel"))))

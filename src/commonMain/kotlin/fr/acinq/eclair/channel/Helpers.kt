@@ -13,17 +13,10 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.wire.AcceptChannel
-import fr.acinq.eclair.wire.ChannelTlv
 import fr.acinq.eclair.wire.OpenChannel
 import kotlin.math.abs
 
 object Helpers {
-    fun getChannelVersion(open: OpenChannel): ChannelVersion {
-        return open.tlvStream.get<ChannelTlv.ChannelVersionTlv>()
-            ?.channelVersion
-            ?: ChannelVersion.STANDARD
-    }
-
     /**
      * Returns the number of confirmations needed to safely handle the funding transaction,
      * we make sure the cumulative block reward largely exceeds the channel size.
@@ -58,7 +51,7 @@ object Helpers {
         // MAY reject the channel.
         if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
 
-        if (getChannelVersion(open).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+        if ((open.channelVersion ?: ChannelVersion.STANDARD).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
             // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
         } else {
             // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:

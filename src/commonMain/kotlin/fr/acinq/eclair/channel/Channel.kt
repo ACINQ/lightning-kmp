@@ -524,7 +524,7 @@ data class WaitForOpenChannel(
                 when (event.message) {
                     is OpenChannel -> {
                         val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-                        var channelVersion = Helpers.getChannelVersion(event.message)
+                        var channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         if (Features.canUseFeature(
                                 localParams.features,
                                 Features.invoke(remoteInit.features),
