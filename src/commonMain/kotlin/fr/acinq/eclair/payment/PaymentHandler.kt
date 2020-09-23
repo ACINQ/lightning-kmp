@@ -103,7 +103,7 @@ class PaymentHandler(
 
 		if (paymentSecretExpected != paymentSecretReceived) {
 
-			val msg = IncorrectOrUnknownPaymentDetails(onion.amount, currentBlockHeight.toLong())
+			val msg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
 			val action = actionForFailureMessage(msg, htlc)
 
 			return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
@@ -131,7 +131,7 @@ class PaymentHandler(
 
 				logger.warning { "received invalid amount: $amountReceived, expected: $amountExpected" }
 
-				val msg = IncorrectOrUnknownPaymentDetails(onion.amount, currentBlockHeight.toLong())
+				val msg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
 				val action = actionForFailureMessage(msg, htlc)
 
 				return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
@@ -189,7 +189,7 @@ class PaymentHandler(
 
 			parts.forEach { part ->
 
-				val msg = FinalIncorrectHtlcAmount(amount = part.onion.totalAmount)
+				val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight)
 				actions += actionForFailureMessage(msg, htlc)
 			}
 
@@ -206,7 +206,7 @@ class PaymentHandler(
 		// - if the total `amount_msat` of this HTLC set equals `total_msat`:
 		//   - SHOULD fulfill all HTLCs in the HTLC set
 
-		val cumulativeMsat = parts.fold(MilliSatoshi(0)) { acc, part -> acc + part.onion.amount }
+		val cumulativeMsat = parts.map { it.onion.amount }.sum()
 
 		if (cumulativeMsat < totalMsat) {
 			// Still waiting for more payments
