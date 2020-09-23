@@ -390,16 +390,10 @@ class PaymentHandlerTestsCommon {
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
-
-			val fulfillEvents = par.actions.filterIsInstance<WrappedChannelEvent>().filter {
-
-				val channelEvent = it.channelEvent // compiler whines if we don't capture this
-
-				(it.channelId == channelId) &&
-				(channelEvent is ExecuteCommand) &&
-				(channelEvent.command is CMD_FULFILL_HTLC)
-			}
-			assertTrue { fulfillEvents.count() == 2 }
+assertEquals(setOf(
+                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(0, paymentPreimage, commit = true))),
+                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(1, paymentPreimage, commit = true))),
+            ), par.actions.toSet())
 		}
 	}
 
