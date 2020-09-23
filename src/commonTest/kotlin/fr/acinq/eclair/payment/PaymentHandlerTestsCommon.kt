@@ -492,16 +492,10 @@ assertEquals(setOf(
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts
-
-			val failEvents = par.actions.filterIsInstance<WrappedChannelEvent>().filter {
-
-				val channelEvent = it.channelEvent // compiler whines if we don't capture this
-
-				(it.channelId == channelId) &&
-					 (channelEvent is ExecuteCommand) &&
-					 (channelEvent.command is CMD_FAIL_HTLC)
-			}
-			assertTrue { failEvents.count() == 2 }
+assertEquals(setOf(
+                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, currentBlockHeight.toLong())), commit = true))),
+                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, currentBlockHeight.toLong())), commit = true))),
+            ), par.actions.toSet())
 		}
 	}
 }
