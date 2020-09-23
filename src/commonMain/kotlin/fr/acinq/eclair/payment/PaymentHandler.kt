@@ -6,6 +6,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
@@ -189,7 +190,7 @@ class PaymentHandler(
 
 			parts.forEach { part ->
 
-				val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight)
+				val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight.toLong())
 				actions += actionForFailureMessage(msg, htlc)
 			}
 
