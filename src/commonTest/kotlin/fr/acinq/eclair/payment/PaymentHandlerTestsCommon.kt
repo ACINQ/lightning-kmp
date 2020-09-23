@@ -3,6 +3,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
@@ -14,20 +15,9 @@ import kotlin.test.*
 
 class PaymentHandlerTestsCommon {
 
-	/**
-	 * Creates a multipart htlc, and wraps it in CMD_ADD_HTLC.
-	 * The result is ready to be processed thru the sender's channel.
-	 */
-	fun makeMpp(
-		amount             : MilliSatoshi,
-		totalAmount        : MilliSatoshi,
-		destination        : PublicKey,
-		currentBlockHeight : Long,
-		paymentHash        : ByteVector32,
-		paymentSecret      : ByteVector32
-	): CMD_ADD_HTLC
-	{
-		val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+	private fun channelHops(
+		destination: PublicKey,
+	): List<ChannelHop> {
 
 		val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
 		val dummyUpdate = ChannelUpdate(
@@ -45,17 +35,62 @@ class PaymentHandlerTestsCommon {
 		)
 		val channelHop = ChannelHop(dummyKey, destination, dummyUpdate)
 
+		return listOf(channelHop)
+	}
+
+	/**
+	 * Creates a multipart htlc, and wraps it in CMD_ADD_HTLC.
+	 * The result is ready to be processed thru the sender's channel.
+	 */
+	fun makeCmdAddHtlc(
+		amount             : MilliSatoshi,
+		totalAmount        : MilliSatoshi,
+		destination        : PublicKey,
+		currentBlockHeight : Long,
+		paymentHash        : ByteVector32,
+		paymentSecret      : ByteVector32
+	): CMD_ADD_HTLC
+	{
+		val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
 		val finalPayload = FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
 
-		val id = UUID.randomUUID()
-		val cmdAdd = OutgoingPacket.buildCommand(
-			id = id,
+		return OutgoingPacket.buildCommand(
+			id = UUID.randomUUID(),
 			paymentHash = paymentHash,
-			hops = listOf(channelHop),
+			hops = channelHops(destination),
 			finalPayload = finalPayload
-		).first.copy(commit = false)
+		).first.copy(commit = true)
+	}
 
-		return cmdAdd
+	private fun makeUpdateAddHtlc(
+		channelId          : ByteVector32,
+		id                 : Long,
+		amount             : MilliSatoshi,
+		totalAmount        : MilliSatoshi,
+		destination        : PublicKey,
+		currentBlockHeight : Long,
+		paymentHash        : ByteVector32,
+		paymentSecret      : ByteVector32
+	): UpdateAddHtlc {
+
+		val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+		val finalPayload = FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
+
+		val (_, _, packetAndSecrets) = OutgoingPacket.buildPacket(
+			paymentHash = paymentHash,
+			hops = channelHops(destination),
+			finalPayload = finalPayload,
+			payloadLength = OnionRoutingPacket.PaymentPacketLength
+		)
+
+		return UpdateAddHtlc(
+			channelId          = channelId,
+			id                 = id,
+			amountMsat         = amount,
+			paymentHash        = paymentHash,
+			cltvExpiry         = expiry,
+			onionRoutingPacket = packetAndSecrets.packet
+		)
 	}
 
 	/**
@@ -95,7 +130,7 @@ class PaymentHandlerTestsCommon {
 		val amount = MilliSatoshi(100.sat)
 		val totalAmount = amount * 2
 
-		val cmdAddHtlc = makeMpp(
+		val cmdAddHtlc = makeCmdAddHtlc(
 			amount             = amount,
 			totalAmount        = totalAmount,
 			destination        = bob.staticParams.nodeParams.nodeId,
@@ -107,6 +142,14 @@ class PaymentHandlerTestsCommon {
 		var processResult: Pair<ChannelState, List<ChannelAction>>
 		var actions: List<ChannelAction>
 
+		var a2b_updateAddHtlc: SendMessage? = null
+		var a2a_cmdSign: ProcessCommand? = null
+		var a2b_commitmentSigned: SendMessage? = null
+		var b2a_revokeAndAck: SendMessage? = null
+		var b2b_cmdSign: ProcessCommand? = null
+		var b2a_commitmentSigned: SendMessage? = null
+		var a2b_revokeAndAck: SendMessage? = null
+
 		// Step 1 of 5:
 		//
 		// alice => update_add_htlc => bob
@@ -116,16 +159,22 @@ class PaymentHandlerTestsCommon {
 		alice = processResult.first
 		assertTrue { alice is Normal }
 
-		actions = processResult.second.filterIsInstance<SendMessage>()
-		assertTrue { actions.size == 1 }
+		actions = processResult.second
+		assertTrue { actions.isNotEmpty() }
 
-		processResult = bob.process(MessageReceived(actions.first().message))
+		a2b_updateAddHtlc = actions.filterIsInstance<SendMessage>().filter { it.message is UpdateAddHtlc }.firstOrNull()
+		assertNotNull(a2b_updateAddHtlc)
+
+		a2a_cmdSign = actions.filterIsInstance<ProcessCommand>().filter { it.command == CMD_SIGN }.firstOrNull()
+		assertNotNull(a2a_cmdSign)
+
+		processResult = bob.process(MessageReceived(a2b_updateAddHtlc.message))
 
 		bob = processResult.first
 		assertTrue { bob is Normal }
 
-		actions = processResult.second.filterIsInstance<SendMessage>()
-		assertTrue { actions.size == 0 }
+		actions = processResult.second
+		assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
 
 		assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 1 }
 		assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
@@ -139,21 +188,30 @@ class PaymentHandlerTestsCommon {
 		//
 		// alice => commitment_signed => bob
 
-		processResult = alice.process(ExecuteCommand(CMD_SIGN))
+		processResult = alice.process(ExecuteCommand(a2a_cmdSign.command))
 
 		alice = processResult.first
 		assertTrue { alice is Normal }
 
-		actions = processResult.second.filterIsInstance<SendMessage>()
-		assertTrue { actions.size == 1 }
+		actions = processResult.second
+		assertTrue { actions.isNotEmpty() }
 
-		processResult = bob.process(MessageReceived(actions.first().message))
+		a2b_commitmentSigned = actions.filterIsInstance<SendMessage>().filter{ it.message is CommitSig }.firstOrNull()
+		assertNotNull(a2b_commitmentSigned)
+
+		processResult = bob.process(MessageReceived(a2b_commitmentSigned.message))
 
 		bob = processResult.first
 		assertTrue { bob is Normal }
 
-		actions = processResult.second.filterIsInstance<SendMessage>()
-		assertTrue { actions.size == 1 }
+		actions = processResult.second
+		assertTrue { actions.isNotEmpty() }
+
+		b2a_revokeAndAck = actions.filterIsInstance<SendMessage>().filter{ it.message is RevokeAndAck }.firstOrNull()
+		assertNotNull(b2a_revokeAndAck)
+
+		b2b_cmdSign = actions.filterIsInstance<ProcessCommand>().filter { it.command == CMD_SIGN }.firstOrNull()
+		assertNotNull(b2b_cmdSign)
 
 		assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
 		assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 1 }
@@ -167,13 +225,13 @@ class PaymentHandlerTestsCommon {
 		//
 		// alice <= revoke_and_ack <= bob
 
-		processResult = alice.process(MessageReceived(actions.first().message))
+		processResult = alice.process(MessageReceived(b2a_revokeAndAck.message))
 
 		alice = processResult.first
 		assertTrue { alice is Normal }
 
-		actions = processResult.second.filterIsInstance<SendMessage>()
-		assertTrue { actions.size == 0 }
+		actions = processResult.second
+		assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
 
 		assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
 		assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
@@ -187,7 +245,7 @@ class PaymentHandlerTestsCommon {
 		//
 		// alice <= commitment_signed <= bob
 
-		processResult = bob.process(ExecuteCommand(CMD_SIGN))
+		processResult = bob.process(ExecuteCommand(b2b_cmdSign.command))
 
 		bob = processResult.first
 		assertTrue { bob is Normal }
@@ -195,13 +253,19 @@ class PaymentHandlerTestsCommon {
 		actions = processResult.second.filterIsInstance<SendMessage>()
 		assertTrue { actions.size == 1 }
 
-		processResult = alice.process(MessageReceived(actions.first().message))
+		b2a_commitmentSigned = actions.filterIsInstance<SendMessage>().filter{ it.message is CommitSig }.firstOrNull()
+		assertNotNull(b2a_commitmentSigned)
+
+		processResult = alice.process(MessageReceived(b2a_commitmentSigned.message))
 
 		alice = processResult.first
 		assertTrue { alice is Normal }
 
-		actions = processResult.second.filterIsInstance<SendMessage>()
-		assertTrue { actions.size == 1 }
+		actions = processResult.second
+		assertTrue { actions.isNotEmpty() }
+
+		a2b_revokeAndAck = actions.filterIsInstance<SendMessage>().filter{ it.message is RevokeAndAck }.firstOrNull()
+		assertNotNull(a2b_revokeAndAck)
 
 		assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
 		assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
@@ -215,14 +279,14 @@ class PaymentHandlerTestsCommon {
 		//
 		// alice => revoke_and_ack => bob
 
-		processResult = bob.process(MessageReceived(actions.first().message))
+		processResult = bob.process(MessageReceived(a2b_revokeAndAck.message))
 
 		bob = processResult.first
 		assertTrue { bob is Normal }
 
 		actions = processResult.second
-		assertTrue { actions.filterIsInstance<SendMessage>().size == 0 }
-		assertTrue { actions.filterIsInstance<ProcessAdd>().size == 1 }
+		assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
+		assertTrue { actions.filterIsInstance<ProcessAdd>().isNotEmpty() }
 
 		assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
 		assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
@@ -251,7 +315,7 @@ class PaymentHandlerTestsCommon {
 		val amount2 = MilliSatoshi(100.sat)
 		val totalAmount = amount1 + amount2
 
-		val invoiceFeatures = mutableSetOf(
+		val invoiceFeatures = setOf(
 			ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
 			ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
 			ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
@@ -260,7 +324,7 @@ class PaymentHandlerTestsCommon {
 			chainHash = nodeParams_alice.chainHash,
 			amount = totalAmount,
 			paymentHash = paymentHash,
-			privateKey = nodeParams_alice.privateKey,
+			privateKey = nodeParams_bob.privateKey, // Bob creates invoice, sends to Alice
 			description = "unit test",
 			minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
 			features = Features(invoiceFeatures)
@@ -279,21 +343,15 @@ class PaymentHandlerTestsCommon {
 
 		run {
 
-			val cmdAddHtlc = makeMpp(
+			val updateAddHtlc = makeUpdateAddHtlc(
+				channelId          = channelId,
+				id                 = 0,
 				amount             = amount1,
 				totalAmount        = totalAmount,
 				destination        = nodeParams_bob.nodeId,
 				currentBlockHeight = currentBlockHeight.toLong(),
 				paymentHash        = paymentHash,
 				paymentSecret      = paymentSecret
-			)
-			val updateAddHtlc = UpdateAddHtlc(
-				channelId = channelId,
-				id = 0,
-				amountMsat         = cmdAddHtlc.amount,
-				paymentHash        = cmdAddHtlc.paymentHash,
-				cltvExpiry         = cmdAddHtlc.cltvExpiry,
-				onionRoutingPacket = cmdAddHtlc.onion
 			)
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
@@ -314,21 +372,15 @@ class PaymentHandlerTestsCommon {
 
 		run {
 
-			val cmdAddHtlc = makeMpp(
+			val updateAddHtlc = makeUpdateAddHtlc(
+				channelId          = channelId,
+				id                 = 1,
 				amount             = amount2,
 				totalAmount        = totalAmount,
 				destination        = nodeParams_bob.nodeId,
 				currentBlockHeight = currentBlockHeight.toLong(),
 				paymentHash        = paymentHash,
 				paymentSecret      = paymentSecret
-			)
-			val updateAddHtlc = UpdateAddHtlc(
-				channelId = channelId,
-				id = 1,
-				amountMsat         = cmdAddHtlc.amount,
-				paymentHash        = cmdAddHtlc.paymentHash,
-				cltvExpiry         = cmdAddHtlc.cltvExpiry,
-				onionRoutingPacket = cmdAddHtlc.onion
 			)
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
@@ -338,7 +390,16 @@ class PaymentHandlerTestsCommon {
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
-			assertTrue { par.actions.count() >= 2 }
+
+			val fulfillEvents = par.actions.filterIsInstance<WrappedChannelEvent>().filter {
+
+				val channelEvent = it.channelEvent // compiler whines if we don't capture this
+
+				(it.channelId == channelId) &&
+				(channelEvent is ExecuteCommand) &&
+				(channelEvent.command is CMD_FULFILL_HTLC)
+			}
+			assertTrue { fulfillEvents.count() == 2 }
 		}
 	}
 
@@ -361,7 +422,7 @@ class PaymentHandlerTestsCommon {
 		val amount3 = MilliSatoshi(100.sat)
 		val totalAmount = amount1 + amount2 + amount3
 
-		val invoiceFeatures = mutableSetOf(
+		val invoiceFeatures = setOf(
 			ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
 			ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
 			ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
@@ -370,7 +431,7 @@ class PaymentHandlerTestsCommon {
 			chainHash = nodeParams_alice.chainHash,
 			amount = totalAmount,
 			paymentHash = paymentHash,
-			privateKey = nodeParams_alice.privateKey,
+			privateKey = nodeParams_bob.privateKey, // Bob creates invoice, sends to Alice
 			description = "unit test",
 			minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
 			features = Features(invoiceFeatures)
@@ -389,21 +450,15 @@ class PaymentHandlerTestsCommon {
 
 		run {
 
-			val cmdAddHtlc = makeMpp(
+			val updateAddHtlc = makeUpdateAddHtlc(
+				channelId          = channelId,
+				id                 = 0,
 				amount             = amount1,
 				totalAmount        = totalAmount,
 				destination        = nodeParams_bob.nodeId,
 				currentBlockHeight = currentBlockHeight.toLong(),
 				paymentHash        = paymentHash,
 				paymentSecret      = paymentSecret
-			)
-			val updateAddHtlc = UpdateAddHtlc(
-				channelId = channelId,
-				id = 0,
-				amountMsat         = cmdAddHtlc.amount,
-				paymentHash        = cmdAddHtlc.paymentHash,
-				cltvExpiry         = cmdAddHtlc.cltvExpiry,
-				onionRoutingPacket = cmdAddHtlc.onion
 			)
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
@@ -414,7 +469,6 @@ class PaymentHandlerTestsCommon {
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
 			assertTrue { par.actions.count() == 0 }
-
 		}
 
 		// Step 2 of 2:
@@ -426,21 +480,15 @@ class PaymentHandlerTestsCommon {
 
 		run {
 
-			val cmdAddHtlc = makeMpp(
+			val updateAddHtlc = makeUpdateAddHtlc(
+				channelId          = channelId,
+				id                 = 1,
 				amount             = amount2,
-				totalAmount        = totalAmount - amount3, // trying to cheat here !!
+				totalAmount        = totalAmount + MilliSatoshi(1), // goofy mismatch. (not less than totalAmount)
 				destination        = nodeParams_bob.nodeId,
 				currentBlockHeight = currentBlockHeight.toLong(),
 				paymentHash        = paymentHash,
 				paymentSecret      = paymentSecret
-			)
-			val updateAddHtlc = UpdateAddHtlc(
-				channelId = channelId,
-				id = 1,
-				amountMsat         = cmdAddHtlc.amount,
-				paymentHash        = cmdAddHtlc.paymentHash,
-				cltvExpiry         = cmdAddHtlc.cltvExpiry,
-				onionRoutingPacket = cmdAddHtlc.onion
 			)
 
 			val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
@@ -450,7 +498,16 @@ class PaymentHandlerTestsCommon {
 			)
 
 			assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts
-			assertTrue { par.actions.count() >= 2 }
+
+			val failEvents = par.actions.filterIsInstance<WrappedChannelEvent>().filter {
+
+				val channelEvent = it.channelEvent // compiler whines if we don't capture this
+
+				(it.channelId == channelId) &&
+					 (channelEvent is ExecuteCommand) &&
+					 (channelEvent.command is CMD_FAIL_HTLC)
+			}
+			assertTrue { failEvents.count() == 2 }
 		}
 	}
 }

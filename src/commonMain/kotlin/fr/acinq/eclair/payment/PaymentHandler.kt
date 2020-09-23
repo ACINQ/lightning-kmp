@@ -6,7 +6,6 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.Either
-import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
@@ -110,14 +109,6 @@ class PaymentHandler(
 			return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
 		}
 
-		if (onion.totalAmount > onion.amount) {
-
-			// This is a multipart payment.
-			// Forward to alternative logic handler.
-
-			return processMpp(htlc, onion, incomingPayment, currentBlockHeight)
-		}
-
 		// BOLT 04:
 		//
 		// - if the amount paid is less than the amount expected:
@@ -132,7 +123,7 @@ class PaymentHandler(
 		//   the amount while not allowing for accidental gross overpayment.
 
 		val amountExpected = incomingPayment.paymentRequest.amount
-		val amountReceived = onion.amount
+		val amountReceived = onion.totalAmount
 
 		if (amountExpected != null) { // invoice amount may have been unspecified
 
@@ -145,6 +136,14 @@ class PaymentHandler(
 
 				return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
 			}
+		}
+
+		if (onion.totalAmount > onion.amount) {
+
+			// This is a multipart payment.
+			// Forward to alternative logic handler.
+
+			return processMpp(htlc, onion, incomingPayment, currentBlockHeight)
 		}
 
 		logger.info { "received $htlc for ${incomingPayment.paymentRequest}" }
@@ -180,9 +179,9 @@ class PaymentHandler(
 		var totalMsatMismatch = false
 
 		for (i in 1..parts.lastIndex) {
-
 			if (parts[i].onion.totalAmount != totalMsat) {
 				totalMsatMismatch = true
+				break
 			}
 		}
 

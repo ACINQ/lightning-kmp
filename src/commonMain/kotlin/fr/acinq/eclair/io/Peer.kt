@@ -426,8 +426,7 @@ class Peer(
                                             pendingIncomingPayments.remove(htlc.paymentHash)
                                         }
                                         if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED) {
-                                            require(incomingPayment != null)
-                                            listenerEventChannel.send(PaymentReceived(incomingPayment))
+                                            listenerEventChannel.send(PaymentReceived(incomingPayment!!))
                                         }
                                         for (action in result.actions) {
                                             input.send(action)
