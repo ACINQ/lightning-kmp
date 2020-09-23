@@ -366,6 +366,7 @@ class Peer(
                         }
                         msg is HasTemporaryChannelId && !channels.containsKey(msg.temporaryChannelId) -> {
                             logger.error { "received $msg for unknown temporary channel ${msg.temporaryChannelId}" }
+                            send(listOf(SendMessage(Error(msg.temporaryChannelId, "unknown channel"))))
                         }
                         msg is HasTemporaryChannelId -> {
                             logger.info { "received $msg for temporary channel ${msg.temporaryChannelId}" }
@@ -383,6 +384,7 @@ class Peer(
                         }
                         msg is HasChannelId && !channels.containsKey(msg.channelId) -> {
                             logger.error { "received $msg for unknown channel ${msg.channelId}" }
+                            send(listOf(SendMessage(Error(msg.channelId, "unknown channel"))))
                         }
                         msg is HasChannelId -> {
                             logger.info { "received $msg for channel ${msg.channelId}" }
