@@ -44,7 +44,7 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation(project(":utils:bitcoin-json-rpc"))
+            implementation(project(":eclair-test-fixtures"))
         }
     }
 

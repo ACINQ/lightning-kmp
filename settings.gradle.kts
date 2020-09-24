@@ -10,5 +10,5 @@ pluginManagement {
 
 include(
     ":",
-    ":utils:bitcoin-json-rpc"
+    ":eclair-test-fixtures"
 )

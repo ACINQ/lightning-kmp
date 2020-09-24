@@ -364,17 +364,6 @@ class TransactionsTestsCommon {
         }
     }
 
-    // TODO: enable this test ASAP !!
-    @Ignore @Test fun `repeated generate valid commitment and htlc transactions`() {
-        repeat(500) {
-            try {
-                `generate valid commitment and htlc transactions`()
-            } catch (ex: Throwable) {
-                fail("Failed at atempt $it", ex)
-            }
-        }
-    }
-
     @Test fun `sort the htlc outputs using BIP69 and cltv expiry`() {
         val localFundingPriv = PrivateKey.fromHex("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
         val remoteFundingPriv = PrivateKey.fromHex("a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
