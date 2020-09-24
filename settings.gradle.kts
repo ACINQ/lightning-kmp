@@ -9,6 +9,5 @@ pluginManagement {
 }
 
 include(
-    ":",
-    ":eclair-test-fixtures"
+    ":eclair-kmp-test-fixtures"
 )

@@ -44,7 +44,7 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation(project(":eclair-test-fixtures"))
+            implementation(project(":eclair-kmp-test-fixtures"))
         }
     }
 
@@ -53,9 +53,9 @@ kotlin {
             kotlinOptions.jvmTarget = "1.8"
         }
         compilations["main"].defaultSourceSet.dependencies {
-            implementation(ktor("client-okhttp"))
-            implementation(ktor("network"))
-            implementation(ktor("network-tls"))
+            api(ktor("client-okhttp"))
+            api(ktor("network"))
+            api(ktor("network-tls"))
             implementation("org.slf4j:slf4j-api:1.7.29")
             api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
