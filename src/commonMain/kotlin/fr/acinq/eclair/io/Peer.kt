@@ -3,11 +3,9 @@ package fr.acinq.eclair.io
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchEvent
-import fr.acinq.eclair.blockchain.electrum.AskForHeaderSubscriptionUpdate
-import fr.acinq.eclair.blockchain.electrum.AskForStatusUpdate
-import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
+import fr.acinq.eclair.blockchain.electrum.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.channel.Connected
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.OutgoingPacket
@@ -15,6 +13,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
+import fr.acinq.eclair.wire.Ping
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -226,6 +225,7 @@ class Peer(
                     }
                 }
                 it is SendWatch -> watcher.watch(it.watch)
+                it is PublishTx -> watcher.send(PublishAsapEvent(it.tx))
                 else -> Unit
             }
         }
