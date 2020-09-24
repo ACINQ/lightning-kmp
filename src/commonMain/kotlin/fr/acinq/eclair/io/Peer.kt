@@ -10,7 +10,9 @@ import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.IncomingPayment
 import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.PaymentHandler
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.*
@@ -40,7 +42,7 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
-data class PaymentReceived(val receivePayment: ReceivePayment) : PeerListenerEvent()
+data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
 data class SendingPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 data class PaymentSent(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 
@@ -69,15 +71,18 @@ class Peer(
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
 
     // channels map, indexed by channel id
-    // note that a channel starts with a temporary id then switchs to its final id once the funding tx is known
+    // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     private var channels by channelsChannel
     private var connected by connectedChannel
 
     // pending incoming payments, indexed by payment hash
-    private val pendingIncomingPayments: HashMap<ByteVector32, ReceivePayment> = HashMap()
+    private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
     // pending outgoing payments, indexed by payment payment hash
     private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
+
+    // encapsulates logic for validating payments
+    private val paymentHandler = PaymentHandler(nodeParams)
 
     private val features = Features(
         setOf(
@@ -293,6 +298,16 @@ class Peer(
     private suspend fun run() {
         logger.info { "peer is active" }
         for (event in input) {
+            processEvent(event)
+        }
+    }
+
+    private suspend fun processEvent(event: PeerEvent) {
+
+        // Note: Yes, this needs its indentation fixed.
+        // But I wanted to do that in a separate commit.
+        // Otherwise it would be hard to follow the **logical** changes I made.
+
             when {
                 event is BytesReceived -> {
                     val msg = LightningMessage.decode(event.data)
@@ -428,20 +443,23 @@ class Peer(
                             sendToSelf(msg.channelId, actions)
                             actions.forEach {
                                 when {
-                                    it is ProcessAdd && !pendingIncomingPayments.containsKey(it.add.paymentHash) -> {
-                                        logger.warning { "received ${it.add} } for which we don't have a preimage" }
-                                    }
                                     it is ProcessAdd -> {
-                                        val payment = pendingIncomingPayments[it.add.paymentHash]!!
-                                        // TODO: check that we've been paid what we asked for
-                                        logger.info { "received ${it.add} for $payment" }
-                                        input.send(
-                                            WrappedChannelEvent(
-                                                msg.channelId,
-                                                ExecuteCommand(CMD_FULFILL_HTLC(it.add.id, payment.paymentPreimage, commit = true))
-                                            )
-                                        )
-                                        listenerEventChannel.send(PaymentReceived(payment))
+                                        val htlc = it.add
+                                        val incomingPayment = pendingIncomingPayments[htlc.paymentHash]
+
+                                        val result = paymentHandler.processAdd(htlc, incomingPayment, state1.currentBlockHeight)
+
+                                        if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED ||
+                                            result.status == PaymentHandler.ProcessedStatus.REJECTED)
+                                        {
+                                            pendingIncomingPayments.remove(htlc.paymentHash)
+                                        }
+                                        if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED) {
+                                            listenerEventChannel.send(PaymentReceived(incomingPayment!!))
+                                        }
+                                        for (action in result.actions) {
+                                            input.send(action)
+                                        }
                                     }
                                     it is ProcessFulfill && !pendingOutgoingPayments.containsKey(it.fulfill.paymentPreimage.sha256()) -> {
                                         logger.warning { "received ${it.fulfill} } for which we don't have a payment hash" }
@@ -480,7 +498,7 @@ class Peer(
                     }
                     val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
                     logger.info { "payment request ${pr.write()}" }
-                    pendingIncomingPayments[event.paymentHash] = event
+                    pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 }
                 //
@@ -548,6 +566,5 @@ class Peer(
                     sendToSelf(event.channelId, actions)
                 }
             }
-        }
     }
 }
