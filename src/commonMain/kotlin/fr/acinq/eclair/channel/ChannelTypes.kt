@@ -5,10 +5,7 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.io.ByteVectorKSerializer
-import fr.acinq.eclair.io.KeyPathKSerializer
-import fr.acinq.eclair.io.PublicKeyKSerializer
-import fr.acinq.eclair.io.SatoshiKSerializer
+import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.BitField
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.sum
@@ -61,6 +58,52 @@ object CMD_GETSTATE : Command()
 object CMD_GETSTATEDATA : Command()
 
 
+/*
+      8888888b.        d8888 88888888888     d8888
+      888  "Y88b      d88888     888        d88888
+      888    888     d88P888     888       d88P888
+      888    888    d88P 888     888      d88P 888
+      888    888   d88P  888     888     d88P  888
+      888    888  d88P   888     888    d88P   888
+      888  .d88P d8888888888     888   d8888888888
+      8888888P" d88P     888     888  d88P     888
+ */
+@Serializable
+data class LocalCommitPublished(
+    @Serializable(with = TransactionKSerializer::class)
+    val commitTx: Transaction,
+    @Serializable(with = TransactionKSerializer::class)
+    val claimMainDelayedOutputTx: Transaction? = null,
+    val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+)
+
+@Serializable
+data class RemoteCommitPublished(
+    @Serializable(with = TransactionKSerializer::class)
+    val commitTx: Transaction,
+    @Serializable(with = TransactionKSerializer::class)
+    val claimMainOutputTx: Transaction? = null,
+    val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+)
+
+@Serializable
+data class RevokedCommitPublished(
+    @Serializable(with = TransactionKSerializer::class)
+    val commitTx: Transaction,
+    @Serializable(with = TransactionKSerializer::class)
+    val claimMainOutputTx: Transaction? = null,
+    @Serializable(with = TransactionKSerializer::class)
+    val mainPenaltyTx: Transaction? = null,
+    val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val irrevocablySpent: Map< @Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+)
+
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class LocalParams constructor(
@@ -109,6 +152,9 @@ data class ChannelVersion(val bits: BitField) {
 
     // TODO: This is baaad performance! The copy needs to be optimized out.
     fun isSet(bit: Int) = bits.getRight(bit)
+
+    val hasPubkeyKeyPath: Boolean by lazy { isSet(USE_PUBKEY_KEYPATH_BIT) }
+    val hasStaticRemotekey: Boolean by lazy { isSet(USE_STATIC_REMOTEKEY_BIT) }
 
     companion object {
         val SIZE_BYTE = 4
