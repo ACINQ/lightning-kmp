@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair
+import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeEstimator
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -78,8 +79,13 @@ data class Commitments(
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
     @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
-    @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector? = null
+    @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector = ByteVector.empty
 ) {
+
+    fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
+        localParams = localParams.copy(features = Features(localInit.features)),
+        remoteParams = remoteParams.copy(features = Features(remoteInit.features))
+    )
 
     fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo.isRight
 
@@ -94,6 +100,9 @@ data class Commitments(
             is Either.Right -> thisCommitAdds
         }
     }
+
+    val isZeroReserve: Boolean
+        get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
 
     /**
      * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
@@ -173,6 +182,12 @@ data class Commitments(
         }
     }
 
+    fun isMoreRecent(other: Commitments): Boolean {
+        return this.localCommit.index > other.localCommit.index ||
+                this.remoteCommit.index > other.remoteCommit.index ||
+                (this.remoteCommit.index == other.remoteCommit.index && this.remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight)
+    }
+
     /**
      *
      * @param commitments current commitments
@@ -219,7 +234,15 @@ data class Commitments(
         val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isFunder) fees.toMilliSatoshi() + funderFeeReserve else 0.msat)
         val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isFunder) 0.msat else fees.toMilliSatoshi())
         if (missingForSender < 0.msat) {
-            return Try.Failure(InsufficientFunds(channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi(), reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
+            return Try.Failure(
+                InsufficientFunds(
+                    channelId,
+                    amount = cmd.amount,
+                    missing = -missingForSender.truncateToSatoshi(),
+                    reserve = commitments1.remoteParams.channelReserve,
+                    fees = if (commitments1.localParams.isFunder) fees else 0.sat
+                )
+            )
         } else if (missingForReceiver < 0.msat) {
             if (localParams.isFunder) {
                 // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
@@ -442,7 +465,11 @@ data class Commitments(
             val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint) }
 
             // NB: IN/OUT htlcs are inverted because this is the remote commit
-            log.info { "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=${spec.htlcs.outgoings().map { it.id }.joinToString(",")} htlc_out=${spec.htlcs.incomings().map { it.id }.joinToString(",")} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}" }
+            log.info {
+                "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=${
+                    spec.htlcs.outgoings().map { it.id }.joinToString(",")
+                } htlc_out=${spec.htlcs.incomings().map { it.id }.joinToString(",")} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}"
+            }
 
             // don't sign if they don't get paid
             val commitSig = CommitSig(
@@ -495,7 +522,11 @@ data class Commitments(
         val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
         val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath))
 
-        log.info { "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=${spec.htlcs.incomings().map { it.id }.joinToString(",")} htlc_out=${spec.htlcs.outgoings().map { it.id }.joinToString(",")} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx=${localCommitTx.tx}" }
+        log.info {
+            "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=${
+                spec.htlcs.incomings().map { it.id }.joinToString(",")
+            } htlc_out=${spec.htlcs.outgoings().map { it.id }.joinToString(",")} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx=${localCommitTx.tx}"
+        }
 
         // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 

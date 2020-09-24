@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.handleRemoteSpentCurrent
 import fr.acinq.eclair.channel.Channel.handleRemoteSpentNext
@@ -22,6 +23,8 @@ import fr.acinq.eclair.wire.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -106,6 +109,22 @@ sealed class ChannelState {
      */
     abstract fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>>
 
+    /**
+     * update outgoing messages to include an encrypted backup when necessary
+     */
+    fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
+        this is HasCommitments && this.isZeroReserve() -> actions.map {
+            when {
+                it is SendMessage && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                it is SendMessage && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                it is SendMessage && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                it is SendMessage && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
+                else -> it
+            }
+        }
+        else -> actions
+    }
+
     @Transient
     val logger = LoggerFactory.default.newLogger(Logger.Tag(Channel::class))
 }
@@ -114,6 +133,12 @@ interface HasCommitments {
     val commitments: Commitments
     val channelId: ByteVector32
         get() = commitments.channelId
+
+    fun isZeroReserve(): Boolean = commitments.isZeroReserve
+
+    fun isFunder(): Boolean = commitments.localParams.isFunder
+
+    fun updateCommitments(input: Commitments): HasCommitments
 
     companion object {
         val serializersModule = SerializersModule {
@@ -125,6 +150,27 @@ interface HasCommitments {
                 subclass(Closing::class)
             }
         }
+
+        private val serializationModules = SerializersModule {
+            include(Tlv.serializersModule)
+            include(KeyManager.serializersModule)
+            include(UpdateMessage.serializersModule)
+            include(ConstantFeeEstimator.testSerializersModule)
+        }
+
+        private val cbor = Cbor {
+            serializersModule = serializationModules
+        }
+
+        fun serialize(state: HasCommitments): ByteArray {
+            return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
+        }
+
+        fun deserialize(bin: ByteArray): HasCommitments {
+            return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
+        }
+
+        fun deserialize(bin: ByteVector): HasCommitments = deserialize(bin.toByteArray())
     }
 }
 
@@ -194,7 +240,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 )
                 val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed))
                 // TODO: ask watcher for the funding tx when restoring WaitForFundingConfirmed
-                Pair(Offline(event.state), actions)
+                Pair(Offline(event.state), event.state.updateActions(actions))
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
@@ -215,22 +261,49 @@ data class Offline(val state: ChannelState) : ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
         return when {
-            event is Connected && state is HasCommitments -> {
-                val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
-                val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
+            event is Connected -> {
+                when {
+                    state is WaitForRemotePublishFutureComitment -> {
+                        // they already proved that we have an outdated commitment
+                        // there isn't much to do except asking them again to publish their current commitment by sending an error
+                        val exc = PleasePublishYourCommitment(state.channelId)
+                        val error = Error(state.channelId, exc.message)
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        Pair(
+                            nextState,
+                            nextState.updateActions(listOf(SendMessage(error)))
+                        )
+                    }
+                    state is HasCommitments && state.isZeroReserve() -> {
+                        logger.info { "syncing $state, waiting fo their channelReestablish message" }
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        Pair(Syncing(nextState, true), listOf())
+                    }
+                    state is HasCommitments -> {
+                        val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
 
-                val channelReestablish = ChannelReestablish(
-                    channelId = state.channelId,
-                    nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
-                    nextRemoteRevocationNumber = state.commitments.remoteCommit.index,
-                    yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                    myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-                )
-
-                // TODO: update local/remote connection-local global/local features
-                logger.info { "syncing $state" }
-                Pair(Syncing(state), listOf(SendMessage(channelReestablish)))
+                        val channelReestablish = ChannelReestablish(
+                            channelId = state.channelId,
+                            nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
+                            nextRemoteRevocationNumber = state.commitments.remoteCommit.index,
+                            yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                            state.commitments.remoteChannelData
+                        )
+                        logger.info { "syncing $state" }
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        Pair(
+                            Syncing(nextState, false),
+                            nextState.updateActions(listOf(SendMessage(channelReestablish)))
+                        )
+                    }
+                    else -> {
+                        logger.warning { "unhandled event $event in state ${this::class}" }
+                        Pair(this, listOf())
+                    }
+                }
             }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
@@ -238,15 +311,20 @@ data class Offline(val state: ChannelState) : ChannelState() {
                 Pair(Offline(newState), listOf())
             }
             else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
+                logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
             }
         }
     }
 }
 
+/**
+ * waitForTheirReestablishMessage == true means that we want to wait until we've received their channel_reestablish message before
+ * we send ours (for example, to extract encrypted backup data from extra fields)
+ * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
+ */
 @Serializable
-data class Syncing(val state: ChannelState) : ChannelState() {
+data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
     override val staticParams: StaticParams
         get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader>
@@ -257,6 +335,49 @@ data class Syncing(val state: ChannelState) : ChannelState() {
         return when {
             event is MessageReceived && event.message is ChannelReestablish ->
                 when {
+                    waitForTheirReestablishMessage -> {
+                        if (state !is HasCommitments) {
+                            logger.error { "waiting for their channel_reestablish message in a state  that is not valid" }
+                            return Pair(state, listOf())
+                        }
+                        val nextState = if (!event.message.channelData.isEmpty()) {
+                            logger.info { "channel_reestablish includes a peer backup" }
+                            when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {
+                                is Try.Success -> {
+                                    if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
+                                        logger.warning { "they have a more recent commitment, using it instead" }
+                                        decrypted.get()
+                                    } else {
+                                        logger.info { "ignoring their older backup" }
+                                        state
+                                    }
+                                }
+                                is Try.Failure -> {
+                                    logger.error(decrypted.error) { "ignoring unreadable channel data for channelId=${state.channelId}" }
+                                    state
+                                }
+                            }
+                        } else state
+
+                        val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, nextState.commitments.channelVersion)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, nextState.commitments.localCommit.index)
+
+                        val channelReestablish = ChannelReestablish(
+                            channelId = nextState.channelId,
+                            nextLocalCommitmentNumber = nextState.commitments.localCommit.index + 1,
+                            nextRemoteRevocationNumber = nextState.commitments.remoteCommit.index,
+                            yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                            nextState.commitments.remoteChannelData
+                        )
+                        val actions = listOf<ChannelAction>(
+                            SendMessage(channelReestablish)
+                        )
+                        // now apply their reestablish message to the restored state
+                        val (nextState1, actions1) = Syncing(nextState as ChannelState, waitForTheirReestablishMessage = false).process(event)
+                        Pair(nextState1, updateActions(actions + actions1))
+                    }
                     state is WaitForFundingConfirmed -> {
                         val minDepth = if (state.commitments.localParams.isFunder) {
                             staticParams.nodeParams.minDepthBlocks
@@ -300,7 +421,7 @@ data class Syncing(val state: ChannelState) : ChannelState() {
                                         StoreState(nextState),
                                         SendMessage(error)
                                     )
-                                    Pair(nextState, actions)
+                                    Pair(nextState, nextState.updateActions(actions))
                                 } else {
                                     // they lied! the last per_commitment_secret they claimed to have received from us is invalid
                                     logger.warning { "they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
@@ -321,7 +442,7 @@ data class Syncing(val state: ChannelState) : ChannelState() {
                                     StoreState(nextState),
                                     SendMessage(error)
                                 )
-                                Pair(nextState, actions)
+                                Pair(nextState, nextState.updateActions(actions))
                             }
                             else -> {
                                 // normal case, our data is up-to-date
@@ -363,17 +484,17 @@ data class Syncing(val state: ChannelState) : ChannelState() {
                         }
                     }
                     else -> {
-                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        logger.warning { "unhandled event $event in state ${this::class}" }
                         Pair(this, listOf())
                     }
                 }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
-                Pair(Syncing(newState), listOf())
+                Pair(Syncing(newState, waitForTheirReestablishMessage), listOf())
             }
             else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
+                logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
             }
         }
@@ -387,6 +508,7 @@ data class WaitForRemotePublishFutureComitment(
     override val commitments: Commitments,
     val channelReestablish: ChannelReestablish
 ) : ChannelState(), HasCommitments {
+    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         TODO("Not yet implemented")
@@ -407,7 +529,7 @@ data class WaitForOpenChannel(
                 when (event.message) {
                     is OpenChannel -> {
                         val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-                        var channelVersion = Helpers.getChannelVersion(event.message)
+                        var channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         if (Features.canUseFeature(
                                 localParams.features,
                                 Features.invoke(remoteInit.features),
@@ -477,13 +599,13 @@ data class WaitForOpenChannel(
                         Pair(nextState, listOf(SendMessage(accept)))
                     }
                     else -> {
-                        logger.warning { "unhandled event $event ins state ${this::class}" }
+                        logger.warning { "unhandled event $event in state ${this::class}" }
                         Pair(this, listOf())
                     }
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
+                logger.warning { "unhandled event $event in state ${this::class}" }
                 Pair(this, listOf())
             }
         }
@@ -534,7 +656,7 @@ data class WaitForFundingCreated(
                             localSigOfLocalTx,
                             event.message.signature
                         )
-                        when(val result = Transactions.checkSpendable(signedLocalCommitTx)) {
+                        when (val result = Transactions.checkSpendable(signedLocalCommitTx)) {
                             is Try.Failure -> {
                                 // TODO: implement error handling
                                 logger.error(result.error) { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
@@ -576,11 +698,8 @@ data class WaitForFundingCreated(
                                 // NB: we don't send a ChannelSignatureSent for the first commit
                                 logger.info { "waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
                                 // phoenix channels have a zero mindepth for funding tx
-                                val fundingMinDepth =
-                                    if (commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) 0 else Helpers.minDepthForFunding(
-                                        staticParams.nodeParams,
-                                        fundingAmount
-                                    )
+                                val fundingMinDepth = if (commitments.isZeroReserve) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, fundingAmount)
+                                logger.info { "$channelId will wait for $fundingMinDepth confirmations" }
                                 val watchSpent = WatchSpent(
                                     channelId,
                                     commitInput.outPoint.txid,
@@ -597,7 +716,7 @@ data class WaitForFundingCreated(
                                 )
                                 val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
                                 val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
-                                Pair(nextState, actions)
+                                Pair(nextState, nextState.updateActions(actions))
                             }
                         }
                     }
@@ -830,6 +949,7 @@ data class WaitForFundingConfirmed(
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelState(), HasCommitments {
+    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
@@ -873,7 +993,7 @@ data class WaitForFundingConfirmed(
                             val resultPair = nextState.process(MessageReceived(deferred))
                             Pair(resultPair.first, actions + resultPair.second)
                         } else {
-                            Pair(nextState, actions)
+                            Pair(nextState, nextState.updateActions(actions))
                         }
                     }
                     is WatchEventSpent -> {
@@ -900,6 +1020,7 @@ data class WaitForFundingLocked(
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
 ) : ChannelState(), HasCommitments {
+    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
@@ -917,7 +1038,7 @@ data class WaitForFundingLocked(
                         // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
                         val initialChannelUpdate = Announcements.makeChannelUpdate(
                             staticParams.nodeParams.chainHash,
-                            staticParams.nodeParams.privateKey,
+                            staticParams.nodeParams.nodePrivateKey,
                             staticParams.remoteNodeId,
                             shortChannelId,
                             staticParams.nodeParams.expiryDeltaBlocks,
@@ -970,6 +1091,7 @@ data class Normal(
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?
 ) : ChannelState(), HasCommitments {
+    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is ExecuteCommand -> {
@@ -1006,7 +1128,7 @@ data class Normal(
                         }
                     }
                     is CMD_FAIL_HTLC -> {
-                        when (val result = commitments.sendFail(event.command, staticParams.nodeParams.privateKey)) {
+                        when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
@@ -1046,9 +1168,9 @@ data class Normal(
                                             logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                             HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                                         }
-                                        val newState = this.copy(commitments = result.result.first)
-                                        val actions = listOf(StoreHtlcInfos(htlcInfos), StoreState(newState), SendMessage(result.result.second))
-                                        Pair(newState, actions)
+                                        val nextState = this.copy(commitments = result.result.first)
+                                        val actions = listOf(StoreHtlcInfos(htlcInfos), StoreState(nextState), SendMessage(result.result.second))
+                                        Pair(nextState, nextState.updateActions(actions))
                                     }
                                 }
                             }
@@ -1095,15 +1217,15 @@ data class Normal(
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
                                 }
-                                val newState = this.copy(commitments = result.result.first)
+                                val nextState = this.copy(commitments = result.result.first)
                                 var actions = listOf<ChannelAction>(
                                     SendMessage(result.result.second),
-                                    StoreState(newState)
+                                    StoreState(nextState)
                                 )
                                 if (result.result.first.localHasChanges()) {
                                     actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
-                                Pair(newState, actions)
+                                Pair(nextState, nextState.updateActions(actions))
                             }
                         }
                     }
@@ -1112,12 +1234,12 @@ data class Normal(
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 // TODO: handle shutdown
-                                val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<ChannelAction>(StoreState(newState)) + result.result.second
+                                val nextState = this.copy(commitments = result.result.first)
+                                var actions = listOf<ChannelAction>(StoreState(nextState)) + result.result.second
                                 if (result.result.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
                                     actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
-                                Pair(newState, actions)
+                                Pair(nextState, nextState.updateActions(actions))
                             }
                         }
                     }
@@ -1167,6 +1289,10 @@ data class Closing(
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         TODO("implement this")
     }
+
+    override fun updateCommitments(input: Commitments): HasCommitments {
+        TODO("Not yet implemented")
+    }
 }
 
 
@@ -1178,6 +1304,10 @@ data class ErrorInformationLeak(
 ) : ChannelState(), HasCommitments {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         TODO("implement this")
+    }
+
+    override fun updateCommitments(input: Commitments): HasCommitments {
+        TODO("Not yet implemented")
     }
 }
 
@@ -1227,7 +1357,8 @@ object Channel {
             localChanges = d.commitments.localChanges.copy(proposed = emptyList()),
             remoteChanges = d.commitments.remoteChanges.copy(proposed = emptyList()),
             localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>().size,
-            remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size)
+            remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size
+        )
         log.verbose { "localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}" }
         log.verbose { "remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}" }
 
@@ -1237,7 +1368,7 @@ object Channel {
                 // nothing to do
             } else if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber + 1) {
                 // our last revocation got lost, let's resend it
-                log.verbose {  "re-sending last revocation" }
+                log.verbose { "re-sending last revocation" }
                 val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
                 val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, d.commitments.localCommit.index - 1)
                 val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index + 1)

@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
@@ -20,15 +21,8 @@ class OfflineTestsCommon {
         assertTrue{ alice1 is Offline }
         assertTrue{ bob1 is Offline }
 
-        val features = Features(
-            setOf(
-                ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-            )
-        )
-        val localInit = Init(features.toByteArray().toByteVector())
-        val remoteInit = localInit
+        val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
+        val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(Connected(localInit, remoteInit))
         assertTrue { alice2 is Syncing}
@@ -51,7 +45,7 @@ class OfflineTestsCommon {
         // a didn't receive any update or sig
         assertEquals(
             ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint),
-            channelReestablishA
+            channelReestablishA.copy(channelData = ByteVector.empty)
         )
         assertEquals(
             ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint),
@@ -59,6 +53,7 @@ class OfflineTestsCommon {
         )
 
         val (alice3, actions2) = alice2.process(MessageReceived(channelReestablishB))
+        assertEquals(alice.commitments.localParams, (alice3 as Normal).commitments.localParams)
         assertEquals(alice, alice3)
         assertTrue(actions2.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().size == 1)
 
@@ -87,15 +82,8 @@ class OfflineTestsCommon {
         assertTrue{ alice1 is Offline }
         assertTrue{ bob1 is Offline }
 
-        val features = Features(
-            setOf(
-                ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-            )
-        )
-        val localInit = Init(features.toByteArray().toByteVector())
-        val remoteInit = localInit
+        val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
+        val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(Connected(localInit, remoteInit))
         assertTrue { alice2 is Syncing}
@@ -162,5 +150,4 @@ class OfflineTestsCommon {
 
         assertEquals(1, alice.commitments.localNextHtlcId)
     }
-
 }
