@@ -164,7 +164,7 @@ class Peer(
                     logger.warning { ex.message }
                 }
             }
-            println("sending init ${LightningMessage.encode(ourInit)!!}")
+            logger.info { "sending init ${LightningMessage.encode(ourInit)!!}" }
             send(LightningMessage.encode(ourInit)!!)
 
             suspend fun doPing() {
@@ -225,7 +225,7 @@ class Peer(
                 it is SendMessage -> {
                     val encoded = LightningMessage.encode(it.message)
                     encoded?.let { bin ->
-                        logger.info { "sending ${it.message}" }
+                        logger.info { "sending ${it.message} encoded as ${Hex.encode(bin)}" }
                         output.send(bin)
                     }
                 }
@@ -311,6 +311,7 @@ class Peer(
             when {
                 event is BytesReceived -> {
                     val msg = LightningMessage.decode(event.data)
+                    logger.info { "received $msg" }
                     when {
                         msg is Init -> {
                             logger.info { "received $msg" }
@@ -378,8 +379,40 @@ class Peer(
                             channels = channels + (msg.temporaryChannelId to state2)
                             logger.info { "new state for ${msg.temporaryChannelId}: $state2" }
                         }
+                        msg is ChannelReestablish && !channels.containsKey(msg.channelId) -> {
+                            if (msg.channelData.isEmpty()) {
+                                send(listOf(SendMessage(Error(msg.channelId, "unknown channel"))))
+                            } else {
+                                when (val decrypted = runTrying { Helpers.decrypt(nodeParams.nodePrivateKey, msg.channelData) }) {
+                                    is Try.Success -> {
+                                        logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
+                                        val backup = decrypted.result
+                                        val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                                        val (state1, actions1) = state.process(Restore(backup as ChannelState))
+                                        send(actions1)
+                                        store(actions1)
+                                        sendToSelf(msg.channelId, actions1)
+
+                                        val (state2, actions2) = state1.process(Connected(ourInit, theirInit!!))
+                                        send(actions2)
+                                        store(actions2)
+                                        sendToSelf(msg.channelId, actions2)
+
+                                        val (state3, actions3) = state2.process(MessageReceived(msg))
+                                        send(actions3)
+                                        store(actions3)
+                                        sendToSelf(msg.channelId, actions3)
+                                        channels = channels + (msg.channelId to state3)
+                                    }
+                                    is Try.Failure -> {
+                                        logger.error(decrypted.error) { "failed to restore channelId=${msg.channelId}" }
+                                    }
+                                }
+                            }
+                        }
                         msg is HasTemporaryChannelId && !channels.containsKey(msg.temporaryChannelId) -> {
                             logger.error { "received $msg for unknown temporary channel ${msg.temporaryChannelId}" }
+                            send(listOf(SendMessage(Error(msg.temporaryChannelId, "unknown channel"))))
                         }
                         msg is HasTemporaryChannelId -> {
                             logger.info { "received $msg for temporary channel ${msg.temporaryChannelId}" }
@@ -390,18 +423,14 @@ class Peer(
                             send(actions)
                             store(actions)
                             sendToSelf(msg.temporaryChannelId, actions)
-                            actions.forEach {
-                                when (it) {
-                                    is ChannelIdSwitch -> {
-                                        logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
-                                        channels = channels - it.oldChannelId + (it.newChannelId to state1)
-                                    }
-                                    else -> logger.warning { "ignoring $it" }
-                                }
+                            actions.filterIsInstance<ChannelIdSwitch>().forEach {
+                                logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
+                                channels = channels - it.oldChannelId + (it.newChannelId to state1)
                             }
                         }
                         msg is HasChannelId && !channels.containsKey(msg.channelId) -> {
                             logger.error { "received $msg for unknown channel ${msg.channelId}" }
+                            send(listOf(SendMessage(Error(msg.channelId, "unknown channel"))))
                         }
                         msg is HasChannelId -> {
                             logger.info { "received $msg for channel ${msg.channelId}" }
@@ -467,7 +496,7 @@ class Peer(
                     if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
                         invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
                     }
-                    val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.privateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
+                    val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
                     logger.info { "payment request ${pr.write()}" }
                     pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                     listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))

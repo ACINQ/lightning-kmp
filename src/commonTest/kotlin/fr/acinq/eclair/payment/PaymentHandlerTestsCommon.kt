@@ -324,7 +324,7 @@ class PaymentHandlerTestsCommon {
             chainHash = nodeParams_alice.chainHash,
             amount = totalAmount,
             paymentHash = paymentHash,
-            privateKey = nodeParams_bob.privateKey, // Bob creates invoice, sends to Alice
+            privateKey = nodeParams_bob.nodePrivateKey, // Bob creates invoice, sends to Alice
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures)
@@ -425,7 +425,7 @@ class PaymentHandlerTestsCommon {
             chainHash = nodeParams_alice.chainHash,
             amount = totalAmount,
             paymentHash = paymentHash,
-            privateKey = nodeParams_bob.privateKey, // Bob creates invoice, sends to Alice
+            privateKey = nodeParams_bob.nodePrivateKey, // Bob creates invoice, sends to Alice
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures)

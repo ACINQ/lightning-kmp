@@ -99,13 +99,22 @@ class TlvStreamSerializer<T : Tlv>(val lengthPrefixed: Boolean, val serializers:
                 require(tag > previousTag) { "tlvstream is not sorted by tags" }
             }
             previousTag = tag
-            val length = bigSize(input)
-            val data = bytes(input, length)
-            val dataStream = ByteArrayInput(data)
             val serializer = serializers[tag]
             serializer
-                ?.let { records.add(serializer.read(dataStream)) }
-                ?: unknown.add(GenericTlv(tag, ByteVector(data)))
+                ?.let {
+                    if (it.willHandleLength) records.add(serializer.read(input))
+                    else {
+                        val length = bigSize(input)
+                        val data = bytes(input, length)
+                        val dataStream = ByteArrayInput(data)
+                        records.add(serializer.read(dataStream))
+                    }
+                }
+                ?: run {
+                    val length = bigSize(input)
+                    val data = bytes(input, length)
+                    unknown.add(GenericTlv(tag, ByteVector(data)))
+                }
         }
         return TlvStream(records.toList(), unknown.toList())
     }

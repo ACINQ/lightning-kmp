@@ -33,7 +33,7 @@ class PaymentHandler(
     private data class FinalPacket(val htlc: UpdateAddHtlc, val onion: FinalPayload)
     private val pending = mutableMapOf<ByteVector32, Set<FinalPacket>>()
 
-    private val privateKey get() = nodeParams.privateKey
+    private val privateKey get() = nodeParams.nodePrivateKey
 
     /**
      * Processes an incoming htlc.

@@ -190,7 +190,7 @@ class CommitmentsTests {
         assertEquals(bc4.availableBalanceForReceive(), a - p - fee)
 
         val cmdFail = CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(p, 42)))
-        val (bc5, fail) = bc4.sendFail(cmdFail, bob.staticParams.nodeParams.privateKey).get()
+        val (bc5, fail) = bc4.sendFail(cmdFail, bob.staticParams.nodeParams.nodePrivateKey).get()
         assertEquals(bc5.availableBalanceForSend(), b)
         assertEquals(bc5.availableBalanceForReceive(), a - p - fee)
 
@@ -315,7 +315,7 @@ class CommitmentsTests {
         assertEquals(bc8.availableBalanceForReceive(), a - p1 - fee - p2 - fee - fee)
 
         val cmdFail2 = CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(p2, 42)))
-        val (bc9, fail2) = bc8.sendFail(cmdFail2, bob.staticParams.nodeParams.privateKey).get()
+        val (bc9, fail2) = bc8.sendFail(cmdFail2, bob.staticParams.nodeParams.nodePrivateKey).get()
         assertEquals(bc9.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc9.availableBalanceForReceive(), a - p1 - fee - p2 - fee - fee) // a's balance won't return to previous before she acknowledges the fail
 

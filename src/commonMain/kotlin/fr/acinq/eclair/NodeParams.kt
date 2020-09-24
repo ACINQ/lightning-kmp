@@ -46,6 +46,6 @@ data class NodeParams(
     val maxPaymentAttempts: Int,
     val enableTrampolinePayment: Boolean,
 ) {
-    val privateKey get() = keyManager.nodeKey.privateKey
+    val nodePrivateKey get() = keyManager.nodeKey.privateKey
     val nodeId get() = keyManager.nodeId
 }

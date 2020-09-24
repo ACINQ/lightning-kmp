@@ -2,23 +2,15 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
-import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.wire.Tlv
-import fr.acinq.eclair.wire.UpdateMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.decodeFromByteArray
-import kotlinx.serialization.modules.SerializersModule
 import java.sql.Connection
 import java.sql.Statement
 
 
-class SqliteChannelsDb(val sqlite: Connection): ChannelsDb {
+class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
     /**
      * This helper makes sure statements are correctly closed.
      *
@@ -31,7 +23,7 @@ class SqliteChannelsDb(val sqlite: Connection): ChannelsDb {
             val res = block(statement)
             if (inTransaction) statement.getConnection().commit()
             return res
-        } catch(e: Exception) {
+        } catch (e: Exception) {
             if (inTransaction) statement.getConnection().rollback()
             throw e
         } finally {
@@ -56,27 +48,9 @@ class SqliteChannelsDb(val sqlite: Connection): ChannelsDb {
 
     }
 
-    private val serializationModules = SerializersModule {
-        include(Tlv.serializersModule)
-        include(KeyManager.serializersModule)
-        include(UpdateMessage.serializersModule)
-        include(ConstantFeeEstimator.testSerializersModule)
-    }
-    private val cbor = Cbor {
-        serializersModule = serializationModules
-    }
-
-    private fun serialize(state: HasCommitments): ByteArray {
-        return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
-    }
-    
-    private fun deserialize(bin: ByteArray) : HasCommitments {
-        return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
-    }
-    
     override suspend fun addOrUpdateChannel(state: HasCommitments) {
         withContext(Dispatchers.IO) {
-            val data = serialize(state)
+            val data = HasCommitments.serialize(state)
             using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
                 update.setBytes(1, data)
                 update.setBytes(2, state.channelId.toByteArray())
@@ -116,7 +90,7 @@ class SqliteChannelsDb(val sqlite: Connection): ChannelsDb {
                 val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
                 val result = ArrayList<HasCommitments>()
                 while (rs.next()) {
-                    result.add(deserialize(rs.getBytes("data")))
+                    result.add(HasCommitments.deserialize(rs.getBytes("data")))
                 }
                 result
             }
