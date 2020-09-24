@@ -239,6 +239,36 @@ class PaymentHandler(
         return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = actions)
     }
 
+    fun checkPaymentsTimeout(
+        incomingPayments: Map<ByteVector32, IncomingPayment>,
+        currentTimestampSeconds: Long
+    ): List<PeerEvent> {
+
+        val actions = mutableListOf<PeerEvent>()
+        val keysToRemove = mutableListOf<ByteVector32>()
+
+        pending.forEach { (paymentHash, parts) ->
+
+            val isExpired = when(val incomingPayment = incomingPayments[paymentHash]) {
+                null -> true
+                else -> incomingPayment.paymentRequest.isExpired(currentTimestampSeconds)
+            }
+
+            if (isExpired) {
+                keysToRemove += paymentHash
+                parts.forEach { part ->
+                    actions += actionForFailureMessage(msg = PaymentTimeout, htlc = part.htlc)
+                }
+            }
+        }
+
+        pending.minusAssign(keysToRemove)
+        return actions
+    }
+
+    /**
+     * Creates and returns a CMD_FAIL_HTLC (wrapped in a WrappedChannelEvent)
+     */
     private fun actionForFailureMessage(
         msg: FailureMessage,
         htlc: UpdateAddHtlc,

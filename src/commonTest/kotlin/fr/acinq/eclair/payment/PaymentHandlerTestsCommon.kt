@@ -499,4 +499,105 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             ), par.actions.toSet())
         }
     }
+
+    @Test
+    fun `PaymentHandler should fail unfinished payments after expiration`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
+        val currentBlockHeight = TestConstants.defaultBlockHeight
+
+        val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
+        val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
+
+        val nodeParams_alice = TestConstants.Alice.nodeParams
+        val nodeParams_bob = TestConstants.Bob.nodeParams
+
+        val paymentHandler_bob = PaymentHandler(nodeParams_bob)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2
+
+        val invoiceFeatures = setOf(
+            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
+        )
+        val paymentRequest = PaymentRequest.create(
+            chainHash = nodeParams_alice.chainHash,
+            amount = totalAmount,
+            paymentHash = paymentHash,
+            privateKey = nodeParams_bob.privateKey, // Bob creates invoice, sends to Alice
+            description = "unit test",
+            minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+            features = Features(invoiceFeatures)
+        )
+        val paymentSecret = paymentRequest.paymentSecret!!
+        val incomingPayment = IncomingPayment(
+            paymentRequest = paymentRequest,
+            paymentPreimage = paymentPreimage
+        )
+
+        // Step 1 of 3:
+        // Alice sends single (unfinished) multipart htlc to Bob.
+        run {
+
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                amount = amount1,
+                totalAmount = totalAmount,
+                destination = nodeParams_bob.nodeId,
+                currentBlockHeight = currentBlockHeight.toLong(),
+                paymentHash = paymentHash,
+                paymentSecret = paymentSecret
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = currentBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 3:
+        // Ensure PaymentHandler doesn't expire the multipart htlc before invoice expiration.
+        run {
+
+            val expiry = paymentRequest.expiry ?: PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong()
+            val currentTimestampSeconds = paymentRequest.timestamp + expiry - 1
+
+            val actions = paymentHandler_bob.checkPaymentsTimeout(
+                incomingPayments = mapOf(paymentHash to incomingPayment),
+                currentTimestampSeconds = currentTimestampSeconds
+            )
+
+            assertTrue { actions.isEmpty() }
+        }
+
+        // Step 3 of 3:
+        // Ensure PaymentHandler expires the multipart htlc after invoice expiration.
+        run {
+
+            val expiry = paymentRequest.expiry ?: PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong()
+            val currentTimestampSeconds = paymentRequest.timestamp + expiry
+
+            val actions = paymentHandler_bob.checkPaymentsTimeout(
+                incomingPayments = mapOf(paymentHash to incomingPayment),
+                currentTimestampSeconds = currentTimestampSeconds
+            )
+
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+                    ),
+                ), actions.toSet()
+            )
+        }
+    }
 }

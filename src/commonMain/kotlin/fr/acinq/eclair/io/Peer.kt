@@ -39,6 +39,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 
 data class SendPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
+object CheckPaymentsTimeout: PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -175,6 +176,13 @@ class Peer(
                 }
             }
 
+            suspend fun doPaymentTimeout() {
+                while (isActive) {
+                    delay(timeMillis = 30_000)
+                    input.send(CheckPaymentsTimeout)
+                }
+            }
+
             suspend fun listen() {
                 try {
                     while (isActive) {
@@ -203,6 +211,7 @@ class Peer(
                     }
                 }
                 launch { doPing() }
+                launch { doPaymentTimeout() }
                 launch { respond() }
 
                 listen()
@@ -547,6 +556,13 @@ class Peer(
                     sendToSelf(key, actions)
                     channels = channels + (key to state1)
                 }
+            event is CheckPaymentsTimeout -> {
+                val actions = paymentHandler.checkPaymentsTimeout(
+                    incomingPayments = pendingIncomingPayments,
+                    currentTimestampSeconds = currentTimestampSeconds()
+                )
+                actions.forEach { input.send(it) }
+            }
             }
             event is WrappedChannelEvent && !channels.containsKey(event.channelId) -> {
                 logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
