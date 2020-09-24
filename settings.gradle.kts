@@ -7,3 +7,7 @@ pluginManagement {
         jcenter()
     }
 }
+
+include(
+    ":eclair-kmp-test-fixtures"
+)

@@ -4,9 +4,9 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
 import fr.acinq.eclair.io.TcpSocket
+import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.Connection
 import fr.acinq.eclair.utils.ServerAddress
-import fr.acinq.eclair.utils.runTest
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.CoroutineScope
@@ -15,12 +15,11 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.withTimeout
 import kotlin.test.*
 import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClientIntegrationTest {
     // this is tx #2690 of block #500000
     private val referenceTx =
@@ -61,16 +60,16 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `connect to an electrumx mainnet server`() = runTest { connectToMainnetServer().stop() }
+    fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
 
     @Test
-    fun `get transaction id from position`() = runTest {
+    fun `get transaction id from position`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendMessage(SendElectrumRequest(GetTransactionIdFromPosition(height, position)))
 
-        notifications.consumerCheckWithTimeout<GetTransactionIdFromPositionResponse> { message ->
+        notifications.consumerCheck<GetTransactionIdFromPositionResponse> { message ->
             assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position), message)
         }
 
@@ -78,13 +77,13 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `get transaction id from position with merkle proof`() = runTest {
+    fun `get transaction id from position with merkle proof`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendMessage(SendElectrumRequest(GetTransactionIdFromPosition(height, position, true)))
 
-        notifications.consumerCheckWithTimeout<GetTransactionIdFromPositionResponse> { message ->
+        notifications.consumerCheck<GetTransactionIdFromPositionResponse> { message ->
             assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, merkleProof), message)
         }
 
@@ -92,13 +91,13 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `get transaction`() = runTest {
+    fun `get transaction`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendMessage(SendElectrumRequest(GetTransaction(referenceTx.txid)))
 
-        notifications.consumerCheckWithTimeout<GetTransactionResponse> { message ->
+        notifications.consumerCheck<GetTransactionResponse> { message ->
             assertEquals(referenceTx, message.tx)
         }
 
@@ -106,13 +105,13 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `get header`() = runTest {
+    fun `get header`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendMessage(SendElectrumRequest(GetHeader(100000)))
 
-        notifications.consumerCheckWithTimeout<GetHeaderResponse> { message ->
+        notifications.consumerCheck<GetHeaderResponse> { message ->
             assertEquals(
                 Hex.decode("000000000003ba27aa200b1cecaad478d2b00432346c3f1f3986da1afd33e506").byteVector32(),
                 message.header.blockId
@@ -123,14 +122,14 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `get headers`() = runTest {
+    fun `get headers`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         val start = (500000 / 2016) * 2016
         client.sendElectrumRequest(GetHeaders(start, 2016))
 
-        notifications.consumerCheckWithTimeout<GetHeadersResponse> { message ->
+        notifications.consumerCheck<GetHeadersResponse> { message ->
             assertEquals(start, message.start_height)
             assertEquals(2016, message.headers.size)
         }
@@ -139,13 +138,13 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `get merkle tree`() = runTest {
+    fun `get merkle tree`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendElectrumRequest(GetMerkle(referenceTx.txid, 500000))
 
-        notifications.consumerCheckWithTimeout<GetMerkleResponse> { message ->
+        notifications.consumerCheck<GetMerkleResponse> { message ->
             assertEquals(referenceTx.txid, message.txid)
             assertEquals(500000, message.block_height)
             assertEquals(2690, message.pos)
@@ -159,25 +158,25 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `header subscription`() = runTest {
+    fun `header subscription`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendMessage(AskForHeaderSubscriptionUpdate)
 
-        notifications.consumerCheckWithTimeout<HeaderSubscriptionResponse>()
+        notifications.consumerCheck<HeaderSubscriptionResponse>()
 
         client.stop()
     }
 
     @Test
-    fun `scripthash subscription`() = runTest {
+    fun `scripthash subscription`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
 
-        notifications.consumerCheckWithTimeout<ScriptHashSubscriptionResponse> { message ->
+        notifications.consumerCheck<ScriptHashSubscriptionResponse> { message ->
             assertNotEquals("", message.status)
         }
 
@@ -185,13 +184,13 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `get scripthash history`() = runTest {
+    fun `get scripthash history`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendElectrumRequest(GetScriptHashHistory(scriptHash))
 
-        notifications.consumerCheckWithTimeout<GetScriptHashHistoryResponse> { message ->
+        notifications.consumerCheck<GetScriptHashHistoryResponse> { message ->
             assertTrue { message.history.contains(TransactionHistoryItem(500000, referenceTx.txid)) }
         }
 
@@ -199,13 +198,13 @@ class ElectrumClientIntegrationTest {
     }
 
     @Test
-    fun `list script unspents`() = runTest {
+    fun `list script unspents`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val notifications = client.openNotificationsSubscription()
 
         client.sendElectrumRequest(ScriptHashListUnspent(scriptHash))
 
-        notifications.consumerCheckWithTimeout<ScriptHashListUnspentResponse> { message ->
+        notifications.consumerCheck<ScriptHashListUnspentResponse> { message ->
             assertTrue { message.unspents.isEmpty() }
         }
 
@@ -213,12 +212,10 @@ class ElectrumClientIntegrationTest {
     }
 
     @OptIn(ExperimentalTime::class)
-    private suspend inline fun <reified T : ElectrumMessage> ReceiveChannel<ElectrumMessage>.consumerCheckWithTimeout(crossinline assertion: (T) -> Unit = {}) {
-        withTimeout(10.seconds) {
-            val msg = this@consumerCheckWithTimeout.consumeAsFlow().filterIsInstance<T>().firstOrNull()
-            assertNotNull(msg)
-            assertion(msg)
-        }
+    private suspend inline fun <reified T : ElectrumMessage> ReceiveChannel<ElectrumMessage>.consumerCheck(crossinline assertion: (T) -> Unit = {}) {
+        val msg = this@consumerCheck.consumeAsFlow().filterIsInstance<T>().firstOrNull()
+        assertNotNull(msg)
+        assertion(msg)
     }
 
 }

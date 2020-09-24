@@ -1,4 +1,4 @@
-package fr.acinq.eclair.utils
+package fr.acinq.eclair.tests.utils
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
@@ -8,7 +8,7 @@ import platform.Foundation.NSRunLoop
 import platform.Foundation.dateWithTimeIntervalSinceNow
 import platform.Foundation.runUntilDate
 
-actual fun runTest(block: suspend CoroutineScope.() -> Unit) {
+actual fun runSuspendBlocking(block: suspend CoroutineScope.() -> Unit) {
     var result: Result<Unit>? = null
 
     MainScope().launch {
