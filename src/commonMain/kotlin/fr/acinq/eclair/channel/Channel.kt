@@ -106,6 +106,11 @@ sealed class ChannelState {
      */
     abstract fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>>
 
+    fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "unhandled event $event in state ${this::class}" }
+        return Pair(this, listOf())
+    }
+
     /**
      * update outgoing messages to include an encrypted backup when necessary
      */
@@ -238,10 +243,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 Pair(Offline(event.state), event.state.updateActions(actions))
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            else -> {
-                logger.warning { "unhandled event $event ins state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -294,10 +296,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                             nextState.updateActions(listOf(SendMessage(channelReestablish)))
                         )
                     }
-                    else -> {
-                        logger.warning { "unhandled event $event in state ${this::class}" }
-                        Pair(this, listOf())
-                    }
+                    else -> unhandled(event)
                 }
             }
             event is NewBlock -> {
@@ -305,10 +304,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                 val (newState, actions) = state.process(event)
                 Pair(Offline(newState), listOf())
             }
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -477,20 +473,14 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                             }
                         }
                     }
-                    else -> {
-                        logger.warning { "unhandled event $event in state ${this::class}" }
-                        Pair(this, listOf())
-                    }
+                    else -> unhandled(event)
                 }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
                 Pair(Syncing(newState, waitForTheirReestablishMessage), listOf())
             }
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -522,8 +512,14 @@ data class WaitForOpenChannel(
             is MessageReceived ->
                 when (event.message) {
                     is OpenChannel -> {
-                        val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
                         var channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
+                        try {
+                            Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion)
+                        } catch (e: Throwable) {
+                            logger.error(e) { "invalid ${event.message} in state $this" }
+                            return Pair(Closed(staticParams, currentTip), listOf(SendMessage(Error(temporaryChannelId, e.message))))
+                        }
+                        val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
                         if (Features.canUseFeature(
                                 localParams.features,
                                 Features.invoke(remoteInit.features),
@@ -592,16 +588,19 @@ data class WaitForOpenChannel(
 
                         Pair(nextState, listOf(SendMessage(accept)))
                     }
-                    else -> {
-                        logger.warning { "unhandled event $event in state ${this::class}" }
-                        Pair(this, listOf())
+                    is Error -> {
+                        logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                        return Pair(Closed(staticParams, currentTip), listOf())
                     }
+                    else -> unhandled(event)
+                }
+            is ExecuteCommand ->
+                when (event.command) {
+                    is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
+                    else -> unhandled(event)
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -714,16 +713,10 @@ data class WaitForFundingCreated(
                             }
                         }
                     }
-                    else -> {
-                        logger.warning { "unhandled message ${event.message} in state ${this::class}" }
-                        Pair(this, listOf())
-                    }
+                    else -> unhandled(event)
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 
@@ -735,51 +728,49 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived && event.message is AcceptChannel -> {
-                val result = fr.acinq.eclair.utils.runTrying {
+                try {
                     Helpers.validateParamsFunder(staticParams.nodeParams, lastSent, event.message)
+                } catch (e: Throwable) {
+                    logger.error(e) { "invalid ${event.message} in state $this" }
+                    return Pair(Closed(staticParams, currentTip), listOf(SendMessage(Error(initFunder.temporaryChannelId, e.message))))
                 }
-                when (result) {
-                    is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
-                    is Try.Success -> {
-                        // TODO: check equality of temporaryChannelId? or should be done upstream
-                        val remoteParams = RemoteParams(
-                            nodeId = staticParams.remoteNodeId,
-                            dustLimit = event.message.dustLimitSatoshis,
-                            maxHtlcValueInFlightMsat = event.message.maxHtlcValueInFlightMsat,
-                            channelReserve = event.message.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
-                            htlcMinimum = event.message.htlcMinimumMsat,
-                            toSelfDelay = event.message.toSelfDelay,
-                            maxAcceptedHtlcs = event.message.maxAcceptedHtlcs,
-                            fundingPubKey = event.message.fundingPubkey,
-                            revocationBasepoint = event.message.revocationBasepoint,
-                            paymentBasepoint = event.message.paymentBasepoint,
-                            delayedPaymentBasepoint = event.message.delayedPaymentBasepoint,
-                            htlcBasepoint = event.message.htlcBasepoint,
-                            features = Features(initFunder.remoteInit.features)
-                        )
-                        logger.verbose { "remote params: $remoteParams" }
-                        val localFundingPubkey = keyManager.fundingPublicKey(initFunder.localParams.fundingKeyPath)
-                        val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey))))
-                        val makeFundingTx = MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeeratePerKw)
-                        val nextState = WaitForFundingInternal(
-                            staticParams,
-                            currentTip,
-                            initFunder.temporaryChannelId,
-                            initFunder.localParams,
-                            remoteParams,
-                            initFunder.fundingAmount,
-                            initFunder.pushAmount,
-                            initFunder.initialFeeratePerKw,
-                            event.message.firstPerCommitmentPoint,
-                            initFunder.channelVersion,
-                            lastSent
-                        )
-                        Pair(nextState, listOf(makeFundingTx))
-                    }
-                }
+                // TODO: check equality of temporaryChannelId? or should be done upstream
+                val remoteParams = RemoteParams(
+                    nodeId = staticParams.remoteNodeId,
+                    dustLimit = event.message.dustLimitSatoshis,
+                    maxHtlcValueInFlightMsat = event.message.maxHtlcValueInFlightMsat,
+                    channelReserve = event.message.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+                    htlcMinimum = event.message.htlcMinimumMsat,
+                    toSelfDelay = event.message.toSelfDelay,
+                    maxAcceptedHtlcs = event.message.maxAcceptedHtlcs,
+                    fundingPubKey = event.message.fundingPubkey,
+                    revocationBasepoint = event.message.revocationBasepoint,
+                    paymentBasepoint = event.message.paymentBasepoint,
+                    delayedPaymentBasepoint = event.message.delayedPaymentBasepoint,
+                    htlcBasepoint = event.message.htlcBasepoint,
+                    features = Features(initFunder.remoteInit.features)
+                )
+                logger.verbose { "remote params: $remoteParams" }
+                val localFundingPubkey = keyManager.fundingPublicKey(initFunder.localParams.fundingKeyPath)
+                val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey))))
+                val makeFundingTx = MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeeratePerKw)
+                val nextState = WaitForFundingInternal(
+                    staticParams,
+                    currentTip,
+                    initFunder.temporaryChannelId,
+                    initFunder.localParams,
+                    remoteParams,
+                    initFunder.fundingAmount,
+                    initFunder.pushAmount,
+                    initFunder.initialFeeratePerKw,
+                    event.message.firstPerCommitmentPoint,
+                    initFunder.channelVersion,
+                    lastSent
+                )
+                Pair(nextState, listOf(makeFundingTx))
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            else -> Pair(this, listOf())
+            else -> unhandled(event)
         }
     }
 }
@@ -846,10 +837,7 @@ data class WaitForFundingInternal(
                 Pair(nextState, listOf(channelIdAssigned, SendMessage(fundingCreated)))
             }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -925,10 +913,7 @@ data class WaitForFundingSigned(
                 }
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -994,14 +979,11 @@ data class WaitForFundingConfirmed(
                         // TODO: handle funding tx spent
                         Pair(this, listOf())
                     }
-                    else -> Pair(this, listOf())
+                    else -> unhandled(event)
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is Disconnected -> Pair(Offline(this), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -1057,17 +1039,11 @@ data class WaitForFundingLocked(
                         )
                         Pair(nextState, listOf(SendWatch(watchConfirmed), StoreState(nextState)))
                     }
-                    else -> {
-                        logger.warning { "unhandled event $event in state ${this::class}" }
-                        Pair(this, listOf())
-                    }
+                    else -> unhandled(event)
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is Disconnected -> Pair(Offline(this), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
     }
 }
@@ -1170,10 +1146,7 @@ data class Normal(
                             }
                         }
                     }
-                    else -> {
-                        logger.warning { "unhandled event $event in state ${this::class}" }
-                        Pair(this, listOf())
-                    }
+                    else -> unhandled(event)
                 }
             }
             is MessageReceived -> {
@@ -1237,10 +1210,7 @@ data class Normal(
                             }
                         }
                     }
-                    else -> {
-                        logger.warning { "unhandled event $event in state ${this::class}" }
-                        Pair(this, listOf())
-                    }
+                    else -> unhandled(event)
                 }
             }
             is NewBlock -> {
@@ -1249,11 +1219,18 @@ data class Normal(
                 Pair(newState, listOf())
             }
             is Disconnected -> Pair(Offline(this), listOf())
-            else -> {
-                logger.warning { "unhandled event $event in state ${this::class}" }
-                Pair(this, listOf())
-            }
+            else -> unhandled(event)
         }
+    }
+}
+
+/**
+ * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
+ */
+@Serializable
+data class Closed(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>) : ChannelState() {
+    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        return Pair(this, listOf())
     }
 }
 

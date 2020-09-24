@@ -3,6 +3,9 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
+import fr.acinq.eclair.Eclair.MinimumFeeratePerKw
+import fr.acinq.eclair.Feature
+import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
@@ -12,9 +15,11 @@ import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.AcceptChannel
 import fr.acinq.eclair.wire.OpenChannel
 import kotlin.math.abs
+import kotlin.math.max
 
 object Helpers {
     /**
@@ -33,6 +38,66 @@ object Helpers {
             val blocksToReachFunding: Int = (((scalingFactor * btc) / blockReward) + 1).toInt()
             kotlin.math.max(nodeParams.minDepthBlocks, blocksToReachFunding)
         }
+
+    /**
+     * Called by the fundee
+     */
+    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion): ChannelVersion {
+        // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
+        // MUST reject the channel.
+        if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
+
+        if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) throw InvalidFundingAmount(
+            open.temporaryChannelId,
+            open.fundingSatoshis,
+            nodeParams.minFundingSatoshis,
+            nodeParams.maxFundingSatoshis
+        )
+
+        // BOLT #2: Channel funding limits
+        if (open.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Feature.Wumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING)
+
+        // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
+        if (open.pushMsat.truncateToSatoshi() > open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi())
+
+        // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
+        if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+
+        // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
+        if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
+
+        // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
+        if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
+
+        if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+            // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
+        } else {
+            // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
+            if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
+        }
+
+        // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
+        // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
+        val (toLocalMsat, toRemoteMsat) = Pair(open.pushMsat, open.fundingSatoshis.toMilliSatoshi() - open.pushMsat)
+        if (toLocalMsat.truncateToSatoshi() < open.channelReserveSatoshis && toRemoteMsat.truncateToSatoshi() < open.channelReserveSatoshis) {
+            throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
+        }
+
+        val localFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+        if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+        // only enforce dust limit check on mainnet
+        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
+            if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+        }
+
+        // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
+        // now, but it will be done later when we receive `funding_created`
+
+        val reserveToFundingRatio = open.channelReserveSatoshis.toLong().toDouble() / max(open.fundingSatoshis.toLong(), 1)
+        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+
+        return channelVersion
+    }
 
     /**
      * Called by the funder
@@ -158,7 +223,19 @@ object Helpers {
          *
          * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
          */
-        fun makeFirstCommitTxs(keyManager: KeyManager, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): FirstCommitTx {
+        fun makeFirstCommitTxs(
+            keyManager: KeyManager,
+            channelVersion: ChannelVersion,
+            temporaryChannelId: ByteVector32,
+            localParams: LocalParams,
+            remoteParams: RemoteParams,
+            fundingAmount: Satoshi,
+            pushMsat: MilliSatoshi,
+            initialFeeratePerKw: Long,
+            fundingTxHash: ByteVector32,
+            fundingTxOutputIndex: Int,
+            remoteFirstPerCommitmentPoint: PublicKey
+        ): FirstCommitTx {
             val toLocalMsat = if (localParams.isFunder) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
             val toRemoteMsat = if (localParams.isFunder) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
 
@@ -193,6 +270,12 @@ object Helpers {
      */
     fun feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
         abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
+
+    /**
+     * @param remoteFeeratePerKw remote fee rate per kiloweight
+     * @return true if the remote fee rate is too small
+     */
+    fun isFeeTooSmall(remoteFeeratePerKw: Long): Boolean = remoteFeeratePerKw < MinimumFeeratePerKw
 
     /**
      * @param referenceFeePerKw       reference fee rate per kiloweight

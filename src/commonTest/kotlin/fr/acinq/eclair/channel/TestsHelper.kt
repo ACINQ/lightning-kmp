@@ -13,7 +13,7 @@ import fr.acinq.eclair.wire.*
 import kotlin.test.assertTrue
 
 object TestsHelper {
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
+    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
         var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
         val channelFlags = 0.toByte()
@@ -42,12 +42,18 @@ object TestsHelper {
         var rb = bob.process(InitFundee(ByteVector32.Zeroes, bobChannelParams, aliceInit))
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
-
         val open = findOutgoingMessage<OpenChannel>(ra.second)
-        rb = bob.process(MessageReceived(open))
+        return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
+    }
+
+    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
+        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
+        var alice = a as ChannelState
+        var bob = b as ChannelState
+        var rb = bob.process(MessageReceived(open))
         bob = rb.first
         val accept = findOutgoingMessage<AcceptChannel>(rb.second)
-        ra = alice.process(MessageReceived(accept))
+        var ra = alice.process(MessageReceived(accept))
         alice = ra.first
         val makeFundingTx = run {
             val candidates = ra.second.filterIsInstance<MakeFundingTx>()
