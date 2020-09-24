@@ -196,9 +196,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
         // Features may depend on other features, as specified in Bolt 9.
         private val featuresDependency: Map<Feature, List<Feature>> = mapOf(
             Feature.ChannelRangeQueriesExtended to listOf(Feature.ChannelRangeQueries),
-            // This dependency requirement was added to the spec after the Phoenix release, which means Phoenix users have "invalid"
-            // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
-            // PaymentSecret to listOf(VariableLengthOnion),
+            Feature.PaymentSecret to listOf(Feature.VariableLengthOnion),
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.TrampolinePayment to listOf(Feature.PaymentSecret)
         )

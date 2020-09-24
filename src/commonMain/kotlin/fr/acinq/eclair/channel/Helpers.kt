@@ -10,7 +10,6 @@ import fr.acinq.eclair.blockchain.fee.FeeEstimator
 import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.*
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
@@ -23,7 +22,6 @@ import fr.acinq.eclair.wire.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-
 
 object Helpers {
 
@@ -53,7 +51,7 @@ object Helpers {
     /**
      * Called by the funder
      */
-    fun validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Unit {
+    fun validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel) {
         if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
         // only enforce dust limit check on mainnet
         if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -89,20 +87,13 @@ object Helpers {
      *
      */
     fun aboveReserve(commitments: Commitments): Boolean {
-        val remoteCommit = when(commitments.remoteNextCommitInfo) {
+        val remoteCommit = when (commitments.remoteNextCommitInfo) {
             is Either.Left -> commitments.remoteNextCommitInfo.value.nextRemoteCommit
             else -> commitments.remoteCommit
         }
         val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi()
         // NB: this is an approximation (we don't take network fees into account)
-        val result = toRemoteSatoshis > commitments.remoteParams.channelReserve
-        return result
-    }
-
-    fun origin(c: CMD_ADD_HTLC): Origin = when(c.upstream) {
-        is Upstream.Local -> Origin.Local(c.upstream.id) // we were the origin of the payment
-        is Upstream.Relayed -> Origin.Relayed(c.upstream.add.channelId, c.upstream.add.id, c.upstream.add.amountMsat, c.amount) // this is a relayed payment to an outgoing channel
-        is Upstream.TrampolineRelayed -> Origin.TrampolineRelayed(c.upstream.adds.map { Pair(it.channelId, it.id) }) // this is a relayed payment to an outgoing node
+        return toRemoteSatoshis > commitments.remoteParams.channelReserve
     }
 
     /**
@@ -175,6 +166,7 @@ object Helpers {
         }
 
         data class FirstCommitTx(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx)
+
         /**
          * Creates both sides's first commitment transaction
          *

@@ -12,6 +12,7 @@ import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
@@ -97,6 +98,7 @@ sealed class ChannelState {
     abstract val currentTip: Pair<Int, BlockHeader>
     val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
+    val privateKey: PrivateKey get() = staticParams.nodeParams.keyManager.nodeKey.privateKey
 
     /**
      * @param event input event (for example, a message was received, a command was sent by the GUI/API, ...
@@ -974,7 +976,7 @@ data class Normal(
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
                         // TODO: handle shutdown in progress
-                        when (val result = commitments.sendAdd(event.command, Helpers.origin(event.command), currentBlockHeight.toLong())) {
+                        when (val result = commitments.sendAdd(event.command, Origin.Local(event.command.id), currentBlockHeight.toLong())) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }
@@ -982,7 +984,7 @@ data class Normal(
                                 val newState = this.copy(commitments = result.result.first)
                                 var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
+                                    actions += ProcessCommand(CMD_SIGN)
                                 }
                                 Pair(newState, actions)
                             }
@@ -997,7 +999,7 @@ data class Normal(
                                 val newState = this.copy(commitments = result.result.first)
                                 var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
+                                    actions += ProcessCommand(CMD_SIGN)
                                 }
                                 Pair(newState, actions)
                             }
@@ -1012,7 +1014,7 @@ data class Normal(
                                 val newState = this.copy(commitments = result.result.first)
                                 var actions = listOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
+                                    actions += ProcessCommand(CMD_SIGN)
                                 }
                                 Pair(newState, actions)
                             }
@@ -1061,9 +1063,14 @@ data class Normal(
             is MessageReceived -> {
                 when (event.message) {
                     is UpdateAddHtlc -> {
-                        when (val result = commitments.receiveAdd(event.message)) {
+                        val htlc = event.message
+                        when (val result = commitments.receiveAdd(htlc)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
-                            is Try.Success -> Pair(this.copy(commitments = result.result), listOf())
+                            is Try.Success -> {
+                                val newState = this.copy(commitments = result.result)
+                                var actions = listOf<ChannelAction>()
+                                Pair(newState, actions)
+                            }
                         }
                     }
                     is UpdateFulfillHtlc -> {

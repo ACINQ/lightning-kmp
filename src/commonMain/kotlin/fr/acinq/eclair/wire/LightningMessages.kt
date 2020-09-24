@@ -7,10 +7,8 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
 import fr.acinq.eclair.io.*
-import fr.acinq.eclair.utils.leftPaddedCopyOf
-import fr.acinq.eclair.utils.or
-import fr.acinq.eclair.utils.toByteVector
-import fr.acinq.eclair.utils.toByteVector32
+import fr.acinq.eclair.payment.IncomingPacket
+import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient

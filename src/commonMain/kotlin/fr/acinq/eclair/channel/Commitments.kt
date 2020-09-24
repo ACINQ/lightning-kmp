@@ -17,8 +17,7 @@ import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.payment.relay.Origin
-import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.*
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
@@ -27,8 +26,6 @@ import fr.acinq.eclair.transactions.Transactions.htlcOutputFee
 import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.transactions.Transactions.offeredHtlcTrimThreshold
 import fr.acinq.eclair.transactions.Transactions.receivedHtlcTrimThreshold
-import fr.acinq.eclair.transactions.incomings
-import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
