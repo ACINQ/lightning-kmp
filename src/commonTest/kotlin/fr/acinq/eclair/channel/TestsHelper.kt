@@ -15,6 +15,8 @@ import org.kodein.log.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+data class NodePair(val sender: ChannelState, val receiver: ChannelState)
+
 object TestsHelper {
     fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
         var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
@@ -109,16 +111,39 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
+    fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Pair<NodePair, Pair<ByteVector32, UpdateAddHtlc>> {
+        val currentBlockHeight = sender.currentBlockHeight.toLong()
+        val (payment_preimage, cmd) = makeCmdAdd(amount, sender.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (sr, htlc) = addHtlc(cmd, sender, receiver)
+        return sr to (payment_preimage to htlc)
+    }
+
+    private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Pair<NodePair, UpdateAddHtlc> {
+        val (s, sa) = sender.process(ExecuteCommand(cmdAdd))
+        assertEquals(1, sa.size)
+        assertTrue(sa[0] is SendMessage)
+        val msg = sa[0] as SendMessage
+        assertTrue(msg.message is UpdateAddHtlc)
+        val htlc = msg.message as UpdateAddHtlc
+
+        val (r, ra) = receiver.process(MessageReceived(htlc))
+        assertTrue(r is HasCommitments)
+        assertTrue(r.commitments.remoteChanges.proposed.contains(htlc))
+
+        return NodePair(s, r) to htlc
+    }
+
+
     /*
     * sender -> receiver couple can be:
     *   - alice -> bob
     *   - bob -> alice
     */
-    fun makePayment(payment: MilliSatoshi = 42000000.msat, sender: HasCommitments, receiver: HasCommitments, logger: Logger): Pair<ChannelState, ChannelState> {
+    fun makePayment(payment: MilliSatoshi = 42000000.msat, sender: ChannelState, receiver: ChannelState, logger: Logger): Pair<ChannelState, ChannelState> {
         val fee = 1720000.msat // fee due to the additional htlc output
 
-        assertTrue(sender is ChannelState)
-        assertTrue(receiver is ChannelState)
+        assertTrue(sender is HasCommitments)
+        assertTrue(receiver is HasCommitments)
 
         val ac0 = sender.commitments
         val bc0 = receiver.commitments
