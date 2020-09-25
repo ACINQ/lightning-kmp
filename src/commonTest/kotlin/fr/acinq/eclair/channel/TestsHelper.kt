@@ -15,8 +15,6 @@ import org.kodein.log.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-data class NodePair(val sender: ChannelState, val receiver: ChannelState)
-
 object TestsHelper {
     fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
         var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
@@ -113,18 +111,16 @@ object TestsHelper {
 
     fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Pair<NodePair, Pair<ByteVector32, UpdateAddHtlc>> {
         val currentBlockHeight = sender.currentBlockHeight.toLong()
-        val (payment_preimage, cmd) = makeCmdAdd(amount, sender.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (paymentPreimage, cmd) = makeCmdAdd(amount, sender.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (sr, htlc) = addHtlc(cmd, sender, receiver)
-        return sr to (payment_preimage to htlc)
+        return sr to (paymentPreimage to htlc)
     }
 
     private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Pair<NodePair, UpdateAddHtlc> {
         val (s, sa) = sender.process(ExecuteCommand(cmdAdd))
-        assertEquals(1, sa.size)
-        assertTrue(sa[0] is SendMessage)
-        val msg = sa[0] as SendMessage
-        assertTrue(msg.message is UpdateAddHtlc)
-        val htlc = msg.message as UpdateAddHtlc
+        assertTrue(sa.isNotEmpty())
+        assertTrue(sa.hasMessage<UpdateAddHtlc>())
+        val htlc: UpdateAddHtlc = sa.messages().msg()
 
         val (r, ra) = receiver.process(MessageReceived(htlc))
         assertTrue(r is HasCommitments)
@@ -133,6 +129,85 @@ object TestsHelper {
         return NodePair(s, r) to htlc
     }
 
+    fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, sender: ChannelState, receiver: ChannelState): NodePair {
+        val (s, sa) = sender.process(ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
+        assertTrue(sa.isNotEmpty())
+        assertTrue(sa.hasMessage<UpdateFulfillHtlc>())
+        val fulfillHtlc : UpdateFulfillHtlc = sa.messages().msg()
+
+        val (r, ra) = receiver.process(MessageReceived(fulfillHtlc))
+        assertTrue(r is HasCommitments)
+        assertTrue(r.commitments.remoteChanges.proposed.contains(fulfillHtlc))
+
+        return NodePair(s, r)
+    }
+
+    fun crossSign(s: ChannelState, r: ChannelState): NodePair {
+        var sender = s ; var receiver = r
+        assertTrue(sender is HasCommitments)
+        assertTrue(receiver is HasCommitments)
+
+        val sCommitIndex = sender.commitments.localCommit.index
+        val rCommitIndex = receiver.commitments.localCommit.index
+        val rHasChanges = receiver.commitments.localHasChanges()
+
+        val (s0, sa0) = sender.process(ExecuteCommand(CMD_SIGN))
+        sender = s0
+        assertTrue(sa0.isNotEmpty())
+        assertTrue(sa0.hasMessage<CommitSig>())
+
+        val (r0, ra0) = receiver.process(MessageReceived(sa0.messages().msg<CommitSig>()))
+        receiver = r0
+        assertTrue(ra0.isNotEmpty())
+        assertTrue(ra0.hasMessage<RevokeAndAck>())
+        assertTrue(ra0.hasCommand<CMD_SIGN>())
+
+        val (s1, sa1) = sender.process(MessageReceived(ra0.messages().msg<RevokeAndAck>()))
+        sender = s1
+
+        val (r1, ra1) = receiver.process(ExecuteCommand(ra0.commands().cmd<CMD_SIGN>()))
+        receiver = r1
+        assertTrue(ra1.isNotEmpty())
+        assertTrue(ra1.hasMessage<CommitSig>())
+
+        val (s2, sa2) = sender.process(MessageReceived(ra1.messages().msg<CommitSig>()))
+        sender = s2
+        assertTrue(sa2.isNotEmpty())
+        assertTrue(sa2.hasMessage<RevokeAndAck>())
+
+        val (r2, ra2) = receiver.process(MessageReceived(sa2.messages().msg<RevokeAndAck>()))
+        receiver = r2
+
+        if (rHasChanges) {
+            assertTrue(sa2.hasCommand<CMD_SIGN>())
+            val (s3, sa3) = sender.process(ExecuteCommand(sa2.commands().cmd<CMD_SIGN>()))
+            sender = s3
+            assertTrue(sa3.isNotEmpty())
+            assertTrue(sa3.hasMessage<CommitSig>())
+
+            val (r3, ra3) = receiver.process(MessageReceived(sa3.messages().msg<CommitSig>()))
+            receiver = r3
+            assertTrue(ra3.isNotEmpty())
+            assertTrue(ra3.hasMessage<RevokeAndAck>())
+
+            val (s4, sa4) = sender.process(MessageReceived(ra3.messages().msg<RevokeAndAck>()))
+            sender = s4
+
+            sender as HasCommitments ; receiver as HasCommitments
+            assertEquals(sCommitIndex + 1, sender.commitments.localCommit.index)
+            assertEquals(sCommitIndex + 2, sender.commitments.remoteCommit.index)
+            assertEquals(rCommitIndex + 2, receiver.commitments.localCommit.index)
+            assertEquals(rCommitIndex + 1, receiver.commitments.remoteCommit.index)
+        } else {
+            sender as HasCommitments ; receiver as HasCommitments
+            assertEquals(sCommitIndex + 1, sender.commitments.localCommit.index)
+            assertEquals(sCommitIndex + 1, sender.commitments.remoteCommit.index)
+            assertEquals(rCommitIndex + 1, receiver.commitments.localCommit.index)
+            assertEquals(rCommitIndex + 1, receiver.commitments.remoteCommit.index)
+        }
+
+        return NodePair(sender, receiver)
+    }
 
     /*
     * sender -> receiver couple can be:
@@ -158,7 +233,7 @@ object TestsHelper {
         assertEquals(bc0.availableBalanceForReceive(), a)
 
         val currentBlockHeight = 144L
-        val (payment_preimage, cmdAdd) = TestsHelper.makeCmdAdd(payment, receiver.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (payment_preimage, cmdAdd) = makeCmdAdd(payment, receiver.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (ac1, add) = ac0.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
         assertEquals(ac1.availableBalanceForSend(), a - payment - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
