@@ -20,19 +20,20 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         destination: PublicKey,
     ): List<ChannelHop> {
 
-        val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
+        val dummyKey =
+            PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
         val dummyUpdate = ChannelUpdate(
-            signature                 = ByteVector64.Zeroes,
-            chainHash                 = ByteVector32.Zeroes,
-            shortChannelId            = ShortChannelId(144,0,0),
-            timestamp                 = 0,
-            messageFlags              = 0,
-            channelFlags              = 0,
-            cltvExpiryDelta           = CltvExpiryDelta(1),
-            htlcMinimumMsat           = 0.msat,
-            feeBaseMsat               = 0.msat,
+            signature = ByteVector64.Zeroes,
+            chainHash = ByteVector32.Zeroes,
+            shortChannelId = ShortChannelId(144, 0, 0),
+            timestamp = 0,
+            messageFlags = 0,
+            channelFlags = 0,
+            cltvExpiryDelta = CltvExpiryDelta(1),
+            htlcMinimumMsat = 0.msat,
+            feeBaseMsat = 0.msat,
             feeProportionalMillionths = 0,
-            htlcMaximumMsat           = null
+            htlcMaximumMsat = null
         )
         val channelHop = ChannelHop(dummyKey, destination, dummyUpdate)
 
@@ -43,15 +44,15 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
      * Creates a multipart htlc, and wraps it in CMD_ADD_HTLC.
      * The result is ready to be processed thru the sender's channel.
      */
-    fun makeCmdAddHtlc(
-        amount             : MilliSatoshi,
-        totalAmount        : MilliSatoshi,
-        destination        : PublicKey,
-        currentBlockHeight : Long,
-        paymentHash        : ByteVector32,
-        paymentSecret      : ByteVector32
-    ): CMD_ADD_HTLC
-    {
+    private fun makeCmdAddHtlc(
+        amount: MilliSatoshi,
+        totalAmount: MilliSatoshi,
+        destination: PublicKey,
+        currentBlockHeight: Long,
+        paymentHash: ByteVector32,
+        paymentSecret: ByteVector32
+    ): CMD_ADD_HTLC {
+
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val finalPayload = FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
 
@@ -64,14 +65,14 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     private fun makeUpdateAddHtlc(
-        channelId          : ByteVector32,
-        id                 : Long,
-        amount             : MilliSatoshi,
-        totalAmount        : MilliSatoshi,
-        destination        : PublicKey,
-        currentBlockHeight : Long,
-        paymentHash        : ByteVector32,
-        paymentSecret      : ByteVector32
+        channelId: ByteVector32,
+        id: Long,
+        amount: MilliSatoshi,
+        totalAmount: MilliSatoshi,
+        destination: PublicKey,
+        currentBlockHeight: Long,
+        paymentHash: ByteVector32,
+        paymentSecret: ByteVector32
     ): UpdateAddHtlc {
 
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
@@ -85,11 +86,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         )
 
         return UpdateAddHtlc(
-            channelId          = channelId,
-            id                 = id,
-            amountMsat         = amount,
-            paymentHash        = paymentHash,
-            cltvExpiry         = expiry,
+            channelId = channelId,
+            id = id,
+            amountMsat = amount,
+            paymentHash = paymentHash,
+            cltvExpiry = expiry,
             onionRoutingPacket = packetAndSecrets.packet
         )
     }
@@ -132,24 +133,32 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val totalAmount = amount * 2
 
         val cmdAddHtlc = makeCmdAddHtlc(
-            amount             = amount,
-            totalAmount        = totalAmount,
-            destination        = bob.staticParams.nodeParams.nodeId,
+            amount = amount,
+            totalAmount = totalAmount,
+            destination = bob.staticParams.nodeParams.nodeId,
             currentBlockHeight = alice.currentBlockHeight.toLong(),
-            paymentHash        = paymentHash,
-            paymentSecret      = paymentSecret
+            paymentHash = paymentHash,
+            paymentSecret = paymentSecret
         )
 
         var processResult: Pair<ChannelState, List<ChannelAction>>
         var actions: List<ChannelAction>
 
-        var a2b_updateAddHtlc: SendMessage? = null
-        var a2a_cmdSign: ProcessCommand? = null
-        var a2b_commitmentSigned: SendMessage? = null
-        var b2a_revokeAndAck: SendMessage? = null
-        var b2b_cmdSign: ProcessCommand? = null
-        var b2a_commitmentSigned: SendMessage? = null
-        var a2b_revokeAndAck: SendMessage? = null
+        val a2b = object {
+            var updateAddHtlc: SendMessage? = null
+            var commitmentSigned: SendMessage? = null
+            var revokeAndAck: SendMessage? = null
+        }
+        val a2a = object {
+            var cmdSign: ProcessCommand? = null
+        }
+        val b2a = object {
+            var revokeAndAck: SendMessage? = null
+            var commitmentSigned: SendMessage? = null
+        }
+        val b2b = object {
+            var cmdSign: ProcessCommand? = null
+        }
 
         // Step 1 of 5:
         //
@@ -163,13 +172,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        a2b_updateAddHtlc = actions.filterIsInstance<SendMessage>().filter { it.message is UpdateAddHtlc }.firstOrNull()
-        assertNotNull(a2b_updateAddHtlc)
+        a2b.updateAddHtlc = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is UpdateAddHtlc }
+        assertNotNull(a2b.updateAddHtlc)
 
-        a2a_cmdSign = actions.filterIsInstance<ProcessCommand>().filter { it.command == CMD_SIGN }.firstOrNull()
-        assertNotNull(a2a_cmdSign)
+        a2a.cmdSign = actions.filterIsInstance<ProcessCommand>().firstOrNull { it.command == CMD_SIGN }
+        assertNotNull(a2a.cmdSign)
 
-        processResult = bob.process(MessageReceived(a2b_updateAddHtlc.message))
+        processResult = bob.process(MessageReceived(a2b.updateAddHtlc!!.message))
 
         bob = processResult.first
         assertTrue { bob is Normal }
@@ -177,19 +186,19 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
 
-        assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 1 }
-        assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.acked.size    == 0 }
+        assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 1 } // size == 1
+        assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.acked.isEmpty() }    // size == 0
 
-        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.size  == 1 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size     == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.signed.size    == 0 }
+        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.size == 1 }  // size == 1
+        assertTrue { (bob as Normal).commitments.remoteChanges.acked.isEmpty() }     // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.signed.isEmpty() }    // size == 0
 
         // Step 2 of 5:
         //
         // alice => commitment_signed => bob
 
-        processResult = alice.process(ExecuteCommand(a2a_cmdSign.command))
+        processResult = alice.process(ExecuteCommand(a2a.cmdSign!!.command))
 
         alice = processResult.first
         assertTrue { alice is Normal }
@@ -197,10 +206,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        a2b_commitmentSigned = actions.filterIsInstance<SendMessage>().filter{ it.message is CommitSig }.firstOrNull()
-        assertNotNull(a2b_commitmentSigned)
+        a2b.commitmentSigned = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is CommitSig }
+        assertNotNull(a2b.commitmentSigned)
 
-        processResult = bob.process(MessageReceived(a2b_commitmentSigned.message))
+        processResult = bob.process(MessageReceived(a2b.commitmentSigned!!.message))
 
         bob = processResult.first
         assertTrue { bob is Normal }
@@ -208,25 +217,25 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        b2a_revokeAndAck = actions.filterIsInstance<SendMessage>().filter{ it.message is RevokeAndAck }.firstOrNull()
-        assertNotNull(b2a_revokeAndAck)
+        b2a.revokeAndAck = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is RevokeAndAck }
+        assertNotNull(b2a.revokeAndAck)
 
-        b2b_cmdSign = actions.filterIsInstance<ProcessCommand>().filter { it.command == CMD_SIGN }.firstOrNull()
-        assertNotNull(b2b_cmdSign)
+        b2b.cmdSign = actions.filterIsInstance<ProcessCommand>().firstOrNull { it.command == CMD_SIGN }
+        assertNotNull(b2b.cmdSign)
 
-        assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 1 }
-        assertTrue { (alice as Normal).commitments.localChanges.acked.size    == 0 }
+        assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.signed.size == 1 }   // size == 1
+        assertTrue { (alice as Normal).commitments.localChanges.acked.isEmpty() }    // size == 0
 
-        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.size  == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size     == 1 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.signed.size    == 0 }
+        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.isEmpty() }  // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size == 1 }     // size == 1
+        assertTrue { (bob as Normal).commitments.remoteChanges.signed.isEmpty() }    // size == 0
 
         // Step 3 of 5
         //
         // alice <= revoke_and_ack <= bob
 
-        processResult = alice.process(MessageReceived(b2a_revokeAndAck.message))
+        processResult = alice.process(MessageReceived(b2a.revokeAndAck!!.message))
 
         alice = processResult.first
         assertTrue { alice is Normal }
@@ -234,19 +243,19 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
 
-        assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.acked.size    == 1 }
+        assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.acked.size == 1 }    // size == 1
 
-        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.size  == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size     == 1 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.signed.size    == 0 }
+        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.isEmpty() }  // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size == 1 }     // size == 1
+        assertTrue { (bob as Normal).commitments.remoteChanges.signed.isEmpty() }    // size == 0
 
         // Step 4 of 5:
         //
         // alice <= commitment_signed <= bob
 
-        processResult = bob.process(ExecuteCommand(b2b_cmdSign.command))
+        processResult = bob.process(ExecuteCommand(b2b.cmdSign!!.command))
 
         bob = processResult.first
         assertTrue { bob is Normal }
@@ -254,10 +263,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second.filterIsInstance<SendMessage>()
         assertTrue { actions.size == 1 }
 
-        b2a_commitmentSigned = actions.filterIsInstance<SendMessage>().filter{ it.message is CommitSig }.firstOrNull()
-        assertNotNull(b2a_commitmentSigned)
+        b2a.commitmentSigned = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is CommitSig }
+        assertNotNull(b2a.commitmentSigned)
 
-        processResult = alice.process(MessageReceived(b2a_commitmentSigned.message))
+        processResult = alice.process(MessageReceived(b2a.commitmentSigned!!.message))
 
         alice = processResult.first
         assertTrue { alice is Normal }
@@ -265,22 +274,22 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        a2b_revokeAndAck = actions.filterIsInstance<SendMessage>().filter{ it.message is RevokeAndAck }.firstOrNull()
-        assertNotNull(a2b_revokeAndAck)
+        a2b.revokeAndAck = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is RevokeAndAck }
+        assertNotNull(a2b.revokeAndAck)
 
-        assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.acked.size    == 0 }
+        assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.acked.isEmpty() }    // size == 0
 
-        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.size  == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size     == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.signed.size    == 1 }
+        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.isEmpty() }  // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.acked.isEmpty() }     // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.signed.size == 1 }    // size == 1
 
         // Step 5 of 5:
         //
         // alice => revoke_and_ack => bob
 
-        processResult = bob.process(MessageReceived(a2b_revokeAndAck.message))
+        processResult = bob.process(MessageReceived(a2b.revokeAndAck!!.message))
 
         bob = processResult.first
         assertTrue { bob is Normal }
@@ -289,13 +298,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
         assertTrue { actions.filterIsInstance<ProcessAdd>().isNotEmpty() }
 
-        assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.signed.size   == 0 }
-        assertTrue { (alice as Normal).commitments.localChanges.acked.size    == 0 }
+        assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
+        assertTrue { (alice as Normal).commitments.localChanges.acked.isEmpty() }    // size == 0
 
-        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.size  == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.acked.size     == 0 }
-        assertTrue { (bob as Normal).commitments.remoteChanges.signed.size    == 0 }
+        assertTrue { (bob as Normal).commitments.remoteChanges.proposed.isEmpty() }  // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.acked.isEmpty() }     // size == 0
+        assertTrue { (bob as Normal).commitments.remoteChanges.signed.isEmpty() }    // size == 0
     }
 
     @Test
@@ -307,10 +316,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 
-        val nodeParams_alice = TestConstants.Alice.nodeParams
-        val nodeParams_bob = TestConstants.Bob.nodeParams
-
-        val paymentHandler_bob = PaymentHandler(nodeParams_bob)
+        val alice = object {
+            val nodeParams = TestConstants.Alice.nodeParams
+        }
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -322,10 +334,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
         )
         val paymentRequest = PaymentRequest.create(
-            chainHash = nodeParams_alice.chainHash,
+            chainHash = alice.nodeParams.chainHash,
             amount = totalAmount,
             paymentHash = paymentHash,
-            privateKey = nodeParams_bob.nodePrivateKey, // Bob creates invoice, sends to Alice
+            privateKey = bob.nodeParams.nodePrivateKey, // Bob creates invoice, sends to Alice
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures)
@@ -345,17 +357,17 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
 
             val updateAddHtlc = makeUpdateAddHtlc(
-                channelId          = channelId,
-                id                 = 0,
-                amount             = amount1,
-                totalAmount        = totalAmount,
-                destination        = nodeParams_bob.nodeId,
+                channelId = channelId,
+                id = 0,
+                amount = amount1,
+                totalAmount = totalAmount,
+                destination = bob.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
-                paymentHash        = paymentHash,
-                paymentSecret      = paymentSecret
+                paymentHash = paymentHash,
+                paymentSecret = paymentSecret
             )
 
-            val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
+            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -374,27 +386,29 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
 
             val updateAddHtlc = makeUpdateAddHtlc(
-                channelId          = channelId,
-                id                 = 1,
-                amount             = amount2,
-                totalAmount        = totalAmount,
-                destination        = nodeParams_bob.nodeId,
+                channelId = channelId,
+                id = 1,
+                amount = amount2,
+                totalAmount = totalAmount,
+                destination = bob.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
-                paymentHash        = paymentHash,
-                paymentSecret      = paymentSecret
+                paymentHash = paymentHash,
+                paymentSecret = paymentSecret
             )
 
-            val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
+            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
-            assertEquals(setOf(
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(0, paymentPreimage, commit = true))),
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(1, paymentPreimage, commit = true))),
-            ), par.actions.toSet())
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(0, paymentPreimage, commit = true))),
+                    WrappedChannelEvent(channelId, ExecuteCommand(CMD_FULFILL_HTLC(1, paymentPreimage, commit = true))),
+                ), par.actions.toSet()
+            )
         }
     }
 
@@ -407,10 +421,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 
-        val nodeParams_alice = TestConstants.Alice.nodeParams
-        val nodeParams_bob = TestConstants.Bob.nodeParams
-
-        val paymentHandler_bob = PaymentHandler(nodeParams_bob)
+        val alice = object {
+            val nodeParams = TestConstants.Alice.nodeParams
+        }
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -423,10 +440,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
         )
         val paymentRequest = PaymentRequest.create(
-            chainHash = nodeParams_alice.chainHash,
+            chainHash = alice.nodeParams.chainHash,
             amount = totalAmount,
             paymentHash = paymentHash,
-            privateKey = nodeParams_bob.nodePrivateKey, // Bob creates invoice, sends to Alice
+            privateKey = bob.nodeParams.nodePrivateKey, // Bob creates invoice, sends to Alice
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures)
@@ -446,17 +463,17 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
 
             val updateAddHtlc = makeUpdateAddHtlc(
-                channelId          = channelId,
-                id                 = 0,
-                amount             = amount1,
-                totalAmount        = totalAmount,
-                destination        = nodeParams_bob.nodeId,
+                channelId = channelId,
+                id = 0,
+                amount = amount1,
+                totalAmount = totalAmount,
+                destination = bob.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
-                paymentHash        = paymentHash,
-                paymentSecret      = paymentSecret
+                paymentHash = paymentHash,
+                paymentSecret = paymentSecret
             )
 
-            val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
+            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -476,27 +493,57 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
 
             val updateAddHtlc = makeUpdateAddHtlc(
-                channelId          = channelId,
-                id                 = 1,
-                amount             = amount2,
-                totalAmount        = totalAmount + MilliSatoshi(1), // goofy mismatch. (not less than totalAmount)
-                destination        = nodeParams_bob.nodeId,
+                channelId = channelId,
+                id = 1,
+                amount = amount2,
+                totalAmount = totalAmount + MilliSatoshi(1), // goofy mismatch. (not less than totalAmount)
+                destination = bob.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
-                paymentHash        = paymentHash,
-                paymentSecret      = paymentSecret
+                paymentHash = paymentHash,
+                paymentSecret = paymentSecret
             )
 
-            val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
+            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts
-            assertEquals(setOf(
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, currentBlockHeight.toLong())), commit = true))),
-                WrappedChannelEvent(channelId, ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, currentBlockHeight.toLong())), commit = true))),
-            ), par.actions.toSet())
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                0,
+                                CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount,
+                                        currentBlockHeight.toLong()
+                                    )
+                                ),
+                                commit = true
+                            )
+                        )
+                    ),
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                1,
+                                CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount + 1.msat,
+                                        currentBlockHeight.toLong()
+                                    )
+                                ),
+                                commit = true
+                            )
+                        )
+                    ),
+                ), par.actions.toSet()
+            )
         }
     }
 
@@ -509,10 +556,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 
-        val nodeParams_alice = TestConstants.Alice.nodeParams
-        val nodeParams_bob = TestConstants.Bob.nodeParams
-
-        val paymentHandler_bob = PaymentHandler(nodeParams_bob)
+        val alice = object {
+            val nodeParams = TestConstants.Alice.nodeParams
+        }
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -524,10 +574,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
         )
         val paymentRequest = PaymentRequest.create(
-            chainHash = nodeParams_alice.chainHash,
+            chainHash = alice.nodeParams.chainHash,
             amount = totalAmount,
             paymentHash = paymentHash,
-            privateKey = nodeParams_bob.privateKey, // Bob creates invoice, sends to Alice
+            privateKey = bob.nodeParams.privateKey, // Bob creates invoice, sends to Alice
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures)
@@ -547,13 +597,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = nodeParams_bob.nodeId,
+                destination = bob.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = paymentHash,
                 paymentSecret = paymentSecret
             )
 
-            val par: PaymentHandler.ProcessAddResult = paymentHandler_bob.processAdd(
+            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -570,7 +620,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             val expiry = paymentRequest.expiry ?: PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong()
             val currentTimestampSeconds = paymentRequest.timestamp + expiry - 1
 
-            val actions = paymentHandler_bob.checkPaymentsTimeout(
+            val actions = bob.paymentHandler.checkPaymentsTimeout(
                 incomingPayments = mapOf(paymentHash to incomingPayment),
                 currentTimestampSeconds = currentTimestampSeconds
             )
@@ -585,7 +635,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             val expiry = paymentRequest.expiry ?: PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong()
             val currentTimestampSeconds = paymentRequest.timestamp + expiry
 
-            val actions = paymentHandler_bob.checkPaymentsTimeout(
+            val actions = bob.paymentHandler.checkPaymentsTimeout(
                 incomingPayments = mapOf(paymentHash to incomingPayment),
                 currentTimestampSeconds = currentTimestampSeconds
             )
