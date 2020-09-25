@@ -6,13 +6,14 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.wire.UpdateFailHtlc
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class CommitmentSpecTestsCommon {
+class CommitmentSpecTestsCommon : EclairTestSuite() {
     @Test
     fun `add, fulfill and fail htlcs from the sender side`() {
         val spec = CommitmentSpec(htlcs = setOf(), feeratePerKw = 1000, toLocal = MilliSatoshi(5000000), toRemote = MilliSatoshi(0))

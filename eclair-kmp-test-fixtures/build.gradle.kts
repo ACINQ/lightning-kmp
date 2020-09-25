@@ -18,10 +18,7 @@ kotlin {
             api(ktor("client-auth"))
             api(ktor("client-json"))
             api(ktor("client-serialization"))
-        }
-    }
-    val commonTest by sourceSets.getting {
-        dependencies {
+
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
         }
@@ -32,10 +29,6 @@ kotlin {
             kotlinOptions.jvmTarget = "1.8"
         }
         compilations["main"].defaultSourceSet.dependencies {
-            implementation(ktor("client-okhttp"))
-        }
-        compilations["test"].defaultSourceSet.dependencies {
-            implementation(kotlin("test-junit"))
         }
     }
 
@@ -44,18 +37,12 @@ kotlin {
     if (currentOs.isLinux) {
         linuxX64("linux") {
             compilations["main"].defaultSourceSet.dependsOn(nativeMain)
-            compilations["test"].defaultSourceSet.dependencies {
-                implementation(ktor("client-curl"))
-            }
         }
     }
 
     if (currentOs.isMacOsX) {
         ios {
             compilations["main"].defaultSourceSet.dependsOn(nativeMain)
-            compilations["test"].defaultSourceSet.dependencies {
-                implementation(ktor("client-ios"))
-            }
         }
     }
 

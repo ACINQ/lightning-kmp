@@ -1,12 +1,13 @@
 package fr.acinq.eclair.crypto.noise
 
 import fr.acinq.eclair.crypto.assertArrayEquals
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 @ExperimentalStdlibApi
-class NoiseTestsCommon {
+class NoiseTestsCommon : EclairTestSuite() {
     @Test
     fun `hash tests`() {
         // see https://tools.ietf.org/html/rfc4231

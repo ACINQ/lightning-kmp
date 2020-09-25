@@ -22,7 +22,7 @@ import kotlin.math.max
 
 interface LightningMessage {
     companion object {
-        val logger = LoggerFactory.default.newLogger(Logger.Tag(LightningMessage::class))
+        val logger = newEclairLogger()
 
         /**
          * @param input a single, complete message (typically received over the transport layer)

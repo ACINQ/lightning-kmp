@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.CommitSig
@@ -11,7 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class NormalStateCommonTests {
+class NormalStateCommonTests : EclairTestSuite() {
     @Test
     fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L

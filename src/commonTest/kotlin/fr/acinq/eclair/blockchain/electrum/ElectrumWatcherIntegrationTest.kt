@@ -7,6 +7,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScrip
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.utils.ServerAddress
 import fr.acinq.eclair.tests.bitcoind.BitcoindService
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.currentTimestampSeconds
 import fr.acinq.eclair.tests.utils.runSuspendBlocking
 import fr.acinq.eclair.tests.utils.runSuspendTest
@@ -28,7 +29,7 @@ import kotlin.time.minutes
 import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
-class ElectrumWatcherIntegrationTest {
+class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     private val bitcoincli = BitcoindService()
 

@@ -1,9 +1,10 @@
 package fr.acinq.eclair.utils
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class ByteArraysCommon {
+class ByteArraysCommon : EclairTestSuite() {
 
     @Test
     fun `Left pad`() {

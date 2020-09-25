@@ -1,10 +1,11 @@
 package fr.acinq.eclair
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
-class ShortChannelIdTestsCommon {
+class ShortChannelIdTestsCommon : EclairTestSuite() {
     @ExperimentalUnsignedTypes
     @Test fun `handle values from 0 to 0xffffffffffff`() {
 

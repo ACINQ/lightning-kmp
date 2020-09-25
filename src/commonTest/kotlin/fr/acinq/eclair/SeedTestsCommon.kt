@@ -2,11 +2,12 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.eclair.crypto.assertArrayEquals
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class SeedTestsCommon {
+class SeedTestsCommon : EclairTestSuite() {
     @Test
     fun `generate seed`() {
         val entropy = Hex.decode("77c2b00716cec7213839159e404db50d")
