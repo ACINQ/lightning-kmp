@@ -577,7 +577,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             chainHash = alice.nodeParams.chainHash,
             amount = totalAmount,
             paymentHash = paymentHash,
-            privateKey = bob.nodeParams.privateKey, // Bob creates invoice, sends to Alice
+            privateKey = bob.nodeParams.nodePrivateKey, // Bob creates invoice, sends to Alice
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures)

@@ -556,13 +556,6 @@ class Peer(
                     sendToSelf(key, actions)
                     channels = channels + (key to state1)
                 }
-            event is CheckPaymentsTimeout -> {
-                val actions = paymentHandler.checkPaymentsTimeout(
-                    incomingPayments = pendingIncomingPayments,
-                    currentTimestampSeconds = currentTimestampSeconds()
-                )
-                actions.forEach { input.send(it) }
-            }
             }
             event is WrappedChannelEvent && !channels.containsKey(event.channelId) -> {
                 logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
@@ -574,6 +567,13 @@ class Peer(
                 send(actions)
                 store(actions)
                 sendToSelf(event.channelId, actions)
+            }
+            event is CheckPaymentsTimeout -> {
+                val actions = paymentHandler.checkPaymentsTimeout(
+                    incomingPayments = pendingIncomingPayments,
+                    currentTimestampSeconds = currentTimestampSeconds()
+                )
+                actions.forEach { input.send(it) }
             }
         }
     }
