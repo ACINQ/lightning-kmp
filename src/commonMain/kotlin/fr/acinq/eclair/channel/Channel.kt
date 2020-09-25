@@ -508,8 +508,8 @@ data class WaitForOpenChannel(
     val remoteInit: Init
 ) : ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when (event) {
-            is MessageReceived ->
+        return when {
+            event is MessageReceived ->
                 when (event.message) {
                     is OpenChannel -> {
                         var channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
@@ -594,12 +594,8 @@ data class WaitForOpenChannel(
                     }
                     else -> unhandled(event)
                 }
-            is ExecuteCommand ->
-                when (event.command) {
-                    is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
-                    else -> unhandled(event)
-                }
-            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
@@ -621,8 +617,8 @@ data class WaitForFundingCreated(
     val lastSent: AcceptChannel
 ) : ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when (event) {
-            is MessageReceived ->
+        return when {
+            event is MessageReceived ->
                 when (event.message) {
                     is FundingCreated -> {
                         // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
@@ -713,9 +709,14 @@ data class WaitForFundingCreated(
                             }
                         }
                     }
+                    is Error -> {
+                        logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                        return Pair(Closed(staticParams, currentTip), listOf())
+                    }
                     else -> unhandled(event)
                 }
-            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
@@ -769,6 +770,11 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
                 )
                 Pair(nextState, listOf(makeFundingTx))
             }
+            event is MessageReceived && event.message is Error -> {
+                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                Pair(Closed(staticParams, currentTip), listOf())
+            }
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -790,8 +796,8 @@ data class WaitForFundingInternal(
     val lastSent: OpenChannel
 ) : ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when (event) {
-            is MakeFundingTxResponse -> {
+        return when {
+            event is MakeFundingTxResponse -> {
                 // let's create the first commitment tx that spends the yet uncommitted funding tx
                 val firstCommitTx = Helpers.Funding.makeFirstCommitTxs(
                     keyManager,
@@ -836,7 +842,12 @@ data class WaitForFundingInternal(
                 )
                 Pair(nextState, listOf(channelIdAssigned, SendMessage(fundingCreated)))
             }
-            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is MessageReceived && event.message is Error -> {
+                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                Pair(Closed(staticParams, currentTip), listOf())
+            }
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
@@ -912,6 +923,11 @@ data class WaitForFundingSigned(
                     }
                 }
             }
+            event is MessageReceived && event.message is Error -> {
+                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                Pair(Closed(staticParams, currentTip), listOf())
+            }
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
