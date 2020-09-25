@@ -114,6 +114,7 @@ object TestsHelper {
     *   - alice -> bob
     *   - bob -> alice
     */
+    private var htlcIndex = 0L
     fun makePayment(payment: MilliSatoshi = 42000000.msat, sender: HasCommitments, receiver: HasCommitments, logger: Logger): Pair<ChannelState, ChannelState> {
         val fee = 1720000.msat // fee due to the additional htlc output
 
@@ -166,7 +167,7 @@ object TestsHelper {
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - payment - fee)
 
-        val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage)
+        val cmdFulfill = CMD_FULFILL_HTLC(htlcIndex++, payment_preimage)
         val (bc5, fulfill) = bc4.sendFulfill(cmdFulfill).get()
         assertEquals(bc5.availableBalanceForSend(), b + payment) // as soon as we have the fulfill, the balance increases
         assertEquals(bc5.availableBalanceForReceive(), a - payment - fee)
