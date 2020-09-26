@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
+import fr.acinq.eclair.blockchain.Watch
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.payment.OutgoingPacket
@@ -42,7 +43,7 @@ object TestsHelper {
         var rb = bob.process(InitFundee(ByteVector32.Zeroes, bobChannelParams, aliceInit))
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
-        val open = findOutgoingMessage<OpenChannel>(ra.second)
+        val open = ra.second.findOutgoingMessage<OpenChannel>()
         return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
     }
 
@@ -52,7 +53,7 @@ object TestsHelper {
         var bob = b as ChannelState
         var rb = bob.process(MessageReceived(open))
         bob = rb.first
-        val accept = findOutgoingMessage<AcceptChannel>(rb.second)
+        val accept = rb.second.findOutgoingMessage<AcceptChannel>()
         var ra = alice.process(MessageReceived(accept))
         alice = ra.first
         val makeFundingTx = run {
@@ -68,10 +69,10 @@ object TestsHelper {
         )
         ra = alice.process(MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
         alice = ra.first
-        val created = findOutgoingMessage<FundingCreated>(ra.second)
+        val created = ra.second.findOutgoingMessage<FundingCreated>()
         rb = bob.process(MessageReceived(created))
         bob = rb.first
-        val signedBob = findOutgoingMessage<FundingSigned>(rb.second)
+        val signedBob = rb.second.findOutgoingMessage<FundingSigned>()
         ra = alice.process(MessageReceived(signedBob))
         alice = ra.first
         val watchConfirmed = run {
@@ -82,11 +83,11 @@ object TestsHelper {
 
         ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         alice = ra.first
-        val fundingLockedAlice = findOutgoingMessage<FundingLocked>(ra.second)
+        val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
 
         rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         bob = rb.first
-        val fundingLockedBob = findOutgoingMessage<FundingLocked>(rb.second)
+        val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
 
         ra = alice.process(MessageReceived(fundingLockedBob))
         alice = ra.first
@@ -97,8 +98,14 @@ object TestsHelper {
         return Pair(alice as Normal, bob as Normal)
     }
 
-    inline fun <reified T : LightningMessage> findOutgoingMessage(input: List<ChannelAction>): T {
-        val candidates = input.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
+    inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
+        val candidates = this.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
+        if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
+        return candidates.first()
+    }
+
+    inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {
+        val candidates = this.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<T>()
         if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
         return candidates.first()
     }
