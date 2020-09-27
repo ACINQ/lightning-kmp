@@ -104,7 +104,18 @@ sealed class ChannelState {
      * @param event input event (for example, a message was received, a command was sent by the GUI/API, ...
      * @return a (new state, list of actions) pair
      */
-    abstract fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>>
+    abstract fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>>
+
+    fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        return try {
+            val (newState, actions) = processInternal(event)
+            Pair(newState, newState.updateActions(actions))
+        } catch (t: Throwable) {
+            handleLocalError(event, t)
+        }
+    }
+
+    abstract fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
     fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "unhandled event $event in state ${this::class}" }
@@ -176,7 +187,7 @@ interface HasCommitments {
 
 @Serializable
 data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>) : ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is InitFundee -> {
                 val nextState = WaitForOpenChannel(staticParams, currentTip, event.temporaryChannelId, event.localParams, event.remoteInit)
@@ -240,11 +251,16 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 )
                 val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed))
                 // TODO: ask watcher for the funding tx when restoring WaitForFundingConfirmed
-                Pair(Offline(event.state), event.state.updateActions(actions))
+                Pair(Offline(event.state), actions)
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        return Pair(this, listOf(HandleError(t)))
     }
 }
 
@@ -255,7 +271,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
     override val currentTip: Pair<Int, BlockHeader>
         get() = state.currentTip
 
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
         return when {
             event is Connected -> {
@@ -266,10 +282,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                         val exc = PleasePublishYourCommitment(state.channelId)
                         val error = Error(state.channelId, exc.message)
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
-                        Pair(
-                            nextState,
-                            nextState.updateActions(listOf(SendMessage(error)))
-                        )
+                        Pair(nextState, listOf(SendMessage(error)))
                     }
                     state is HasCommitments && state.isZeroReserve() -> {
                         logger.info { "syncing $state, waiting fo their channelReestablish message" }
@@ -291,10 +304,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                         )
                         logger.info { "syncing $state" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
-                        Pair(
-                            Syncing(nextState, false),
-                            nextState.updateActions(listOf(SendMessage(channelReestablish)))
-                        )
+                        Pair(Syncing(nextState, false), listOf(SendMessage(channelReestablish)))
                     }
                     else -> unhandled(event)
                 }
@@ -306,6 +316,11 @@ data class Offline(val state: ChannelState) : ChannelState() {
             }
             else -> unhandled(event)
         }
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        return Pair(this, listOf(HandleError(t)))
     }
 }
 
@@ -321,7 +336,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
     override val currentTip: Pair<Int, BlockHeader>
         get() = state.currentTip
 
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "syncing processing $event" }
         return when {
             event is MessageReceived && event.message is ChannelReestablish ->
@@ -366,8 +381,8 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                             SendMessage(channelReestablish)
                         )
                         // now apply their reestablish message to the restored state
-                        val (nextState1, actions1) = Syncing(nextState as ChannelState, waitForTheirReestablishMessage = false).process(event)
-                        Pair(nextState1, updateActions(actions + actions1))
+                        val (nextState1, actions1) = Syncing(nextState as ChannelState, waitForTheirReestablishMessage = false).processInternal(event)
+                        Pair(nextState1, actions + actions1)
                     }
                     state is WaitForFundingConfirmed -> {
                         val minDepth = if (state.commitments.localParams.isFunder) {
@@ -412,7 +427,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                                         StoreState(nextState),
                                         SendMessage(error)
                                     )
-                                    Pair(nextState, nextState.updateActions(actions))
+                                    Pair(nextState, actions)
                                 } else {
                                     // they lied! the last per_commitment_secret they claimed to have received from us is invalid
                                     logger.warning { "they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
@@ -433,7 +448,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                                     StoreState(nextState),
                                     SendMessage(error)
                                 )
-                                Pair(nextState, nextState.updateActions(actions))
+                                Pair(nextState, actions)
                             }
                             else -> {
                                 // normal case, our data is up-to-date
@@ -483,6 +498,12 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        return Pair(this, listOf(HandleError(t)))
+    }
+
 }
 
 @Serializable
@@ -494,8 +515,14 @@ data class WaitForRemotePublishFutureComitment(
 ) : ChannelState(), HasCommitments {
     override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
 
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         TODO("Not yet implemented")
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(channelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
     }
 }
 
@@ -507,7 +534,7 @@ data class WaitForOpenChannel(
     val localParams: LocalParams,
     val remoteInit: Init
 ) : ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived ->
                 when (event.message) {
@@ -599,6 +626,12 @@ data class WaitForOpenChannel(
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(temporaryChannelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 @Serializable
@@ -616,7 +649,7 @@ data class WaitForFundingCreated(
     val channelVersion: ChannelVersion,
     val lastSent: AcceptChannel
 ) : ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived ->
                 when (event.message) {
@@ -705,7 +738,7 @@ data class WaitForFundingCreated(
                                 )
                                 val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
                                 val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
-                                Pair(nextState, nextState.updateActions(actions))
+                                Pair(nextState, actions)
                             }
                         }
                     }
@@ -721,12 +754,17 @@ data class WaitForFundingCreated(
         }
     }
 
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(temporaryChannelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 @Serializable
 data class WaitForAcceptChannel(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, val initFunder: InitFunder, val lastSent: OpenChannel) :
     ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived && event.message is AcceptChannel -> {
                 try {
@@ -779,6 +817,12 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(initFunder.temporaryChannelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 @Serializable
@@ -795,7 +839,7 @@ data class WaitForFundingInternal(
     val channelVersion: ChannelVersion,
     val lastSent: OpenChannel
 ) : ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MakeFundingTxResponse -> {
                 // let's create the first commitment tx that spends the yet uncommitted funding tx
@@ -851,6 +895,12 @@ data class WaitForFundingInternal(
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(temporaryChannelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 @Serializable
@@ -869,7 +919,7 @@ data class WaitForFundingSigned(
     val channelVersion: ChannelVersion,
     val lastSent: FundingCreated
 ) : ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is MessageReceived && event.message is FundingSigned -> {
                 // we make sure that their sig checks out and that our first commit tx is spendable
@@ -932,6 +982,12 @@ data class WaitForFundingSigned(
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(channelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 @Serializable
@@ -946,7 +1002,7 @@ data class WaitForFundingConfirmed(
 ) : ChannelState(), HasCommitments {
     override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
 
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
                 when (event.message) {
@@ -988,7 +1044,7 @@ data class WaitForFundingConfirmed(
                             val resultPair = nextState.process(MessageReceived(deferred))
                             Pair(resultPair.first, actions + resultPair.second)
                         } else {
-                            Pair(nextState, nextState.updateActions(actions))
+                            Pair(nextState, actions)
                         }
                     }
                     is WatchEventSpent -> {
@@ -1002,6 +1058,12 @@ data class WaitForFundingConfirmed(
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(channelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 @Serializable
@@ -1013,7 +1075,7 @@ data class WaitForFundingLocked(
     val lastSent: FundingLocked
 ) : ChannelState(), HasCommitments {
     override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
                 when (event.message) {
@@ -1062,6 +1124,12 @@ data class WaitForFundingLocked(
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(channelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 
@@ -1078,7 +1146,7 @@ data class Normal(
     val remoteShutdown: Shutdown?
 ) : ChannelState(), HasCommitments {
     override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is ExecuteCommand -> {
                 when (event.command) {
@@ -1156,7 +1224,7 @@ data class Normal(
                                         }
                                         val nextState = this.copy(commitments = result.result.first)
                                         val actions = listOf(StoreHtlcInfos(htlcInfos), StoreState(nextState), SendMessage(result.result.second))
-                                        Pair(nextState, nextState.updateActions(actions))
+                                        Pair(nextState, actions)
                                     }
                                 }
                             }
@@ -1222,7 +1290,7 @@ data class Normal(
                                 if (result.result.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
                                     actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
-                                Pair(nextState, nextState.updateActions(actions))
+                                Pair(nextState, actions)
                             }
                         }
                     }
@@ -1238,6 +1306,12 @@ data class Normal(
             else -> unhandled(event)
         }
     }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(channelId, t.message)
+        return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
+    }
 }
 
 /**
@@ -1245,8 +1319,13 @@ data class Normal(
  */
 @Serializable
 data class Closed(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>) : ChannelState() {
-    override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        return Pair(Closed(staticParams, currentTip), listOf())
     }
 }
 
