@@ -80,7 +80,7 @@ object TestConstants {
         val keyManager = LocalKeyManager(Alice.seed, Block.RegtestGenesisBlock.hash)
         val nodeParams = NodeParams(
             keyManager = keyManager,
-            alias = "alice",
+            alias = "bob",
             features = Features(
                 setOf(
                     ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
