@@ -11,25 +11,12 @@ import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.channel.TestsHelper.findOutgoingWatch
 import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.*
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class WaitForFundingCreatedTestsCommon {
-
-    fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Triple<WaitForFundingSigned, WaitForFundingCreated, FundingCreated> {
-        val (a, b, open) = TestsHelper.init(channelVersion, 0, fundingAmount)
-        val open1 = open.copy(pushMsat = pushAmount)
-        val (b1, actions) = b.process(MessageReceived(open1))
-        val accept =actions.findOutgoingMessage<AcceptChannel>()
-        val (a1, actions2) = a.process(MessageReceived(accept))
-        val fundingRequest = actions2.filterIsInstance<MakeFundingTx>().first()
-        val fundingTx = Transaction(version = 2, txIn = listOf(), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
-        val (a2, actions3) = a1.process(MakeFundingTxResponse(fundingTx, 0, Satoshi(0)))
-        val fundingCreated = actions3.findOutgoingMessage<FundingCreated>()
-        return Triple(a2 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)
-    }
-
     @Test
     fun `recv FundingCreated`() {
         val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
@@ -38,6 +25,15 @@ class WaitForFundingCreatedTestsCommon {
         actions1.findOutgoingMessage<FundingSigned>()
         actions1.findOutgoingWatch<WatchSpent>()
         actions1.findOutgoingWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv FundingCreated (funder can't pay fees)`() {
+        val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, 1000100.sat, 1000000.sat.toMilliSatoshi())
+        val (bob1, actions1) = bob.process(MessageReceived(fundingCreated))
+        val error = actions1.findOutgoingMessage<Error>()
+        println(error)
+        assertTrue { bob1 is Closed }
     }
 
     @Test
@@ -52,5 +48,20 @@ class WaitForFundingCreatedTestsCommon {
         val (_, bob, _) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
         val (bob1, _) = bob.process(ExecuteCommand(CMD_CLOSE(null)))
         assertTrue { bob1 is Closed }
+    }
+
+    companion object {
+        fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Triple<WaitForFundingSigned, WaitForFundingCreated, FundingCreated> {
+            val (a, b, open) = TestsHelper.init(channelVersion, 0, fundingAmount)
+            val open1 = open.copy(pushMsat = pushAmount)
+            val (b1, actions) = b.process(MessageReceived(open1))
+            val accept = actions.findOutgoingMessage<AcceptChannel>()
+            val (a1, actions2) = a.process(MessageReceived(accept))
+            val fundingRequest = actions2.filterIsInstance<MakeFundingTx>().first()
+            val fundingTx = Transaction(version = 2, txIn = listOf(), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
+            val (a2, actions3) = a1.process(MakeFundingTxResponse(fundingTx, 0, Satoshi(0)))
+            val fundingCreated = actions3.findOutgoingMessage<FundingCreated>()
+            return Triple(a2 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)
+        }
     }
 }
