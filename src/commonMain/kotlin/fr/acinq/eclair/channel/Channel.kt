@@ -1012,7 +1012,7 @@ data class WaitForFundingConfirmed(
             is WatchReceived ->
                 when (event.watch) {
                     is WatchEventConfirmed -> {
-                        val result = fr.acinq.eclair.utils.runTrying {
+                        val result = runTrying {
                             Transaction.correctlySpends(
                                 commitments.localCommit.publishableTxs.commitTx.tx,
                                 listOf(event.watch.tx),
@@ -1023,8 +1023,9 @@ data class WaitForFundingConfirmed(
                             logger.error { "funding tx verification failed: ${result.error}" }
                             if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
                                 logger.error { "ignoring this error on regtest" }
+                                return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                             } else {
-                                return Pair(this, listOf(HandleError(result.error)))
+                                return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                             }
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
