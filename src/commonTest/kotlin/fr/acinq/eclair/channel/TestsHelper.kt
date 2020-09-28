@@ -116,14 +116,14 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Pair<NodePair, Pair<ByteVector32, UpdateAddHtlc>> {
+    fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Triple<NodePair, ByteVector32, UpdateAddHtlc> {
         val currentBlockHeight = sender.currentBlockHeight.toLong()
         val (paymentPreimage, cmd) = makeCmdAdd(amount, sender.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (sr, htlc) = addHtlc(cmd, sender, receiver)
-        return sr to (paymentPreimage to htlc)
+        val (s, r, htlc) = addHtlc(cmd, sender, receiver)
+        return Triple(NodePair(s, r), paymentPreimage, htlc)
     }
 
-    private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Pair<NodePair, UpdateAddHtlc> {
+    private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Triple<ChannelState, ChannelState, UpdateAddHtlc> {
         val (s, sa) = sender.process(ExecuteCommand(cmdAdd))
         val htlc = sa.findOutgoingMessage<UpdateAddHtlc>()
 
@@ -131,7 +131,7 @@ object TestsHelper {
         assertTrue(r is HasCommitments)
         assertTrue(r.commitments.remoteChanges.proposed.contains(htlc))
 
-        return NodePair(s, r) to htlc
+        return Triple(s, r, htlc)
     }
 
     fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, sender: ChannelState, receiver: ChannelState): NodePair {
