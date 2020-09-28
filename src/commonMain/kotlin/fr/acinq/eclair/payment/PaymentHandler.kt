@@ -6,16 +6,19 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.currentTimestampSeconds
 import fr.acinq.eclair.utils.newEclairLogger
 import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
+import kotlin.math.min
 
 data class IncomingPayment(
     val paymentRequest: PaymentRequest,
-    val paymentPreimage: ByteVector32
+    val paymentPreimage: ByteVector32,
+    var mppStartedAt: Long? = null // In seconds
 )
 
 class PaymentHandler(
@@ -51,21 +54,11 @@ class PaymentHandler(
         currentBlockHeight: Int
     ): ProcessAddResult
     {
-        // BOLT 04:
-        //
-        // - if the payment hash is unknown:
-        //   - MUST fail the HTLC.
-        //   - MUST return an incorrect_or_unknown_payment_details error.
-
-        if (incomingPayment == null) {
-
-            logger.warning { "received $htlc for which we don't have a preimage" }
-
-            val msg = IncorrectOrUnknownPaymentDetails(htlc.amountMsat, currentBlockHeight.toLong())
-            val action = actionForFailureMessage(msg, htlc)
-
-            return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
-        }
+        // Security note:
+        // There are several checks we could perform before decrypting the onion.
+        // However an error message here would differ from an error message below,
+        // as we don't know the `onion.totalAmount` yet.
+        // So to prevent any kind of information leakage, we always peel the onion first.
 
         // Try to decrypt the onion
         return when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
@@ -88,12 +81,38 @@ class PaymentHandler(
     private fun processAdd(
         htlc: UpdateAddHtlc,
         onion: FinalPayload,
-        incomingPayment: IncomingPayment,
+        incomingPayment: IncomingPayment?,
         currentBlockHeight: Int
     ): ProcessAddResult
     {
+        val failureMsg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
+        val failureAction = actionForFailureMessage(failureMsg, htlc)
+        val rejectedResult = ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(failureAction))
+
+        if (incomingPayment == null) {
+
+            logger.warning { "received $htlc for which we don't have a preimage" }
+            return rejectedResult
+        }
+
+        if (incomingPayment.paymentRequest.isExpired()) {
+
+            logger.warning { "received payment for expired invoice" }
+            return rejectedResult
+        }
+
+        val minFinalCltvExpiryDelta = incomingPayment.paymentRequest.minFinalExpiryDelta ?: PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+        val minFinalCltvExpiry = minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+
+        if (htlc.cltvExpiry < minFinalCltvExpiry) {
+
+            logger.warning { "received payment with expiry too small: received(${htlc.cltvExpiry}) min($minFinalCltvExpiry)" }
+            return rejectedResult
+        }
+
+        val isMultiPartPayment = onion.totalAmount > onion.amount
+
         // BOLT 04:
-        //
         // - if the payment_secret doesn't match the expected value for that payment_hash,
         //   or the payment_secret is required and is not present:
         //   - MUST fail the HTLC.
@@ -104,16 +123,13 @@ class PaymentHandler(
         val paymentSecretExpected = incomingPayment.paymentRequest.paymentSecret
         val paymentSecretReceived = onion.paymentSecret
 
-        if (paymentSecretExpected != paymentSecretReceived) {
+        if ((isMultiPartPayment || paymentSecretReceived != null) && (paymentSecretExpected != paymentSecretReceived)) {
 
-            val msg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
-            val action = actionForFailureMessage(msg, htlc)
-
-            return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
+            logger.warning { "received payment with invalid paymentSecret" }
+            return rejectedResult
         }
 
         // BOLT 04:
-        //
         // - if the amount paid is less than the amount expected:
         //   - MUST fail the HTLC.
         //   - MUST return an incorrect_or_unknown_payment_details error.
@@ -133,29 +149,27 @@ class PaymentHandler(
             if ((amountReceived < amountExpected) || (amountReceived > amountExpected * 2)) {
 
                 logger.warning { "received invalid amount: $amountReceived, expected: $amountExpected" }
-
-                val msg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
-                val action = actionForFailureMessage(msg, htlc)
-
-                return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
+                return rejectedResult
             }
         }
+
+        // All checks passed
 
         if (onion.totalAmount > onion.amount) {
 
             // This is a multipart payment.
             // Forward to alternative logic handler.
-
             return processMpp(htlc, onion, incomingPayment, currentBlockHeight)
+
+        } else {
+
+            logger.info { "received $htlc for ${incomingPayment.paymentRequest}" }
+            val action = WrappedChannelEvent(
+                channelId = htlc.channelId,
+                channelEvent = ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, incomingPayment.paymentPreimage, commit = true))
+            )
+            return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = listOf(action))
         }
-
-        logger.info { "received $htlc for ${incomingPayment.paymentRequest}" }
-        val action = WrappedChannelEvent(
-            channelId = htlc.channelId,
-            channelEvent = ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, incomingPayment.paymentPreimage, commit = true))
-        )
-
-        return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = listOf(action))
     }
 
     private fun processMpp(
@@ -168,7 +182,6 @@ class PaymentHandler(
         val actions = mutableListOf<PeerEvent>()
 
         // Add <htlc, onion> tuple to pending set.
-        //
         // NB: We need to update the `pending` map too. But we do that right before we return.
 
         val updatedPendingSet = (pending[htlc.paymentHash] ?: setOf()) + FinalPacket(htlc, onion)
@@ -213,9 +226,9 @@ class PaymentHandler(
 
         if (cumulativeMsat < totalMsat) {
             // Still waiting for more payments
-            //
-            // Future Work: This is where we need to request a timer/timeout action
-
+            if (incomingPayment.mppStartedAt == null) {
+                incomingPayment.mppStartedAt = currentTimestampSeconds()
+            }
             pending[htlc.paymentHash] = updatedPendingSet
             return ProcessAddResult(status = ProcessedStatus.PENDING, actions = actions)
         }
@@ -247,11 +260,18 @@ class PaymentHandler(
         val actions = mutableListOf<PeerEvent>()
         val keysToRemove = mutableListOf<ByteVector32>()
 
+        // BOLT 04:
+        // - MUST fail all HTLCs in the HTLC set after some reasonable timeout.
+        //   - SHOULD wait for at least 60 seconds after the initial HTLC.
+        //   - SHOULD use mpp_timeout for the failure message.
+
+        val mppExpiry = min(60, nodeParams.multiPartPaymentExpiry)
+
         pending.forEach { (paymentHash, parts) ->
 
-            val isExpired = when(val incomingPayment = incomingPayments[paymentHash]) {
-                null -> true
-                else -> incomingPayment.paymentRequest.isExpired(currentTimestampSeconds)
+            val isExpired = when(val mppStartedAt = incomingPayments[paymentHash]?.mppStartedAt) {
+                null -> false
+                else -> currentTimestampSeconds > (mppStartedAt + mppExpiry)
             }
 
             if (isExpired) {

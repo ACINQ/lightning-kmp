@@ -176,7 +176,7 @@ class Peer(
                 }
             }
 
-            suspend fun doPaymentTimeout() {
+            suspend fun checkPaymentsTimeout() {
                 while (isActive) {
                     delay(timeMillis = 30_000)
                     input.send(CheckPaymentsTimeout)
@@ -211,7 +211,7 @@ class Peer(
                     }
                 }
                 launch { doPing() }
-                launch { doPaymentTimeout() }
+                launch { checkPaymentsTimeout() }
                 launch { respond() }
 
                 listen()

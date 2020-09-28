@@ -10,6 +10,7 @@ import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.PeerChannels
+import fr.acinq.eclair.payment.PaymentHandler
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.OnionRoutingPacket
@@ -69,7 +70,7 @@ object TestConstants {
             chainHash = Block.RegtestGenesisBlock.hash,
             channelFlags = 1,
             paymentRequestExpiry = 3600,
-            multiPartPaymentExpiry = 30,
+            multiPartPaymentExpiry = 60,
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
@@ -83,6 +84,8 @@ object TestConstants {
             true,
             fundingSatoshis
         ).copy(channelReserve = 10000.sat) // Bob will need to keep that much satoshis as direct payment
+
+        val paymentHandler = PaymentHandler(this.nodeParams)
     }
 
     object Bob {
@@ -132,7 +135,7 @@ object TestConstants {
             chainHash = Block.RegtestGenesisBlock.hash,
             channelFlags = 1,
             paymentRequestExpiry = 3600,
-            multiPartPaymentExpiry = 30,
+            multiPartPaymentExpiry = 60,
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
@@ -146,5 +149,7 @@ object TestConstants {
             false,
             fundingSatoshis
         ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment
+
+        val paymentHandler = PaymentHandler(this.nodeParams)
     }
 }
