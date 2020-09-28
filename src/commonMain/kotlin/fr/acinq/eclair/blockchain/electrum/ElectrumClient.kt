@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.Json
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
 
@@ -305,7 +306,7 @@ class ElectrumClient(
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
-        val logger = LoggerFactory.default.newLogger(Logger.Tag(ElectrumClient::class))
+        val logger = EclairLoggerFactory.newLogger<ElectrumClient>()
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }

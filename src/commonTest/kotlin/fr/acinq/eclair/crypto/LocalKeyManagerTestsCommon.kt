@@ -4,11 +4,12 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class LocalKeyManagerSpec {
+class LocalKeyManagerTestsCommon : EclairTestSuite() {
     @Test
     fun `generate the same node id from the same seed`() {
         // if this test breaks it means that we will generate a different node id  from

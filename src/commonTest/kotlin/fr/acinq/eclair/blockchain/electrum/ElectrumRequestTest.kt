@@ -1,10 +1,11 @@
 package fr.acinq.eclair.blockchain.electrum
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 
-class ElectrumRequestTest {
+class ElectrumRequestTest : EclairTestSuite() {
 
     @Test
     fun `ServerVersion stringify JSON-RPC format`() {

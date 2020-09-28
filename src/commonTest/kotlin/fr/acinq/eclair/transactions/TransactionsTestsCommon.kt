@@ -16,6 +16,7 @@ import fr.acinq.eclair.Eclair.MinimumFeeratePerKw
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eclair.transactions.Scripts.htlcOffered
 import fr.acinq.eclair.transactions.Scripts.htlcReceived
@@ -58,7 +59,7 @@ import kotlin.random.Random
 import kotlin.test.*
 
 @InternalSerializationApi
-class TransactionsTestsCommon {
+class TransactionsTestsCommon : EclairTestSuite() {
 
     private val localFundingPriv = PrivateKey(randomBytes32())
     private val remoteFundingPriv = PrivateKey(randomBytes32())

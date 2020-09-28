@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector
@@ -12,7 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class OfflineTestsCommon {
+class OfflineTestsCommon : EclairTestSuite() {
     @Test
     fun `handle disconnect - connect events (no messages sent yet)`() {
         val (alice, bob) = TestsHelper.reachNormal()

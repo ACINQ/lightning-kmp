@@ -27,6 +27,7 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -123,7 +124,7 @@ sealed class ChannelState {
     }
 
     @Transient
-    val logger = LoggerFactory.default.newLogger(Logger.Tag(Channel::class))
+    val logger = EclairLoggerFactory.newLogger<Channel<*>>()
 }
 
 interface HasCommitments {
@@ -474,7 +475,6 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
 
                                 // TODO: update fees if needed
                                 logger.info { "switching to $state" }
-                                println("switching to $state")
                                 Pair(state.copy(commitments = commitments1), actions)
                             }
                         }

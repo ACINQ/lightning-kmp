@@ -1,6 +1,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
@@ -8,7 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class MilliSatoshiTestsCommon {
+class MilliSatoshiTestsCommon : EclairTestSuite() {
 
     @Test fun `millisatoshi numeric operations`() {
         // add

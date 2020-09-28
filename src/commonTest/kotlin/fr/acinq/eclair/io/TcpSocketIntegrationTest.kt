@@ -1,5 +1,6 @@
 package fr.acinq.eclair.io
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.withTimeout
@@ -10,7 +11,7 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
 
 @OptIn(ExperimentalTime::class)
-class TcpSocketIntegrationTest {
+class TcpSocketIntegrationTest : EclairTestSuite() {
 
     private val serverVersionRpc = buildString {
         append("""{ "id":"0", "method":"server.version", "params": ["3.3.6", "1.4"]}""")

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.tests.bitcoind
 
 import fr.acinq.eclair.utils.JsonRPCResponse
+import fr.acinq.eclair.utils.newEclairLogger
 import io.ktor.client.*
 import io.ktor.client.features.auth.*
 import io.ktor.client.features.auth.providers.*
@@ -45,7 +46,7 @@ class BitcoinJsonRPCClient(
     }
 
     companion object {
-        private val logger = LoggerFactory.default.newLogger(Logger.Tag(BitcoinJsonRPCClient::class))
+        private val logger = newEclairLogger()
     }
 }
 

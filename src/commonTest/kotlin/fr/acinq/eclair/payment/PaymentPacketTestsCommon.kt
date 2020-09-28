@@ -14,11 +14,12 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
-class PaymentPacketTestsCommon {
+class PaymentPacketTestsCommon : EclairTestSuite() {
 
     private val privA = randomKey()
     private val a = privA.publicKey()

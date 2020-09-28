@@ -6,10 +6,12 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.newEclairLogger
 import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
 data class IncomingPayment(
     val paymentRequest: PaymentRequest,
@@ -28,7 +30,7 @@ class PaymentHandler(
 
     data class ProcessAddResult(val status: ProcessedStatus, val actions: List<PeerEvent>)
 
-    private val logger = LoggerFactory.default.newLogger(Logger.Tag(PaymentHandler::class))
+    private val logger = newEclairLogger()
 
     private data class FinalPacket(val htlc: UpdateAddHtlc, val onion: FinalPayload)
     private val pending = mutableMapOf<ByteVector32, Set<FinalPacket>>()

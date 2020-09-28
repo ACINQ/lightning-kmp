@@ -7,6 +7,7 @@ import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.CommitmentSpecTestsCommon
 import fr.acinq.eclair.transactions.Transactions
@@ -14,12 +15,13 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class CommitmentsTests {
-    val logger = LoggerFactory.default.newLogger(Logger.Tag(CommitmentSpecTestsCommon::class))
+class CommitmentsTestsCommon : EclairTestSuite() {
+    val logger = EclairLoggerFactory.newLogger<CommitmentSpecTestsCommon>()
 
     @Test
     fun `reach normal state`() {

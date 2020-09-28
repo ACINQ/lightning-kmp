@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.assertArrayEquals
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,7 +16,7 @@ import kotlin.test.assertFails
 import kotlin.test.assertNull
 
 @OptIn(ExperimentalUnsignedTypes::class)
-class TlvTestsCommon {
+class TlvTestsCommon : EclairTestSuite() {
 
     @Test
     fun `encode - decode truncated uint16`() {

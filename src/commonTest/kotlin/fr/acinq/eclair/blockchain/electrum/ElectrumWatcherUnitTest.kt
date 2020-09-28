@@ -1,11 +1,12 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.byteVector32
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class ElectrumWatcherUnitTest {
+class ElectrumWatcherUnitTest : EclairTestSuite() {
     @Test
     fun `generate unique dummy scids`() {
         // generate 1000 dummy ids

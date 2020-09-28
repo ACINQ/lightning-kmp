@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.eclair.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.eclair.crypto.sphinx.Sphinx.peekPayloadLength
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.Try
 import fr.acinq.eclair.utils.msat
@@ -17,7 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertTrue
 
-class SphinxTestsCommon {
+class SphinxTestsCommon : EclairTestSuite() {
     private val privKeys = listOf(
         PrivateKey(ByteVector32("4141414141414141414141414141414141414141414141414141414141414141")),
         PrivateKey(ByteVector32("4242424242424242424242424242424242424242424242424242424242424242")),
