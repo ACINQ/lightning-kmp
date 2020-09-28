@@ -3,16 +3,16 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.io.*
+import fr.acinq.eclair.channel.CMD_FAIL_HTLC
+import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
+import fr.acinq.eclair.channel.ExecuteCommand
+import fr.acinq.eclair.io.PeerEvent
+import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.currentTimestampSeconds
 import fr.acinq.eclair.utils.newEclairLogger
 import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.*
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.math.min
 
 data class IncomingPayment(
@@ -36,6 +36,7 @@ class PaymentHandler(
     private val logger = newEclairLogger()
 
     private data class FinalPacket(val htlc: UpdateAddHtlc, val onion: FinalPayload)
+
     private val pending = mutableMapOf<ByteVector32, Set<FinalPacket>>()
 
     private val privateKey get() = nodeParams.nodePrivateKey
@@ -52,8 +53,7 @@ class PaymentHandler(
         htlc: UpdateAddHtlc,
         incomingPayment: IncomingPayment?,
         currentBlockHeight: Int
-    ): ProcessAddResult
-    {
+    ): ProcessAddResult {
         // Security note:
         // There are several checks we could perform before decrypting the onion.
         // However an error message here would differ from an error message below,
@@ -83,8 +83,7 @@ class PaymentHandler(
         onion: FinalPayload,
         incomingPayment: IncomingPayment?,
         currentBlockHeight: Int
-    ): ProcessAddResult
-    {
+    ): ProcessAddResult {
         val failureMsg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
         val failureAction = actionForFailureMessage(failureMsg, htlc)
         val rejectedResult = ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(failureAction))
@@ -101,7 +100,8 @@ class PaymentHandler(
             return rejectedResult
         }
 
-        val minFinalCltvExpiryDelta = incomingPayment.paymentRequest.minFinalExpiryDelta ?: PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+        val minFinalCltvExpiryDelta =
+            incomingPayment.paymentRequest.minFinalExpiryDelta ?: PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
         val minFinalCltvExpiry = minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
 
         if (htlc.cltvExpiry < minFinalCltvExpiry) {
@@ -177,8 +177,7 @@ class PaymentHandler(
         onion: FinalPayload,
         incomingPayment: IncomingPayment,
         currentBlockHeight: Int
-    ): ProcessAddResult
-    {
+    ): ProcessAddResult {
         val actions = mutableListOf<PeerEvent>()
 
         // Add <htlc, onion> tuple to pending set.
@@ -210,8 +209,8 @@ class PaymentHandler(
             }
 
             logger.warning {
-                "Discovered htlc set total_msat_mismatch."+
-                " Failing entire set with paymentHash = ${incomingPayment.paymentRequest.paymentHash}"
+                "Discovered htlc set total_msat_mismatch." +
+                    " Failing entire set with paymentHash = ${incomingPayment.paymentRequest.paymentHash}"
             }
 
             pending.remove(htlc.paymentHash)
@@ -269,7 +268,7 @@ class PaymentHandler(
 
         pending.forEach { (paymentHash, parts) ->
 
-            val isExpired = when(val mppStartedAt = incomingPayments[paymentHash]?.mppStartedAt) {
+            val isExpired = when (val mppStartedAt = incomingPayments[paymentHash]?.mppStartedAt) {
                 null -> false
                 else -> currentTimestampSeconds > (mppStartedAt + mppExpiry)
             }
@@ -293,8 +292,7 @@ class PaymentHandler(
         msg: FailureMessage,
         htlc: UpdateAddHtlc,
         commit: Boolean = true
-    ): WrappedChannelEvent
-    {
+    ): WrappedChannelEvent {
         val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
 
         val cmd = CMD_FAIL_HTLC(

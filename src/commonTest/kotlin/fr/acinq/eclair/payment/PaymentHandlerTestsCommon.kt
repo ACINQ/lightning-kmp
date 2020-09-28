@@ -7,12 +7,11 @@ import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
-//import fr.acinq.eclair.utils.UUID
-//import fr.acinq.eclair.utils.msat
-//import fr.acinq.eclair.utils.sat
-//import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 
 class PaymentHandlerTestsCommon : EclairTestSuite() {
