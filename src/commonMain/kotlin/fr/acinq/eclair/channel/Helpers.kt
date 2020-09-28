@@ -221,6 +221,7 @@ object Helpers {
             val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
             val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+          //val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, remoteCommit.spec, commitments.commitmentFormat)
             val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteCommit.spec)
 
             // we need to use a rather high fee for htlc-claim because we compete with the counterparty
@@ -248,34 +249,30 @@ object Helpers {
                                 feeratePerKwHtlc
                             )
                         }?.let {
-                            val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath))
+                            val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint)
                             Transactions.addSigs(it, sig, preimage).tx
                         }
                     }
                 }
 
-
             val claimHtlcTimeoutTxs = remoteCommit.spec.htlcs.filterIsInstance<IncomingHtlc>().map { it.add }.mapNotNull { add ->
                     // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
                     // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-                    val txResult = Transactions.makeClaimHtlcTimeoutTx(
-                        remoteCommitTx.tx,
-                        outputs,
-                        localParams.dustLimit,
-                        localHtlcPubkey,
-                        remoteHtlcPubkey,
-                        remoteRevocationPubkey,
-                        localParams.defaultFinalScriptPubKey.toByteArray(),
-                        add,
-                        feeratePerKwHtlc
-                    )
-
-                    when (txResult) {
-                        is Transactions.TxResult.Success -> {
-                            val sig = keyManager.sign(txResult.result, keyManager.htlcPoint(channelKeyPath))
-                            Transactions.addSigs(txResult.result, sig).tx
-                        }
-                        is Transactions.TxResult.Skipped -> null
+                    generateTx {
+                        Transactions.makeClaimHtlcTimeoutTx(
+                            remoteCommitTx.tx,
+                            outputs,
+                            localParams.dustLimit,
+                            localHtlcPubkey,
+                            remoteHtlcPubkey,
+                            remoteRevocationPubkey,
+                            localParams.defaultFinalScriptPubKey.toByteArray(),
+                            add,
+                            feeratePerKwHtlc
+                        )
+                    }?.let {
+                        val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+                        Transactions.addSigs(it, sig).tx
                     }
                 }
 
@@ -313,7 +310,7 @@ object Helpers {
                     feeratePerKwMain
                 )
             }?.let {
-                val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath))
+                val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
                 Transactions.addSigs(it, localPubkey, sig).tx
             }
 
@@ -377,7 +374,7 @@ object Helpers {
                             feeratePerKwMain
                         )
                     }?.let {
-                        val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath))
+                        val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
                         Transactions.addSigs(it, localPaymentPubkey, sig).tx
                     }
                 }
@@ -394,7 +391,7 @@ object Helpers {
                         feeratePerKwPenalty
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, keyManager.revocationPoint(channelKeyPath))
+                    val sig = keyManager.sign(it, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret)
                     Transactions.addSigs(it, sig).tx
                 }
 
