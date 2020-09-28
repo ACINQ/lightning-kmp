@@ -14,6 +14,19 @@ import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
+
+data class NodePair(val sender: ChannelState, val receiver: ChannelState)
+
+// LN Message
+inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T =
+    filterIsInstance<SendMessage>().map { it.message }.firstOrNull { it is T } as T? ?: fail("cannot find LightningMessage ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasMessage() = any { it is SendMessage && it.message is T }
+
+// Commands
+inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
+    filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasCommand() = any { it is ProcessCommand && it.command is T }
 
 object TestsHelper {
     fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
@@ -46,10 +59,10 @@ object TestsHelper {
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
 
-        val open = findOutgoingMessage<OpenChannel>(ra.second)
+        val open = ra.second.findOutgoingMessage<OpenChannel>()
         rb = bob.process(MessageReceived(open))
         bob = rb.first
-        val accept = findOutgoingMessage<AcceptChannel>(rb.second)
+        val accept = rb.second.findOutgoingMessage<AcceptChannel>()
         ra = alice.process(MessageReceived(accept))
         alice = ra.first
         val makeFundingTx = run {
@@ -65,10 +78,10 @@ object TestsHelper {
         )
         ra = alice.process(MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
         alice = ra.first
-        val created = findOutgoingMessage<FundingCreated>(ra.second)
+        val created = ra.second.findOutgoingMessage<FundingCreated>()
         rb = bob.process(MessageReceived(created))
         bob = rb.first
-        val signedBob = findOutgoingMessage<FundingSigned>(rb.second)
+        val signedBob = rb.second.findOutgoingMessage<FundingSigned>()
         ra = alice.process(MessageReceived(signedBob))
         alice = ra.first
         val watchConfirmed = run {
@@ -79,11 +92,11 @@ object TestsHelper {
 
         ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         alice = ra.first
-        val fundingLockedAlice = findOutgoingMessage<FundingLocked>(ra.second)
+        val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
 
         rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         bob = rb.first
-        val fundingLockedBob = findOutgoingMessage<FundingLocked>(rb.second)
+        val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
 
         ra = alice.process(MessageReceived(fundingLockedBob))
         alice = ra.first
@@ -92,12 +105,6 @@ object TestsHelper {
         bob = rb.first
 
         return Pair(alice as Normal, bob as Normal)
-    }
-
-    inline fun <reified T : LightningMessage> findOutgoingMessage(input: List<ChannelAction>): T {
-        val candidates = input.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
-        if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
-        return candidates.first()
     }
 
     fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = Eclair.randomBytes32(), id: UUID = UUID.randomUUID()): Pair<ByteVector32, CMD_ADD_HTLC> {
@@ -109,97 +116,82 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    /*
-    * sender -> receiver couple can be:
-    *   - alice -> bob
-    *   - bob -> alice
-    */
-    private var htlcIndex = 0L
-    fun makePayment(payment: MilliSatoshi = 42000000.msat, sender: HasCommitments, receiver: HasCommitments, logger: Logger): Pair<ChannelState, ChannelState> {
-        val fee = 1720000.msat // fee due to the additional htlc output
+    fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Pair<NodePair, Pair<ByteVector32, UpdateAddHtlc>> {
+        val currentBlockHeight = sender.currentBlockHeight.toLong()
+        val (paymentPreimage, cmd) = makeCmdAdd(amount, sender.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (sr, htlc) = addHtlc(cmd, sender, receiver)
+        return sr to (paymentPreimage to htlc)
+    }
 
-        assertTrue(sender is ChannelState)
-        assertTrue(receiver is ChannelState)
+    private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Pair<NodePair, UpdateAddHtlc> {
+        val (s, sa) = sender.process(ExecuteCommand(cmdAdd))
+        val htlc = sa.findOutgoingMessage<UpdateAddHtlc>()
 
-        val ac0 = sender.commitments
-        val bc0 = receiver.commitments
+        val (r, ra) = receiver.process(MessageReceived(htlc))
+        assertTrue(r is HasCommitments)
+        assertTrue(r.commitments.remoteChanges.proposed.contains(htlc))
 
-        val a = ac0.availableBalanceForSend() // initial balance alice
-        val b = bc0.availableBalanceForSend() // initial balance bob
+        return NodePair(s, r) to htlc
+    }
 
-        assertTrue(ac0.availableBalanceForSend() > payment) // alice can afford the payment
-        assertEquals(ac0.availableBalanceForSend(), a)
-        assertEquals(ac0.availableBalanceForReceive(), b)
-        assertEquals(bc0.availableBalanceForSend(), b)
-        assertEquals(bc0.availableBalanceForReceive(), a)
+    fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, sender: ChannelState, receiver: ChannelState): NodePair {
+        val (s, sa) = sender.process(ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
+        val fulfillHtlc = sa.findOutgoingMessage<UpdateFulfillHtlc>()
 
-        val currentBlockHeight = 144L
-        val (payment_preimage, cmdAdd) = TestsHelper.makeCmdAdd(payment, receiver.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add) = ac0.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
-        assertEquals(ac1.availableBalanceForSend(), a - payment - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
-        assertEquals(ac1.availableBalanceForReceive(), b)
+        val (r, ra) = receiver.process(MessageReceived(fulfillHtlc))
+        assertTrue(r is HasCommitments)
+        assertTrue(r.commitments.remoteChanges.proposed.contains(fulfillHtlc))
 
-        val bc1 = bc0.receiveAdd(add).get()
-        assertEquals(bc1.availableBalanceForSend(), b)
-        assertEquals(bc1.availableBalanceForReceive(), a - payment - fee)
+        return NodePair(s, r)
+    }
 
-        val (ac2, commit1) = ac1.sendCommit(sender.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(ac2.availableBalanceForSend(), a - payment - fee)
-        assertEquals(ac2.availableBalanceForReceive(), b)
+    fun crossSign(sender: ChannelState, receiver: ChannelState): NodePair {
+        assertTrue(sender is HasCommitments)
+        assertTrue(receiver is HasCommitments)
 
-        val (bc2, revocation1) = bc1.receiveCommit(commit1, receiver.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(bc2.availableBalanceForSend(), b)
-        assertEquals(bc2.availableBalanceForReceive(), a - payment - fee)
+        val sCommitIndex = sender.commitments.localCommit.index
+        val rCommitIndex = receiver.commitments.localCommit.index
+        val rHasChanges = receiver.commitments.localHasChanges()
 
-        val ac3 = ac2.receiveRevocation(revocation1).get().first
-        assertEquals(ac3.availableBalanceForSend(), a - payment - fee)
-        assertEquals(ac3.availableBalanceForReceive(), b)
+        val (sender0, sActions0) = sender.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
 
-        val (bc3, commit2) = bc2.sendCommit(receiver.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(bc3.availableBalanceForSend(), b)
-        assertEquals(bc3.availableBalanceForReceive(), a - payment - fee)
+        val (receiver0, rActions0) = receiver.process(MessageReceived(commitSig0))
+        val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
+        val commandSign0 = rActions0.findProcessCommand<CMD_SIGN>()
 
-        val (ac4, revocation2) = ac3.receiveCommit(commit2, sender.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(ac4.availableBalanceForSend(), a - payment - fee)
-        assertEquals(ac4.availableBalanceForReceive(), b)
+        val (sender1, _) = sender0.process(MessageReceived(revokeAndAck0))
+        val (receiver1, rActions1) = receiver0.process(ExecuteCommand(commandSign0))
+        val commitSig1 = rActions1.findOutgoingMessage<CommitSig>()
 
-        val bc4 = bc3.receiveRevocation(revocation2).get().first
-        assertEquals(bc4.availableBalanceForSend(), b)
-        assertEquals(bc4.availableBalanceForReceive(), a - payment - fee)
+        val (sender2, sActions2) = sender1.process(MessageReceived(commitSig1))
+        val revokeAndAck1 = sActions2.findOutgoingMessage<RevokeAndAck>()
+        val (receiver2, _) = receiver1.process(MessageReceived(revokeAndAck1))
 
-        val cmdFulfill = CMD_FULFILL_HTLC(htlcIndex++, payment_preimage)
-        val (bc5, fulfill) = bc4.sendFulfill(cmdFulfill).get()
-        assertEquals(bc5.availableBalanceForSend(), b + payment) // as soon as we have the fulfill, the balance increases
-        assertEquals(bc5.availableBalanceForReceive(), a - payment - fee)
+        if (rHasChanges) {
+            val commandSign1 = sActions2.findProcessCommand<CMD_SIGN>()
+            val (sender3, sActions3) = sender2.process(ExecuteCommand(commandSign1))
+            val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
 
-        val ac5 = ac4.receiveFulfill(fulfill).get().first
-        assertEquals(ac5.availableBalanceForSend(), a - payment - fee)
-        assertEquals(ac5.availableBalanceForReceive(), b + payment)
+            val (receiver3, rActions3) = receiver2.process(MessageReceived(commitSig2))
+            val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
+            val (sender4, _) = sender3.process(MessageReceived(revokeAndAck2))
 
-        val (bc6, commit3) = bc5.sendCommit(receiver.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(bc6.availableBalanceForSend(), b + payment)
-        assertEquals(bc6.availableBalanceForReceive(), a - payment - fee)
+            sender4 as HasCommitments ; receiver3 as HasCommitments
+            assertEquals(sCommitIndex + 1, sender4.commitments.localCommit.index)
+            assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommit.index)
+            assertEquals(rCommitIndex + 2, receiver3.commitments.localCommit.index)
+            assertEquals(rCommitIndex + 1, receiver3.commitments.remoteCommit.index)
 
-        val (ac6, revocation3) = ac5.receiveCommit(commit3, sender.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(ac6.availableBalanceForSend(), a - payment)
-        assertEquals(ac6.availableBalanceForReceive(), b + payment)
+            return NodePair(sender4, receiver3)
+        } else {
+            sender2 as HasCommitments ; receiver2 as HasCommitments
+            assertEquals(sCommitIndex + 1, sender2.commitments.localCommit.index)
+            assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommit.index)
+            assertEquals(rCommitIndex + 1, receiver2.commitments.localCommit.index)
+            assertEquals(rCommitIndex + 1, receiver2.commitments.remoteCommit.index)
 
-        val bc7 = bc6.receiveRevocation(revocation3).get().first
-        assertEquals(bc7.availableBalanceForSend(), b + payment)
-        assertEquals(bc7.availableBalanceForReceive(), a - payment)
-
-        val (ac7, commit4) = ac6.sendCommit(sender.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(ac7.availableBalanceForSend(), a - payment)
-        assertEquals(ac7.availableBalanceForReceive(), b + payment)
-
-        val (bc8, revocation4) = bc7.receiveCommit(commit4, receiver.staticParams.nodeParams.keyManager, logger).get()
-        assertEquals(bc8.availableBalanceForSend(), b + payment)
-        assertEquals(bc8.availableBalanceForReceive(), a - payment)
-
-        val ac8 = ac7.receiveRevocation(revocation4).get().first
-        assertEquals(ac8.availableBalanceForSend(), a - payment)
-        assertEquals(ac8.availableBalanceForReceive(), b + payment)
-
-        return sender.updateCommitments(ac8) as ChannelState to receiver.updateCommitments(bc8) as ChannelState
+            return NodePair(sender2, receiver2)
+        }
     }
 }
