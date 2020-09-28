@@ -3,38 +3,47 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.utils.ServerAddress
-import fr.acinq.eclair.utils.*
+import fr.acinq.eclair.tests.bitcoind.BitcoindService
+import fr.acinq.eclair.utils.currentTimestampSeconds
+import fr.acinq.eclair.tests.utils.runSuspendBlocking
+import fr.acinq.eclair.tests.utils.runSuspendTest
+import fr.acinq.eclair.utils.runTrying
+import fr.acinq.eclair.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.consume
-import kotlinx.coroutines.flow.*
-import kotlin.test.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
 import kotlin.time.minutes
 import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest {
-    private val TIMEOUT = 20.seconds
 
     private val bitcoincli = BitcoindService()
 
     init {
-        runTest {
-            var count = 0
-            while(fr.acinq.eclair.utils.runTrying { bitcoincli.getNetworkInfo() }.isFailure && count++ < 5) {
-                delay(1000)
+        runSuspendBlocking {
+            withTimeout(10.seconds) {
+                while(runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
+                    delay(0.5.seconds)
+                }
             }
         }
     }
 
     @Test
-    fun `watch for confirmed transactions`() = runTest {
+    fun `watch for confirmed transactions`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -53,17 +62,15 @@ class ElectrumWatcherIntegrationTest {
         )
         bitcoincli.generateBlocks(5)
 
-        withTimeout(TIMEOUT) {
-            val confirmed = listener.receive() as WatchEventConfirmed
-            assertEquals(tx.txid, confirmed.tx.txid)
-        }
+        val confirmed = listener.receive() as WatchEventConfirmed
+        assertEquals(tx.txid, confirmed.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `watch for confirmed transactions created while being offline`() = runTest {
+    fun `watch for confirmed transactions created while being offline`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -81,17 +88,15 @@ class ElectrumWatcherIntegrationTest {
             BITCOIN_FUNDING_DEPTHOK
         ))
 
-        withTimeout(TIMEOUT) {
-            val confirmed = listener.receive() as WatchEventConfirmed
-            assertEquals(tx.txid, confirmed.tx.txid)
-        }
+        val confirmed = listener.receive() as WatchEventConfirmed
+        assertEquals(tx.txid, confirmed.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `watch for spent transactions`() = runTest {
+    fun `watch for spent transactions`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -136,17 +141,15 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        withTimeout(TIMEOUT) {
-            val msg = listener.receive() as WatchEventSpent
-            assertEquals(spendingTx.txid, msg.tx.txid)
-        }
+        val msg = listener.receive() as WatchEventSpent
+        assertEquals(spendingTx.txid, msg.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `watch for spent transactions before client is connected`() = runTest {
+    fun `watch for spent transactions before client is connected`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(),this)
         val watcher = ElectrumWatcher(client, this)
 
@@ -193,17 +196,15 @@ class ElectrumWatcherIntegrationTest {
 
         client.connect(ServerAddress("localhost", 51001, null))
 
-        withTimeout(TIMEOUT) {
-            val msg = listener.receive() as WatchEventSpent
-            assertEquals(spendingTx.txid, msg.tx.txid)
-        }
+        val msg = listener.receive() as WatchEventSpent
+        assertEquals(spendingTx.txid, msg.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `watch for spent transactions while being offline`() = runTest {
+    fun `watch for spent transactions while being offline`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -250,17 +251,15 @@ class ElectrumWatcherIntegrationTest {
             BITCOIN_FUNDING_SPENT
         ))
 
-        withTimeout(TIMEOUT) {
-            val msg = listener.receive() as WatchEventSpent
-            assertEquals(spendingTx.txid, msg.tx.txid)
-        }
+        val msg = listener.receive() as WatchEventSpent
+        assertEquals(spendingTx.txid, msg.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runTest {
+    fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runSuspendTest(timeout = 50.seconds) {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -274,16 +273,14 @@ class ElectrumWatcherIntegrationTest {
         assertEquals(tx2, sentTx2)
 
         // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
-        withTimeout(TIMEOUT) {
-            val getHistoryListener = client.openNotificationsSubscription()
+        val getHistoryListener = client.openNotificationsSubscription()
 
-            client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript))))
-            getHistoryListener.consume {
-                val msg = this.receive()
-                if (msg is GetScriptHashHistoryResponse) {
-                    val (_, history) = msg
-                    if (history.map { it.tx_hash }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) this.cancel()
-                }
+        client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript))))
+        getHistoryListener.consume {
+            val msg = this.receive()
+            if (msg is GetScriptHashHistoryResponse) {
+                val (_, history) = msg
+                if (history.map { it.tx_hash }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) this.cancel()
             }
         }
 
@@ -296,18 +293,16 @@ class ElectrumWatcherIntegrationTest {
             BITCOIN_FUNDING_DEPTHOK
         ))
 
-        withTimeout(TIMEOUT) {
-            val watchEvent = listener.receive()
-            assertTrue(watchEvent is WatchEventConfirmed)
-            assertEquals(tx2.txid, watchEvent.tx.txid)
-        }
+        val watchEvent = listener.receive()
+        assertTrue(watchEvent is WatchEventConfirmed)
+        assertEquals(tx2.txid, watchEvent.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runTest {
+    fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`()  = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -329,41 +324,35 @@ class ElectrumWatcherIntegrationTest {
         val sentTx2 = bitcoincli.sendRawTransaction(tx2)
         assertEquals(tx2, sentTx2)
 
-        withTimeout(TIMEOUT) {
-            val watchEvent = listener.receive()
-            assertTrue(watchEvent is WatchEventConfirmed)
-            assertEquals(tx2.txid, watchEvent.tx.txid)
-        }
+        val watchEvent = listener.receive()
+        assertTrue(watchEvent is WatchEventConfirmed)
+        assertEquals(tx2.txid, watchEvent.tx.txid)
 
         watcher.stop()
         client.stop()
     }
 
     @Test
-    fun `publish transactions with relative and absolute delays`()  = runTest {
+    fun `publish transactions with relative and absolute delays`()  = runSuspendTest(timeout = 2.minutes) {
         val client = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
         val watcherNotifications = watcher.openNotificationsSubscription()
 
         suspend fun awaitForBlockCount(height: Int) {
-            withTimeout(TIMEOUT) {
-                do {
-                    val count = bitcoincli.getBlockCount()
-                    delay(1.seconds)
-                } while (count < height)
-            }
+            do {
+                val count = bitcoincli.getBlockCount()
+                delay(1.seconds)
+            } while (count < height)
         }
         suspend fun checkIfExistsInMempool(tx: Transaction) {
-            withTimeout(TIMEOUT) {
-                do {
-                    val mempool = bitcoincli.getRawMempool()
-                    if (mempool.isNotEmpty()) {
-                        assertEquals(1, mempool.size)
-                        assertEquals(tx.txid.toHex(), mempool.first())
-                    }
-                    delay(1.seconds)
-                } while (mempool.isEmpty())
-            }
+            do {
+                val mempool = bitcoincli.getRawMempool()
+                if (mempool.isNotEmpty()) {
+                    assertEquals(1, mempool.size)
+                    assertEquals(tx.txid.toHex(), mempool.first())
+                }
+                delay(1.seconds)
+            } while (mempool.isEmpty())
         }
         suspend fun checkIfMempoolIsEmpty() {
             val mempool = bitcoincli.getRawMempool()
@@ -414,11 +403,9 @@ class ElectrumWatcherIntegrationTest {
         bitcoincli.generateBlocks(1) // 156
         bitcoincli.getBlockCount()
 
-        withTimeout(TIMEOUT) {
-            val watchEvent = watcherNotifications.receive()
-            assertTrue(watchEvent is WatchEventConfirmed)
-            assertEquals(tx1.txid, watchEvent.tx.txid)
-        }
+        val watchEvent1 = watcherNotifications.receive()
+        assertTrue(watchEvent1 is WatchEventConfirmed)
+        assertEquals(tx1.txid, watchEvent1.tx.txid)
 
         bitcoincli.generateBlocks(2) // 158
         bitcoincli.getBlockCount()
@@ -440,11 +427,9 @@ class ElectrumWatcherIntegrationTest {
         bitcoincli.generateBlocks(1) // 159
         bitcoincli.getBlockCount()
 
-        withTimeout(TIMEOUT) {
-            val watchEvent = watcherNotifications.receive()
-            assertTrue(watchEvent is WatchEventConfirmed)
-            assertEquals(tx2.txid, watchEvent.tx.txid)
-        }
+        val watchEvent2 = watcherNotifications.receive()
+        assertTrue(watchEvent2 is WatchEventConfirmed)
+        assertEquals(tx2.txid, watchEvent2.tx.txid)
 
         // after 1 block, the relative delay is elapsed, but not the absolute delay
         val currentBlock = bitcoincli.getBlockCount()
@@ -457,11 +442,9 @@ class ElectrumWatcherIntegrationTest {
         bitcoincli.generateBlocks(3) // 163
         bitcoincli.getBlockCount()
 
-        withTimeout(TIMEOUT) {
-            val watchEvent = watcherNotifications.receive()
-            assertTrue(watchEvent is WatchEventSpent)
-            assertEquals(tx3.txid, watchEvent.tx.txid)
-        }
+        val watchEvent3 = watcherNotifications.receive()
+        assertTrue(watchEvent3 is WatchEventSpent)
+        assertEquals(tx3.txid, watchEvent3.tx.txid)
         checkIfExistsInMempool(tx3)
 
         watcherNotifications.cancel()
@@ -470,7 +453,7 @@ class ElectrumWatcherIntegrationTest {
     }
 
     @Test
-    fun `get transaction`() = runTest {
+    fun `get transaction`() = runSuspendTest(timeout = 50.seconds) {
         // Run on a production server
         val electrumClient = ElectrumClient(TcpSocket.Builder(),this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
         val electrumWatcher = ElectrumWatcher(electrumClient, this)
@@ -478,29 +461,25 @@ class ElectrumWatcherIntegrationTest {
         delay(1_000) // Wait for the electrum client to be ready
 
         // tx is in the blockchain
-        withTimeout(TIMEOUT) {
-            val txid = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
-            val result = CompletableDeferred<GetTxWithMetaResponse>()
-            electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid, result)))
-            val res = result.await()
-            assertEquals(res.txid, txid)
-            assertEquals(
-                res.tx_opt,
-                Transaction.read("0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000")
-            )
-            assertTrue(res.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
-        }
+        val txid1 = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
+        val result1 = CompletableDeferred<GetTxWithMetaResponse>()
+        electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid1, result1)))
+        val res1 = result1.await()
+        assertEquals(res1.txid, txid1)
+        assertEquals(
+            res1.tx_opt,
+            Transaction.read("0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000")
+        )
+        assertTrue(res1.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
 
         // tx doesn't exist
-        withTimeout(TIMEOUT) {
-            val txid = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-            val result = CompletableDeferred<GetTxWithMetaResponse>()
-            electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid, result)))
-            val res = result.await()
-            assertEquals(res.txid, txid)
-            assertNull(res.tx_opt)
-            assertTrue(res.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
-        }
+        val txid2 = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+        val result2 = CompletableDeferred<GetTxWithMetaResponse>()
+        electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid2, result2)))
+        val res2 = result2.await()
+        assertEquals(res2.txid, txid2)
+        assertNull(res2.tx_opt)
+        assertTrue(res2.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
 
         electrumWatcher.stop()
         electrumClient.stop()

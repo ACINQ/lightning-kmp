@@ -1,12 +1,15 @@
 package fr.acinq.eclair.io
 
-import fr.acinq.eclair.utils.runTest
+import fr.acinq.eclair.tests.utils.runSuspendTest
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.time.ExperimentalTime
+import kotlin.time.seconds
 
+@OptIn(ExperimentalTime::class)
 class TcpSocketIntegrationTest {
 
     private val serverVersionRpc = buildString {
@@ -15,25 +18,20 @@ class TcpSocketIntegrationTest {
     }.toByteArray()
 
     @Test
-    @Ignore // TODO activate this test with docker env
-    fun `TCP connection`() = runTest {
-        withTimeout(5_000) {
-            val socket = TcpSocket.Builder().connect("localhost", 51001)
-            socket.send(serverVersionRpc)
-            val size = socket.receiveAvailable(ByteArray(32))
-            assertTrue { size > 0 }
-            socket.close()
-        }
+    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 5.seconds) {
+        val socket = TcpSocket.Builder().connect("localhost", 51001)
+        socket.send(serverVersionRpc)
+        val size = socket.receiveAvailable(ByteArray(32))
+        assertTrue { size > 0 }
+        socket.close()
     }
 
     @Test
-    fun `SSL connection`() = runTest {
-        withTimeout(5_000) {
-            val socket = TcpSocket.Builder().connect("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
-            socket.send(serverVersionRpc)
-            val size = socket.receiveAvailable(ByteArray(32))
-            assertTrue { size > 0 }
-            socket.close()
-        }
+    fun `SSL connection`() = runSuspendTest(timeout = 5.seconds) {
+        val socket = TcpSocket.Builder().connect("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
+        socket.send(serverVersionRpc)
+        val size = socket.receiveAvailable(ByteArray(32))
+        assertTrue { size > 0 }
+        socket.close()
     }
 }

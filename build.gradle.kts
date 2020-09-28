@@ -7,23 +7,26 @@ plugins {
     `maven-publish`
 }
 
-group = "fr.acinq.eclair"
-version = (project.findProperty("publishVersion") as? String?) ?: "snapshot"
+allprojects {
+    group = "fr.acinq.eclair"
+    version = (project.findProperty("publishVersion") as? String?) ?: "snapshot"
 
-repositories {
-    mavenLocal()
-    maven("https://dl.bintray.com/kotlin/kotlinx")
-    maven("https://dl.bintray.com/kotlin/ktor")
-    maven("https://dl.bintray.com/kodein-framework/kodein-dev")
-    maven("https://dl.bintray.com/acinq/libs")
-    google()
-    jcenter()
+    repositories {
+        mavenLocal()
+        maven("https://dl.bintray.com/kotlin/kotlinx")
+        maven("https://dl.bintray.com/kotlin/ktor")
+        maven("https://dl.bintray.com/kodein-framework/kodein-dev")
+        maven("https://dl.bintray.com/acinq/libs")
+        google()
+        jcenter()
+    }
 }
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    fun ktor(module: String, version: String = "1.4.0") = "io.ktor:ktor-$module:$version"
+    val ktorVersion: String by extra { "1.4.0" }
+    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val secp256k1Version = "0.4.1"
     val serializationVersion = "1.0.0-RC"
 
@@ -32,19 +35,16 @@ kotlin {
             api("fr.acinq.bitcoin:bitcoin-kmp:0.6.1")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.5.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9-native-mt")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9-native-mt")
+            api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
+            api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
         }
     }
     val commonTest by sourceSets.getting {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation(ktor("client-core"))
-            implementation(ktor("client-auth"))
-            implementation(ktor("client-json"))
-            implementation(ktor("client-serialization"))
+            implementation(project(":eclair-kmp-test-fixtures"))
         }
     }
 
@@ -53,13 +53,12 @@ kotlin {
             kotlinOptions.jvmTarget = "1.8"
         }
         compilations["main"].defaultSourceSet.dependencies {
-            implementation(ktor("client-okhttp"))
-            implementation(ktor("network"))
-            implementation(ktor("network-tls"))
+            api(ktor("client-okhttp"))
+            api(ktor("network"))
+            api(ktor("network-tls"))
             implementation("org.slf4j:slf4j-api:1.7.29")
             api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
-        compilations["test"].kotlinOptions.jvmTarget = "1.8"
         compilations["test"].defaultSourceSet.dependencies {
             val target = when {
                 currentOs.isLinux -> "linux"

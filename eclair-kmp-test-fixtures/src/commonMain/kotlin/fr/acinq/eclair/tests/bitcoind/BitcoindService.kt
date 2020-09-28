@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.bitcoind
+package fr.acinq.eclair.tests.bitcoind
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
@@ -6,7 +6,6 @@ import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.JsonElement
-import kotlin.test.assertEquals
 
 class BitcoindService {
     private val client = BitcoinJsonRPCClient()
@@ -35,7 +34,7 @@ class BitcoindService {
     suspend fun generateBlocks(blockCount: Int) {
         val (address, _) = getNewAddress()
         val response: GenerateToAddressResponse = client.sendRequest(GenerateToAddress(blockCount, address))
-        assertEquals(blockCount, response.blocks.size)
+        check(blockCount == response.blocks.size)
     }
 
     suspend fun sendRawTransaction(tx: Transaction): Transaction {
