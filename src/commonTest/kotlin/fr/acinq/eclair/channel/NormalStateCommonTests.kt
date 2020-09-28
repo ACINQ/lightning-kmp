@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector
@@ -18,11 +17,11 @@ class NormalStateCommonTests {
         val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
-        val add = findOutgoingMessage<UpdateAddHtlc>(actions)
+        val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val (alice1, _) = alice.process(MessageReceived(add))
         assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
         val (bob2, actions2) = bob1.process(ExecuteCommand(CMD_SIGN))
-        val commitSig = findOutgoingMessage<CommitSig>(actions2)
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
         val blob = Helpers.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
         assertEquals(blob.toByteVector(), commitSig.channelData)
     }
@@ -33,18 +32,18 @@ class NormalStateCommonTests {
         val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
-        val add = findOutgoingMessage<UpdateAddHtlc>(actions)
+        val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val (alice1, _) = alice.process(MessageReceived(add))
         assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
         val (bob2, actions2) = bob1.process(ExecuteCommand(CMD_SIGN))
-        val commitSig = findOutgoingMessage<CommitSig>(actions2)
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
         val (alice2, actions3) = alice1.process(MessageReceived(commitSig))
-        val revack = findOutgoingMessage<RevokeAndAck>(actions3)
+        val revack = actions3.findOutgoingMessage<RevokeAndAck>()
         val (bob3, _) = bob2.process(MessageReceived(revack))
         val (_, actions4) = alice2.process(ExecuteCommand(CMD_SIGN))
-        val commitSig1 = findOutgoingMessage<CommitSig>(actions4)
+        val commitSig1 = actions4.findOutgoingMessage<CommitSig>()
         val (bob4, actions5) = bob3.process(MessageReceived(commitSig1))
-        val revack1 = findOutgoingMessage<RevokeAndAck>(actions5)
+        val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
         val blob = Helpers.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
         assertEquals(blob.toByteVector(), revack1.channelData)
     }

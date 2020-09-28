@@ -14,6 +14,19 @@ import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
+
+data class NodePair(val sender: ChannelState, val receiver: ChannelState)
+
+// LN Message
+inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T =
+    filterIsInstance<SendMessage>().map { it.message }.firstOrNull { it is T } as T? ?: fail("cannot find LightningMessage ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasMessage() = any { it is SendMessage && it.message is T }
+
+// Commands
+inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
+    filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasCommand() = any { it is ProcessCommand && it.command is T }
 
 object TestsHelper {
     fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
@@ -46,10 +59,10 @@ object TestsHelper {
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
 
-        val open = findOutgoingMessage<OpenChannel>(ra.second)
+        val open = ra.second.findOutgoingMessage<OpenChannel>()
         rb = bob.process(MessageReceived(open))
         bob = rb.first
-        val accept = findOutgoingMessage<AcceptChannel>(rb.second)
+        val accept = rb.second.findOutgoingMessage<AcceptChannel>()
         ra = alice.process(MessageReceived(accept))
         alice = ra.first
         val makeFundingTx = run {
@@ -65,10 +78,10 @@ object TestsHelper {
         )
         ra = alice.process(MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
         alice = ra.first
-        val created = findOutgoingMessage<FundingCreated>(ra.second)
+        val created = ra.second.findOutgoingMessage<FundingCreated>()
         rb = bob.process(MessageReceived(created))
         bob = rb.first
-        val signedBob = findOutgoingMessage<FundingSigned>(rb.second)
+        val signedBob = rb.second.findOutgoingMessage<FundingSigned>()
         ra = alice.process(MessageReceived(signedBob))
         alice = ra.first
         val watchConfirmed = run {
@@ -79,11 +92,11 @@ object TestsHelper {
 
         ra = alice.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         alice = ra.first
-        val fundingLockedAlice = findOutgoingMessage<FundingLocked>(ra.second)
+        val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
 
         rb = bob.process(WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
         bob = rb.first
-        val fundingLockedBob = findOutgoingMessage<FundingLocked>(rb.second)
+        val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
 
         ra = alice.process(MessageReceived(fundingLockedBob))
         alice = ra.first
@@ -92,12 +105,6 @@ object TestsHelper {
         bob = rb.first
 
         return Pair(alice as Normal, bob as Normal)
-    }
-
-    inline fun <reified T : LightningMessage> findOutgoingMessage(input: List<ChannelAction>): T {
-        val candidates = input.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
-        if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
-        return candidates.first()
     }
 
     fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = Eclair.randomBytes32(), id: UUID = UUID.randomUUID()): Pair<ByteVector32, CMD_ADD_HTLC> {
@@ -118,9 +125,7 @@ object TestsHelper {
 
     private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Pair<NodePair, UpdateAddHtlc> {
         val (s, sa) = sender.process(ExecuteCommand(cmdAdd))
-        assertTrue(sa.isNotEmpty())
-        assertTrue(sa.hasMessage<UpdateAddHtlc>())
-        val htlc: UpdateAddHtlc = sa.messages().msg()
+        val htlc = sa.findOutgoingMessage<UpdateAddHtlc>()
 
         val (r, ra) = receiver.process(MessageReceived(htlc))
         assertTrue(r is HasCommitments)
@@ -131,9 +136,7 @@ object TestsHelper {
 
     fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, sender: ChannelState, receiver: ChannelState): NodePair {
         val (s, sa) = sender.process(ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
-        assertTrue(sa.isNotEmpty())
-        assertTrue(sa.hasMessage<UpdateFulfillHtlc>())
-        val fulfillHtlc : UpdateFulfillHtlc = sa.messages().msg()
+        val fulfillHtlc = sa.findOutgoingMessage<UpdateFulfillHtlc>()
 
         val (r, ra) = receiver.process(MessageReceived(fulfillHtlc))
         assertTrue(r is HasCommitments)
@@ -142,8 +145,7 @@ object TestsHelper {
         return NodePair(s, r)
     }
 
-    fun crossSign(s: ChannelState, r: ChannelState): NodePair {
-        var sender = s ; var receiver = r
+    fun crossSign(sender: ChannelState, receiver: ChannelState): NodePair {
         assertTrue(sender is HasCommitments)
         assertTrue(receiver is HasCommitments)
 
@@ -151,62 +153,46 @@ object TestsHelper {
         val rCommitIndex = receiver.commitments.localCommit.index
         val rHasChanges = receiver.commitments.localHasChanges()
 
-        val (s0, sa0) = sender.process(ExecuteCommand(CMD_SIGN))
-        sender = s0
-        assertTrue(sa0.isNotEmpty())
-        assertTrue(sa0.hasMessage<CommitSig>())
+        val (sender0, sActions0) = sender.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
 
-        val (r0, ra0) = receiver.process(MessageReceived(sa0.messages().msg<CommitSig>()))
-        receiver = r0
-        assertTrue(ra0.isNotEmpty())
-        assertTrue(ra0.hasMessage<RevokeAndAck>())
-        assertTrue(ra0.hasCommand<CMD_SIGN>())
+        val (receiver0, rActions0) = receiver.process(MessageReceived(commitSig0))
+        val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
+        val commandSign0 = rActions0.findProcessCommand<CMD_SIGN>()
 
-        val (s1, sa1) = sender.process(MessageReceived(ra0.messages().msg<RevokeAndAck>()))
-        sender = s1
+        val (sender1, _) = sender0.process(MessageReceived(revokeAndAck0))
+        val (receiver1, rActions1) = receiver0.process(ExecuteCommand(commandSign0))
+        val commitSig1 = rActions1.findOutgoingMessage<CommitSig>()
 
-        val (r1, ra1) = receiver.process(ExecuteCommand(ra0.commands().cmd<CMD_SIGN>()))
-        receiver = r1
-        assertTrue(ra1.isNotEmpty())
-        assertTrue(ra1.hasMessage<CommitSig>())
-
-        val (s2, sa2) = sender.process(MessageReceived(ra1.messages().msg<CommitSig>()))
-        sender = s2
-        assertTrue(sa2.isNotEmpty())
-        assertTrue(sa2.hasMessage<RevokeAndAck>())
-
-        val (r2, ra2) = receiver.process(MessageReceived(sa2.messages().msg<RevokeAndAck>()))
-        receiver = r2
+        val (sender2, sActions2) = sender1.process(MessageReceived(commitSig1))
+        val revokeAndAck1 = sActions2.findOutgoingMessage<RevokeAndAck>()
+        val (receiver2, _) = receiver1.process(MessageReceived(revokeAndAck1))
 
         if (rHasChanges) {
-            assertTrue(sa2.hasCommand<CMD_SIGN>())
-            val (s3, sa3) = sender.process(ExecuteCommand(sa2.commands().cmd<CMD_SIGN>()))
-            sender = s3
-            assertTrue(sa3.isNotEmpty())
-            assertTrue(sa3.hasMessage<CommitSig>())
+            val commandSign1 = sActions2.findProcessCommand<CMD_SIGN>()
+            val (sender3, sActions3) = sender2.process(ExecuteCommand(commandSign1))
+            val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
 
-            val (r3, ra3) = receiver.process(MessageReceived(sa3.messages().msg<CommitSig>()))
-            receiver = r3
-            assertTrue(ra3.isNotEmpty())
-            assertTrue(ra3.hasMessage<RevokeAndAck>())
+            val (receiver3, rActions3) = receiver2.process(MessageReceived(commitSig2))
+            val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
+            val (sender4, _) = sender3.process(MessageReceived(revokeAndAck2))
 
-            val (s4, sa4) = sender.process(MessageReceived(ra3.messages().msg<RevokeAndAck>()))
-            sender = s4
+            sender4 as HasCommitments ; receiver3 as HasCommitments
+            assertEquals(sCommitIndex + 1, sender4.commitments.localCommit.index)
+            assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommit.index)
+            assertEquals(rCommitIndex + 2, receiver3.commitments.localCommit.index)
+            assertEquals(rCommitIndex + 1, receiver3.commitments.remoteCommit.index)
 
-            sender as HasCommitments ; receiver as HasCommitments
-            assertEquals(sCommitIndex + 1, sender.commitments.localCommit.index)
-            assertEquals(sCommitIndex + 2, sender.commitments.remoteCommit.index)
-            assertEquals(rCommitIndex + 2, receiver.commitments.localCommit.index)
-            assertEquals(rCommitIndex + 1, receiver.commitments.remoteCommit.index)
+            return NodePair(sender4, receiver3)
         } else {
-            sender as HasCommitments ; receiver as HasCommitments
-            assertEquals(sCommitIndex + 1, sender.commitments.localCommit.index)
-            assertEquals(sCommitIndex + 1, sender.commitments.remoteCommit.index)
-            assertEquals(rCommitIndex + 1, receiver.commitments.localCommit.index)
-            assertEquals(rCommitIndex + 1, receiver.commitments.remoteCommit.index)
-        }
+            sender2 as HasCommitments ; receiver2 as HasCommitments
+            assertEquals(sCommitIndex + 1, sender2.commitments.localCommit.index)
+            assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommit.index)
+            assertEquals(rCommitIndex + 1, receiver2.commitments.localCommit.index)
+            assertEquals(rCommitIndex + 1, receiver2.commitments.remoteCommit.index)
 
-        return NodePair(sender, receiver)
+            return NodePair(sender2, receiver2)
+        }
     }
 
     /*
