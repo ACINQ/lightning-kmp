@@ -16,8 +16,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
-data class NodePair(val sender: ChannelState, val receiver: ChannelState)
-
 // LN Message
 inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T =
     filterIsInstance<SendMessage>().map { it.message }.firstOrNull { it is T } as T? ?: fail("cannot find LightningMessage ${T::class}.")
@@ -116,11 +114,11 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Triple<NodePair, ByteVector32, UpdateAddHtlc> {
+    fun addHtlc(amount: MilliSatoshi, sender: ChannelState, receiver: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {
         val currentBlockHeight = sender.currentBlockHeight.toLong()
         val (paymentPreimage, cmd) = makeCmdAdd(amount, sender.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (s, r, htlc) = addHtlc(cmd, sender, receiver)
-        return Triple(NodePair(s, r), paymentPreimage, htlc)
+        return Triple(s to r, paymentPreimage, htlc)
     }
 
     private fun addHtlc(cmdAdd: CMD_ADD_HTLC, sender: ChannelState, receiver: ChannelState): Triple<ChannelState, ChannelState, UpdateAddHtlc> {
@@ -134,7 +132,7 @@ object TestsHelper {
         return Triple(s, r, htlc)
     }
 
-    fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, sender: ChannelState, receiver: ChannelState): NodePair {
+    fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, sender: ChannelState, receiver: ChannelState): Pair<ChannelState, ChannelState> {
         val (s, sa) = sender.process(ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
         val fulfillHtlc = sa.findOutgoingMessage<UpdateFulfillHtlc>()
 
@@ -142,10 +140,10 @@ object TestsHelper {
         assertTrue(r is HasCommitments)
         assertTrue(r.commitments.remoteChanges.proposed.contains(fulfillHtlc))
 
-        return NodePair(s, r)
+        return s to r
     }
 
-    fun crossSign(sender: ChannelState, receiver: ChannelState): NodePair {
+    fun crossSign(sender: ChannelState, receiver: ChannelState): Pair<ChannelState, ChannelState> {
         assertTrue(sender is HasCommitments)
         assertTrue(receiver is HasCommitments)
 
@@ -183,7 +181,7 @@ object TestsHelper {
             assertEquals(rCommitIndex + 2, receiver3.commitments.localCommit.index)
             assertEquals(rCommitIndex + 1, receiver3.commitments.remoteCommit.index)
 
-            return NodePair(sender4, receiver3)
+            return sender4 to receiver3
         } else {
             sender2 as HasCommitments ; receiver2 as HasCommitments
             assertEquals(sCommitIndex + 1, sender2.commitments.localCommit.index)
@@ -191,7 +189,7 @@ object TestsHelper {
             assertEquals(rCommitIndex + 1, receiver2.commitments.localCommit.index)
             assertEquals(rCommitIndex + 1, receiver2.commitments.remoteCommit.index)
 
-            return NodePair(sender2, receiver2)
+            return sender2 to receiver2
         }
     }
 }
