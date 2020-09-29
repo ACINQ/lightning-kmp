@@ -77,6 +77,7 @@ data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : ChannelAction()
 data class HandleError(val error: Throwable) : ChannelAction()
+data class HandleCommandFailed(val cmd: Command, val error: Throwable?) : ChannelAction()
 data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : ChannelAction()
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelAction()
 data class PublishTx(val tx: Transaction) : ChannelAction()
@@ -117,7 +118,7 @@ sealed class ChannelState {
 
     abstract fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
-    fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    internal fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "unhandled event $event in state ${this::class}" }
         return Pair(this, listOf())
     }
@@ -125,7 +126,7 @@ sealed class ChannelState {
     /**
      * update outgoing messages to include an encrypted backup when necessary
      */
-    fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
+    private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         this is HasCommitments && this.isZeroReserve() -> actions.map {
             when {
                 it is SendMessage && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
@@ -136,6 +137,11 @@ sealed class ChannelState {
             }
         }
         else -> actions
+    }
+
+    internal fun handleCommandError(cmd: Command, error: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning(error) { "processing $cmd in state $this failed" }
+        return Pair(this, listOf(HandleCommandFailed(cmd, error)))
     }
 
     @Transient
@@ -254,6 +260,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 Pair(Offline(event.state), actions)
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip), listOf())
             else -> unhandled(event)
         }
     }
@@ -1210,7 +1217,7 @@ data class Normal(
                             else -> {
                                 when (val result = commitments.sendCommit(keyManager, logger)) {
                                     is Try.Failure -> {
-                                        Pair(this, listOf(HandleError(result.error)))
+                                        handleLocalError(event, result.error)
                                     }
                                     is Try.Success -> {
                                         val commitments1 = result.result.first
@@ -1231,6 +1238,20 @@ data class Normal(
                             }
                         }
                     }
+                    is CMD_CLOSE -> {
+                        val localScriptPubkey = event.command.scriptPubKey ?: commitments.localParams.defaultFinalScriptPubKey
+                        when {
+                            this.localShutdown != null -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+                            this.commitments.localHasUnsignedOutgoingHtlcs() -> handleCommandError(event.command, CannotCloseWithUnsignedOutgoingHtlcs(channelId))
+                            !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey) -> handleCommandError(event.command, InvalidFinalScript(channelId))
+                            else -> {
+                                val shutdown = Shutdown(channelId, localScriptPubkey)
+                                val newState = this.copy(localShutdown = shutdown)
+                                val actions = listOf(StoreState(newState), SendMessage(shutdown))
+                                Pair(newState, actions)
+                            }
+                        }
+                    }
                     else -> unhandled(event)
                 }
             }
@@ -1239,7 +1260,7 @@ data class Normal(
                     is UpdateAddHtlc -> {
                         val htlc = event.message
                         when (val result = commitments.receiveAdd(htlc)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                            is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result)
                                 var actions = listOf<ChannelAction>()
@@ -1250,21 +1271,21 @@ data class Normal(
                     is UpdateFulfillHtlc -> {
                         // README: we consider that a payment is fulfilled as soon as we have the preimage (we don't wait for a commit signature)
                         when (val result = commitments.receiveFulfill(event.message)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                            is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message)))
                         }
                     }
                     is UpdateFailHtlc -> {
                         // README: we don't relay payments, so we don't need to send failures upstream
                         when (val result = commitments.receiveFail(event.message)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                            is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
                         }
                     }
                     is CommitSig -> {
                         // README: we don't relay payments, so we don't need to send failures upstream
                         when (val result = commitments.receiveCommit(event.message, keyManager, logger)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
+                            is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
@@ -1277,13 +1298,13 @@ data class Normal(
                                 if (result.result.first.localHasChanges()) {
                                     actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
-                                Pair(nextState, nextState.updateActions(actions))
+                                Pair(nextState, actions)
                             }
                         }
                     }
                     is RevokeAndAck -> {
                         when (val result = commitments.receiveRevocation(event.message)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
+                            is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
                                 // TODO: handle shutdown
                                 val nextState = this.copy(commitments = result.result.first)
@@ -1292,6 +1313,80 @@ data class Normal(
                                     actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(nextState, actions)
+                            }
+                        }
+                    }
+                    is Shutdown -> {
+                        // they have pending unsigned htlcs         => they violated the spec, close the channel
+                        // they don't have pending unsigned htlcs
+                        //    we have pending unsigned htlcs
+                        //      we already sent a shutdown message  => spec violation (we can't send htlcs after having sent shutdown)
+                        //      we did not send a shutdown message
+                        //        we are ready to sign              => we stop sending further htlcs, we initiate a signature
+                        //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
+                        //    we have no pending unsigned htlcs
+                        //      we already sent a shutdown message
+                        //        there are pending signed htlcs    => send our shutdown message, go to SHUTDOWN
+                        //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
+                        //      we did not send a shutdown message
+                        //        there are pending signed htlcs    => go to SHUTDOWN
+                        //        there are no htlcs                => go to NEGOTIATING
+                        when {
+                            !Helpers.Closing.isValidFinalScriptPubkey(event.message.scriptPubKey) -> {
+                                handleLocalError(event, InvalidFinalScript(channelId))
+                            }
+                            commitments.remoteHasUnsignedOutgoingHtlcs() -> {
+                                handleLocalError(event, CannotCloseWithUnsignedOutgoingHtlcs(channelId))
+                            }
+                            commitments.localHasUnsignedOutgoingHtlcs() -> {
+                                require(localShutdown == null) { "can't have pending unsigned outgoing htlcs after having sent Shutdown" }
+                                when (commitments.remoteNextCommitInfo) {
+                                    is Either.Left -> {
+                                        // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
+                                        val commitments1 = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.value.copy(reSignAsap = true)))
+                                        val newState = this.copy(commitments = commitments1, remoteShutdown = event.message)
+                                        Pair(newState, listOf())
+                                    }
+                                    is Either.Right -> {
+                                        // no, let's sign right away
+                                        val newState = this.copy(remoteShutdown = remoteShutdown, commitments = commitments.copy(remoteChannelData = event.message.channelData))
+                                        Pair(newState, listOf(ProcessCommand(CMD_SIGN)))
+                                    }
+                                }
+                            }
+                            else -> {
+                                // so we don't have any unsigned outgoing htlcs
+                                var actions = listOf<ChannelAction>()
+                                val localShutdown = this.localShutdown ?: Shutdown(channelId, commitments.localParams.defaultFinalScriptPubKey)
+                                if (this.localShutdown == null) actions = actions + listOf(SendMessage(localShutdown))
+                                val commitments1 = commitments.copy(remoteChannelData = event.message.channelData)
+
+                                when {
+                                    commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
+                                        val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                            keyManager,
+                                            commitments1,
+                                            localShutdown.scriptPubKey.toByteArray(),
+                                            event.message.scriptPubKey.toByteArray(),
+                                            staticParams.nodeParams.onChainFeeConf.feeEstimator,
+                                            staticParams.nodeParams.onChainFeeConf.feeTargets
+                                        )
+                                        val nextState = Negotiating(staticParams, currentTip, commitments1, localShutdown, event.message, listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx = null)
+                                        actions = actions + listOf(StoreState(nextState), SendMessage(closingSigned))
+                                        Pair(nextState, actions)
+                                    }
+                                    commitments1.hasNoPendingHtlcs() -> {
+                                        val nextState = Negotiating(staticParams, currentTip, commitments1, localShutdown, event.message, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
+                                        actions = actions + listOf(StoreState(nextState))
+                                        Pair(nextState, actions)
+                                    }
+                                    else -> {
+                                        // there are some pending signed htlcs, we need to fail/fulfill them
+                                        val nextState = ShuttingDown(staticParams, currentTip, commitments1, localShutdown, event.message)
+                                        actions = listOf(StoreState(nextState)) + actions
+                                        Pair(nextState, actions)
+                                    }
+                                }
                             }
                         }
                     }
@@ -1311,9 +1406,213 @@ data class Normal(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
+        // TODO: this is wrong, we need to publish and spend our local commit tx and transition to Closing state
         return Pair(Closed(staticParams, currentTip), listOf(SendMessage(error)))
     }
 }
+
+@Serializable
+data class ShuttingDown(
+    override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val commitments: Commitments,
+    val localShutdown: Shutdown,
+    val remoteShutdown: Shutdown
+) : ChannelState(), HasCommitments {
+    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        return when (event) {
+            is MessageReceived -> {
+                when (event.message) {
+                    is UpdateFulfillHtlc -> {
+                        when (val result = commitments.receiveFulfill(event.message)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message)))
+                        }
+                    }
+                    is UpdateFailHtlc -> {
+                        when (val result = commitments.receiveFail(event.message)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
+                        }
+                    }
+                    is CommitSig -> {
+                        when (val result = commitments.receiveCommit(event.message, keyManager, logger)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> {
+                                val (commitments1, revocation) = result.get()
+                                when {
+                                    commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
+                                        val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                            keyManager,
+                                            commitments1,
+                                            localShutdown.scriptPubKey.toByteArray(),
+                                            remoteShutdown.scriptPubKey.toByteArray(),
+                                            staticParams.nodeParams.onChainFeeConf.feeEstimator,
+                                            staticParams.nodeParams.onChainFeeConf.feeTargets
+                                        )
+                                        val nextState = Negotiating(staticParams, currentTip, commitments1, localShutdown, remoteShutdown, listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx = null)
+                                        val actions = listOf(StoreState(nextState), SendMessage(revocation), SendMessage(closingSigned))
+                                        Pair(nextState, actions)
+                                    }
+                                    commitments1.hasNoPendingHtlcs() -> {
+                                        val nextState = Negotiating(staticParams, currentTip, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
+                                        val actions = listOf(StoreState(nextState), SendMessage(revocation))
+                                        Pair(nextState, actions)
+                                    }
+                                    else -> {
+                                        val nextState = this.copy(commitments = commitments1)
+                                        var actions = listOf(StoreState(nextState), SendMessage(revocation))
+                                        if (commitments1.localHasChanges()) {
+                                            // if we have newly acknowledged changes let's sign them
+                                            actions = actions + listOf(ProcessCommand(CMD_SIGN))
+                                        }
+                                        Pair(nextState, actions)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is RevokeAndAck -> {
+                        when (val result = commitments.receiveRevocation(event.message)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> {
+                                val (commitments1, actions) = result.get()
+                                when {
+                                    commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
+                                        val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                            keyManager,
+                                            commitments1,
+                                            localShutdown.scriptPubKey.toByteArray(),
+                                            remoteShutdown.scriptPubKey.toByteArray(),
+                                            staticParams.nodeParams.onChainFeeConf.feeEstimator,
+                                            staticParams.nodeParams.onChainFeeConf.feeTargets
+                                        )
+                                        val nextState = Negotiating(staticParams, currentTip, commitments1, localShutdown, remoteShutdown, listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTx = null)
+                                        val actions1 = actions + listOf(StoreState(nextState), SendMessage(closingSigned))
+                                        Pair(nextState, actions1)
+                                    }
+                                    commitments1.hasNoPendingHtlcs() -> {
+                                        val nextState = Negotiating(staticParams, currentTip, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
+                                        val actions1 = actions + listOf(StoreState(nextState))
+                                        Pair(nextState, actions1)
+                                    }
+                                    else -> {
+                                        val nextState = this.copy(commitments = commitments1)
+                                        var actions1 = actions + listOf(StoreState(nextState))
+                                        if (commitments1.localHasChanges() && commitments1.remoteNextCommitInfo.isLeft && commitments1.remoteNextCommitInfo.left!!.reSignAsap) {
+                                            actions1 = actions1 + listOf(ProcessCommand(CMD_SIGN))
+                                        }
+                                        Pair(nextState, actions1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is Error -> {
+                        TODO("handle remote errors")
+                    }
+                    else -> unhandled(event)
+                }
+            }
+            is ExecuteCommand -> {
+                when {
+                    event.command is CMD_ADD_HTLC -> {
+                        logger.info { "rejecting htlc request in state=$this" }
+                        val error = ChannelUnavailable(channelId)
+                        // we don't provide a channel_update: this will be a permanent channel failure
+                        handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, Origin.Local(event.command.id), null, event.command))
+                    }
+                    event.command is CMD_SIGN && !commitments.localHasChanges() -> {
+                        logger.verbose { "ignoring CMD_SIGN (nothing to sign)" }
+                        Pair(this, listOf())
+                    }
+                    event.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
+                        logger.verbose { "already in the process of signing, will sign again as soon as possible" }
+                        Pair(this.copy(commitments = this.commitments.copy(remoteNextCommitInfo = Either.Left(this.commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))), listOf())
+                    }
+                    event.command is CMD_SIGN ->
+                        when (val result = commitments.sendCommit(keyManager, logger)) {
+                            is Try.Failure -> {
+                                handleLocalError(event, result.error)
+                            }
+                            is Try.Success -> {
+                                val commitments1 = result.result.first
+                                val nextState = this.copy(commitments = commitments1)
+                                val actions = listOf(StoreState(nextState), SendMessage(result.result.second))
+                                Pair(nextState, actions)
+                            }
+                        }
+                    event.command is CMD_FULFILL_HTLC -> {
+                        when (val result = commitments.sendFulfill(event.command)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> {
+                                var actions = listOf<ChannelAction>()
+                                if (event.command.commit) {
+                                    actions = actions + listOf(ProcessCommand(CMD_SIGN))
+                                }
+                                val commitments1 = result.get().first
+                                val fulfill = result.get().second
+                                Pair(this.updateCommitments(commitments1) as ShuttingDown, actions + listOf(SendMessage(fulfill)))
+                            }
+                        }
+                    }
+                    event.command is CMD_FAIL_HTLC -> {
+                        when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> {
+                                var actions = listOf<ChannelAction>()
+                                if (event.command.commit) {
+                                    actions = actions + listOf(ProcessCommand(CMD_SIGN))
+                                }
+                                val commitments1 = result.get().first
+                                val fail = result.get().second
+                                Pair(this.copy(commitments = commitments1), actions + listOf(SendMessage(fail)))
+                            }
+                        }
+                    }
+                    event.command is CMD_CLOSE -> {
+                        Pair(this, listOf(HandleCommandFailed(event.command, ClosingAlreadyInProgress(channelId))))
+                    }
+                    else -> unhandled(event)
+                }
+            }
+            else -> unhandled(event)
+        }
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        TODO("Not yet implemented")
+    }
+}
+
+@Serializable
+data class Negotiating(
+    override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val commitments: Commitments,
+    val localShutdown: Shutdown,
+    val remoteShutdown: Shutdown,
+    val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
+    @Serializable(with = TransactionKSerializer::class) val bestUnpublishedClosingTx: Transaction?
+) : ChannelState(), HasCommitments {
+    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+
+    init {
+        require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
+        require(!commitments.localParams.isFunder || !closingTxProposed.any { it.isNotEmpty() }) { "funder must have at least one closing signature for every negotation attempt because it initiates the closing" }
+    }
+
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        TODO("Not yet implemented")
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        TODO("Not yet implemented")
+    }
+}
+
 
 /**
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten

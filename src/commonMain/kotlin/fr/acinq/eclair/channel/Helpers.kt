@@ -8,6 +8,8 @@ import fr.acinq.eclair.Feature
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.blockchain.fee.FeeEstimator
+import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -15,11 +17,16 @@ import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.Try
+import fr.acinq.eclair.utils.runTrying
 import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.AcceptChannel
+import fr.acinq.eclair.wire.ClosingSigned
 import fr.acinq.eclair.wire.OpenChannel
+import fr.acinq.secp256k1.Hex
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 object Helpers {
     /**
@@ -260,6 +267,66 @@ object Helpers {
             val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec).first
 
             return FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
+        }
+    }
+
+    object Closing {
+        // used only to compute tx weights and estimate fees
+        private val dummyPublicKey by lazy { PrivateKey(ByteArray(32) { 1.toByte() }).publicKey() }
+
+        fun isValidFinalScriptPubkey(scriptPubKey: ByteArray): Boolean {
+            return runTrying {
+                val script = Script.parse(scriptPubKey)
+                Script.isPay2pkh(script) || Script.isPay2sh(script) || Script.isPay2wpkh(script) || Script.isPay2wsh(script)
+            }.getOrElse { false }
+        }
+
+        fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
+
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, feeratePerKw: Long): Satoshi {
+            // this is just to estimate the weight, it depends on size of the pubkey scripts
+            val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
+            val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
+            return Transactions.weight2fee(feeratePerKw, closingWeight)
+        }
+
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Satoshi {
+            val requestedFeerate = feeEstimator.getFeeratePerKw(feeTargets.mutualCloseBlockTarget)
+            // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
+            val feeratePerKw = min(requestedFeerate, commitments.localCommit.spec.feeratePerKw)
+            return firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeratePerKw)
+        }
+
+        fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
+
+        fun makeFirstClosingTx(
+            keyManager: KeyManager,
+            commitments: Commitments,
+            localScriptPubkey: ByteArray,
+            remoteScriptPubkey: ByteArray,
+            feeEstimator: FeeEstimator,
+            feeTargets: FeeTargets
+        ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
+            val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeEstimator, feeTargets)
+            return makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+        }
+
+        fun makeClosingTx(
+            keyManager: KeyManager,
+            commitments: Commitments,
+            localScriptPubkey: ByteArray,
+            remoteScriptPubkey: ByteArray,
+            closingFee: Satoshi
+        ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
+            require(isValidFinalScriptPubkey(localScriptPubkey)) { "invalid localScriptPubkey" }
+            require(isValidFinalScriptPubkey(remoteScriptPubkey)) { "invalid remoteScriptPubkey" }
+            val dustLimitSatoshis = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
+            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
+            val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+            val closingSigned = ClosingSigned(commitments.channelId, closingFee, localClosingSig)
+            //log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
+            //log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
+            return Pair(closingTx, closingSigned)
         }
     }
 

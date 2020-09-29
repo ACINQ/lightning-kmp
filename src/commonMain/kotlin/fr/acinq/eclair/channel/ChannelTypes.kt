@@ -5,13 +5,11 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.io.ByteVectorKSerializer
-import fr.acinq.eclair.io.KeyPathKSerializer
-import fr.acinq.eclair.io.PublicKeyKSerializer
-import fr.acinq.eclair.io.SatoshiKSerializer
+import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.BitField
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.sum
+import fr.acinq.eclair.wire.ClosingSigned
 import fr.acinq.eclair.wire.FailureMessage
 import fr.acinq.eclair.wire.OnionRoutingPacket
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -118,3 +116,6 @@ object ChannelFlags {
     val AnnounceChannel = 0x01.toByte()
     val Empty = 0x00.toByte()
 }
+
+@Serializable
+data class ClosingTxProposed(@Serializable(with = TransactionKSerializer::class) val unsignedTx: Transaction, val localClosingSigned: ClosingSigned)

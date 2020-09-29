@@ -5,6 +5,7 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.Watch
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
+import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.UUID
@@ -96,6 +97,15 @@ object TestsHelper {
         bob = rb.first
 
         return Pair(alice as Normal, bob as Normal)
+    }
+
+    fun signAndRevack(alice: ChannelState, bob: ChannelState): Pair<ChannelState, ChannelState> {
+        val (alice1, actions1) = alice.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actions1.findOutgoingMessage<CommitSig>()
+        val (bob1, actions2) = bob.process(MessageReceived(commitSig))
+        val revack = actions2.findOutgoingMessage<RevokeAndAck>()
+        val (alice2, _) = alice1.process(MessageReceived(revack))
+        return Pair(alice2, bob1)
     }
 
     inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
