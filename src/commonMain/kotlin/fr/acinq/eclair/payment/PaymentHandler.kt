@@ -17,8 +17,7 @@ import kotlin.math.min
 
 data class IncomingPayment(
     val paymentRequest: PaymentRequest,
-    val paymentPreimage: ByteVector32,
-    var mppStartedAt: Long? = null // In seconds
+    val paymentPreimage: ByteVector32
 )
 
 class PaymentHandler(
@@ -33,12 +32,25 @@ class PaymentHandler(
 
     data class ProcessAddResult(val status: ProcessedStatus, val actions: List<PeerEvent>)
 
+    private data class FinalPacket( // htlc + decrypted onion
+        val htlc: UpdateAddHtlc,
+        val onion: FinalPayload
+    )
+
+    private class FinalPacketSet( // htlc set + metadata
+        val parts: Set<FinalPacket> = setOf(),
+        val mppStartedAt: Long? = null // In seconds
+    ) {
+        fun addingPart(part: FinalPacket): FinalPacketSet {
+            return FinalPacketSet(
+                parts = this.parts + part,
+                mppStartedAt = this.mppStartedAt ?: currentTimestampSeconds()
+            )
+        }
+    }
+
     private val logger = newEclairLogger()
-
-    private data class FinalPacket(val htlc: UpdateAddHtlc, val onion: FinalPayload)
-
-    private val pending = mutableMapOf<ByteVector32, Set<FinalPacket>>()
-
+    private val pending = mutableMapOf<ByteVector32, FinalPacketSet>()
     private val privateKey get() = nodeParams.nodePrivateKey
 
     /**
@@ -183,12 +195,11 @@ class PaymentHandler(
         // Add <htlc, onion> tuple to pending set.
         // NB: We need to update the `pending` map too. But we do that right before we return.
 
-        val updatedPendingSet = (pending[htlc.paymentHash] ?: setOf()) + FinalPacket(htlc, onion)
+        val updatedPendingSet = (pending[htlc.paymentHash] ?: FinalPacketSet()).addingPart(FinalPacket(htlc, onion))
+        val parts = updatedPendingSet.parts.toTypedArray()
 
         // Bolt 04:
         // - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
-
-        val parts = updatedPendingSet.toTypedArray()
 
         val totalMsat: MilliSatoshi = parts[0].onion.totalAmount
         var totalMsatMismatch = false
@@ -225,9 +236,7 @@ class PaymentHandler(
 
         if (cumulativeMsat < totalMsat) {
             // Still waiting for more payments
-            if (incomingPayment.mppStartedAt == null) {
-                incomingPayment.mppStartedAt = currentTimestampSeconds()
-            }
+
             pending[htlc.paymentHash] = updatedPendingSet
             return ProcessAddResult(status = ProcessedStatus.PENDING, actions = actions)
         }
@@ -266,16 +275,16 @@ class PaymentHandler(
 
         val mppExpiry = min(60, nodeParams.multiPartPaymentExpiry)
 
-        pending.forEach { (paymentHash, parts) ->
+        pending.forEach { (paymentHash, set) ->
 
-            val isExpired = when (val mppStartedAt = incomingPayments[paymentHash]?.mppStartedAt) {
+            val isExpired = when (val mppStartedAt = pending[paymentHash]?.mppStartedAt) {
                 null -> false
-                else -> currentTimestampSeconds > (mppStartedAt + mppExpiry)
+               else -> currentTimestampSeconds > (mppStartedAt + mppExpiry)
             }
 
             if (isExpired) {
                 keysToRemove += paymentHash
-                parts.forEach { part ->
+                set.parts.forEach { part ->
                     actions += actionForFailureMessage(msg = PaymentTimeout, htlc = part.htlc)
                 }
             }

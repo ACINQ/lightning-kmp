@@ -349,7 +349,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val totalAmount = MilliSatoshi(100.sat)
         val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
@@ -392,7 +396,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -474,7 +482,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -580,7 +592,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -640,7 +656,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -695,7 +715,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -751,7 +775,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
@@ -829,7 +857,12 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
+
         val amount = MilliSatoshi(100.sat)
 
         val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = null)
@@ -870,7 +903,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        val bob = TestConstants.Bob
+        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
+        val bob = object {
+            val nodeParams = TestConstants.Bob.nodeParams
+            val paymentHandler = PaymentHandler(this.nodeParams)
+        }
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)

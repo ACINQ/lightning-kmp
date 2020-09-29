@@ -84,8 +84,6 @@ object TestConstants {
             true,
             fundingSatoshis
         ).copy(channelReserve = 10000.sat) // Bob will need to keep that much satoshis as direct payment
-
-        val paymentHandler = PaymentHandler(this.nodeParams)
     }
 
     object Bob {
@@ -149,7 +147,5 @@ object TestConstants {
             false,
             fundingSatoshis
         ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment
-
-        val paymentHandler = PaymentHandler(this.nodeParams)
     }
 }
