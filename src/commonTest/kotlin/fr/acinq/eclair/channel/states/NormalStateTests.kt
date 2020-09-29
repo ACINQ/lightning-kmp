@@ -22,10 +22,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class NormalStateTests {
-    private val logger = LoggerFactory.default.newLogger(Logger.Tag(NormalStateTests::class))
-
     @Test fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
-        var (alice, bob) = TestsHelper.reachNormal()
+        var (alice, bob) = reachNormal()
 
         val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice, payee = bob)
         nodes0.run { alice = first as Normal ; bob = second as Normal }
@@ -98,7 +96,7 @@ class NormalStateTests {
     }
 
     @Test fun `recv BITCOIN_FUNDING_SPENT (their *next* commit with htlc)`() {
-        var (alice, bob) = TestsHelper.reachNormal()
+        var (alice, bob) = reachNormal()
 
         val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice, payee = bob)
         nodes0.run { alice = first as Normal ; bob = second as Normal }
