@@ -7,12 +7,14 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
+import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.CommitSig
+import fr.acinq.eclair.wire.Error
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.test.Test
@@ -21,6 +23,7 @@ import kotlin.test.assertTrue
 
 class NormalStateTests {
     private val logger = LoggerFactory.default.newLogger(Logger.Tag(NormalStateTests::class))
+
     @Test fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
         var (alice, bob) = TestsHelper.reachNormal()
 
@@ -35,7 +38,7 @@ class NormalStateTests {
         val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = bob, payee = alice)
         nodes4.run { bob = first as Normal ; alice = second as Normal }
 
-        crossSign(nodeA = alice, nodeB = bob)
+        crossSign(alice, bob)
             .run { alice = first as Normal ; bob = second as Normal }
         fulfillHtlc(1, preimage_alice2bob_2, payer = alice, payee = bob)
             .run { alice = first as Normal ; bob = second as Normal }
@@ -73,7 +76,7 @@ class NormalStateTests {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(815220.sat, amountClaimed) // TODO ? formerly 814880.sat
+        assertEquals(814880.sat, amountClaimed) // TODO actually 815220.sat ?
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.watches<WatchConfirmed>()[0].event)
         assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.watches<WatchConfirmed>()[1].event)
@@ -108,7 +111,7 @@ class NormalStateTests {
         val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = bob, payee = alice)
         nodes4.run { bob = first as Normal ; alice = second as Normal }
 
-        crossSign(nodeA = alice, nodeB = bob)
+        crossSign(alice, bob)
             .run { alice = first as Normal ; bob = second as Normal }
         fulfillHtlc(1, preimage_alice2bob_2, payer = alice, payee = bob)
             .run { alice = first as Normal ; bob = second as Normal }
@@ -158,7 +161,7 @@ class NormalStateTests {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(822330.sat, amountClaimed) // TODO ? formerly 822310.sat
+        assertEquals(822310.sat, amountClaimed) // TODO actually 822330.sat ?
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.watches<WatchConfirmed>()[0].event)
         assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.watches<WatchConfirmed>()[1].event)
@@ -179,6 +182,136 @@ class NormalStateTests {
         }
     }
 
-    @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commavant it)`() {}
-    @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {}
+    @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
+        var (alice, bob) = reachNormal()
+        // initially we have :
+        // alice = 800 000
+        //   bob = 200 000
+        fun send(): Transaction {
+            // alice sends 8 000 sat
+            addHtlc(10_000_000.msat, payer = alice,payee = bob)
+                .first.run { alice = first as Normal; bob = second as Normal }
+            crossSign(alice, bob)
+                .run { alice = first as Normal; bob = second as Normal }
+
+            return bob.commitments.localCommit.publishableTxs.commitTx.tx
+        }
+
+        val txes = (0..9).map { send() }
+        // bob now has 10 spendable tx, 9 of them being revoked
+
+        // let's say that bob published this tx
+        val revokedTx = txes[3]
+        // channel state for this revoked tx is as follows:
+        // alice = 760 000
+        //   bob = 200 000
+        //  a->b =  10 000
+        //  a->b =  10 000
+        //  a->b =  10 000
+        //  a->b =  10 000
+        // 2 main outputs + 4 htlc
+        assertEquals(6, revokedTx.txOut.size)
+
+        val (aliceClosing, actions) = alice.process(WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+
+        assertTrue(aliceClosing is Closing)
+        assertEquals(1, aliceClosing.revokedCommitPublished.size)
+        assertTrue(actions.isNotEmpty())
+        assertTrue(actions.hasMessage<Error>())
+
+        val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
+        val mainTx = claimTxes[0]
+        val mainPenaltyTx = claimTxes[1]
+        // TODO business code is disabled for now
+        //      val htlcPenaltyTxs = claimTxes.drop(2)
+        //      assertEquals(2, htlcPenaltyTxs.size)
+        //      // let's make sure that htlc-penalty txs each spend a different output
+        //      assertEquals(htlcPenaltyTxs.map { it.txIn.first().outPoint.index }.toSet().size, htlcPenaltyTxs.size)
+
+        assertEquals(BITCOIN_TX_CONFIRMED(revokedTx), actions.watches<WatchConfirmed>()[0].event)
+        assertEquals(BITCOIN_TX_CONFIRMED(mainTx), actions.watches<WatchConfirmed>()[1].event)
+        assertTrue(actions.watches<WatchSpent>().all { it.event is BITCOIN_OUTPUT_SPENT })
+        // TODO business code is disabled for now
+        //        assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+        //        htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
+
+        Transaction.correctlySpends(mainTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(mainPenaltyTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        // TODO business code is disabled for now
+//            htlcPenaltyTxs.forEach {
+//                Transaction.correctlySpends(it, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+//            }
+
+        // two main outputs are 760 000 and 200 000
+        assertEquals(741500.sat, mainTx.txOut[0].amount)
+        assertEquals(195160.sat, mainPenaltyTx.txOut[0].amount)
+        // TODO business code is disabled for now
+        //        assertEquals(4540.sat, htlcPenaltyTxs[0].txOut[0].amount)
+        //        assertEquals(4540.sat, htlcPenaltyTxs[1].txOut[0].amount)
+        //        assertEquals(4540.sat, htlcPenaltyTxs[2].txOut[0].amount)
+        //        assertEquals(4540.sat, htlcPenaltyTxs[3].txOut[0].amount)
+    }
+
+    @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {
+        var (alice, bob) = reachNormal()
+        // initially we have :
+        // alice = 800 000
+        //   bob = 200 000
+        val (_, cmdAddHtlc) = makeCmdAdd(10_000_000.msat, bob.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong())
+//        addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
+//            .first.run { alice = first as Normal; bob = second as Normal }
+//        addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
+//            .first.run { alice = first as Normal; bob = second as Normal }
+        addHtlc(cmdAdd = cmdAddHtlc, payer = alice, payee = bob)
+            .run { alice = first as Normal; bob = second as Normal }
+        addHtlc(cmdAdd = cmdAddHtlc, payer = alice, payee = bob)
+            .run { alice = first as Normal; bob = second as Normal }
+
+        crossSign(alice, bob)
+            .run { alice = first as Normal; bob = second as Normal }
+
+        // bob will publish this tx after it is revoked
+        val revokedTx = bob.commitments.localCommit.publishableTxs.commitTx.tx
+
+        addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
+            .first.run { alice = first as Normal; bob = second as Normal }
+        crossSign(alice, bob)
+            .run { alice = first as Normal; bob = second as Normal }
+
+        // channel state for this revoked tx is as follows:
+        // alice = 780 000
+        //   bob = 200 000
+        //  a->b =  10 000
+        //  a->b =  10 000
+        assertEquals(4, revokedTx.txOut.size)
+
+        val (aliceClosing, actions) = alice.process(WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+
+        assertTrue(aliceClosing is Closing)
+        assertTrue(actions.isNotEmpty())
+        assertTrue(actions.hasMessage<Error>())
+
+        val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
+        val mainTx = claimTxes[0]
+        val mainPenaltyTx = claimTxes[1]
+        // TODO business code is disabled for now
+        //      val htlcPenaltyTxs = claimTxes.drop(2)
+        //      assertEquals(2, htlcPenaltyTxs.size)
+        //      // let's make sure that htlc-penalty txs each spend a different output
+        //      assertEquals(htlcPenaltyTxs.map { it.txIn.first().outPoint.index }.toSet().size, htlcPenaltyTxs.size)
+
+        assertEquals(BITCOIN_TX_CONFIRMED(revokedTx), actions.watches<WatchConfirmed>()[0].event)
+        assertEquals(BITCOIN_TX_CONFIRMED(mainTx), actions.watches<WatchConfirmed>()[1].event)
+        assertTrue(actions.watches<WatchSpent>().all { it.event is BITCOIN_OUTPUT_SPENT })
+        // TODO business code is disabled for now
+        //        assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+        //        htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
+
+        Transaction.correctlySpends(mainTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(mainPenaltyTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        // TODO business code is disabled for now
+//            htlcPenaltyTxs.forEach {
+//                Transaction.correctlySpends(it, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+//            }
+    }
 }

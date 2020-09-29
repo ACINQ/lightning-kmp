@@ -1499,7 +1499,7 @@ object Channel {
         )?.let { revokedCommitPublished ->
             logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
             val exc = FundingTxSpent(d.channelId, tx)
-            val error = Error(d.channelId, ByteVector(exc.message!!))
+            val error = Error(d.channelId, exc.message)
 
             val nextState = when(d) {
                 is Closing -> d.copy(revokedCommitPublished = d.revokedCommitPublished + revokedCommitPublished)

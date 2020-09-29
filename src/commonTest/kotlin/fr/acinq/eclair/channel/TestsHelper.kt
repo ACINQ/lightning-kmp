@@ -26,6 +26,7 @@ internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance
 // Commands
 inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
     filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasMessage() = any { it is SendMessage && it.message is T }
 internal inline fun <reified T> List<ChannelAction>.hasCommand() = any { it is ProcessCommand && it.command is T }
 
 object TestsHelper {
@@ -123,7 +124,7 @@ object TestsHelper {
         return Triple(sender0 to receiver0, paymentPreimage, htlc)
     }
 
-    private fun addHtlc(cmdAdd: CMD_ADD_HTLC, payer: ChannelState, payee: ChannelState): Triple<ChannelState, ChannelState, UpdateAddHtlc> {
+    fun addHtlc(cmdAdd: CMD_ADD_HTLC, payer: ChannelState, payee: ChannelState): Triple<ChannelState, ChannelState, UpdateAddHtlc> {
         val (sender0, senderActions0) = payer.process(ExecuteCommand(cmdAdd))
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
