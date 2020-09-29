@@ -4,44 +4,77 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.TestsHelper.addHtlc
-import fr.acinq.eclair.channel.TestsHelper.crossSign
-import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
-import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
-import fr.acinq.eclair.channel.TestsHelper.reachNormal
+import fr.acinq.eclair.channel.hasMessage
+import fr.acinq.eclair.channel.watches
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.sum
+import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.CommitSig
 import fr.acinq.eclair.wire.Error
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
+import fr.acinq.eclair.wire.RevokeAndAck
+import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class NormalStateTests {
+class NormalStateTestsCommon {
+    @Test fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
+        val currentBlockHeight = 500L
+        val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
+        val add = actions.findOutgoingMessage<UpdateAddHtlc>()
+        val (alice1, _) = alice.process(MessageReceived(add))
+        assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
+        val (bob2, actions2) = bob1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
+        val blob = Helpers.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
+        assertEquals(blob.toByteVector(), commitSig.channelData)
+    }
+
+    @Test fun `recv RevokeAndAck (channel backup, zero-reserve channel, fundee)`() {
+        val currentBlockHeight = 500L
+        val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
+        val add = actions.findOutgoingMessage<UpdateAddHtlc>()
+        val (alice1, _) = alice.process(MessageReceived(add))
+        assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
+        val (bob2, actions2) = bob1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
+        val (alice2, actions3) = alice1.process(MessageReceived(commitSig))
+        val revack = actions3.findOutgoingMessage<RevokeAndAck>()
+        val (bob3, _) = bob2.process(MessageReceived(revack))
+        val (_, actions4) = alice2.process(ExecuteCommand(CMD_SIGN))
+        val commitSig1 = actions4.findOutgoingMessage<CommitSig>()
+        val (bob4, actions5) = bob3.process(MessageReceived(commitSig1))
+        val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
+        val blob = Helpers.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
+        assertEquals(blob.toByteVector(), revack1.channelData)
+    }
+
     @Test fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
-        var (alice, bob) = reachNormal()
+        var (alice, bob) = TestsHelper.reachNormal()
 
-        val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice, payee = bob)
-        nodes0.run { alice = first as Normal ; bob = second as Normal }
-        val (nodes1, preimage_alice2bob_2, _) = addHtlc(100_000_000.msat, payer = alice, payee = bob)
-        nodes1.run { alice = first as Normal ; bob = second as Normal }
-        val (nodes2, _, _) = addHtlc(10_000.msat, payer = alice, payee = bob)
-        nodes2.run { alice = first as Normal ; bob = second as Normal }
-        val (nodes3, preimage_bob2alice_1, _) = addHtlc(50_000_000.msat, payer = bob, payee = alice)
-        nodes3.run { bob = first as Normal ; alice = second as Normal }
-        val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = bob, payee = alice)
-        nodes4.run { bob = first as Normal ; alice = second as Normal }
+        val (nodes0, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice, payee = bob)
+        nodes0.run { alice = first as Normal; bob = second as Normal }
+        val (nodes1, preimage_alice2bob_2, _) = TestsHelper.addHtlc(100_000_000.msat, payer = alice, payee = bob)
+        nodes1.run { alice = first as Normal; bob = second as Normal }
+        val (nodes2, _, _) = TestsHelper.addHtlc(10_000.msat, payer = alice, payee = bob)
+        nodes2.run { alice = first as Normal; bob = second as Normal }
+        val (nodes3, preimage_bob2alice_1, _) = TestsHelper.addHtlc(50_000_000.msat, payer = bob, payee = alice)
+        nodes3.run { bob = first as Normal; alice = second as Normal }
+        val (nodes4, _, _) = TestsHelper.addHtlc(55_000_000.msat, payer = bob, payee = alice)
+        nodes4.run { bob = first as Normal; alice = second as Normal }
 
-        crossSign(alice, bob)
-            .run { alice = first as Normal ; bob = second as Normal }
-        fulfillHtlc(1, preimage_alice2bob_2, payer = alice, payee = bob)
-            .run { alice = first as Normal ; bob = second as Normal }
-        fulfillHtlc(0, preimage_bob2alice_1, payer = bob, payee = alice)
-            .run { bob = first as Normal ; alice = second as Normal }
+        TestsHelper.crossSign(alice, bob)
+            .run { alice = first as Normal; bob = second as Normal }
+        TestsHelper.fulfillHtlc(1, preimage_alice2bob_2, payer = alice, payee = bob)
+            .run { alice = first as Normal; bob = second as Normal }
+        TestsHelper.fulfillHtlc(0, preimage_bob2alice_1, payer = bob, payee = alice)
+            .run { bob = first as Normal; alice = second as Normal }
 
         // at this point here is the situation from alice pov and what she should do when bob publishes his commit tx:
         // balances :
@@ -74,7 +107,7 @@ class NormalStateTests {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(814880.sat, amountClaimed) // TODO actually 815220.sat ?
+        assertEquals(815220.sat, amountClaimed) // TODO formerly 814880.sat ?
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.watches<WatchConfirmed>()[0].event)
         assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.watches<WatchConfirmed>()[1].event)
@@ -96,25 +129,25 @@ class NormalStateTests {
     }
 
     @Test fun `recv BITCOIN_FUNDING_SPENT (their *next* commit with htlc)`() {
-        var (alice, bob) = reachNormal()
+        var (alice, bob) = TestsHelper.reachNormal()
 
-        val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice, payee = bob)
-        nodes0.run { alice = first as Normal ; bob = second as Normal }
-        val (nodes1, preimage_alice2bob_2, _) = addHtlc(100_000_000.msat, payer = alice, payee = bob)
-        nodes1.run { alice = first as Normal ; bob = second as Normal }
-        val (nodes2, _, _) = addHtlc(10_000.msat, payer = alice, payee = bob)
-        nodes2.run { alice = first as Normal ; bob = second as Normal }
-        val (nodes3, preimage_bob2alice_1, _) = addHtlc(50_000_000.msat, payer = bob, payee = alice)
-        nodes3.run { bob = first as Normal ; alice = second as Normal }
-        val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = bob, payee = alice)
-        nodes4.run { bob = first as Normal ; alice = second as Normal }
+        val (nodes0, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice, payee = bob)
+        nodes0.run { alice = first as Normal; bob = second as Normal }
+        val (nodes1, preimage_alice2bob_2, _) = TestsHelper.addHtlc(100_000_000.msat, payer = alice, payee = bob)
+        nodes1.run { alice = first as Normal; bob = second as Normal }
+        val (nodes2, _, _) = TestsHelper.addHtlc(10_000.msat, payer = alice, payee = bob)
+        nodes2.run { alice = first as Normal; bob = second as Normal }
+        val (nodes3, preimage_bob2alice_1, _) = TestsHelper.addHtlc(50_000_000.msat, payer = bob, payee = alice)
+        nodes3.run { bob = first as Normal; alice = second as Normal }
+        val (nodes4, _, _) = TestsHelper.addHtlc(55_000_000.msat, payer = bob, payee = alice)
+        nodes4.run { bob = first as Normal; alice = second as Normal }
 
-        crossSign(alice, bob)
-            .run { alice = first as Normal ; bob = second as Normal }
-        fulfillHtlc(1, preimage_alice2bob_2, payer = alice, payee = bob)
-            .run { alice = first as Normal ; bob = second as Normal }
-        fulfillHtlc(0, preimage_bob2alice_1, payer = bob, payee = alice)
-            .run { bob = first as Normal ; alice = second as Normal }
+        TestsHelper.crossSign(alice, bob)
+            .run { alice = first as Normal; bob = second as Normal }
+        TestsHelper.fulfillHtlc(1, preimage_alice2bob_2, payer = alice, payee = bob)
+            .run { alice = first as Normal; bob = second as Normal }
+        TestsHelper.fulfillHtlc(0, preimage_bob2alice_1, payer = bob, payee = alice)
+            .run { bob = first as Normal; alice = second as Normal }
 
         // alice sign but we intercept bob's revocation
         val (alice0, aActions0) = alice.process(ExecuteCommand(CMD_SIGN))
@@ -159,7 +192,7 @@ class NormalStateTests {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(822310.sat, amountClaimed) // TODO actually 822330.sat ?
+        assertEquals(822330.sat, amountClaimed) // TODO formerly 822310.sat ?
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.watches<WatchConfirmed>()[0].event)
         assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.watches<WatchConfirmed>()[1].event)
@@ -181,15 +214,15 @@ class NormalStateTests {
     }
 
     @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
-        var (alice, bob) = reachNormal()
+        var (alice, bob) = TestsHelper.reachNormal()
         // initially we have :
         // alice = 800 000
         //   bob = 200 000
         fun send(): Transaction {
             // alice sends 8 000 sat
-            addHtlc(10_000_000.msat, payer = alice,payee = bob)
+            TestsHelper.addHtlc(10_000_000.msat, payer = alice, payee = bob)
                 .first.run { alice = first as Normal; bob = second as Normal }
-            crossSign(alice, bob)
+            TestsHelper.crossSign(alice, bob)
                 .run { alice = first as Normal; bob = second as Normal }
 
             return bob.commitments.localCommit.publishableTxs.commitTx.tx
@@ -251,29 +284,33 @@ class NormalStateTests {
     }
 
     @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {
-        var (alice, bob) = reachNormal()
+        var (alice, bob) = TestsHelper.reachNormal()
         // initially we have :
         // alice = 800 000
         //   bob = 200 000
-        val (_, cmdAddHtlc) = makeCmdAdd(10_000_000.msat, bob.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong())
+        val (_, cmdAddHtlc) = TestsHelper.makeCmdAdd(
+            10_000_000.msat,
+            bob.staticParams.nodeParams.nodeId,
+            alice.currentBlockHeight.toLong()
+        )
 //        addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
 //            .first.run { alice = first as Normal; bob = second as Normal }
 //        addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
 //            .first.run { alice = first as Normal; bob = second as Normal }
-        addHtlc(cmdAdd = cmdAddHtlc, payer = alice, payee = bob)
+        TestsHelper.addHtlc(cmdAdd = cmdAddHtlc, payer = alice, payee = bob)
             .run { alice = first as Normal; bob = second as Normal }
-        addHtlc(cmdAdd = cmdAddHtlc, payer = alice, payee = bob)
+        TestsHelper.addHtlc(cmdAdd = cmdAddHtlc, payer = alice, payee = bob)
             .run { alice = first as Normal; bob = second as Normal }
 
-        crossSign(alice, bob)
+        TestsHelper.crossSign(alice, bob)
             .run { alice = first as Normal; bob = second as Normal }
 
         // bob will publish this tx after it is revoked
         val revokedTx = bob.commitments.localCommit.publishableTxs.commitTx.tx
 
-        addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
+        TestsHelper.addHtlc(amount = 10000000.msat, payer = alice, payee = bob)
             .first.run { alice = first as Normal; bob = second as Normal }
-        crossSign(alice, bob)
+        TestsHelper.crossSign(alice, bob)
             .run { alice = first as Normal; bob = second as Normal }
 
         // channel state for this revoked tx is as follows:
