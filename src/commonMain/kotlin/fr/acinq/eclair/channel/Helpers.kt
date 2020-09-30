@@ -319,7 +319,7 @@ object Helpers {
             val feeratePerKwDelayed = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
             // first we will claim our main output as soon as the delay is over
-            val mainDelayedTx = generateTx {
+            val mainDelayedTx = generateTx("main-delayed-output") {
                 Transactions.makeClaimDelayedOutputTx(
                     tx,
                     localParams.dustLimit,
@@ -358,7 +358,7 @@ object Helpers {
 
             // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
             val htlcDelayedTxes = htlcTxes.mapNotNull { txinfo ->
-                generateTx {
+                generateTx("claim-htlc-delayed") {
                     Transactions.makeClaimDelayedOutputTx(
                         txinfo.tx,
                         localParams.dustLimit,
@@ -422,7 +422,7 @@ object Helpers {
                     // incoming htlc for which we have the preimage: we spend it directly.
                     // NB: we are looking at the remote's commitment, from its point of view it's an outgoing htlc.
                     preimages.firstOrNull { r -> sha256(r).toByteVector() == add.paymentHash }?.let { preimage ->
-                        generateTx {
+                        generateTx("claim-htlc-success") {
                             Transactions.makeClaimHtlcSuccessTx(
                                 remoteCommitTx.tx,
                                 outputs,
@@ -444,7 +444,7 @@ object Helpers {
             val claimHtlcTimeoutTxs = remoteCommit.spec.htlcs.filterIsInstance<IncomingHtlc>().map { it.add }.mapNotNull { add ->
                     // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
                     // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-                    generateTx {
+                    generateTx("claim-htlc-timeout") {
                         Transactions.makeClaimHtlcTimeoutTx(
                             remoteCommitTx.tx,
                             outputs,
@@ -487,7 +487,7 @@ object Helpers {
             val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
             val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
-            val mainTx = generateTx {
+            val mainTx = generateTx("claim-p2wpkh-output") {
                 Transactions.makeClaimP2WPKHOutputTx(
                     tx,
                     commitments.localParams.dustLimit,
@@ -539,11 +539,11 @@ object Helpers {
                 keyManager.revocationPoint(channelKeyPath).publicKey,
                 remotePerCommitmentPoint
             )
-            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
+//            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
             val localPaymentPubkey =
                 Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-            val localHtlcPubkey =
-                Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+//            val localHtlcPubkey =
+//                Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
             val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
             // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
@@ -555,7 +555,7 @@ object Helpers {
                     logger.info { "channel uses option_static_remotekey, not claiming our p2wpkh output" }
                     null
                 }
-                else -> generateTx {
+                else -> generateTx("claim-p2wpkh-output") {
                     Transactions.makeClaimP2WPKHOutputTx(
                         tx,
                         localParams.dustLimit,
@@ -570,7 +570,7 @@ object Helpers {
             }
 
             // then we punish them by stealing their main output
-            val mainPenaltyTx = generateTx {
+            val mainPenaltyTx = generateTx("main-penalty") {
                 Transactions.makeMainPenaltyTx(
                     tx,
                     localParams.dustLimit,
@@ -613,7 +613,7 @@ object Helpers {
             //              and finally we steal the htlc outputs
             //                val htlcPenaltyTxs = tx.txOut.mapIndexedNotNull { outputIndex, txOut ->
             //                    htlcsRedeemScripts[txOut.publicKeyScript.toByteArray()]?.let { htlcRedeemScript ->
-            //                        generateTx {
+            //                        generateTx("htlc-penalty") {
             //                            Transactions.makeHtlcPenaltyTx(
             //                                tx,
             //                                outputIndex,
@@ -689,7 +689,7 @@ object Helpers {
                 // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
                 val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 1)
 
-                val signedTx = generateTx {
+                val signedTx = generateTx("claim-htlc-delayed-penalty") {
                     Transactions.makeClaimDelayedOutputPenaltyTx(
                         htlcTx,
                         localParams.dustLimit,
@@ -1037,7 +1037,7 @@ object Helpers {
          * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
          *
          * @param tx a tx for which we want to compute the fee
-         * @param d  current channel data
+         * @param closing  current channel data
          * @return if the parent tx is found, a tuple (fee, description)
          */
         fun networkFeePaid(tx: Transaction, closing: fr.acinq.eclair.channel.Closing): Pair<Satoshi, String>? {
@@ -1099,7 +1099,7 @@ object Helpers {
         /**
          * Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment.
          */
-        fun <T : Transactions.TransactionWithInputInfo> generateTx(desc: String = "", attempt: () -> Transactions.TxResult<T>): T? =
+        private fun <T : Transactions.TransactionWithInputInfo> generateTx(desc: String, attempt: () -> Transactions.TxResult<T>): T? =
             when (val result = runTrying { attempt() }) {
                 is Try.Success -> when (val txResult = result.get()) {
                     is Transactions.TxResult.Success -> {
