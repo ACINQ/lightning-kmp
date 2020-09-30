@@ -569,10 +569,7 @@ class Peer(
                 sendToSelf(event.channelId, actions)
             }
             event is CheckPaymentsTimeout -> {
-                val actions = paymentHandler.checkPaymentsTimeout(
-                    incomingPayments = pendingIncomingPayments,
-                    currentTimestampSeconds = currentTimestampSeconds()
-                )
+                val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
             }
         }

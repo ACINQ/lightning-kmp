@@ -309,7 +309,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     private fun makeIncomingPayment(
-        payee: NodeParams,
+        payee: PaymentHandler,
         amount: MilliSatoshi?,
         timestamp: Long = currentTimestampSeconds(),
         expirySeconds: Long? = null,
@@ -324,10 +324,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
         )
         val paymentRequest = PaymentRequest.create(
-            chainHash = payee.chainHash,
+            chainHash = payee.nodeParams.chainHash,
             amount = amount,
             paymentHash = paymentHash,
-            privateKey = payee.nodePrivateKey, // Payee creates invoice, sends to payer
+            privateKey = payee.nodeParams.nodePrivateKey, // Payee creates invoice, sends to payer
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures),
@@ -335,30 +335,21 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             expirySeconds = expirySeconds
         )
 
-        val incomingPayment = IncomingPayment(
-            paymentRequest = paymentRequest,
-            paymentPreimage = paymentPreimage
-        )
-
-        return incomingPayment
+        return IncomingPayment(paymentRequest, paymentPreimage)
     }
 
     @Test
-    fun `PaymentHandler should accept non-mpp payment`() {
+    fun `PaymentHandler should accept mpp payment with single HTLC`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val totalAmount = MilliSatoshi(100.sat)
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
-        // Bob should accept full payment
+        // Should accept full payment
         run {
 
             val updateAddHtlc = makeUpdateAddHtlc(
@@ -366,13 +357,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = totalAmount,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -396,17 +387,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Step 1 of 2:
         //
@@ -420,13 +407,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -448,13 +435,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 1,
                 amount = amount2,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -482,18 +469,14 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val amount3 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2 + amount3
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Step 1 of 2:
         //
@@ -507,13 +490,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -536,13 +519,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 1,
                 amount = amount2,
                 totalAmount = totalAmount + MilliSatoshi(1), // goofy mismatch. (not less than totalAmount)
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -592,18 +575,14 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
         val incomingPayment = makeIncomingPayment(
-            payee = bob.nodeParams,
+            payee = paymentHandler,
             amount = totalAmount,
             timestamp = currentTimestampSeconds() - 3600 - 60, // over one hour ago
             expirySeconds = 3600 // one hour expiration
@@ -617,13 +596,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -656,17 +635,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Bob rejects incoming HTLC because the paymentSecret doesn't match
         run {
@@ -676,13 +651,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = Eclair.randomBytes32() // <== Wrong !
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -715,17 +690,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Bob rejects incoming HTLC because the CLTV is too low
         run {
@@ -735,14 +706,14 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!,
                 cltvExpiryDelta = CltvExpiryDelta(2) // <== Too low
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -775,17 +746,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = totalAmount)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Step 1 of 3:
         // Alice sends single (unfinished) multipart htlc to Bob.
@@ -796,13 +763,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -816,13 +783,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         // Ensure PaymentHandler doesn't expire the multipart htlc too soon.
         run {
 
-            val expiry = bob.nodeParams.multiPartPaymentExpiry
+            val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
             val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry - 1
 
-            val actions = bob.paymentHandler.checkPaymentsTimeout(
-                incomingPayments = mapOf(incomingPayment.paymentRequest.paymentHash to incomingPayment),
-                currentTimestampSeconds = currentTimestampSeconds
-            )
+            val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
 
             assertTrue { actions.isEmpty() }
         }
@@ -831,14 +795,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         // Ensure PaymentHandler expires the htlc-set after configured expiration.
         run {
 
-            val expiry = bob.nodeParams.multiPartPaymentExpiry
-            assertTrue { expiry >= 60 } // BOLT 04 suggests minimum of 60 seconds
+            val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
             val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry + 1
 
-            val actions = bob.paymentHandler.checkPaymentsTimeout(
-                incomingPayments = mapOf(incomingPayment.paymentRequest.paymentHash to incomingPayment),
-                currentTimestampSeconds = currentTimestampSeconds
-            )
+            val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
 
             assertEquals(
                 setOf(
@@ -852,20 +812,16 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should accept single-part keysend payment`() {
+    fun `PaymentHandler should accept single-part payment, with amountless invoice`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount = MilliSatoshi(100.sat)
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = null)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = null)
 
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
@@ -873,13 +829,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount,
                 totalAmount = amount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -898,22 +854,18 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should accept multi-part keysend payment`() {
+    fun `PaymentHandler should accept multi-part payment, with amountless invoice`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val currentBlockHeight = TestConstants.defaultBlockHeight
 
-        // Cannot put paymentHandler in TestConstants.Bob because globals are frozen in Kotlin native
-        val bob = object {
-            val nodeParams = TestConstants.Bob.nodeParams
-            val paymentHandler = PaymentHandler(this.nodeParams)
-        }
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
-        val incomingPayment = makeIncomingPayment(payee = bob.nodeParams, amount = null)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = null)
 
         // Step 1 of 2:
         //
@@ -926,13 +878,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 0,
                 amount = amount1,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight
@@ -953,13 +905,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 id = 1,
                 amount = amount2,
                 totalAmount = totalAmount,
-                destination = bob.nodeParams.nodeId,
+                destination = paymentHandler.nodeParams.nodeId,
                 currentBlockHeight = currentBlockHeight.toLong(),
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             )
 
-            val par: PaymentHandler.ProcessAddResult = bob.paymentHandler.processAdd(
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
                 currentBlockHeight = currentBlockHeight

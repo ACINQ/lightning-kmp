@@ -13,7 +13,6 @@ import fr.acinq.eclair.utils.currentTimestampSeconds
 import fr.acinq.eclair.utils.newEclairLogger
 import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.*
-import kotlin.math.min
 
 data class IncomingPayment(
     val paymentRequest: PaymentRequest,
@@ -37,14 +36,28 @@ class PaymentHandler(
         val onion: FinalPayload
     )
 
-    private class FinalPacketSet( // htlc set + metadata
-        val parts: Set<FinalPacket> = setOf(),
-        val mppStartedAt: Long? = null // In seconds
-    ) {
-        fun addingPart(part: FinalPacket): FinalPacketSet {
+    private class FinalPacketSet { // htlc set + metadata
+        val parts: Set<FinalPacket>
+        val totalAmount: MilliSatoshi // all parts must have matching `total_msat`
+        val mppStartedAt: Long // in seconds
+
+        constructor(htlc: UpdateAddHtlc, onion: FinalPayload) {
+            parts = setOf(FinalPacket(htlc, onion))
+            totalAmount = onion.totalAmount
+            mppStartedAt = currentTimestampSeconds()
+        }
+
+        private constructor(parts: Set<FinalPacket>, totalAmount: MilliSatoshi, mppStartedAt: Long) {
+            this.parts = parts
+            this.totalAmount = totalAmount
+            this.mppStartedAt = mppStartedAt
+        }
+
+        fun add(htlc: UpdateAddHtlc, onion: FinalPayload): FinalPacketSet {
             return FinalPacketSet(
-                parts = this.parts + part,
-                mppStartedAt = this.mppStartedAt ?: currentTimestampSeconds()
+                parts = this.parts + FinalPacket(htlc, onion),
+                totalAmount = this.totalAmount,
+                mppStartedAt = this.mppStartedAt
             )
         }
     }
@@ -101,13 +114,11 @@ class PaymentHandler(
         val rejectedResult = ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(failureAction))
 
         if (incomingPayment == null) {
-
             logger.warning { "received $htlc for which we don't have a preimage" }
             return rejectedResult
         }
 
         if (incomingPayment.paymentRequest.isExpired()) {
-
             logger.warning { "received payment for expired invoice" }
             return rejectedResult
         }
@@ -117,12 +128,9 @@ class PaymentHandler(
         val minFinalCltvExpiry = minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
 
         if (htlc.cltvExpiry < minFinalCltvExpiry) {
-
             logger.warning { "received payment with expiry too small: received(${htlc.cltvExpiry}) min($minFinalCltvExpiry)" }
             return rejectedResult
         }
-
-        val isMultiPartPayment = onion.totalAmount > onion.amount
 
         // BOLT 04:
         // - if the payment_secret doesn't match the expected value for that payment_hash,
@@ -131,12 +139,13 @@ class PaymentHandler(
         //   - MUST return an incorrect_or_unknown_payment_details error.
         //
         //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
+        //
+        // NB: We always include a paymentSecret.
 
         val paymentSecretExpected = incomingPayment.paymentRequest.paymentSecret
         val paymentSecretReceived = onion.paymentSecret
 
-        if ((isMultiPartPayment || paymentSecretReceived != null) && (paymentSecretExpected != paymentSecretReceived)) {
-
+        if (paymentSecretExpected != paymentSecretReceived) {
             logger.warning { "received payment with invalid paymentSecret" }
             return rejectedResult
         }
@@ -159,7 +168,6 @@ class PaymentHandler(
         if (amountExpected != null) { // invoice amount may have been unspecified
 
             if ((amountReceived < amountExpected) || (amountReceived > amountExpected * 2)) {
-
                 logger.warning { "received invalid amount: $amountReceived, expected: $amountExpected" }
                 return rejectedResult
             }
@@ -192,36 +200,25 @@ class PaymentHandler(
     ): ProcessAddResult {
         val actions = mutableListOf<PeerEvent>()
 
-        // Add <htlc, onion> tuple to pending set.
+        // Add <htlc, onion> tuple to pending htlcSet.
         // NB: We need to update the `pending` map too. But we do that right before we return.
 
-        val updatedPendingSet = (pending[htlc.paymentHash] ?: FinalPacketSet()).addingPart(FinalPacket(htlc, onion))
-        val parts = updatedPendingSet.parts.toTypedArray()
+        val htlcSet = pending[htlc.paymentHash]?.add(htlc, onion) ?: FinalPacketSet(htlc, onion)
+        val parts = htlcSet.parts.toTypedArray()
 
         // Bolt 04:
         // - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
 
-        val totalMsat: MilliSatoshi = parts[0].onion.totalAmount
-        var totalMsatMismatch = false
-
-        for (i in 1..parts.lastIndex) {
-            if (parts[i].onion.totalAmount != totalMsat) {
-                totalMsatMismatch = true
-                break
-            }
-        }
-
-        if (totalMsatMismatch) {
+        if (onion.totalAmount != htlcSet.totalAmount) {
 
             parts.forEach { part ->
-
                 val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight.toLong())
                 actions += actionForFailureMessage(msg, part.htlc)
             }
 
             logger.warning {
                 "Discovered htlc set total_msat_mismatch." +
-                    " Failing entire set with paymentHash = ${incomingPayment.paymentRequest.paymentHash}"
+                    " Failing entire set with paymentHash = ${htlc.paymentHash}"
             }
 
             pending.remove(htlc.paymentHash)
@@ -234,10 +231,10 @@ class PaymentHandler(
 
         val cumulativeMsat = parts.map { it.onion.amount }.sum()
 
-        if (cumulativeMsat < totalMsat) {
+        if (cumulativeMsat < htlcSet.totalAmount) {
             // Still waiting for more payments
 
-            pending[htlc.paymentHash] = updatedPendingSet
+            pending[htlc.paymentHash] = htlcSet
             return ProcessAddResult(status = ProcessedStatus.PENDING, actions = actions)
         }
 
@@ -261,7 +258,6 @@ class PaymentHandler(
     }
 
     fun checkPaymentsTimeout(
-        incomingPayments: Map<ByteVector32, IncomingPayment>,
         currentTimestampSeconds: Long
     ): List<PeerEvent> {
 
@@ -273,15 +269,9 @@ class PaymentHandler(
         //   - SHOULD wait for at least 60 seconds after the initial HTLC.
         //   - SHOULD use mpp_timeout for the failure message.
 
-        val mppExpiry = min(60, nodeParams.multiPartPaymentExpiry)
-
         pending.forEach { (paymentHash, set) ->
 
-            val isExpired = when (val mppStartedAt = pending[paymentHash]?.mppStartedAt) {
-                null -> false
-               else -> currentTimestampSeconds > (mppStartedAt + mppExpiry)
-            }
-
+            val isExpired = currentTimestampSeconds > (set.mppStartedAt + nodeParams.multiPartPaymentExpiry)
             if (isExpired) {
                 keysToRemove += paymentHash
                 set.parts.forEach { part ->
