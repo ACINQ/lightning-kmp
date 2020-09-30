@@ -20,7 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-class NormalStateTestsCommon {
+class NormalTestsCommon {
     @Test fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
         val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)

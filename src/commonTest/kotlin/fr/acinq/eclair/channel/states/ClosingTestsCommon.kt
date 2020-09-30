@@ -1,5 +1,5 @@
 package fr.acinq.eclair.channel.states
 
-class ClosingStateTestsCommon {
+class ClosingTestsCommon {
     // TODO
 }
