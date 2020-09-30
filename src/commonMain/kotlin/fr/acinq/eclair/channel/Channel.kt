@@ -1911,13 +1911,13 @@ data class ErrorInformationLeak(
 private class ChannelStateBuilder {
     lateinit var state: ChannelState
     var actions = emptyList<ChannelAction>()
-    fun build() = state to actions
+    fun build() = state to state.updateActions(actions)
 }
 private fun newState(init: ChannelStateBuilder.() -> Unit) = ChannelStateBuilder().apply(init).build()
 private fun newState(newState: ChannelState) = ChannelStateBuilder().apply { state = newState }.build()
 
 private val ChannelState.stay: Pair<ChannelState, List<ChannelAction>> get() = this to emptyList()
-private fun ChannelState.returnState(vararg actions: ChannelAction): Pair<ChannelState, List<ChannelAction>> = this to actions.toList()
+private fun ChannelState.returnState(vararg actions: ChannelAction): Pair<ChannelState, List<ChannelAction>> = this to this.updateActions(actions.toList())
 
 object Channel {
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements

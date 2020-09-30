@@ -1,30 +1,364 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.*
+import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.hasMessage
-import fr.acinq.eclair.channel.watches
+import fr.acinq.eclair.channel.TestsHelper.addHtlc
+import fr.acinq.eclair.channel.TestsHelper.crossSign
+import fr.acinq.eclair.channel.TestsHelper.reachNormal
+import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.sat
-import fr.acinq.eclair.utils.sum
-import fr.acinq.eclair.utils.toByteVector
-import fr.acinq.eclair.wire.CommitSig
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.wire.RevokeAndAck
-import fr.acinq.eclair.wire.UpdateAddHtlc
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import fr.acinq.eclair.transactions.Transactions.weight2fee
+import fr.acinq.eclair.transactions.incomings
+import fr.acinq.eclair.transactions.outgoings
+import fr.acinq.eclair.utils.*
+import fr.acinq.eclair.wire.*
+import kotlin.test.*
 
 class NormalTestsCommon {
-    @Test fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
+
+    private val currentBlockHeight = 144L
+    private val CMD_ADD_HTLC: () -> CMD_ADD_HTLC = {
+        CMD_ADD_HTLC(
+            50_000_000.msat,
+            randomBytes32(),
+            CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight),
+            TestConstants.emptyOnionPacket,
+            UUID.randomUUID()
+        )
+    }
+
+    @Ignore
+    fun `recv CMD_ADD_HTLC (empty origin)`() {
+        TODO("a faire")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (incrementing ids)`() {
+        val (alice0, bob0) = reachNormal()
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
+        val h = randomBytes32()
+
+        var alice = alice0
+        for (i in 0..9) {
+            val add = CMD_ADD_HTLC().copy(paymentHash = h)
+
+            val (tempAlice, actions ) = alice.process(ExecuteCommand(add))
+            alice = tempAlice as Normal
+
+            val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
+            assertEquals(i.toLong(), htlc.id)
+            assertEquals(h, htlc.paymentHash)
+        }
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (expiry too small)`() {
+        val (alice0, bob0) = reachNormal()
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
+        // It's usually dangerous for Bob to accept HTLCs that are expiring soon. However it's not Alice's decision to reject
+        // them when she's asked to relay; she should forward those HTLCs to Bob, and Bob will choose whether to fail them
+        // or fulfill them (Bob could be #reckless and fulfill HTLCs with a very low expiry delta).
+        val expiryTooSmall = CltvExpiry(currentBlockHeight + 3)
+
+        val add = CMD_ADD_HTLC().copy(cltvExpiry = expiryTooSmall)
+        val (alice1, actions1) = alice0.process(ExecuteCommand(add))
+        actions1.hasError<ExpiryTooSmall>()
+        assertEquals(alice0, alice1)
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (expiry too big)`() {
+        val (alice0, bob0) = reachNormal()
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
+        val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
+
+        val add = CMD_ADD_HTLC().copy(cltvExpiry = expiryTooBig)
+
+        val (alice1, actions1) = alice0.process(ExecuteCommand(add))
+        val actualError = actions1.findError<ExpiryTooBig>()
+
+        val expectedError = ExpiryTooBig(alice0.channelId,
+            maximum = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentBlockHeight),
+            actual = expiryTooBig,
+            blockCount = currentBlockHeight)
+
+        assertEquals(expectedError, actualError)
+        assertEquals(alice0, alice1)
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (value too small)`() {
+        val (alice0, bob0) = reachNormal()
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
+
+//        val add = CMD_ADD_HTLC(amount = 50.msat)
+
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (0 msat)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (increasing balance but still below reserve)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (insufficient funds)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (insufficient funds) (anchor outputs)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (insufficient funds, missing 1 msat)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs and 0 balance)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs 2-2)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (over max inflight htlc value)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (over max inflight htlc value with duplicate amounts)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (over max accepted htlcs)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (over capacity)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (channel feerate mismatch)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (after having sent Shutdown)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (after having received Shutdown)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_SIGN`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, _) = addHtlc(50_000_000.msat, payer = alice0, payee = bob0).first
+        val (alice2, actions) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actions.findOutgoingMessage<CommitSig>()
+        assertEquals(1, commitSig.htlcSignatures.size)
+        assertTrue { (alice2 as HasCommitments).commitments.remoteNextCommitInfo.isLeft }
+    }
+
+    @Test
+    fun `recv CMD_SIGN (two identical htlcs in each direction)`() {
+        val (alice0, bob0) = reachNormal()
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
+        val add = CMD_ADD_HTLC(10_000_000.msat,
+            randomBytes32(),
+            CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight),
+            TestConstants.emptyOnionPacket,
+            UUID.randomUUID())
+
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(add))
+        val htlc1 = actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
+        val (bob1, _) = bob0.process(MessageReceived(htlc1))
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(add))
+        val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
+        val (bob2, _) = bob1.process(MessageReceived(htlc2))
+
+        val (alice3, bob3) = crossSign(alice2, bob2)
+
+        val (bob4, actionsBob4) = bob3.process(ExecuteCommand(add))
+        val htlc3 = actionsBob4.findOutgoingMessage<UpdateAddHtlc>()
+        val (alice4, _) = alice3.process(MessageReceived(htlc3))
+        val (bob5, actionsBob5) = bob4.process(ExecuteCommand(add))
+        val htlc4 = actionsBob5.findOutgoingMessage<UpdateAddHtlc>()
+        alice4.process(MessageReceived(htlc4))
+
+        val (_, actionsBob6) = bob5.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsBob6.findOutgoingMessage<CommitSig>()
+        assertEquals(4, commitSig.htlcSignatures.size)
+    }
+
+    @Ignore
+    fun `recv CMD_SIGN (check htlc info are persisted)`() {
+        val (alice0, bob0) = reachNormal()
+        // for the test to be really useful we have constraint on parameters
+        assertTrue { alice0.staticParams.nodeParams.dustLimit > bob0.staticParams.nodeParams.dustLimit }
+        // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
+        // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
+        val aliceMinReceive =
+            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcSuccessWeight)
+        val aliceMinOffer =
+            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcTimeoutWeight)
+        val bobMinReceive =
+            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcSuccessWeight)
+        val bobMinOffer =
+            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcTimeoutWeight)
+        val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
+        val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
+        val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx
+        val b2a_2 = bobMinOffer + 10.sat // will be only be in bob tx
+        assertTrue { a2b_1 > aliceMinOffer && a2b_1 > bobMinReceive }
+        assertTrue { a2b_2 > aliceMinOffer && a2b_2 > bobMinReceive }
+        assertTrue { b2a_1 > aliceMinReceive && b2a_1 > bobMinOffer }
+        assertTrue { b2a_2 < aliceMinReceive && b2a_2 > bobMinOffer }
+
+        val (alice1, bob1) = addHtlc(a2b_1.toMilliSatoshi(), alice0, bob0).first
+        val (alice2, bob2) = addHtlc(a2b_2.toMilliSatoshi(), alice1, bob1).first
+        val (alice3, bob3) = addHtlc(b2a_1.toMilliSatoshi(), bob2, alice2).first
+        val (alice4, bob4) = addHtlc(b2a_2.toMilliSatoshi(), bob3, alice3).first
+
+        val (alice5, bob5) = crossSign(alice4, bob4)
+        // depending on who starts signing first, there will be one or two commitments because both sides have changes
+        alice5 as HasCommitments; bob5 as HasCommitments
+        assertEquals(1, alice5.commitments.localCommit.index)
+        assertEquals(2, bob5.commitments.localCommit.index)
+
+        /* TODO test DB channels ?
+                assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+                assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
+                assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
+                assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
+                assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
+         */
+    }
+
+    @Test
+    fun `recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)`() {
+        val (alice0, bob0) = reachNormal()
+        val add = CMD_ADD_HTLC(10_000_000.msat,
+            randomBytes32(),
+            CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()),
+            TestConstants.emptyOnionPacket,
+            UUID.randomUUID())
+        val epsilons = listOf(3, 1, 5, 7, 6) // unordered on purpose
+        val htlcCount = epsilons.size
+
+        val (alice1, bob1) = kotlin.run {
+            var (alice1, bob1) = alice0 to bob0
+            for (i in epsilons) {
+                val (stateA, actionsA) = alice1.process(ExecuteCommand(add.copy(amount = add.amount + (i * 1000).msat)))
+                alice1 = stateA as Normal
+                val updateAddHtlc = actionsA.findOutgoingMessage<UpdateAddHtlc>()
+                val (stateB, _) = bob1.process(MessageReceived(updateAddHtlc))
+                bob1 = stateB as Normal
+            }
+            alice1 to bob1
+        }
+
+        val (_, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
+        assertEquals(htlcCount, commitSig.htlcSignatures.size)
+        val (bob2, _) = bob1.process(MessageReceived(commitSig))
+        bob2 as HasCommitments
+        val htlcTxs = bob2.commitments.localCommit.publishableTxs.htlcTxsAndSigs
+        assertEquals(htlcCount, htlcTxs.size)
+        val amounts = htlcTxs.map { it.txinfo.tx.txOut.first().amount.sat }
+        assertEquals(amounts, amounts.sorted())
+    }
+
+    @Test
+    fun `recv CMD_SIGN (no changes)`() {
+        val (alice0, _) = reachNormal()
+        val (_, actions) = alice0.process(ExecuteCommand(CMD_SIGN))
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun `recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50000000.msat, alice0, bob0).first
+        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        actionsAlice2.hasMessage<CommitSig>()
+
+        (alice2 as HasCommitments)
+        assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
+        val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left
+        assertEquals(false, waitForRevocation?.reSignAsap)
+
+        val (alice3, _) = alice2.process(ExecuteCommand(CMD_SIGN))
+        assertEquals(Either.Left(waitForRevocation), (alice3 as HasCommitments).commitments.remoteNextCommitInfo)
+    }
+
+    @Test
+    fun `recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        actionsAlice2.hasMessage<CommitSig>()
+
+        (alice2 as HasCommitments)
+        assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
+        val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left
+        assertNotNull(waitForRevocation)
+        assertFalse(waitForRevocation.reSignAsap)
+
+        val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob1).first
+        val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
+        (alice4 as HasCommitments)
+        assertEquals(Either.Left(waitForRevocation.copy(reSignAsap = true)), alice4.commitments.remoteNextCommitInfo)
+    }
+
+    @Ignore
+    fun `recv CMD_SIGN (going above reserve)`() {
+        val (alice0, bob0) = reachNormal()
+        // TODO channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
+//                assertEquals(false, Announcements.isEnabled(bob0.channelUpdate.channelFlags))
+    }
+
+    @Ignore
+    fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
         val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
-        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat,
+            alice.staticParams.nodeParams.nodeId,
+            currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val (alice1, _) = alice.process(MessageReceived(add))
@@ -35,10 +369,201 @@ class NormalTestsCommon {
         assertEquals(blob.toByteVector(), commitSig.channelData)
     }
 
-    @Test fun `recv RevokeAndAck (channel backup, zero-reserve channel, fundee)`() {
+    @Test
+    fun `recv CommitSig (one htlc received)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes0, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, initialState) = nodes0
+
+        val (_, bob2) = signAndRevack(alice1, initialState)
+        val (bob3, _) = bob2.process(ExecuteCommand(CMD_SIGN))
+
+        bob3 as HasCommitments; initialState as HasCommitments
+        assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc.id })
+        assertEquals(1, bob3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        assertEquals(initialState.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
+        assertEquals(0, bob3.commitments.remoteChanges.acked.size)
+        assertEquals(1, bob3.commitments.remoteChanges.signed.size)
+    }
+
+    @Test
+    fun `recv CommitSig (one htlc sent)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes0, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, initialState) = nodes0
+
+        val (alice2, bob2) = signAndRevack(alice1, initialState)
+        val (bob3, actionsBob3) = bob2.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsBob3.findOutgoingMessage<CommitSig>()
+        val (alice3, _) = alice2.process(MessageReceived(commitSig))
+
+        alice3 as HasCommitments; bob3 as HasCommitments; initialState as HasCommitments
+        assertTrue(alice3.commitments.localCommit.spec.htlcs.outgoings().any { it.id == htlc.id })
+        assertEquals(1, alice3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        assertEquals(1, alice3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        assertEquals(initialState.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
+    }
+
+    @Test
+    fun `recv CommitSig (multiple htlcs in both directions)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes1, r1, htlc1) = addHtlc(50_000_000.msat, alice0, bob0) // a->b (regular)
+        val (alice1, bob1) = nodes1
+        val (nodes2, r2, htlc2) = addHtlc(8_000_000.msat, alice1, bob1) //  a->b (regular)
+        val (alice2, bob2) = nodes2
+        val (nodes3, r3, htlc3) = addHtlc(300_000.msat, bob2, alice2) //   b->a (dust)
+        val (bob3, alice3) = nodes3
+        val (nodes4, r4, htlc4) = addHtlc(1_000_000.msat, alice3, bob3) //  a->b (regular)
+        val (alice4, bob4) = nodes4
+        val (nodes5, r5, htlc5) = addHtlc(50_000_000.msat, bob4, alice4) // b->a (regular)
+        val (bob5, alice5) = nodes5
+        val (nodes6, r6, htlc6) = addHtlc(500_000.msat, alice5, bob5) //   a->b (dust)
+        val (alice6, bob6) = nodes6
+        val (nodes7, r7, htlc7) = addHtlc(4_000_000.msat, bob6, alice6) //  b->a (regular)
+        val (bob7, alice7) = nodes7
+
+        val (alice8, bob8) = signAndRevack(alice7, bob7)
+        val (_, actionsBob9) = bob8.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsBob9.findOutgoingMessage<CommitSig>()
+        val (alice9, _) = alice8.process(MessageReceived(commitSig))
+
+        alice9 as HasCommitments
+        assertEquals(1, alice9.commitments.localCommit.index)
+        assertEquals(3, alice9.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
+    }
+
+    @Ignore
+    fun `recv CommitSig (only fee update)`() {
+        TODO("not implemented yet!")
+    }
+
+    @Test
+    fun `recv CommitSig (two htlcs received with same r)`() {
+        val (alice0, bob0) = reachNormal()
+
+        val r = randomBytes32()
+        val h = Crypto.sha256(r).toByteVector32()
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
+
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(
+            CMD_ADD_HTLC(50_000_000.msat,
+                h,
+                CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight),
+                TestConstants.emptyOnionPacket,
+                UUID.randomUUID())
+        ))
+        val htlc1 = actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
+        val (bob1, _) = bob0.process(MessageReceived(htlc1))
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(
+            CMD_ADD_HTLC(50_000_000.msat,
+                h,
+                CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight),
+                TestConstants.emptyOnionPacket,
+                UUID.randomUUID())
+        ))
+        val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
+        val (bob2, _) = bob1.process(MessageReceived(htlc2))
+
+        assertEquals(listOf(htlc1, htlc2), (bob2 as HasCommitments).commitments.remoteChanges.proposed)
+        val initialState = bob2
+
+        val (_, bob3) = crossSign(alice2, bob2)
+
+        bob3 as HasCommitments
+        assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc1.id })
+        assertEquals(2, bob3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        assertEquals(initialState.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
+        assertEquals(2, bob3.commitments.localCommit.publishableTxs.commitTx.tx.txOut.count { it.amount == 50_000.sat })
+    }
+
+    @Test
+    fun `recv CommitSig (no changes)`() {
+        val (alice0, bob0) = reachNormal()
+        val tx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
+
+        // signature is invalid but it doesn't matter
+        val sig = CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, emptyList())
+        val (bob1, actionsBob1) = bob0.process(MessageReceived(sig))
+        /** TODO handle invalid sig!!
+        sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil))
+        val error = bob2alice.expectMsgType[Error]
+        assert(new String(error.data.toArray).startsWith("cannot sign when there are no changes"))
+        awaitCond(bob.stateName == CLOSING)
+        // channel should be advertised as down
+        assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+        bob2blockchain.expectMsg(PublishAsap(tx))
+        bob2blockchain.expectMsgType[PublishAsap]
+        bob2blockchain.expectMsgType[WatchConfirmed]
+         */
+    }
+
+    @Test
+    fun `recv CommitSig (invalid signature)`() {
+        val (alice0, bob0) = reachNormal()
+        val tx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
+
+        // signature is invalid but it doesn't matter
+        val sig = CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, emptyList())
+        val (bob1, actionsBob1) = bob0.process(MessageReceived(sig))
+        val error = actionsBob1.findError<InvalidCommitmentSignature>()
+        error.message.let {
+            assertNotNull(it)
+            assertTrue(it.toLowerCase().startsWith("invalid commitment signature"))
+        }
+        /* TODO handle invalid sig!!
+            assertTrue(bob1 is Closing)
+            actionsBob1.hasMessage<PublishTx>()
+            actionsBob1.hasMessage<WatchConfirmed>()
+         */
+    }
+
+    @Test
+    fun `recv CommitSig (bad htlc sig count)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        val tx = (bob1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val badCommitSig = commitSig.copy(htlcSignatures = commitSig.htlcSignatures + commitSig.htlcSignatures)
+
+        val (bob2, actionsBob2) = bob1.process(MessageReceived(badCommitSig))
+        /*  TODO handle invalid sig!!
+                val error = bob2alice.expectMsgType[Error]
+                assert(new String(error.data.toArray) === HtlcSigCountMismatch(channelId(bob), expected = 1, actual = 2).getMessage)
+                bob2blockchain.expectMsg(PublishAsap(tx))
+                bob2blockchain.expectMsgType[PublishAsap]
+                bob2blockchain.expectMsgType[WatchConfirmed]
+         */
+    }
+
+    @Test
+    fun `recv CommitSig (invalid htlc sig)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        val tx = (bob1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val badCommitSig = commitSig.copy(htlcSignatures = listOf(commitSig.signature))
+        val (bob2, actionsBob2) = bob1.process(MessageReceived(badCommitSig))
+        /*  TODO handle invalid sig!!
+                val error = bob2alice.expectMsgType[Error]
+                assert(new String(error.data.toArray).startsWith("invalid htlc signature"))
+                bob2blockchain.expectMsg(PublishAsap(tx))
+                bob2blockchain.expectMsgType[PublishAsap]
+                bob2blockchain.expectMsgType[WatchConfirmed]
+         */
+    }
+
+    @Test
+    fun `recv RevokeAndAck (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
         val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
-        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat,
+            alice.staticParams.nodeParams.nodeId,
+            currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val (alice1, _) = alice.process(MessageReceived(add))
@@ -56,10 +581,234 @@ class NormalTestsCommon {
         assertEquals(blob.toByteVector(), revack1.channelData)
     }
 
-    @Test fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
+    @Test
+    fun `recv RevokeAndAck (one htlc sent)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val (_, actionsBob2) = bob1.process(MessageReceived(commitSig))
+        val revokeAndAck = actionsBob2.findOutgoingMessage<RevokeAndAck>()
+
+        assertTrue((alice2 as HasCommitments).commitments.remoteNextCommitInfo.isLeft)
+        val (alice3, _) = alice2.process(MessageReceived(revokeAndAck))
+        assertTrue((alice3 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertEquals(1, (alice3 as HasCommitments).commitments.localChanges.acked.size)
+    }
+
+    @Test
+    fun `recv RevokeAndAck (one htlc received)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = nodes
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
+
+        val (bob2, actionsBob2) = bob1.process(MessageReceived(commitSig0))
+        val revokeAndAck0 = actionsBob2.findOutgoingMessage<RevokeAndAck>()
+        val cmd = actionsBob2.findProcessCommand<CMD_SIGN>()
+        val (bob3, actionsBob3) = bob2.process(ExecuteCommand(cmd))
+        val (alice3, _) = alice2.process(MessageReceived(revokeAndAck0))
+        assertTrue((alice3 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        val commitSig1 = actionsBob3.findOutgoingMessage<CommitSig>()
+        val (_, actionsAlice4) = alice3.process(MessageReceived(commitSig1))
+        val revokeAndAck1 = actionsAlice4.findOutgoingMessage<RevokeAndAck>()
+        val (bob4, _) = bob3.process(MessageReceived(revokeAndAck1))
+        assertTrue((bob4 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+    }
+
+    @Test
+    fun `recv RevokeAndAck (multiple htlcs in both directions)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes1, r1, htlc1) = addHtlc(50_000_000.msat, alice0, bob0) // a->b (regular)
+        val (alice1, bob1) = nodes1
+        val (nodes2, r2, htlc2) = addHtlc(8_000_000.msat, alice1, bob1) //  a->b (regular)
+        val (alice2, bob2) = nodes2
+        val (nodes3, r3, htlc3) = addHtlc(300_000.msat, bob2, alice2) //   b->a (dust)
+        val (bob3, alice3) = nodes3
+        val (nodes4, r4, htlc4) = addHtlc(1_000_000.msat, alice3, bob3) //  a->b (regular)
+        val (alice4, bob4) = nodes4
+        val (nodes5, r5, htlc5) = addHtlc(50_000_000.msat, bob4, alice4) // b->a (regular)
+        val (bob5, alice5) = nodes5
+        val (nodes6, r6, htlc6) = addHtlc(500_000.msat, alice5, bob5) //   a->b (dust)
+        val (alice6, bob6) = nodes6
+        val (nodes7, r7, htlc7) = addHtlc(4_000_000.msat, bob6, alice6) //  b->a (regular)
+        val (bob7, alice7) = nodes7
+
+        val (alice8, actionsAlice8) = alice7.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = actionsAlice8.findOutgoingMessage<CommitSig>()
+        val (bob8, actionsBob8) = bob7.process(MessageReceived(commitSig0))
+        val revokeAndAck0 = actionsBob8.findOutgoingMessage<RevokeAndAck>()
+        val cmd = actionsBob8.findProcessCommand<CMD_SIGN>()
+        val (bob9, actionsBob9) = bob8.process(ExecuteCommand(cmd))
+        val (alice9, _) = alice8.process(MessageReceived(revokeAndAck0))
+        assertTrue((alice9 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+
+        val commitSig1 = actionsBob9.findOutgoingMessage<CommitSig>()
+        val (_, actionsAlice10) = alice9.process(MessageReceived(commitSig1))
+        val revokeAndAck1 = actionsAlice10.findOutgoingMessage<RevokeAndAck>()
+        val (bob10, _) = bob9.process(MessageReceived(revokeAndAck1))
+        bob10 as HasCommitments
+
+        assertTrue(bob10.commitments.remoteNextCommitInfo.isRight)
+        assertEquals(1, bob10.commitments.remoteCommit.index)
+        assertEquals(7, bob10.commitments.remoteCommit.spec.htlcs.size)
+    }
+
+    @Test
+    fun `recv RevokeAndAck (with reSignAsap=true)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val (bob2, actionsBob2) = bob1.process(MessageReceived(commitSig0))
+
+        val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob2).first
+        val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
+        assertTrue((alice4 as HasCommitments).commitments.remoteNextCommitInfo.left?.reSignAsap == true)
+
+        val revokeAndAck0 = actionsBob2.findOutgoingMessage<RevokeAndAck>()
+        val (alice5, actionsAlice5) = alice4.process(MessageReceived(revokeAndAck0))
+        val cmd = actionsAlice5.findProcessCommand<CMD_SIGN>()
+        val (_, actionsAlice6) = alice5.process(ExecuteCommand(cmd))
+        actionsAlice6.hasMessage<CommitSig>()
+    }
+
+    @Test
+    fun `recv RevokeAndAck (invalid preimage)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        val tx = (alice1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val (bob2, actionsBob2) = bob1.process(MessageReceived(commitSig0))
+        actionsBob2.hasMessage<RevokeAndAck>()
+        val (alice3, actionsAlice3) = alice2.process(MessageReceived(RevokeAndAck(ByteVector32.Zeroes,
+            PrivateKey(randomBytes32()),
+            PrivateKey(randomBytes32()).publicKey())))
+        val error = actionsAlice3.findError<InvalidRevocation>()
+        error.message.let { assertNotNull(it); assertTrue(it.toLowerCase().startsWith("invalid revocation")) }
+        /** TODO handle invalid revokeAndAck!
+        assertTrue(alice3 is Closing)
+        // channel should be advertised as down
+        assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+        alice2blockchain.expectMsg(PublishAsap(tx))
+        alice2blockchain.expectMsgType[PublishAsap]
+        alice2blockchain.expectMsgType[WatchConfirmed]
+         */
+    }
+
+    @Test
+    fun `recv RevokeAndAck (unexpectedly)`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
+        val tx = (alice1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+
+        val (alice2, actionsAlice2) = alice1.process(MessageReceived(RevokeAndAck(ByteVector32.Zeroes,
+            PrivateKey(randomBytes32()),
+            PrivateKey(randomBytes32()).publicKey())))
+        val error = actionsAlice2.findError<UnexpectedRevocation>()
+        error.message.let {
+            assertNotNull(it); assertTrue(it.toLowerCase().startsWith("received unexpected revokeandack message"))
+        }
+        /** TODO handle invalid revokeAndAck!
+        assertTrue(alice2 is Closing)
+        // channel should be advertised as down
+        assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+        alice2blockchain.expectMsg(PublishAsap(tx))
+        alice2blockchain.expectMsgType[PublishAsap]
+        alice2blockchain.expectMsgType[WatchConfirmed]
+         */
+    }
+
+    @Ignore
+    fun `recv RevokeAndAck (forward UpdateFailHtlc)`() {
+        TODO("?")
+    }
+
+    @Ignore
+    fun `recv RevokeAndAck (forward UpdateFailMalformedHtlc)`() {
+        TODO("?")
+    }
+
+    @Ignore
+    fun `recv RevokeAndAck (one htlc sent, static_remotekey)`() {
+        TODO("?")
+    }
+
+    @Ignore
+    fun `recv RevocationTimeout`() {
+        TODO("?")
+    }
+
+    @Test
+    fun `recv CMD_FULFILL_HTLC`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+        val initialState = bob1 as Normal
+
+        val (bob2, actionsBob2) = bob1.process(ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, r)))
+        val fulfillHtlc = actionsBob2.findOutgoingMessage<UpdateFulfillHtlc>()
+        assertEquals(initialState.copy(commitments = initialState.commitments.copy(
+            localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed + fulfillHtlc)
+        )), bob2)
+    }
+
+    @Test
+    fun `recv CMD_FULFILL_HTLC (unknown htlc id)`() {
+        val (alice0, bob0) = reachNormal()
+
+        val r = randomBytes32()
+        val initialState = bob0
+        val cmd = CMD_FULFILL_HTLC(42, r)
+
+        assertFailsWith<NullPointerException> {
+            // TODO expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
+            bob0.process(ExecuteCommand(cmd))
+        }
+    }
+
+    @Test
+    fun `recv CMD_FULFILL_HTLC (invalid preimage)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+        val initialState = bob1 as Normal
+
+        val cmd = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes)
+        val (bob2, actionsBob2) = bob1.process(ExecuteCommand(cmd))
+        actionsBob2.hasError<InvalidHtlcPreimage>()
+
+        assertEquals(initialState, bob2)
+    }
+
+    @Test
+    fun `recv CMD_FULFILL_HTLC (acknowledge in case of failure)`() {
+        val (_, bob0) = reachNormal()
+
+        val r = randomBytes32()
+        val initialState = bob0
+        val cmd = CMD_FULFILL_HTLC(42, r)
+
+        assertFailsWith<NullPointerException> {
+            // TODO expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
+            bob0.process(ExecuteCommand(cmd))
+        }
+        // TODO ? awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
 
-        val (nodes0, _,_) = TestsHelper.addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+        val (nodes0, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
         val (alice1, bob1) = nodes0
         val (nodes1, preimage_alice2bob_2, _) = TestsHelper.addHtlc(100_000_000.msat, payer = alice1, payee = bob1)
         val (alice2, bob2) = nodes1
@@ -85,11 +834,13 @@ class NormalTestsCommon {
         //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
-        alice8 as HasCommitments ; bob8 as HasCommitments
+        alice8 as HasCommitments; bob8 as HasCommitments
         val bobCommitTx = bob8.commitments.localCommit.publishableTxs.commitTx.tx
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs and 4 pending htlcs
 
-        val (aliceClosing, actions) = alice8.process(WatchReceived(WatchEventSpent(alice8.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        val (aliceClosing, actions) = alice8.process(WatchReceived(WatchEventSpent(alice8.channelId,
+            BITCOIN_FUNDING_SPENT,
+            bobCommitTx)))
 
         assertTrue(aliceClosing is Closing)
         assertTrue(actions.isNotEmpty())
@@ -127,7 +878,8 @@ class NormalTestsCommon {
         }
     }
 
-    @Test fun `recv BITCOIN_FUNDING_SPENT (their *next* commit with htlc)`() {
+    @Test
+    fun `recv BITCOIN_FUNDING_SPENT (their *next* commit with htlc)`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
 
         val (nodes0, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
@@ -163,12 +915,14 @@ class NormalTestsCommon {
         //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
-        alice9 as HasCommitments ; bob9 as HasCommitments
+        alice9 as HasCommitments; bob9 as HasCommitments
         // bob publishes his current commit tx
         val bobCommitTx = bob9.commitments.localCommit.publishableTxs.commitTx.tx
         assertEquals(5, bobCommitTx.txOut.size) // 2 main outputs and 3 pending htlcs
 
-        val (aliceClosing, actions) = alice9.process(WatchReceived(WatchEventSpent(alice9.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        val (aliceClosing, actions) = alice9.process(WatchReceived(WatchEventSpent(alice9.channelId,
+            BITCOIN_FUNDING_SPENT,
+            bobCommitTx)))
 
         assertTrue(aliceClosing is Closing)
         assertTrue(actions.isNotEmpty())
@@ -207,7 +961,8 @@ class NormalTestsCommon {
         }
     }
 
-    @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
+    @Test
+    fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
         var (alice, bob) = TestsHelper.reachNormal()
         // initially we have :
         // alice = 800 000
@@ -237,12 +992,14 @@ class NormalTestsCommon {
         // 2 main outputs + 4 htlc
         assertEquals(6, revokedTx.txOut.size)
 
-        val (aliceClosing, actions) = alice.process(WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+        val (aliceClosing, actions) = alice.process(WatchReceived(WatchEventSpent(alice.channelId,
+            BITCOIN_FUNDING_SPENT,
+            revokedTx)))
 
         assertTrue(aliceClosing is Closing)
         assertEquals(1, aliceClosing.revokedCommitPublished.size)
         assertTrue(actions.isNotEmpty())
-        assertTrue(actions.hasMessage<Error>())
+        actions.hasMessage<Error>()
 
         val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
         val mainTx = claimTxes[0]
@@ -277,7 +1034,8 @@ class NormalTestsCommon {
         //        assertEquals(4540.sat, htlcPenaltyTxs[3].txOut[0].amount)
     }
 
-    @Test fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {
+    @Test
+    fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         // initially we have :
         // alice = 800 000
@@ -306,11 +1064,13 @@ class NormalTestsCommon {
         //  a->b =  10 000
         assertEquals(4, revokedTx.txOut.size)
 
-        val (aliceClosing, actions) = alice5.process(WatchReceived(WatchEventSpent((alice5 as HasCommitments).channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+        val (aliceClosing, actions) = alice5.process(WatchReceived(WatchEventSpent((alice5 as HasCommitments).channelId,
+            BITCOIN_FUNDING_SPENT,
+            revokedTx)))
 
         assertTrue(aliceClosing is Closing)
         assertTrue(actions.isNotEmpty())
-        assertTrue(actions.hasMessage<Error>())
+        actions.hasMessage<Error>()
 
         val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
         val mainTx = claimTxes[0]

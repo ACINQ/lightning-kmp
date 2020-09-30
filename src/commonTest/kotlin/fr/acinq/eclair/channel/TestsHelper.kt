@@ -20,14 +20,20 @@ import kotlin.test.fail
 // LN Message
 inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T =
     filterIsInstance<SendMessage>().map { it.message }.firstOrNull { it is T } as T? ?: fail("cannot find LightningMessage ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasMessage() = assertTrue { any { it is SendMessage && it.message is T } }
 internal inline fun <reified T> List<ChannelAction>.messages() = filterIsInstance<SendMessage>().filter { it.message is T }.map { it.message }
 internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance<SendWatch>().filter { it.watch is T }.map { it.watch }
 
 // Commands
 inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
     filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
-internal inline fun <reified T> List<ChannelAction>.hasMessage() = any { it is SendMessage && it.message is T }
-internal inline fun <reified T> List<ChannelAction>.hasCommand() = any { it is ProcessCommand && it.command is T }
+
+internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { any { it is ProcessCommand && it.command is T } }
+
+// Errors
+inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
+    filterIsInstance<HandleError>().map { it.error }.firstOrNull { it is T } as T? ?: fail("cannot find HandleError ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is HandleError && it.error is T } }
 
 object TestsHelper {
     fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
@@ -194,5 +200,14 @@ object TestsHelper {
 
             return sender2 to receiver2
         }
+    }
+
+    fun signAndRevack(alice: ChannelState, bob: ChannelState): Pair<ChannelState, ChannelState> {
+        val (alice1, actions1) = alice.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actions1.findOutgoingMessage<CommitSig>()
+        val (bob1, actions2) = bob.process(MessageReceived(commitSig))
+        val revack = actions2.findOutgoingMessage<RevokeAndAck>()
+        val (alice2, _) = alice1.process(MessageReceived(revack))
+        return Pair(alice2, bob1)
     }
 }

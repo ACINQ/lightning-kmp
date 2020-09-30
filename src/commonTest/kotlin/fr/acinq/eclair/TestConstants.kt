@@ -90,7 +90,7 @@ object TestConstants {
         val keyManager = LocalKeyManager(Alice.seed, Block.RegtestGenesisBlock.hash)
         val nodeParams = NodeParams(
             keyManager = keyManager,
-            alias = "alice",
+            alias = "bob",
             features = Features(
                 setOf(
                     ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
@@ -100,7 +100,7 @@ object TestConstants {
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
                 )
             ),
-            dustLimit = 1100.sat,
+            dustLimit = 1000.sat,
             onChainFeeConf = OnChainFeeConf(
                 feeTargets = FeeTargets(6, 2, 2, 6),
                 feeEstimator = ConstantFeeEstimator(10000),
