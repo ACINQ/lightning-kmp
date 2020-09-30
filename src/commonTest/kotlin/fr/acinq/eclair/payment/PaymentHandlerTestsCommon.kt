@@ -85,7 +85,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun makeLegacyPayload(
         amount: MilliSatoshi,
-        paymentSecret: ByteVector32,
+        paymentSecret: ByteVector32?,
         cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
         currentBlockHeight: Int = TestConstants.defaultBlockHeight
     ): FinalPayload {
@@ -1165,7 +1165,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `mpp payment secret mismatch`() {
+    fun `invalid payment secret`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
@@ -1176,18 +1176,29 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
-        // Bob rejects incoming HTLC because the paymentSecret doesn't match
-        run {
+        val payloads = listOf(
+            makeLegacyPayload(
+                amount = totalAmount,
+                paymentSecret = null
+            ),
+            makeLegacyPayload(
+                amount = totalAmount,
+                paymentSecret = Eclair.randomBytes32() // <== Wrong !
+            ),
+            makeMppPayload(
+                amount = amount1,
+                totalAmount = totalAmount,
+                paymentSecret = Eclair.randomBytes32() // <== Wrong !
+            )
+        )
+
+        payloads.forEach { payload ->
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                finalPayload = makeMppPayload(
-                    amount = amount1,
-                    totalAmount = totalAmount,
-                    paymentSecret = Eclair.randomBytes32() // <== Wrong !
-                )
+                finalPayload = payload
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
