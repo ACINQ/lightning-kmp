@@ -45,16 +45,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
      * The result is ready to be processed thru the sender's channel.
      */
     private fun makeCmdAddHtlc(
-        amount: MilliSatoshi,
-        totalAmount: MilliSatoshi,
         destination: PublicKey,
-        currentBlockHeight: Long,
         paymentHash: ByteVector32,
-        paymentSecret: ByteVector32
+        finalPayload: FinalPayload
     ): CMD_ADD_HTLC {
-
-        val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-        val finalPayload = FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
 
         return OutgoingPacket.buildCommand(
             id = UUID.randomUUID(),
@@ -67,21 +61,14 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     private fun makeUpdateAddHtlc(
         channelId: ByteVector32,
         id: Long,
-        amount: MilliSatoshi,
-        totalAmount: MilliSatoshi,
-        destination: PublicKey,
-        currentBlockHeight: Long,
+        destination: PaymentHandler,
         paymentHash: ByteVector32,
-        paymentSecret: ByteVector32,
-        cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144)
+        finalPayload: FinalPayload
     ): UpdateAddHtlc {
-
-        val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
-        val finalPayload = FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
 
         val (_, _, packetAndSecrets) = OutgoingPacket.buildPacket(
             paymentHash = paymentHash,
-            hops = channelHops(destination),
+            hops = channelHops(destination.nodeParams.nodeId),
             finalPayload = finalPayload,
             payloadLength = OnionRoutingPacket.PaymentPacketLength
         )
@@ -89,11 +76,34 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         return UpdateAddHtlc(
             channelId = channelId,
             id = id,
-            amountMsat = amount,
+            amountMsat = finalPayload.amount,
             paymentHash = paymentHash,
-            cltvExpiry = expiry,
+            cltvExpiry = finalPayload.expiry,
             onionRoutingPacket = packetAndSecrets.packet
         )
+    }
+
+    private fun makeLegacyPayload(
+        amount: MilliSatoshi,
+        paymentSecret: ByteVector32,
+        cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
+        currentBlockHeight: Int = TestConstants.defaultBlockHeight
+    ): FinalPayload {
+
+        val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+        return FinalPayload.createSinglePartPayload(amount, expiry, paymentSecret)
+    }
+
+    private fun makeMppPayload(
+        amount: MilliSatoshi,
+        totalAmount: MilliSatoshi,
+        paymentSecret: ByteVector32,
+        cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
+        currentBlockHeight: Int = TestConstants.defaultBlockHeight
+    ): FinalPayload {
+
+        val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+        return FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
     }
 
     /**
@@ -133,13 +143,16 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val amount = MilliSatoshi(100.sat)
         val totalAmount = amount * 2
 
-        val cmdAddHtlc = makeCmdAddHtlc(
+        val mppPayload = makeMppPayload(
             amount = amount,
             totalAmount = totalAmount,
-            destination = bob.staticParams.nodeParams.nodeId,
-            currentBlockHeight = alice.currentBlockHeight.toLong(),
-            paymentHash = paymentHash,
+            currentBlockHeight = alice.currentBlockHeight,
             paymentSecret = paymentSecret
+        )
+        val cmdAddHtlc = makeCmdAddHtlc(
+            destination = bob.staticParams.nodeParams.nodeId,
+            paymentHash = paymentHash,
+            finalPayload = mppPayload
         )
 
         var processResult: Pair<ChannelState, List<ChannelAction>>
@@ -339,34 +352,30 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should accept mpp payment with single HTLC`() {
+    fun `receive normal single HTLC payment (with legacy onion)`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
-
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val totalAmount = MilliSatoshi(100.sat)
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
-        // Should accept full payment
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = totalAmount,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeLegacyPayload(
+                    amount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
@@ -382,11 +391,49 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should accept payment after all MPPs received`() {
+    fun `receive mpp payment with single HTLC`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = totalAmount,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive mpp payment with multiple HTLC's via same channel`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -396,27 +443,25 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Step 1 of 2:
-        //
-        // Alice sends first multipart htlc to Bob.
-        // Ensure that:
+        // - Alice sends first multipart htlc to Bob
         // - Bob doesn't accept the MPP set yet
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
@@ -424,27 +469,25 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         // Step 2 of 2:
-        //
-        // Alice sends second multipart htlc to Bob.
-        // Ensure that:
+        // - Alice sends second multipart htlc to Bob
         // - Bob now accepts the MPP set
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 1,
-                amount = amount2,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount2,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
@@ -464,42 +507,38 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should reject MPP set if total_amount's don't match`() {
+    fun `receive mpp payment with multiple HTLC's via different channels`() {
 
-        val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
-
+        val channelId1: ByteVector32 = Eclair.randomBytes32()
+        val channelId2: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
-        val amount3 = MilliSatoshi(100.sat)
-        val totalAmount = amount1 + amount2 + amount3
+        val totalAmount = amount1 + amount2
 
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         // Step 1 of 2:
-        //
-        // Alice sends first multipart htlc to Bob.
-        // Ensure that:
+        // - Alice sends first multipart htlc to Bob
         // - Bob doesn't accept the MPP set yet
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
-                channelId = channelId,
+                channelId = channelId1,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
@@ -507,62 +546,37 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         // Step 2 of 2:
-        //
-        // Alice sends second multipart htlc to Bob.
-        // Ensure that:
-        // - Bob detects some shenanigans
-        // - Bob rejects the entire MPP set (as per spec)
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
-                channelId = channelId,
+                channelId = channelId2,
                 id = 1,
-                amount = amount2,
-                totalAmount = totalAmount + MilliSatoshi(1), // goofy mismatch. (not less than totalAmount)
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount2,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
-            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
             assertEquals(
                 setOf(
                     WrappedChannelEvent(
-                        channelId,
-                        ExecuteCommand(
-                            CMD_FAIL_HTLC(
-                                0,
-                                CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        currentBlockHeight.toLong()
-                                    )
-                                ),
-                                commit = true
-                            )
-                        )
+                        channelId1,
+                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
-                        channelId,
-                        ExecuteCommand(
-                            CMD_FAIL_HTLC(
-                                1,
-                                CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount + 1.msat,
-                                        currentBlockHeight.toLong()
-                                    )
-                                ),
-                                commit = true
-                            )
-                        )
+                        channelId2,
+                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -570,11 +584,208 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should reject payment after invoice expiration`() {
+    fun `receive normal single HTLC (with legacy onion), with amountless invoice`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
+        val amount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = null)
+
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount,
+                    totalAmount = amount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive mpp payment, with amountless invoice`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = null)
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 1,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount2,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay !!
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive mpp payment, with amount greater than totalAmount`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val amount3 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2 + amount3 // requested <= received <= requested*2
+        val requestedAmount = MilliSatoshi(250.sat)
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = requestedAmount)
+
+        // Step 1 of 2:
+        // - Alice sends first 2 multipart htlc's to Bob.
+        // - Bob doesn't accept the MPP set yet
+        listOf(amount1, amount2).forEachIndexed { idx, amount ->
+            
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = idx.toLong(),
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends third multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 2,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount3,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay !!
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(2, incomingPayment.paymentPreimage, commit = true))
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `invoice expired`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -590,22 +801,22 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         // Bob rejects incoming HTLC because the corresponding invoice is expired
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
@@ -618,7 +829,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                                 0, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
-                                        currentBlockHeight.toLong()
+                                        TestConstants.defaultBlockHeight.toLong()
                                     )
                                 ), commit = true
                             )
@@ -630,37 +841,28 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should reject payment if paymentSecret is invalid`() {
+    fun `invoice unknown`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
-
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
-        val amount1 = MilliSatoshi(100.sat)
-        val amount2 = MilliSatoshi(100.sat)
-        val totalAmount = amount1 + amount2
-
-        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
-
-        // Bob rejects incoming HTLC because the paymentSecret doesn't match
         run {
-
+            val amount = MilliSatoshi(100.sat)
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
-                paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = Eclair.randomBytes32() // <== Wrong !
+                destination = paymentHandler,
+                paymentHash = Eclair.randomBytes32(),
+                finalPayload = makeLegacyPayload(
+                    amount = amount,
+                    paymentSecret = Eclair.randomBytes32()
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                incomingPayment = null,
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
@@ -672,8 +874,8 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                             CMD_FAIL_HTLC(
                                 0, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        currentBlockHeight.toLong()
+                                        amount,
+                                        TestConstants.defaultBlockHeight.toLong()
                                     )
                                 ), commit = true
                             )
@@ -685,11 +887,56 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should reject payment if CLTV is too low`() {
+    fun `invalid onion`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
+        val amount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = amount)
+
+        run {
+            val cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            val badOnion = OnionRoutingPacket(
+                version = 0,
+                publicKey = Eclair.randomBytes(33).toByteVector(),
+                payload = Eclair.randomBytes(OnionRoutingPacket.PaymentPacketLength).toByteVector(),
+                hmac = Eclair.randomBytes32()
+            )
+            val updateAddHtlc = UpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                amountMsat = amount,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                cltvExpiry = cltvExpiry,
+                onionRoutingPacket = badOnion
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = null,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
+            // Error is probably InvalidOnionKey.
+            // But if random gives us a valid pubKey (theoretically possible),
+            // it could return something else, such as InvalidOnionHmac.
+            assertTrue { par.actions.size == 1 }
+            val action = par.actions[0] as? WrappedChannelEvent
+            assertNotNull(action)
+            assertTrue { action!!.channelId == channelId }
+            val executeCommand = action!!.channelEvent as? ExecuteCommand
+            assertNotNull(executeCommand)
+            assertTrue { executeCommand.command is CMD_FAIL_HTLC }
+        }
+
+    }
+
+    @Test
+    fun `invalid cltv expiry`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -700,23 +947,23 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         // Bob rejects incoming HTLC because the CLTV is too low
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!,
-                cltvExpiryDelta = CltvExpiryDelta(2) // <== Too low
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!,
+                    cltvExpiryDelta = CltvExpiryDelta(2) // <== Too low
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
@@ -729,7 +976,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                                 0, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
-                                        currentBlockHeight.toLong()
+                                        TestConstants.defaultBlockHeight.toLong()
                                     )
                                 ), commit = true
                             )
@@ -741,11 +988,186 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should fail unfinished payments after expiration`() {
+    fun `amount too low or too high`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
+        val lowAmount = MilliSatoshi(100.sat)
+        val requestedAmount = MilliSatoshi(150.sat)
+        val highAmount = MilliSatoshi(400.sat)
+
+        val incomingPayment = makeIncomingPayment(
+            payee = paymentHandler,
+            amount = requestedAmount
+        )
+
+        val payloads = listOf(
+            makeLegacyPayload(
+                amount = lowAmount, // too low
+                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+            ),
+            makeMppPayload(
+                amount = lowAmount,
+                totalAmount = lowAmount, // too low
+                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+            ),
+            makeLegacyPayload(
+                amount = highAmount, // too high
+                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+            ),
+            makeMppPayload(
+                amount = highAmount,
+                totalAmount = highAmount, // too high
+                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+            )
+        )
+
+        payloads.forEach { payload ->
+
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = payload
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = null,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        payload.totalAmount,
+                                        TestConstants.defaultBlockHeight.toLong()
+                                    )
+                                ), commit = true
+                            )
+                        )
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `mpp total_amount mismatch`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val amount3 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2 + amount3
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        // Step 1 of 2:
+        //
+        // Alice sends first multipart htlc to Bob.
+        // Ensure that:
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 2:
+        //
+        // Alice sends second multipart htlc to Bob.
+        // Ensure that:
+        // - Bob detects some shenanigans
+        // - Bob rejects the entire MPP set (as per spec)
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 1,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount2,
+                    totalAmount = totalAmount + MilliSatoshi(1), // goofy mismatch. (not less than totalAmount)
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED } // should fail due to non-matching total_amounts
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                0,
+                                CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount,
+                                        TestConstants.defaultBlockHeight.toLong()
+                                    )
+                                ),
+                                commit = true
+                            )
+                        )
+                    ),
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                1,
+                                CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount + 1.msat,
+                                        TestConstants.defaultBlockHeight.toLong()
+                                    )
+                                ),
+                                commit = true
+                            )
+                        )
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `mpp payment secret mismatch`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -754,25 +1176,77 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
-        // Step 1 of 3:
-        // Alice sends single (unfinished) multipart htlc to Bob.
+        // Bob rejects incoming HTLC because the paymentSecret doesn't match
         run {
-
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = Eclair.randomBytes32() // <== Wrong !
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount,
+                                        TestConstants.defaultBlockHeight.toLong()
+                                    )
+                                ), commit = true
+                            )
+                        )
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `mpp timeout`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 * 2
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        // Step 1 of 3:
+        // - Alice sends single (unfinished) multipart htlc to Bob.
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
@@ -780,9 +1254,8 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         // Step 2 of 3:
-        // Ensure PaymentHandler doesn't expire the multipart htlc too soon.
+        // - don't expire the multipart htlc too soon.
         run {
-
             val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
             val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry - 1
 
@@ -792,9 +1265,8 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         // Step 3 of 3:
-        // Ensure PaymentHandler expires the htlc-set after configured expiration.
+        // - expire the htlc-set after configured expiration.
         run {
-
             val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
             val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry + 1
 
@@ -812,109 +1284,105 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `PaymentHandler should accept single-part payment, with amountless invoice`() {
+    fun `mpp timeout then success`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
-
-        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
-
-        val amount = MilliSatoshi(100.sat)
-
-        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = null)
-
-        run {
-            val updateAddHtlc = makeUpdateAddHtlc(
-                channelId = channelId,
-                id = 0,
-                amount = amount,
-                totalAmount = amount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
-                paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
-            )
-
-            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
-                htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
-            )
-
-            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
-            assertEquals(
-                setOf(
-                    WrappedChannelEvent(
-                        channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
-                    )
-                ), par.actions.toSet()
-            )
-        }
-    }
-
-    @Test
-    fun `PaymentHandler should accept multi-part payment, with amountless invoice`() {
-
-        val channelId: ByteVector32 = Eclair.randomBytes32()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
-
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val amount2 = MilliSatoshi(100.sat)
         val totalAmount = amount1 + amount2
 
-        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = null)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
-        // Step 1 of 2:
-        //
-        // Alice sends first multipart htlc to Bob.
-        // Ensure that:
-        // - Bob doesn't accept the MPP set yet
+        // Step 1 of 4:
+        // - Alice sends single (unfinished) multipart htlc to Bob.
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
                 id = 0,
-                amount = amount1,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
             assertTrue { par.actions.count() == 0 }
         }
 
-        // Step 2 of 2:
-        //
-        // Alice sends second multipart htlc to Bob.
-        // Ensure that:
-        // - Bob now accepts the MPP set
+        // Step 2 of 4:
+        // - the MPP set times out
+        run {
+            val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
+            val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry + 2
+
+            val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
+
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+                    ),
+                ), actions.toSet()
+            )
+        }
+
+        // Step 3 of 4:
+        // - Alice tries again, and sends another single (unfinished) multipart htlc to Bob.
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 1,
-                amount = amount2,
-                totalAmount = totalAmount,
-                destination = paymentHandler.nodeParams.nodeId,
-                currentBlockHeight = currentBlockHeight.toLong(),
+                id = 0,
+                destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
                 incomingPayment = incomingPayment,
-                currentBlockHeight = currentBlockHeight
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 3 of 4:
+        // - Alice sends second and last part of mpp
+        // - Bob accepts htlc set
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 1,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount2,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay !!
@@ -927,6 +1395,127 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                     WrappedChannelEvent(
                         channelId,
                         ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `mpp success then additional HTLC`() {
+
+        val channelId: ByteVector32 = Eclair.randomBytes32()
+        val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2
+        val spuriousAmount = MilliSatoshi(50.sat)
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        // Step 1 of 2:
+        // - Alice receives first mpp (unfinished at this point)
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 0,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 3:
+        // - Alice receives another mpp, which concludes the set
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 1,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount2,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = incomingPayment,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay !!
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+
+        // Step 3 of 3:
+        // - Alice receives additional htlc for the invoice, which she already completed
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId,
+                id = 2,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = spuriousAmount,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            // NB: When the PaymentHandler returns a result of ProcessedStatus.ACCEPTED,
+            // the Peer is expected to remove the invoice from the database,
+            // or otherwise mark the invoice as Paid.
+            // Whatever the case, it must not re-use that invoice for processing again.
+
+            val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+                htlc = updateAddHtlc,
+                incomingPayment = null, // <= See note above
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                2, CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount,
+                                        TestConstants.defaultBlockHeight.toLong()
+                                    )
+                                ), commit = true
+                            )
+                        )
                     ),
                 ), par.actions.toSet()
             )
