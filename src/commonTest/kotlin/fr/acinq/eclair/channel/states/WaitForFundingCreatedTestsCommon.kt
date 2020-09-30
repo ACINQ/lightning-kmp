@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
@@ -8,11 +8,15 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.channel.TestsHelper.findOutgoingWatch
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
-import fr.acinq.eclair.wire.*
+import fr.acinq.eclair.wire.AcceptChannel
+import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.wire.FundingCreated
+import fr.acinq.eclair.wire.FundingSigned
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

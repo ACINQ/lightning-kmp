@@ -1,15 +1,13 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.updated
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_DEPTHOK
-import fr.acinq.eclair.blockchain.BITCOIN_TX_CONFIRMED
-import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.sat

@@ -1,13 +1,13 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,7 +26,7 @@ class OfflineTestsCommon : EclairTestSuite() {
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(Connected(localInit, remoteInit))
-        assertTrue { alice2 is Syncing}
+        assertTrue { alice2 is Syncing }
         val channelReestablishA = (actions[0] as SendMessage).message as ChannelReestablish
         val (bob2, actions1) = bob1.process(Connected(remoteInit, localInit))
         assertTrue { bob2 is Syncing}
