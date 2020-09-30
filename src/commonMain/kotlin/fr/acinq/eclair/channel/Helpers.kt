@@ -23,9 +23,14 @@ import fr.acinq.eclair.wire.AcceptChannel
 import fr.acinq.eclair.wire.OpenChannel
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
 import kotlin.math.abs
 
 object Helpers {
+
+    val logger = LoggerFactory.default.newLogger(Logger.Tag(Helpers::class))
+
     /**
      * Returns the number of confirmations needed to safely handle the funding transaction,
      * we make sure the cumulative block reward largely exceeds the channel size.
@@ -521,7 +526,7 @@ object Helpers {
             // this tx has been published by remote, so we need to invert local/remote params
             val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
             require(txnumber <= 0xffffffffffffL) { "txnumber must be lesser than 48 bits long" }
-            // TODO logger.warning { "a revoked commit has been published with txnumber=$txnumber" }
+            logger.warning { "a revoked commit has been published with txnumber=$txnumber" }
 
             // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
             val hash = commitments.remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber) ?: return null
@@ -546,7 +551,10 @@ object Helpers {
 
             // first we will claim our main output right away
             val mainTx = when {
-                channelVersion.hasStaticRemotekey -> null // TODO logger.info { "channel uses option_static_remotekey, not claiming our p2wpkh output" }
+                channelVersion.hasStaticRemotekey -> {
+                    logger.info { "channel uses option_static_remotekey, not claiming our p2wpkh output" }
+                    null
+                }
                 else -> generateTx {
                     Transactions.makeClaimP2WPKHOutputTx(
                         tx,
@@ -648,7 +656,7 @@ object Helpers {
 
             if (htlcTx.txIn.map { it.outPoint.txid }.contains(revokedCommitPublished.commitTx.txid) &&
                 !claimTxes.map { it.txid }.toSet().contains(htlcTx.txid)) {
-                // TODO log.info(s"looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}")
+                logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val localParams = commitments.localParams
                 val channelVersion = commitments.channelVersion
@@ -718,9 +726,9 @@ object Helpers {
          */
         fun extractPreimages(localCommit: LocalCommit, tx: Transaction): Set<Pair<UpdateAddHtlc, ByteVector32>> {
             val htlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromHtlcSuccess())
-            // TODO            htlcSuccess.foreach(r => logger.info(s"extracted paymentPreimage=$r from tx=$tx (htlc-success)"))
+                .also { it.forEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (htlc-success)" } } }
             val claimHtlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess())
-            // TODO            claimHtlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (claim-htlc-success)"))
+                .also { it.forEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (claim-htlc-success)" } } }
             val paymentPreimages = (htlcSuccess + claimHtlcSuccess).toSet()
 
             return paymentPreimages.flatMap { paymentPreimage ->
@@ -756,7 +764,7 @@ object Helpers {
                 .sortedWith(compareBy({ t -> t.txOut.map { it.amount.sat }.sum() }, { it.txid.toHex() }))
 
             if (matchingTxs.size != matchingHtlcs.size) {
-                // TODO log.error(s"some htlcs don't have a corresponding timeout transaction: tx=$tx, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs")
+                logger.error { "some htlcs don't have a corresponding timeout transaction: tx=$tx, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs" }
             }
 
             return matchingHtlcs.zip(matchingTxs).firstOrNull { (_, timeoutTx) -> timeoutTx.txid == tx.txid }?.first
@@ -780,7 +788,7 @@ object Helpers {
                     .map { it.witness }
                     .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
                     .mapNotNull { paymentHash160 ->
-                        // TODO log.info(s"extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (htlc-timeout)")
+                        logger.info { ("extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (htlc-timeout)") }
                         findTimedOutHtlc(tx,
                             paymentHash160,
                             untrimmedHtlcs,
@@ -809,7 +817,7 @@ object Helpers {
                     .map { it.witness }
                     .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
                     .mapNotNull { paymentHash160 ->
-                        // TODO log.info(s"extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (claim-htlc-timeout)")
+                        logger.info { "extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (claim-htlc-timeout)" }
                         findTimedOutHtlc(tx,
                             paymentHash160,
                             untrimmedHtlcs,
@@ -1091,16 +1099,26 @@ object Helpers {
         /**
          * Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment.
          */
-        fun <T : Transactions.TransactionWithInputInfo> generateTx(attempt: () -> Transactions.TxResult<T>): T? =
+        fun <T : Transactions.TransactionWithInputInfo> generateTx(desc: String = "", attempt: () -> Transactions.TxResult<T>): T? =
             when (val result = runTrying { attempt() }) {
                 is Try.Success -> when (val txResult = result.get()) {
-//            log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount).sum} tx=${txinfo.tx}")
-                    is Transactions.TxResult.Success -> txResult.result
-//            log.info(s"tx generation skipped: desc=$desc reason: ${skipped.toString}")
-                    is Transactions.TxResult.Skipped -> null // TODO logging ?
+                    is Transactions.TxResult.Success -> {
+                        logger.info {
+                            "tx generation success: desc=$desc txid=${txResult.result.tx.txid} amount=${
+                                txResult.result.tx.txOut.map { it.amount }.sum()
+                            } tx=${txResult.result.tx}"
+                        }
+                        txResult.result
+                    }
+                    is Transactions.TxResult.Skipped -> {
+                        logger.info { "tx generation skipped: desc=$desc reason: ${txResult.why}" }
+                        null
+                    }
                 }
-//            log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
-                is Try.Failure -> null // TODO logging ?
+                is Try.Failure -> {
+                    logger.warning { "tx generation failure: desc=$desc reason: ${result.error.message}" }
+                    null
+                }
             }
     }
 
