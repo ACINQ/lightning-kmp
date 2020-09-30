@@ -7,7 +7,6 @@ import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
@@ -87,6 +86,16 @@ data class Commitments(
     )
 
     fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo.isRight
+
+    /**
+     * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
+     */
+    fun nothingAtStake(): Boolean = localCommit.index == 0L &&
+            localCommit.spec.toLocal == 0.msat &&
+            remoteCommit.index == 0L &&
+            remoteCommit.spec.toRemote == 0.msat &&
+            remoteNextCommitInfo.isRight
+
 
     fun timedOutOutgoingHtlcs(blockheight: Long): Set<UpdateAddHtlc> {
         fun expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong()
@@ -421,11 +430,10 @@ data class Commitments(
         return Try.Success(Pair(commitments1, fee))
     }
 
-    fun receiveFee(feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Try<Commitments> {
+    fun receiveFee(localCommitmentFeeratePerKw: Long, fee: UpdateFee, maxFeerateMismatch: Double): Try<Commitments> {
         if (localParams.isFunder) return Try.Failure(FundeeCannotSendUpdateFee(channelId))
         if (fee.feeratePerKw < Eclair.MinimumFeeratePerKw) return Try.Failure(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
-        val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
-        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) return Try.Failure(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
+        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localCommitmentFeeratePerKw, maxFeerateMismatch)) return Try.Failure(FeerateTooDifferent(channelId, localFeeratePerKw = localCommitmentFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
         // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
         // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
         // and it would be tricky to check if the conditions are met at signing

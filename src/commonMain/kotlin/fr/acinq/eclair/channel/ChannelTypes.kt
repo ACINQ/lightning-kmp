@@ -46,6 +46,53 @@ object CMD_FORCECLOSE : Command()
 object CMD_GETSTATE : Command()
 object CMD_GETSTATEDATA : Command()
 
+
+/*
+      8888888b.        d8888 88888888888     d8888
+      888  "Y88b      d88888     888        d88888
+      888    888     d88P888     888       d88P888
+      888    888    d88P 888     888      d88P 888
+      888    888   d88P  888     888     d88P  888
+      888    888  d88P   888     888    d88P   888
+      888  .d88P d8888888888     888   d8888888888
+      8888888P" d88P     888     888  d88P     888
+ */
+@Serializable
+data class LocalCommitPublished(
+    @Serializable(with = TransactionKSerializer::class)
+    val commitTx: Transaction,
+    @Serializable(with = TransactionKSerializer::class)
+    val claimMainDelayedOutputTx: Transaction? = null,
+    val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+)
+
+@Serializable
+data class RemoteCommitPublished(
+    @Serializable(with = TransactionKSerializer::class)
+    val commitTx: Transaction,
+    @Serializable(with = TransactionKSerializer::class)
+    val claimMainOutputTx: Transaction? = null,
+    val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+)
+
+@Serializable
+data class RevokedCommitPublished(
+    @Serializable(with = TransactionKSerializer::class)
+    val commitTx: Transaction,
+    @Serializable(with = TransactionKSerializer::class)
+    val claimMainOutputTx: Transaction? = null,
+    @Serializable(with = TransactionKSerializer::class)
+    val mainPenaltyTx: Transaction? = null,
+    val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+)
+
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class LocalParams constructor(

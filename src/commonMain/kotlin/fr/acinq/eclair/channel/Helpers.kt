@@ -5,25 +5,18 @@ import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.eclair.Eclair.MinimumFeeratePerKw
 import fr.acinq.eclair.Feature
-import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.blockchain.fee.FeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
-import fr.acinq.eclair.utils.Either
-import fr.acinq.eclair.utils.Try
-import fr.acinq.eclair.utils.runTrying
-import fr.acinq.eclair.utils.toMilliSatoshi
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.AcceptChannel
 import fr.acinq.eclair.wire.ClosingSigned
 import fr.acinq.eclair.wire.OpenChannel
-import fr.acinq.secp256k1.Hex
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -49,7 +42,7 @@ object Helpers {
     /**
      * Called by the fundee
      */
-    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion): ChannelVersion {
+    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion, localFeeratePerKw: Long): ChannelVersion {
         // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
         // MUST reject the channel.
         if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
@@ -90,7 +83,6 @@ object Helpers {
             throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
         }
 
-        val localFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
         if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
         // only enforce dust limit check on mainnet
         if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -138,6 +130,31 @@ object Helpers {
         val reserveToFundingRatio = accept.channelReserveSatoshis.toLong().toDouble() / kotlin.math.max(open.fundingSatoshis.toLong(), 1)
         if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
     }
+
+    /**
+     * @param referenceFeePerKw reference fee rate per kiloweight
+     * @param currentFeePerKw   current fee rate per kiloweight
+     * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
+     */
+    fun feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
+        abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
+
+    /**
+     * @param remoteFeeratePerKw remote fee rate per kiloweight
+     * @return true if the remote fee rate is too small
+     */
+    fun isFeeTooSmall(remoteFeeratePerKw: Long): Boolean = remoteFeeratePerKw < MinimumFeeratePerKw
+
+    /**
+     * @param referenceFeePerKw       reference fee rate per kiloweight
+     * @param currentFeePerKw         current fee rate per kiloweight
+     * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
+     * @return true if the difference between current and reference fee rates is too high.
+     *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
+     */
+    fun isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
+        feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
+
 
     /**
      * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
@@ -283,18 +300,12 @@ object Helpers {
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
 
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, feeratePerKw: Long): Satoshi {
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeeratePerKw: Long): Satoshi {
             // this is just to estimate the weight, it depends on size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
+            val feeratePerKw = min(requestedFeeratePerKw, commitments.localCommit.spec.feeratePerKw)
             return Transactions.weight2fee(feeratePerKw, closingWeight)
-        }
-
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Satoshi {
-            val requestedFeerate = feeEstimator.getFeeratePerKw(feeTargets.mutualCloseBlockTarget)
-            // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
-            val feeratePerKw = min(requestedFeerate, commitments.localCommit.spec.feeratePerKw)
-            return firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeratePerKw)
         }
 
         fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
@@ -304,10 +315,9 @@ object Helpers {
             commitments: Commitments,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
-            feeEstimator: FeeEstimator,
-            feeTargets: FeeTargets
+            requestedFeeratePerKw: Long
         ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
-            val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeEstimator, feeTargets)
+            val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, requestedFeeratePerKw)
             return makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
         }
 
@@ -328,31 +338,20 @@ object Helpers {
             //log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
             return Pair(closingTx, closingSigned)
         }
+
+        fun checkClosingSignature(keyManager: KeyManager, commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64): Try<Transaction> {
+            val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map { it.amount }.sum()
+            if (remoteClosingFee > lastCommitFeeSatoshi) {
+                return Try.Failure(InvalidCloseFee(commitments.channelId, remoteClosingFee))
+            }
+            val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
+            val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+            return when (Transactions.checkSpendable(signedClosingTx)) {
+                is Try.Success -> Try.Success(signedClosingTx.tx)
+                is Try.Failure -> Try.Failure(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+            }
+        }
     }
-
-    /**
-     * @param referenceFeePerKw reference fee rate per kiloweight
-     * @param currentFeePerKw   current fee rate per kiloweight
-     * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
-     */
-    fun feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
-        abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
-
-    /**
-     * @param remoteFeeratePerKw remote fee rate per kiloweight
-     * @return true if the remote fee rate is too small
-     */
-    fun isFeeTooSmall(remoteFeeratePerKw: Long): Boolean = remoteFeeratePerKw < MinimumFeeratePerKw
-
-    /**
-     * @param referenceFeePerKw       reference fee rate per kiloweight
-     * @param currentFeePerKw         current fee rate per kiloweight
-     * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
-     * @return true if the difference between current and reference fee rates is too high.
-     *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
-     */
-    fun isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
-        feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
 
     fun encrypt(key: ByteVector32, state: HasCommitments): ByteArray {
         val bin = HasCommitments.serialize(state)

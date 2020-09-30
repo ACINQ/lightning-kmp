@@ -5,7 +5,7 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.Watch
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.UUID
@@ -16,8 +16,8 @@ import kotlin.test.assertTrue
 
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
-        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
-        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
+        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header), currentOnchainFeerates = OnchainFeerates(1500, 1500, 1500, 1500))
+        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header), currentOnchainFeerates = OnchainFeerates(1500, 1500, 1500, 1500))
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams
         var bobChannelParams = TestConstants.Bob.channelParams
@@ -108,10 +108,13 @@ object TestsHelper {
         return Pair(alice2, bob1)
     }
 
-    inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
+    inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage(): T? {
         val candidates = this.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
-        if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
-        return candidates.first()
+        return candidates.firstOrNull()
+    }
+
+    inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
+        return hasOutgoingMessage() ?: throw IllegalArgumentException("cannot find ${T::class}")
     }
 
     inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {

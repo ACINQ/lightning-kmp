@@ -11,7 +11,7 @@ interface FeeEstimator {
 }
 
 @Serializable
-data class FeeTargets(val fundingBlockTarget: Int, val commitmentBlockTarget: Int, val mutualCloseBlockTarget: Int, val claimMainBlockTarget: Int)
+data class OnchainFeerates(val fundingFeeratePerKw: Long, val commitmentFeeratePerKw: Long, val mutualCloseFeeratePerKw: Long, val claimMainFeeratePerKw: Long)
 
 @Serializable
-data class OnChainFeeConf(val feeTargets: FeeTargets, val feeEstimator: FeeEstimator, val maxFeerateMismatch: Double, val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double)
+data class OnChainFeeConf(val maxFeerateMismatch: Double, val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double)

@@ -5,8 +5,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -45,6 +43,11 @@ object Node {
             )
         ),
         dustLimit = 100.sat,
+        onChainFeeConf = OnChainFeeConf(
+            maxFeerateMismatch = 1.5,
+            closeOnOfflineMismatch = true,
+            updateFeeMinDiffRatio = 0.1
+        ),
         maxHtlcValueInFlightMsat = 150000000L,
         maxAcceptedHtlcs = 100,
         expiryDeltaBlocks = CltvExpiryDelta(144),

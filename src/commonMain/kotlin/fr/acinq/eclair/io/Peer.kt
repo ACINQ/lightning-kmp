@@ -7,6 +7,7 @@ import fr.acinq.eclair.blockchain.electrum.AskForHeaderSubscriptionUpdate
 import fr.acinq.eclair.blockchain.electrum.AskForStatusUpdate
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
@@ -95,6 +96,7 @@ class Peer(
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
+    private var onchainFeerates = OnchainFeerates(750, 750, 750, 750)
 
     init {
         val electrumConnectedChannel = watcher.client.openConnectedSubscription()
@@ -114,7 +116,7 @@ class Peer(
         launch {
             channelsDb.listLocalChannels().forEach {
                 logger.info { "restoring $it" }
-                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                 val (state1, actions) = state.process(Restore(it as ChannelState))
                 send(actions)
                 channels = channels + (it.channelId to state1)
@@ -369,7 +371,8 @@ class Peer(
                         )
                         val state = WaitForInit(
                             StaticParams(nodeParams, remoteNodeId),
-                            Pair(0, Block.RegtestGenesisBlock.header)
+                            currentTip,
+                            onchainFeerates
                         )
                         val (state1, actions1) = state.process(
                             InitFundee(
@@ -391,7 +394,7 @@ class Peer(
                                 is Try.Success -> {
                                     logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
-                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                                     val (state1, actions1) = state.process(Restore(backup as ChannelState))
                                     send(actions1)
                                     store(actions1)
