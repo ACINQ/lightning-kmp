@@ -6,12 +6,13 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class FailureMessageTestsCommon {
+class FailureMessageTestsCommon : EclairTestSuite() {
     private val channelUpdate = ChannelUpdate(
         signature = Eclair.randomBytes64(),
         chainHash = Block.RegtestGenesisBlock.hash,

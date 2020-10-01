@@ -9,6 +9,7 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.assertArrayEquals
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
@@ -16,7 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertNull
 
-class OnionTestsCommon {
+class OnionTestsCommon : EclairTestSuite() {
     @Test
     fun `encode - decode onion packet`() {
         val bin = Hex.decode(

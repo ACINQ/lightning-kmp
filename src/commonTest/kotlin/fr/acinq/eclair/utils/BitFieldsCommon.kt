@@ -1,9 +1,10 @@
 package fr.acinq.eclair.utils
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class BitFieldsCommon {
+class BitFieldsCommon : EclairTestSuite() {
 
     @Test fun `Creation and simple get and set from left`() {
         val bs = BitField(1)

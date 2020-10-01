@@ -62,7 +62,7 @@ class Peer(
     private val input = Channel<PeerEvent>(10)
     private val output = Channel<ByteArray>(3)
 
-    private val logger = LoggerFactory.default.newLogger(Logger.Tag(Peer::class))
+    private val logger = newEclairLogger()
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
 
@@ -197,7 +197,7 @@ class Peer(
                 launch {
                     val sub = watcher.openNotificationsSubscription()
                     sub.consumeEach {
-                        println("notification: $it")
+                        logger.info { "notification: $it" }
                         input.send(WrappedChannelEvent(it.channelId, fr.acinq.eclair.channel.WatchReceived(it)))
                     }
                 }

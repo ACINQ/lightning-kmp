@@ -1,10 +1,11 @@
 package fr.acinq.eclair.crypto
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 
 @ExperimentalStdlibApi
-class ChaCha20Poly1305TestsCommon {
+class ChaCha20Poly1305TestsCommon : EclairTestSuite() {
     fun assertArrayEquals(a: ByteArray, b: ByteArray) = a.contentEquals(b)
 
     @Test

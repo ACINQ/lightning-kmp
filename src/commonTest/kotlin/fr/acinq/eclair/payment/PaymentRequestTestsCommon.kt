@@ -2,11 +2,12 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlin.test.*
 
-class PaymentRequestTestsCommon {
+class PaymentRequestTestsCommon : EclairTestSuite() {
     val priv = PrivateKey(Hex.decode("e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734"))
     val pub = priv.publicKey()
     val nodeId = pub

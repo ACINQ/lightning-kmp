@@ -5,6 +5,7 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
@@ -13,7 +14,7 @@ import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
 
-class PaymentHandlerTestsCommon {
+class PaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun channelHops(
         destination: PublicKey,

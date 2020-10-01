@@ -12,6 +12,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.makeDummySh
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.Connection
+import fr.acinq.eclair.utils.EclairLoggerFactory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
@@ -19,6 +20,7 @@ import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 import kotlin.math.max
 
@@ -499,7 +501,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     companion object {
         // TODO inject
-        val logger = LoggerFactory.default.newLogger(Logger.Tag(ElectrumWatcher::class))
+        val logger = EclairLoggerFactory.newLogger<ElectrumWatcher>()
 
         internal fun registerToScriptHash(watch: Watch): WatcherAction? = when (watch) {
             is WatchSpent -> {

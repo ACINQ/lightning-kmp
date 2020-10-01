@@ -1,5 +1,6 @@
 package fr.acinq.eclair.io
 
+import fr.acinq.eclair.utils.EclairLoggerFactory
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
@@ -68,7 +69,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                         null -> socket
                         TcpSocket.TLS.SAFE -> socket.tls(Dispatchers.IO)
                         TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
-                            LoggerFactory.default.newLogger(JvmTcpSocket::class).warning { "Using unsafe TLS!" }
+                            EclairLoggerFactory.newLogger<JvmTcpSocket>().warning { "Using unsafe TLS!" }
                             trustManager = object : X509TrustManager {
                                 override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
                                 override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}

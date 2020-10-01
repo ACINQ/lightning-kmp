@@ -3,6 +3,7 @@ package fr.acinq.eclair.io
 import fr.acinq.eclair.io.ios_network_framework.nw_k_connection_receive
 import fr.acinq.eclair.io.ios_network_framework.nw_k_parameters_create_secure_tcp
 import fr.acinq.eclair.io.ios_network_framework.nw_k_parameters_create_secure_tcp_custom
+import fr.acinq.eclair.utils.EclairLoggerFactory
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.kodein.log.LoggerFactory
@@ -72,7 +73,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                     null -> nw_k_parameters_create_secure_tcp(false)
                     TcpSocket.TLS.SAFE -> nw_k_parameters_create_secure_tcp(true)
                     TcpSocket.TLS.UNSAFE_CERTIFICATES -> nw_k_parameters_create_secure_tcp_custom {
-                        LoggerFactory.default.newLogger(IosTcpSocket::class).warning { "Using unsafe TLS!" }
+                        EclairLoggerFactory.newLogger<IosTcpSocket>().warning { "Using unsafe TLS!" }
                         val sec_options = nw_tls_copy_sec_protocol_options(it)
                         sec_protocol_options_set_verify_block(sec_options, { _, _, handler ->
                             handler!!(true)

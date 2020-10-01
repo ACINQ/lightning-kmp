@@ -2,10 +2,11 @@ package fr.acinq.eclair
 
 import fr.acinq.eclair.Features.Companion.areSupported
 import fr.acinq.eclair.Features.Companion.validateFeatureGraph
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.BitField
 import kotlin.test.*
 
-class FeaturesTests {
+class FeaturesTestsCommon : EclairTestSuite() {
 
     @Test
     fun `'initial_routing_sync' feature`() {

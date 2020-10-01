@@ -1,11 +1,12 @@
 package fr.acinq.eclair.utils
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class BitstreamTestsCommon {
+class BitstreamTestsCommon : EclairTestSuite() {
     @Test
     fun `add bits`() {
         val bits = BitStream()

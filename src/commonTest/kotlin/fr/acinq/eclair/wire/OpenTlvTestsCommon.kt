@@ -1,11 +1,12 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class OpenTlvTestsCommon {
+class OpenTlvTestsCommon : EclairTestSuite() {
     @Test
     fun `channel version TLV`() {
         val testCases = listOf(

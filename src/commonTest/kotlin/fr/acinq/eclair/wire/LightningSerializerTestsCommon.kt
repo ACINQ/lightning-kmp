@@ -11,6 +11,7 @@ import fr.acinq.eclair.Eclair.randomBytes64
 import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.assertArrayEquals
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector
@@ -24,7 +25,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
 @OptIn(ExperimentalUnsignedTypes::class)
-class LightningSerializerTestsCommon {
+class LightningSerializerTestsCommon : EclairTestSuite() {
 
     fun point(fill: Byte) = PrivateKey(ByteArray(32) { fill }).publicKey()
 
