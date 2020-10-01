@@ -333,7 +333,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         val invoiceFeatures = setOf(
             ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
             ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
         )
         val paymentRequest = PaymentRequest.create(
