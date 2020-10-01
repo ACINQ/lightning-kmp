@@ -501,6 +501,31 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                             }
                         }
                     }
+                    // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+                    // negotiation restarts from the beginning, and is initialized by the funder
+                    // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
+                    state is Negotiating && state.commitments.localParams.isFunder -> {
+                        // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
+                        val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                            keyManager,
+                            state.commitments,
+                            state.localShutdown.scriptPubKey.toByteArray(),
+                            state.remoteShutdown.scriptPubKey.toByteArray(),
+                            state.staticParams.nodeParams.onChainFeeConf.feeEstimator,
+                            state.staticParams.nodeParams.onChainFeeConf.feeTargets
+                        )
+                        val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned)))
+                        val nextState = state.copy(closingTxProposed = closingTxProposed1)
+                        val actions = listOf(StoreState(nextState), SendMessage(state.localShutdown), SendMessage(closingSigned))
+                        return Pair(nextState, actions)
+                    }
+                    state is Negotiating -> {
+                        // we start a new round of negotiation
+                        val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
+                        val nextState = state.copy(closingTxProposed = closingTxProposed1)
+                        val actions = listOf(StoreState(nextState), SendMessage(state.localShutdown))
+                        return Pair(nextState, actions)
+                    }
                     else -> unhandled(event)
                 }
             event is NewBlock -> {
@@ -1761,6 +1786,7 @@ data class Negotiating(
                 val actions = listOf(StoreState(nextState), PublishTx(event.watch.tx))
                 Pair(nextState, actions)
             }
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
