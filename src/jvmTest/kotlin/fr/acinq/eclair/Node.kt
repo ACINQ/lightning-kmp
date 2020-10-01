@@ -76,7 +76,7 @@ object Node {
         chainHash = Block.RegtestGenesisBlock.hash,
         channelFlags = 1,
         paymentRequestExpiry = 3600,
-        multiPartPaymentExpiry = 30,
+        multiPartPaymentExpiry = 60,
         minFundingSatoshis = 1000.sat,
         maxFundingSatoshis = 16777215.sat,
         maxPaymentAttempts = 5,

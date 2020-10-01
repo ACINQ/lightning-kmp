@@ -39,6 +39,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 
 data class SendPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
+object CheckPaymentsTimeout: PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -175,6 +176,13 @@ class Peer(
                 }
             }
 
+            suspend fun checkPaymentsTimeout() {
+                while (isActive) {
+                    delay(timeMillis = 30_000)
+                    input.send(CheckPaymentsTimeout)
+                }
+            }
+
             suspend fun listen() {
                 try {
                     while (isActive) {
@@ -203,6 +211,7 @@ class Peer(
                     }
                 }
                 launch { doPing() }
+                launch { checkPaymentsTimeout() }
                 launch { respond() }
 
                 listen()
@@ -486,7 +495,7 @@ class Peer(
             //
             event is ReceivePayment -> {
                 logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
-                val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional))
+                val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory))
                 if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
                     invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
                 }
@@ -558,6 +567,10 @@ class Peer(
                 send(actions)
                 store(actions)
                 sendToSelf(event.channelId, actions)
+            }
+            event is CheckPaymentsTimeout -> {
+                val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
+                actions.forEach { input.send(it) }
             }
         }
     }
