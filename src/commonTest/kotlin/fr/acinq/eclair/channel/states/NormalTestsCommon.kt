@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
@@ -21,6 +22,7 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
+@OptIn(ExperimentalUnsignedTypes::class)
 class NormalTestsCommon {
 
     private val currentBlockHeight = 144L
@@ -34,22 +36,36 @@ class NormalTestsCommon {
         )
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_ADD_HTLC (empty origin)`() {
-        TODO("a faire")
+        val (alice0, bob0) = reachNormal()
+        val h = randomBytes32()
+        val add = CMD_ADD_HTLC().copy(paymentHash = h)
+
+        val (alice1, actions) = alice0.process(ExecuteCommand(add))
+        assertTrue((alice1 as Normal).commitments.availableBalanceForSend() < alice0.commitments.availableBalanceForSend())
+
+        val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
+        assertEquals(0, htlc.id)
+        assertEquals(h, htlc.paymentHash)
+
+//        assertEquals(alice0.copy(commitments = alice0.commitments.copy(
+//            localNextHtlcId = 1,
+//            localChanges = alice0.commitments.localChanges.copy(proposed = listOf(htlc)),
+////            originChannels = mapOf(0L, add.origin)
+//        )), alice1)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (incrementing ids)`() {
         val (alice0, bob0) = reachNormal()
-        val currentBlockHeight = alice0.currentBlockHeight.toLong()
         val h = randomBytes32()
 
         var alice = alice0
-        for (i in 0..9) {
+        for (i in 0 until 10) {
             val add = CMD_ADD_HTLC().copy(paymentHash = h)
 
-            val (tempAlice, actions ) = alice.process(ExecuteCommand(add))
+            val (tempAlice, actions) = alice.process(ExecuteCommand(add))
             alice = tempAlice as Normal
 
             val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
@@ -61,7 +77,6 @@ class NormalTestsCommon {
     @Test
     fun `recv CMD_ADD_HTLC (expiry too small)`() {
         val (alice0, bob0) = reachNormal()
-        val currentBlockHeight = alice0.currentBlockHeight.toLong()
         // It's usually dangerous for Bob to accept HTLCs that are expiring soon. However it's not Alice's decision to reject
         // them when she's asked to relay; she should forward those HTLCs to Bob, and Bob will choose whether to fail them
         // or fulfill them (Bob could be #reckless and fulfill HTLCs with a very low expiry delta).
@@ -76,9 +91,8 @@ class NormalTestsCommon {
     @Test
     fun `recv CMD_ADD_HTLC (expiry too big)`() {
         val (alice0, bob0) = reachNormal()
-        val currentBlockHeight = alice0.currentBlockHeight.toLong()
-        val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
 
+        val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
         val add = CMD_ADD_HTLC().copy(cltvExpiry = expiryTooBig)
 
         val (alice1, actions1) = alice0.process(ExecuteCommand(add))
@@ -96,70 +110,168 @@ class NormalTestsCommon {
     @Test
     fun `recv CMD_ADD_HTLC (value too small)`() {
         val (alice0, bob0) = reachNormal()
-        val currentBlockHeight = alice0.currentBlockHeight.toLong()
 
-//        val add = CMD_ADD_HTLC(amount = 50.msat)
+        val add = CMD_ADD_HTLC().copy(amount = 50.msat)
+        val (alice1, actions) = alice0.process(ExecuteCommand(add))
+        val actualError = actions.findError<HtlcValueTooSmall>()
 
+        val expectedError = HtlcValueTooSmall(alice0.channelId, 1000.msat, 50.msat)
+        assertEquals(expectedError, actualError)
+        assertEquals(alice0, alice1)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (0 msat)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+        // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
+        assertEquals(0.msat, alice0.commitments.localParams.htlcMinimum)
+        val add = CMD_ADD_HTLC().copy(amount = 0.msat)
+        val (bob1, actions) = bob0.process(ExecuteCommand(add))
+        val actualError = actions.findError<HtlcValueTooSmall>()
+        val expectedError = HtlcValueTooSmall(bob0.channelId, 1.msat, 0.msat)
+        assertEquals(expectedError, actualError)
+        assertEquals(bob0, bob1)
     }
 
-    @Test
+    @Ignore
     fun `recv CMD_ADD_HTLC (increasing balance but still below reserve)`() {
-        TODO("not implemented yet!")
+        TODO("tag no_push_msat need to be applied here")
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+        val add = CMD_ADD_HTLC().copy(amount = Int.MAX_VALUE.msat)
+        val (alice1, actions) = alice0.process(ExecuteCommand(add))
+        val actualError = actions.findError<InsufficientFunds>()
+        val expectError = InsufficientFunds(alice0.channelId,
+            amount = Int.MAX_VALUE.msat,
+            missing = 1_379_883.sat,
+            reserve = 20_000.sat,
+            fees = 8960.sat)
+        assertEquals(expectError, actualError)
+        assertEquals(alice0, alice1)
     }
 
-    @Test
+    @Ignore
     fun `recv CMD_ADD_HTLC (insufficient funds) (anchor outputs)`() {
-        TODO("not implemented yet!")
+        TODO("tag anchor outputs -> ChannelVersion.ANCHOR_OUTPUTS not available")
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds, missing 1 msat)`() {
-        TODO("not implemented yet!")
+        val (_, bob0) = reachNormal()
+        val add = CMD_ADD_HTLC().copy(amount = bob0.commitments.availableBalanceForSend() + 1.sat.toMilliSatoshi())
+        val (bob1, actions) = bob0.process(ExecuteCommand(add))
+        val actualError = actions.findError<InsufficientFunds>()
+        val expectedError = InsufficientFunds(bob0.channelId, amount = add.amount, missing = 1.sat, reserve = 10000.sat, fees = 0.sat)
+        assertEquals(expectedError, actualError)
+        assertEquals(bob0, bob1)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(767_600_000.msat, alice0, bob0).first
+        val (alice2, bob2) = crossSign(alice1, bob1)
+        assertEquals(0.msat, (alice2 as HasCommitments).commitments.availableBalanceForSend())
+
+        // actual test begins
+        // at this point alice has the minimal amount to sustain a channel
+        // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first two HTLCs should be allowed
+        val (bob3, actionsBob3) = bob2.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 12_000_000.msat)))
+        actionsBob3.hasMessage<UpdateAddHtlc>()
+        val (bob4, actionsBob4) = bob3.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 12_500_000.msat)))
+        actionsBob4.hasMessage<UpdateAddHtlc>()
+        // but this one will dip alice below her reserve: we must wait for the two previous HTLCs to settle before sending any more
+        val (_, actionsBob5) = bob4.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 11_000_000.msat)))
+        actionsBob5.hasError<RemoteCannotAffordFeesForNewHtlc>()
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs and 0 balance)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 50_000_000.msat)))
+        actionsAlice1.hasMessage<UpdateAddHtlc>()
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 20_000_000.msat)))
+        actionsAlice2.hasMessage<UpdateAddHtlc>()
+        val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 64_160_000.msat)))
+        actionsAlice3.hasMessage<UpdateAddHtlc>()
+        val (_, actionsAlice4) = alice3.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 1_000_000.msat)))
+        val actualError = actionsAlice4.findError<InsufficientFunds>()
+        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1000.sat, reserve = 20_000.sat, fees = 12_400.sat)
+        assertEquals(expectedError, actualError)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs 2-2)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 300_000_000.msat)))
+        actionsAlice1.hasMessage<UpdateAddHtlc>()
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 300_000_000.msat)))
+        actionsAlice2.hasMessage<UpdateAddHtlc>()
+        val (_, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 500_000_000.msat)))
+        val actualError = actionsAlice3.findError<InsufficientFunds>()
+        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 335_840.sat, reserve = 20_000.sat, fees = 12_400.sat)
+        assertEquals(expectError, actualError)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (over max inflight htlc value)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+        val (bob1, actions) = bob0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 151_000_000.msat)))
+        val actualError = actions.findError<HtlcValueTooHighInFlight>()
+        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
+        assertEquals(expectedError, actualError)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (over max inflight htlc value with duplicate amounts)`() {
-        TODO("not implemented yet!")
+        val (_, bob0) = reachNormal()
+        val (bob1, actionsBob1) = bob0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 75_500_000.msat)))
+        actionsBob1.hasMessage<UpdateAddHtlc>()
+        val (_, actionsBob2) = bob1.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 75_500_000.msat)))
+        val actualError = actionsBob2.findError<HtlcValueTooHighInFlight>()
+        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
+        assertEquals(expectedError, actualError)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (over max accepted htlcs)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+
+        // Bob accepts a maximum of 30 htlcs
+        val alice1 = kotlin.run {
+            var alice = alice0
+            for (i in 0 until 100) { // TODO 30 ?
+                val (tempAlice, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 1_000_000.msat)))
+                println(actions)
+                actions.hasMessage<UpdateAddHtlc>()
+                alice = tempAlice as Normal
+            }
+            alice
+        }
+
+        val (_, actions) = alice1.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 1_000_000.msat)))
+        val actualError = actions.findError<TooManyAcceptedHtlcs>()
+        val expectedError = TooManyAcceptedHtlcs(alice0.channelId, maximum = 100)
+        assertEquals(expectedError, actualError)
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (over capacity)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)))
+        actionsAlice1.hasMessage<UpdateAddHtlc>()
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        actionsAlice2.hasMessage<CommitSig>()
+        // this is over channel-capacity
+        val failAdd = CMD_ADD_HTLC().copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
+        val (_, actionsAlice3) = alice2.process(ExecuteCommand(failAdd))
+        val actualError = actionsAlice3.findError<InsufficientFunds>()
+        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 567_453.sat, 20_000.sat, 10_680.sat)
+        assertEquals(expectedError, actualError)
     }
 
     @Test
@@ -977,7 +1089,7 @@ class NormalTestsCommon {
             return bob.commitments.localCommit.publishableTxs.commitTx.tx
         }
 
-        val txes = (0..9).map { send() }
+        val txes = (0 until 10).map { send() }
         // bob now has 10 spendable tx, 9 of them being revoked
 
         // let's say that bob published this tx
