@@ -3,6 +3,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -15,6 +16,8 @@ import kotlin.test.assertTrue
 
 
 class PaymentHandlerTestsCommon : EclairTestSuite() {
+
+    private var nextId: Long = 0
 
     private fun channelHops(
         destination: PublicKey,
@@ -60,7 +63,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun makeUpdateAddHtlc(
         channelId: ByteVector32,
-        id: Long,
         destination: PaymentHandler,
         paymentHash: ByteVector32,
         finalPayload: FinalPayload
@@ -75,7 +77,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         return UpdateAddHtlc(
             channelId = channelId,
-            id = id,
+            id = nextId++,
             amountMsat = finalPayload.amount,
             paymentHash = paymentHash,
             cltvExpiry = finalPayload.expiry,
@@ -85,13 +87,12 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun makeLegacyPayload(
         amount: MilliSatoshi,
-        paymentSecret: ByteVector32?,
         cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
         currentBlockHeight: Int = TestConstants.defaultBlockHeight
     ): FinalPayload {
 
         val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-        return FinalPayload.createSinglePartPayload(amount, expiry, paymentSecret)
+        return FinalPayload.createSinglePartPayload(amount, expiry)
     }
 
     private fun makeMppPayload(
@@ -352,7 +353,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive normal single HTLC payment (with legacy onion)`() {
+    fun `unsupported legacy onion (without paymentSecret)`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
@@ -363,12 +364,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeLegacyPayload(
-                    amount = totalAmount,
-                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                    amount = totalAmount
                 )
             )
 
@@ -378,13 +377,22 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
-            assertTrue { par.status == PaymentHandler.ProcessedStatus.ACCEPTED } // Yay!
+            assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
             assertEquals(
                 setOf(
                     WrappedChannelEvent(
-                        channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
-                    )
+                        updateAddHtlc.channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
+                                    IncorrectOrUnknownPaymentDetails(
+                                        totalAmount,
+                                        TestConstants.defaultBlockHeight.toLong()
+                                    )
+                                ), commit = true
+                            )
+                        )
+                    ),
                 ), par.actions.toSet()
             )
         }
@@ -402,7 +410,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -422,8 +429,14 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(
                 setOf(
                     WrappedChannelEvent(
-                        channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        updateAddHtlc.channelId,
+                        ExecuteCommand(
+                            CMD_FULFILL_HTLC(
+                                updateAddHtlc.id,
+                                incomingPayment.paymentPreimage,
+                                commit = true
+                            )
+                        )
                     )
                 ), par.actions.toSet()
             )
@@ -434,6 +447,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `receive mpp payment with multiple HTLC's via same channel`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -448,7 +462,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -474,7 +487,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 1,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -495,11 +507,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -511,6 +523,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         val channelId1: ByteVector32 = Eclair.randomBytes32()
         val channelId2: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -525,7 +538,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId1,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -551,7 +563,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId2,
-                id = 1,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -572,11 +583,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId1,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId2,
-                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -584,7 +595,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive normal single HTLC (with legacy onion), with amountless invoice`() {
+    fun `receive normal single HTLC, with amountless invoice`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
@@ -595,7 +606,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -616,7 +626,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(
+                            CMD_FULFILL_HTLC(
+                                updateAddHtlc.id,
+                                incomingPayment.paymentPreimage,
+                                commit = true
+                            )
+                        )
                     )
                 ), par.actions.toSet()
             )
@@ -627,6 +643,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `receive mpp payment, with amountless invoice`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -641,7 +658,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -667,7 +683,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 1,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -688,11 +703,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -703,6 +718,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `receive mpp payment, with amount greater than totalAmount`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -716,11 +732,10 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         // Step 1 of 2:
         // - Alice sends first 2 multipart htlc's to Bob.
         // - Bob doesn't accept the MPP set yet
-        listOf(amount1, amount2).forEachIndexed { idx, amount ->
-            
+        listOf(amount1, amount2).forEach { amount ->
+
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = idx.toLong(),
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -746,7 +761,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 2,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -767,15 +781,15 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(2, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 2, incomingPayment.paymentPreimage, commit = true))
                     )
                 ), par.actions.toSet()
             )
@@ -803,7 +817,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -826,7 +839,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
                                         TestConstants.defaultBlockHeight.toLong()
@@ -850,11 +863,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             val amount = MilliSatoshi(100.sat)
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = Eclair.randomBytes32(),
-                finalPayload = makeLegacyPayload(
+                finalPayload = makeMppPayload(
                     amount = amount,
+                    totalAmount = amount,
                     paymentSecret = Eclair.randomBytes32()
                 )
             )
@@ -872,7 +885,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         amount,
                                         TestConstants.defaultBlockHeight.toLong()
@@ -899,7 +912,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             val cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
             val badOnion = OnionRoutingPacket(
                 version = 0,
-                publicKey = Eclair.randomBytes(33).toByteVector(),
+                publicKey = ByteVector("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"),
                 payload = Eclair.randomBytes(OnionRoutingPacket.PaymentPacketLength).toByteVector(),
                 hmac = Eclair.randomBytes32()
             )
@@ -919,16 +932,26 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
             )
 
             assertTrue { par.status == PaymentHandler.ProcessedStatus.REJECTED }
-            // Error is probably InvalidOnionKey.
-            // But if random gives us a valid pubKey (theoretically possible),
-            // it could return something else, such as InvalidOnionHmac.
-            assertTrue { par.actions.size == 1 }
-            val action = par.actions[0] as? WrappedChannelEvent
-            assertNotNull(action)
-            assertTrue { action!!.channelId == channelId }
-            val executeCommand = action!!.channelEvent as? ExecuteCommand
-            assertNotNull(executeCommand)
-            assertTrue { executeCommand.command is CMD_FAIL_HTLC }
+            // The current flow of error checking within the codebase would be:
+            // 1. InvalidOnionKey
+            // 2. InvalidOnionHmac
+            // Since we used a valid pubKey, we should get an hmac failure.
+            val expectedErr = InvalidOnionHmac(Sphinx.hash(badOnion))
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId,
+                        ExecuteCommand(
+                            CMD_FAIL_MALFORMED_HTLC(
+                                updateAddHtlc.id,
+                                onionHash = expectedErr.onionHash,
+                                failureCode = expectedErr.code,
+                                commit = true
+                            )
+                        )
+                    ),
+                ), par.actions.toSet()
+            )
         }
 
     }
@@ -949,7 +972,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -973,7 +995,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
                                         TestConstants.defaultBlockHeight.toLong()
@@ -1003,17 +1025,9 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         )
 
         val payloads = listOf(
-            makeLegacyPayload(
-                amount = lowAmount, // too low
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
-            ),
             makeMppPayload(
                 amount = lowAmount,
                 totalAmount = lowAmount, // too low
-                paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
-            ),
-            makeLegacyPayload(
-                amount = highAmount, // too high
                 paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
             ),
             makeMppPayload(
@@ -1027,7 +1041,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = payload
@@ -1035,7 +1048,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
                 htlc = updateAddHtlc,
-                incomingPayment = null,
+                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1046,7 +1059,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         payload.totalAmount,
                                         TestConstants.defaultBlockHeight.toLong()
@@ -1064,6 +1077,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `mpp total_amount mismatch`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -1081,7 +1095,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1110,7 +1123,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 1,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1133,7 +1145,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                0,
+                                firstId,
                                 CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
@@ -1148,7 +1160,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                1,
+                                firstId + 1,
                                 CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount + 1.msat,
@@ -1176,29 +1188,16 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
 
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
-        val payloads = listOf(
-            makeLegacyPayload(
-                amount = totalAmount,
-                paymentSecret = null
-            ),
-            makeLegacyPayload(
-                amount = totalAmount,
-                paymentSecret = Eclair.randomBytes32() // <== Wrong !
-            ),
-            makeMppPayload(
-                amount = amount1,
-                totalAmount = totalAmount,
-                paymentSecret = Eclair.randomBytes32() // <== Wrong !
-            )
-        )
-
-        payloads.forEach { payload ->
+        run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                finalPayload = payload
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = Eclair.randomBytes32() // <== Wrong !
+                )
             )
 
             val par: PaymentHandler.ProcessAddResult = paymentHandler.processAdd(
@@ -1214,7 +1213,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                0, CMD_FAIL_HTLC.Reason.Failure(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
                                         TestConstants.defaultBlockHeight.toLong()
@@ -1232,19 +1231,20 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `mpp timeout`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
         val totalAmount = amount1 * 2
 
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+        val startTime = currentTimestampSeconds()
 
         // Step 1 of 3:
         // - Alice sends single (unfinished) multipart htlc to Bob.
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1268,7 +1268,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         // - don't expire the multipart htlc too soon.
         run {
             val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
-            val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry - 1
+            val currentTimestampSeconds = startTime + expiry - 2
 
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
 
@@ -1279,7 +1279,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         // - expire the htlc-set after configured expiration.
         run {
             val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
-            val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry + 1
+            val currentTimestampSeconds = startTime + expiry + 2
 
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
 
@@ -1287,7 +1287,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                firstId,
+                                CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout),
+                                commit = true
+                            )
+                        )
                     ),
                 ), actions.toSet()
             )
@@ -1298,6 +1304,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `mpp timeout then success`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -1305,13 +1312,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         val totalAmount = amount1 + amount2
 
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+        val startTime = currentTimestampSeconds()
 
         // Step 1 of 4:
         // - Alice sends single (unfinished) multipart htlc to Bob.
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1335,7 +1342,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         // - the MPP set times out
         run {
             val expiry = paymentHandler.nodeParams.multiPartPaymentExpiry
-            val currentTimestampSeconds = incomingPayment.paymentRequest.timestamp + expiry + 2
+            val currentTimestampSeconds = startTime + expiry + 2
 
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
 
@@ -1343,7 +1350,13 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+                        ExecuteCommand(
+                            CMD_FAIL_HTLC(
+                                firstId,
+                                CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout),
+                                commit = true
+                            )
+                        )
                     ),
                 ), actions.toSet()
             )
@@ -1354,7 +1367,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1380,7 +1392,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 1,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1401,11 +1412,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 2, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -1416,6 +1427,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     fun `mpp success then additional HTLC`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
         val paymentHandler = PaymentHandler(TestConstants.Bob.nodeParams)
 
         val amount1 = MilliSatoshi(100.sat)
@@ -1430,7 +1442,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 0,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1455,7 +1466,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 1,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1476,11 +1486,11 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(1, incomingPayment.paymentPreimage, commit = true))
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -1491,7 +1501,6 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val updateAddHtlc = makeUpdateAddHtlc(
                 channelId = channelId,
-                id = 2,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
                 finalPayload = makeMppPayload(
@@ -1519,7 +1528,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId,
                         ExecuteCommand(
                             CMD_FAIL_HTLC(
-                                2, CMD_FAIL_HTLC.Reason.Failure(
+                                updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
                                     IncorrectOrUnknownPaymentDetails(
                                         totalAmount,
                                         TestConstants.defaultBlockHeight.toLong()

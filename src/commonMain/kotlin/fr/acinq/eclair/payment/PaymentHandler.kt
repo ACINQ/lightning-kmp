@@ -3,9 +3,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.CMD_FAIL_HTLC
-import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
-import fr.acinq.eclair.channel.ExecuteCommand
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.Either
@@ -92,7 +90,6 @@ class PaymentHandler(
 
                 val failureMessage = decrypted.value
                 val action = actionForFailureMessage(failureMessage, htlc)
-
                 ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
             }
             is Either.Right -> {
@@ -140,7 +137,7 @@ class PaymentHandler(
         //
         //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
         //
-        // NB: We always include a paymentSecret.
+        // NB: We always include a paymentSecret, and mark the feature as mandatory.
 
         val paymentSecretExpected = incomingPayment.paymentRequest.paymentSecret
         val paymentSecretReceived = onion.paymentSecret
@@ -292,13 +289,26 @@ class PaymentHandler(
         htlc: UpdateAddHtlc,
         commit: Boolean = true
     ): WrappedChannelEvent {
-        val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
 
-        val cmd = CMD_FAIL_HTLC(
-            id = htlc.id,
-            reason = reason,
-            commit = commit
-        )
+        val cmd: Command = when (msg) {
+            is BadOnion -> {
+                CMD_FAIL_MALFORMED_HTLC(
+                    id = htlc.id,
+                    onionHash = msg.onionHash,
+                    failureCode = msg.code,
+                    commit = commit
+                )
+            }
+            else -> {
+                val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
+                CMD_FAIL_HTLC(
+                    id = htlc.id,
+                    reason = reason,
+                    commit = commit
+                )
+            }
+        }
+
         val channelEvent = ExecuteCommand(command = cmd)
         return WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
     }
