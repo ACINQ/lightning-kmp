@@ -1,8 +1,6 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
@@ -33,6 +31,12 @@ import kotlin.concurrent.thread
 object Node {
     val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
     val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val defaultClosingPrivateKey = run {
+        val master = DeterministicWallet.generate(seed)
+        DeterministicWallet.derivePrivateKey(master, "m/84'/1'/0'/0/0").privateKey
+    }
+    val defaultClosingPubkeyScript = Script.write(Script.pay2wpkh(defaultClosingPrivateKey.publicKey()))
+
     val nodeParams = NodeParams(
         keyManager = keyManager,
         alias = "alice",

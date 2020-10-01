@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.eclair.Eclair.secureRandom
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.transactions.Transactions
@@ -48,6 +49,18 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
     private fun shaSeed(channelKeyPath: KeyPath) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
 
     private fun shaSeed(channelKeyPath: List<Long>) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
+
+    override fun closingPubkeyScript(fundingPubKey: PublicKey): ByteArray {
+        val path = when(chainHash) {
+            Block.LivenetGenesisBlock.hash -> "m/84'/0'/0'/0/0"
+            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> "m/84'/1'/0'/0/0"
+            else -> throw IllegalArgumentException("invalid chain hash $chainHash")
+        }
+        val priv = DeterministicWallet.derivePrivateKey(master, path)
+        val pub = priv.publicKey
+        val script = Script.pay2wpkh(pub)
+        return Script.write(script)
+    }
 
     override fun newFundingKeyPath(isFunder: Boolean): KeyPath {
         val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
