@@ -409,13 +409,11 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         launch { eventChannel.consumeEach { send(it) } }
         launch {
             clientConnectedSubscription.consumeEach {
-                logger.verbose { "Electrum client connection changed: $it" }
                 eventChannel.send(ClientStateUpdate(it))
             }
         }
         launch {
             clientNotificationsSubscription.consumeEach {
-                logger.verbose { "Electrum message received: $it" }
                 eventChannel.send(ReceivedMessage(it))
             }
         }
@@ -438,14 +436,12 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     private suspend fun run() {
         input.consumeEach { input ->
-            logger.info { "Event received: $input" }
 
             val (newState, actions) = state.process(input)
             state = newState
 
             actions.forEach { action ->
                 yield()
-                logger.verbose { "Execute action: $action" }
                 when (action) {
                     is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
                     is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
@@ -481,7 +477,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
 
     fun watch(watch: Watch) {
         launch {
-            logger.verbose { "Watch received: $watch" }
             eventChannel.send(ReceiveWatch(watch))
         }
     }

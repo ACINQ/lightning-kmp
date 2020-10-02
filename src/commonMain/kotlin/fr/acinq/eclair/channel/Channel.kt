@@ -481,7 +481,7 @@ sealed class ChannelState {
     }
 
     @Transient
-    val logger = EclairLoggerFactory.newLogger<Channel<*>>()
+    val logger = EclairLoggerFactory.newLogger<fr.acinq.eclair.channel.Channel>()
 }
 
 interface HasCommitments {
