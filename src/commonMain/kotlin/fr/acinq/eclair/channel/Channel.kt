@@ -1678,6 +1678,7 @@ data class ShuttingDown(
                     else -> unhandled(event)
                 }
             }
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
@@ -1967,6 +1968,7 @@ data class Closing(
                 Pair(this, listOf())
             }
             event is ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
