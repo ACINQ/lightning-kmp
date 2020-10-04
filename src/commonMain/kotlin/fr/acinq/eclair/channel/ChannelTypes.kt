@@ -67,7 +67,66 @@ data class LocalCommitPublished(
     val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
-)
+) {
+    /**
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+     * local commit scenario and keep track of it.
+     *
+     * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+     * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+     * want to wait forever before declaring that the channel is CLOSED.
+     *
+     * @param tx a transaction that has been irrevocably confirmed
+     */
+    fun update(tx: Transaction): LocalCommitPublished {
+        // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+        // over all of them to check if they are relevant
+        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter {
+            // is this the commit tx itself ? (we could do this outside of the loop...)
+            val isCommitTx = commitTx.txid == tx.txid
+            // does the tx spend an output of the local commitment tx?
+            val spendsTheCommitTx = commitTx.txid == it.txid
+            // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
+            // is itself spending the output of the commitment tx)
+            val is3rdStageDelayedTx = claimHtlcDelayedTxs.map { it.txid }.contains(tx.txid)
+            isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+        }
+        // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
+        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
+    }
+
+    /**
+     * A local commit is considered done when:
+     * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
+     * - all 3rd stage txes (txes spending htlc txes) have been confirmed
+     */
+    fun isDone(): Boolean {
+        // is the commitment tx buried? (we need to check this because we may not have any outputs)
+        val isCommitTxConfirmed = irrevocablySpent.values.toSet().contains(commitTx.txid)
+
+        // are there remaining spendable outputs from the commitment tx? we just subtract all known spent outputs from the ones we control
+        val commitOutputsSpendableByUs = (listOfNotNull(claimMainDelayedOutputTx) + htlcSuccessTxs + htlcTimeoutTxs)
+            .flatMap { it.txIn.map { it.outPoint }.toSet() - irrevocablySpent.keys }
+
+        // which htlc delayed txes can we expect to be confirmed?
+        val unconfirmedHtlcDelayedTxes = claimHtlcDelayedTxs
+            .filter {
+                (it.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
+            } // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+            .filterNot {
+                irrevocablySpent.values.toSet().contains(it.txid)
+            } // has the tx already been confirmed?
+
+        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxes.isEmpty()
+    }
+
+    fun isConfirmed(): Boolean {
+        val confirmedTxs = irrevocablySpent.values.toSet()
+        return (listOf(commitTx) + listOfNotNull(claimMainDelayedOutputTx) + htlcSuccessTxs + htlcTimeoutTxs).any {
+            confirmedTxs.contains(it.txid)
+        }
+    }
+}
 
 @Serializable
 data class RemoteCommitPublished(
@@ -78,7 +137,53 @@ data class RemoteCommitPublished(
     val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
-)
+) {
+    /**
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+     * remote commit scenario and keep track of it.
+     *
+     * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+     * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+     * want to wait forever before declaring that the channel is CLOSED.
+     *
+     * @param tx a transaction that has been irrevocably confirmed
+     */
+    fun update(tx: Transaction): RemoteCommitPublished {
+        // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+        // over all of them to check if they are relevant
+        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter {
+            // is this the commit tx itself ? (we could do this outside of the loop...)
+            val isCommitTx = commitTx.txid == tx.txid
+            // does the tx spend an output of the local commitment tx?
+            val spendsTheCommitTx = commitTx.txid == it.txid
+            isCommitTx || spendsTheCommitTx
+        }
+        // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
+        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
+    }
+
+    /**
+     * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
+     * (even if the spending tx was not ours).
+     */
+    fun isDone(): Boolean {
+        // is the commitment tx buried? (we need to check this because we may not have any outputs)
+        val isCommitTxConfirmed = irrevocablySpent.values.toSet().contains(commitTx.txid)
+
+        // are there remaining spendable outputs from the commitment tx?
+        val commitOutputsSpendableByUs = (listOfNotNull(claimMainOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs)
+            .flatMap { it.txIn.map { it.outPoint }.toSet() - irrevocablySpent.keys }
+
+        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty()
+    }
+
+    fun isConfirmed(): Boolean {
+        val confirmedTxs = irrevocablySpent.values.toSet()
+        return (listOf(commitTx) + listOfNotNull(claimMainOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs).any {
+            confirmedTxs.contains(it.txid)
+        }
+    }
+}
 
 @Serializable
 data class RevokedCommitPublished(
@@ -91,7 +196,57 @@ data class RevokedCommitPublished(
     val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
-)
+) {
+    /**
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+     * revoked commit scenario and keep track of it.
+     *
+     * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+     * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+     * want to wait forever before declaring that the channel is CLOSED.
+     *
+     * @param tx a transaction that has been irrevocably confirmed
+     */
+    fun update(tx: Transaction): RevokedCommitPublished {
+        // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+        // over all of them to check if they are relevant
+        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter {
+            // is this the commit tx itself ? (we could do this outside of the loop...)
+            val isCommitTx = commitTx.txid == tx.txid
+            // does the tx spend an output of the local commitment tx?
+            val spendsTheCommitTx = commitTx.txid == it.txid
+            // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
+            // is itself spending the output of the commitment tx)
+            val is3rdStageDelayedTx = claimHtlcDelayedPenaltyTxs.map { it.txid }.contains(tx.txid)
+            isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+        }
+        // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
+        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
+    }
+
+    /**
+     * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
+     * (even if the spending tx was not ours).
+     */
+    fun done(): Boolean {
+        // is the commitment tx buried? (we need to check this because we may not have any outputs)
+        val isCommitTxConfirmed = irrevocablySpent.values.toSet().contains(commitTx.txid)
+        // are there remaining spendable outputs from the commitment tx?
+        val commitOutputsSpendableByUs = (listOfNotNull(claimMainOutputTx) + listOfNotNull(mainPenaltyTx) + htlcPenaltyTxs)
+            .flatMap { it.txIn.map { it.outPoint } }.toSet() - irrevocablySpent.keys
+
+        // which htlc delayed txes can we expect to be confirmed?
+        val unconfirmedHtlcDelayedTxes = claimHtlcDelayedPenaltyTxs
+            .filter {
+                (it.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
+            } // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+            .filterNot {
+                irrevocablySpent.values.toSet().contains(it.txid)
+            } // has the tx already been confirmed?
+
+        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxes.isEmpty()
+    }
+}
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
