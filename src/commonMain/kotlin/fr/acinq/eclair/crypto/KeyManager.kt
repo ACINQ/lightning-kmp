@@ -18,6 +18,8 @@ interface KeyManager {
 
     val nodeId: PublicKey
 
+    fun closingPubkeyScript(fundingPubKey: PublicKey): ByteArray
+
     fun fundingPublicKey(keyPath: KeyPath): ExtendedPublicKey
 
     fun revocationPoint(channelKeyPath: KeyPath): ExtendedPublicKey

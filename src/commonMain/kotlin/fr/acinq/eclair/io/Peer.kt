@@ -334,9 +334,12 @@ class Peer(
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }
                     }
                     msg is OpenChannel -> {
+                        val fundingKeyPath = KeyPath("/1/2/3")
+                        val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
+                        val defaultFinalScriptPubKey = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey).toByteVector()
                         val localParams = LocalParams(
                             nodeParams.nodeId,
-                            KeyPath("/1/2/3"),
+                            fundingKeyPath,
                             nodeParams.dustLimit,
                             nodeParams.maxHtlcValueInFlightMsat,
                             Satoshi(600),
@@ -344,7 +347,7 @@ class Peer(
                             nodeParams.toRemoteDelayBlocks,
                             nodeParams.maxAcceptedHtlcs,
                             false,
-                            ByteVector.empty,
+                            defaultFinalScriptPubKey,
                             PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey(),
                             Features(
                                 setOf(
