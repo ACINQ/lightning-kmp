@@ -152,7 +152,6 @@ interface HasCommitments {
             include(Tlv.serializersModule)
             include(KeyManager.serializersModule)
             include(UpdateMessage.serializersModule)
-            include(ConstantFeeEstimator.testSerializersModule)
         }
 
         private val cbor = Cbor {

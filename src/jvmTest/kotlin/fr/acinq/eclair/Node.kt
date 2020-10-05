@@ -45,13 +45,6 @@ object Node {
             )
         ),
         dustLimit = 100.sat,
-        onChainFeeConf = OnChainFeeConf(
-            feeTargets = FeeTargets(6, 2, 2, 6),
-            feeEstimator = ConstantFeeEstimator(10000),
-            maxFeerateMismatch = 1.5,
-            closeOnOfflineMismatch = true,
-            updateFeeMinDiffRatio = 0.1
-        ),
         maxHtlcValueInFlightMsat = 150000000L,
         maxAcceptedHtlcs = 100,
         expiryDeltaBlocks = CltvExpiryDelta(144),
@@ -85,7 +78,6 @@ object Node {
 
     private val serializationModules = SerializersModule {
         include(eclairSerializersModule)
-        include(ConstantFeeEstimator.testSerializersModule)
     }
 
     private val json = Json {
