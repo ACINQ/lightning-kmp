@@ -113,7 +113,8 @@ class Peer(
             }
         }
         launch {
-            channelsDb.listLocalChannels().forEach {
+            // we don't restore closed channels
+            channelsDb.listLocalChannels().filterNot { it is Closed }.forEach {
                 logger.info { "restoring $it" }
                 val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                 val (state1, actions) = state.process(Restore(it as ChannelState))
