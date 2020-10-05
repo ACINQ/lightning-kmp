@@ -19,7 +19,6 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.cbor.Cbor
@@ -148,7 +147,7 @@ sealed class ChannelState {
     }
 
     @Transient
-    val logger = EclairLoggerFactory.newLogger<Channel<*>>()
+    val logger = EclairLoggerFactory.newLogger<ChannelState>()
 }
 
 interface HasCommitments {
@@ -244,7 +243,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             }
             event is Restore && event.state is Closing && event.state.commitments.nothingAtStake() -> {
                 logger.info { "we have nothing at stake, going straight to CLOSED" }
-                Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+                Pair(Closed(event.state), listOf())
             }
             event is Restore && event.state is Closing -> {
                 val closingType = event.state.closingTypeAlreadyKnown()
@@ -257,7 +256,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         val commitments = event.state.commitments
                         var actions = listOf<ChannelAction>(
                             SendWatch(WatchSpent(event.state.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)),
-                            SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
+                            //SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
                         )
                         actions = actions + event.state.mutualClosePublished.map { publishActions(it, event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }.flatten()
                         Pair(event.state, actions)
@@ -289,7 +288,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 Pair(Offline(event.state), actions)
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -587,7 +586,7 @@ data class WaitForRemotePublishFutureComitment(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -610,7 +609,7 @@ data class WaitForOpenChannel(
                             Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnchainFeerates.commitmentFeeratePerKw)
                         } catch (e: Throwable) {
                             logger.error(e) { "invalid ${event.message} in state $this" }
-                            return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(Error(temporaryChannelId, e.message))))
+                            return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(Error(temporaryChannelId, e.message))))
                         }
                         val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
                         if (Features.canUseFeature(
@@ -684,11 +683,11 @@ data class WaitForOpenChannel(
                     }
                     is Error -> {
                         logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+                        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
                     }
                     else -> unhandled(event)
                 }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -697,7 +696,7 @@ data class WaitForOpenChannel(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -812,11 +811,11 @@ data class WaitForFundingCreated(
                     }
                     is Error -> {
                         logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+                        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
                     }
                     else -> unhandled(event)
                 }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -825,7 +824,7 @@ data class WaitForFundingCreated(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -845,7 +844,7 @@ data class WaitForAcceptChannel(
                     Helpers.validateParamsFunder(staticParams.nodeParams, lastSent, event.message)
                 } catch (e: Throwable) {
                     logger.error(e) { "invalid ${event.message} in state $this" }
-                    return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(Error(initFunder.temporaryChannelId, e.message))))
+                    return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(Error(initFunder.temporaryChannelId, e.message))))
                 }
                 // TODO: check equality of temporaryChannelId? or should be done upstream
                 val remoteParams = RemoteParams(
@@ -885,9 +884,9 @@ data class WaitForAcceptChannel(
             }
             event is MessageReceived && event.message is Error -> {
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+                Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -896,7 +895,7 @@ data class WaitForAcceptChannel(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(initFunder.temporaryChannelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -965,9 +964,9 @@ data class WaitForFundingInternal(
             }
             event is MessageReceived && event.message is Error -> {
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+                Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -976,7 +975,7 @@ data class WaitForFundingInternal(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -1053,9 +1052,9 @@ data class WaitForFundingSigned(
             }
             event is MessageReceived && event.message is Error -> {
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+                Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
             }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -1064,7 +1063,7 @@ data class WaitForFundingSigned(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf(SendMessage(error)))
     }
 }
 
@@ -1142,7 +1141,7 @@ data class WaitForFundingConfirmed(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -1210,7 +1209,7 @@ data class WaitForFundingLocked(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -1490,7 +1489,7 @@ data class Normal(
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
         // TODO: this is wrong, we need to publish and spend our local commit tx and transition to Closing state
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf(SendMessage(error)))
     }
 }
 
@@ -1827,7 +1826,7 @@ data class Negotiating(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         if (commitments.nothingAtStake()) {
-            return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+            return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
         }
         if (bestUnpublishedClosingTx != null) {
             // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
@@ -1946,10 +1945,11 @@ data class Closing(
                         Pair(nextState, listOf(StoreState(nextState)))
                     }
                     else -> {
+                        logger.info { "channel $channelId is now closed" }
                         if (closingType !is MutualClose) {
                             logger.info { "last known remoteChannelData=${commitments.remoteChannelData}" }
                         }
-                        val nextState = Closed(staticParams, currentTip, currentOnchainFeerates)
+                        val nextState = Closed(this)
                         Pair(nextState, listOf(StoreState(nextState)))
                     }
                 }
@@ -2012,14 +2012,41 @@ data class Closing(
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
  */
 @Serializable
-data class Closed(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnchainFeerates: OnchainFeerates) : ChannelState() {
+data class Closed(val state: Closing) : ChannelState(), HasCommitments {
+    override val staticParams: StaticParams
+        get() = state.staticParams
+    override val currentTip: Pair<Int, BlockHeader>
+        get() = state.currentTip
+    override val currentOnchainFeerates: OnchainFeerates
+        get() = state.currentOnchainFeerates
+    override val commitments: Commitments
+        get() = state.commitments
+
+    override fun updateCommitments(input: Commitments): HasCommitments {
+        return this.copy(state.updateCommitments(input) as Closing)
+    }
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
-        return Pair(Closed(staticParams, currentTip, currentOnchainFeerates), listOf())
+        return Pair(this, listOf())
+    }
+}
+
+/**
+ * Channel has been aborted before it was funded (because we did not receive a FundingCreated or FundingSigned message for example)
+ */
+@Serializable
+data class Aborted(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnchainFeerates: OnchainFeerates) : ChannelState() {
+    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        return Pair(this, listOf())
+    }
+
+    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        return Pair(this, listOf())
     }
 }
 

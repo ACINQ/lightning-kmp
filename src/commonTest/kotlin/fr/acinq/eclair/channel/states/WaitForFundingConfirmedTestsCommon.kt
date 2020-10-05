@@ -44,7 +44,7 @@ class WaitForFundingConfirmedTestsCommon {
         val badOutputScript = Scripts.multiSig2of2(Eclair.randomKey().publicKey(), Eclair.randomKey().publicKey())
         val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updatePublicKeyScript(badOutputScript)))
         val (bob1, _) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
@@ -54,7 +54,7 @@ class WaitForFundingConfirmedTestsCommon {
         val badAmount = 1234567.sat
         val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updateAmount(badAmount)))
         val (bob1, _) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     companion object {

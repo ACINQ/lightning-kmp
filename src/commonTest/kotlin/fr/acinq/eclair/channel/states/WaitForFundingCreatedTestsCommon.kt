@@ -37,21 +37,21 @@ class WaitForFundingCreatedTestsCommon {
         val (bob1, actions1) = bob.process(MessageReceived(fundingCreated))
         val error = actions1.findOutgoingMessage<Error>()
         println(error)
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
     fun `recv Error`() {
         val (_, bob, _) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
         val (bob1, _) = bob.process(MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
     fun `recv CMD_CLOSE`() {
         val (_, bob, _) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
         val (bob1, _) = bob.process(ExecuteCommand(CMD_CLOSE(null)))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     companion object {

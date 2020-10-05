@@ -32,7 +32,7 @@ class WaitForOpenChannelTestsCommon {
         val (bob1, actions) = bob.process(MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, bob.staticParams.nodeParams.chainHash, Block.LivenetGenesisBlock.hash).message))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
@@ -43,7 +43,7 @@ class WaitForOpenChannelTestsCommon {
         val (bob1, actions) = bob.process(MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100.sat, alice.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
@@ -54,7 +54,7 @@ class WaitForOpenChannelTestsCommon {
         val (bob1, actions) = bob.process(MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).message))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
@@ -69,13 +69,13 @@ class WaitForOpenChannelTestsCommon {
     fun `recv Error`() {
         val (_, bob, _) = TestsHelper.init(ChannelVersion.STANDARD, 0, 100.sat)
         val (bob1, _) = bob.process(MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 
     @Test
     fun `recv CMD_CLOSE`() {
         val (_, bob, _) = TestsHelper.init(ChannelVersion.STANDARD, 0, 100.sat)
         val (bob1, _) = bob.process(ExecuteCommand(CMD_CLOSE(null)))
-        assertTrue { bob1 is Closed }
+        assertTrue { bob1 is Aborted }
     }
 }
