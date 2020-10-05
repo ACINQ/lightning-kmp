@@ -15,7 +15,6 @@ data class NodeParams(
     val alias: String,
     val features: Features,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
-    val onChainFeeConf: OnChainFeeConf,
     val maxHtlcValueInFlightMsat: Long,
     val maxAcceptedHtlcs: Int,
     val expiryDeltaBlocks: CltvExpiryDelta,
