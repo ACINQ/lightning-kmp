@@ -174,10 +174,10 @@ private data class WatcherRunning(
                                         watches
                                             .filterIsInstance<WatchSpent>()
                                             .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
-                                            .map {
-                                                logger.info { "output ${it.txId}:${it.outputIndex} spent by transaction ${tx.txid}" }
+                                            .map { w ->
+                                                logger.info { "output ${w.txId}:${w.outputIndex} spent by transaction ${tx.txid}" }
                                                 NotifyWatch(
-                                                    WatchEventSpent(ByteVector32.Zeroes, it.event, tx)
+                                                    WatchEventSpent(w.channelId, w.event, tx)
                                                 )
                                             }
                                     }
@@ -281,7 +281,7 @@ private data class WatcherRunning(
                              triggered.map { w ->
                                     logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
                                     NotifyWatch(
-                                        watchEvent = WatchEventConfirmed(ByteVector32.Zeroes, w.event, txheight, pos, tx),
+                                        watchEvent = WatchEventConfirmed(w.channelId, w.event, txheight, pos, tx),
                                         broadcastNotification = w.channelNotification
                                     )
                                 }
@@ -322,7 +322,7 @@ private data class WatcherRunning(
                         newState(copy(block2tx = updatedBlock2tx))
                     }
                     else -> {
-                        logger.info { "publishing tx=$tx" }
+                        logger.info { "publishing tx=[${tx.txid} / $tx]" }
                         newState {
                             state = copy(sent = sent + tx)
                             actions = listOf(BroadcastTxAction(tx))
@@ -349,7 +349,7 @@ private data class WatcherRunning(
                             updatedBlock2tx[absTimeout] = block2tx.getOrElse(absTimeout) { emptyList() } + tx
                             newState(copy(block2tx = updatedBlock2tx))
                         } else {
-                            logger.info { "publishing tx=$tx" }
+                            logger.info { "publishing tx=[${tx.txid} / $tx]" }
                             newState {
                                 state = copy(sent = sent + tx)
                                 actions = listOf(BroadcastTxAction(tx))
