@@ -4,15 +4,15 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
+import fr.acinq.eclair.channel.CMD_CLOSE
 import fr.acinq.eclair.channel.ChannelState
+import fr.acinq.eclair.channel.ExecuteCommand
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.utils.ServerAddress
-import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.*
+import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -136,7 +136,7 @@ object Node {
 
         suspend fun readLoop(peer: Peer) {
             println("node ${nodeParams.nodeId} is ready:")
-            for(tokens in commandChannel) {
+            for (tokens in commandChannel) {
                 println("got tokens $tokens")
                 when (tokens.first()) {
                     "connect" -> {
@@ -151,6 +151,9 @@ object Node {
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
                         peer.send(SendPayment(UUID.randomUUID(), invoice))
+                    }
+                    "close" -> {
+                        runTrying { ByteVector32(Hex.decode(tokens[1])) }.map { GlobalScope.launch { peer.send(WrappedChannelEvent(it, ExecuteCommand(CMD_CLOSE(null)))) } }
                     }
                     else -> {
                         println("I don't understand $tokens")
