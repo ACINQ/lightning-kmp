@@ -209,27 +209,27 @@ object Helpers {
          *                                  because we don't store the closing tx in the channel state
          * @return the channel closing type, if applicable
          */
-        fun isClosed(closing: HasCommitments, additionalConfirmedTx_opt: Transaction?): ClosingType? {
-            if(closing !is fr.acinq.eclair.channel.Closing) return null
+        fun HasCommitments.isClosed(additionalConfirmedTx_opt: Transaction?): ClosingType? {
+            if(this !is fr.acinq.eclair.channel.Closing) return null
 
             return when {
-                closing.mutualClosePublished.contains(additionalConfirmedTx_opt) ->
+                mutualClosePublished.contains(additionalConfirmedTx_opt) ->
                     additionalConfirmedTx_opt?.let { MutualClose(it) }
-                closing.localCommitPublished != null && closing.localCommitPublished.isLocalCommitDone() ->
-                    LocalClose(closing.commitments.localCommit, closing.localCommitPublished)
-                closing.remoteCommitPublished != null && closing.remoteCommitPublished.isRemoteCommitDone() ->
-                    CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished)
-                closing.nextRemoteCommitPublished != null &&
-                        closing.commitments.remoteNextCommitInfo.isLeft &&
-                        closing.nextRemoteCommitPublished.isRemoteCommitDone() ->
+                localCommitPublished != null && localCommitPublished.isLocalCommitDone() ->
+                    LocalClose(commitments.localCommit, localCommitPublished)
+                remoteCommitPublished != null && remoteCommitPublished.isRemoteCommitDone() ->
+                    CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished)
+                nextRemoteCommitPublished != null &&
+                        commitments.remoteNextCommitInfo.isLeft &&
+                        nextRemoteCommitPublished.isRemoteCommitDone() ->
                     NextRemoteClose(
-                        closing.commitments.remoteNextCommitInfo.left?.nextRemoteCommit ?: error("remoteNextCommitInfo must be defined"),
-                        closing.nextRemoteCommitPublished
+                        commitments.remoteNextCommitInfo.left?.nextRemoteCommit ?: error("remoteNextCommitInfo must be defined"),
+                        nextRemoteCommitPublished
                     )
-                closing.futureRemoteCommitPublished != null && closing.futureRemoteCommitPublished.isRemoteCommitDone() ->
-                    RecoveryClose(closing.futureRemoteCommitPublished)
-                closing.revokedCommitPublished.any { it.isRevokedCommitDone() } ->
-                    RevokedClose(closing.revokedCommitPublished.first { it.isRevokedCommitDone() })
+                futureRemoteCommitPublished != null && futureRemoteCommitPublished.isRemoteCommitDone() ->
+                    RecoveryClose(futureRemoteCommitPublished)
+                revokedCommitPublished.any { it.isRevokedCommitDone() } ->
+                    RevokedClose(revokedCommitPublished.first { it.isRevokedCommitDone() })
                 else -> null
             }
         }
@@ -724,7 +724,7 @@ object Helpers {
          *           - add is the htlc in the downstream channel from which we extracted the preimage
          *           - preimage needs to be sent to the upstream channel
          */
-        fun extractPreimages(localCommit: LocalCommit, tx: Transaction): Set<Pair<UpdateAddHtlc, ByteVector32>> {
+        fun LocalCommit.extractPreimages(tx: Transaction): Set<Pair<UpdateAddHtlc, ByteVector32>> {
             val htlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromHtlcSuccess())
                 .also { it.forEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (htlc-success)" } } }
             val claimHtlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess())
@@ -736,7 +736,7 @@ object Helpers {
                 // if an outgoing htlc is in the remote commitment, then:
                 // - either it is in the local commitment (it was never fulfilled)
                 // - or we have already received the fulfill and forwarded it upstream
-                localCommit.spec.htlcs.filter {
+                spec.htlcs.filter {
                     it is OutgoingHtlc && it.add.paymentHash.contentEquals(sha256(paymentPreimage))
                 }.map { it.add to paymentPreimage }
             }.toSet()
@@ -748,7 +748,7 @@ object Helpers {
          * We need to handle potentially duplicate HTLCs (same amount and expiry): this function will use a deterministic
          * ordering of transactions and HTLCs to handle this.
          */
-        private fun findTimedOutHtlc(tx: Transaction, paymentHash160: ByteVector, htlcs:  List<UpdateAddHtlc>, timeoutTxs: List<Transaction>, extractPaymentHash: (ScriptWitness) -> ByteVector?): UpdateAddHtlc? {
+        private fun Transaction.findTimedOutHtlc(paymentHash160: ByteVector, htlcs:  List<UpdateAddHtlc>, timeoutTxs: List<Transaction>, extractPaymentHash: (ScriptWitness) -> ByteVector?): UpdateAddHtlc? {
             // We use a deterministic ordering to match HTLCs to their corresponding HTLC-timeout tx.
             // We don't match on the expected amounts because this is error-prone: computing the correct weight of a claim-htlc-timeout
             // is hard because signatures can be either 71, 72 or 73 bytes long (ECDSA DER encoding).
@@ -756,7 +756,7 @@ object Helpers {
             // It's simpler to just use the amount as the first ordering key: since the feerate is the same for all timeout
             // transactions we will find the right HTLC to fail upstream.
             val matchingHtlcs = htlcs
-                .filter { it.cltvExpiry.toLong() == tx.lockTime && ripemd160(it.paymentHash).toByteVector() == paymentHash160 }
+                .filter { it.cltvExpiry.toLong() == lockTime && ripemd160(it.paymentHash).toByteVector() == paymentHash160 }
                 .sortedWith(compareBy({ it.amountMsat.toLong() }, { it.id }))
 
             val matchingTxs = timeoutTxs
@@ -764,10 +764,10 @@ object Helpers {
                 .sortedWith(compareBy({ t -> t.txOut.map { it.amount.sat }.sum() }, { it.txid.toHex() }))
 
             if (matchingTxs.size != matchingHtlcs.size) {
-                logger.error { "some htlcs don't have a corresponding timeout transaction: tx=$tx, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs" }
+                logger.error { "some htlcs don't have a corresponding timeout transaction: tx=$this, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs" }
             }
 
-            return matchingHtlcs.zip(matchingTxs).firstOrNull { (_, timeoutTx) -> timeoutTx.txid == tx.txid }?.first
+            return matchingHtlcs.zip(matchingTxs).firstOrNull { (_, timeoutTx) -> timeoutTx.txid == txid }?.first
         }
 
         /**
@@ -777,11 +777,11 @@ object Helpers {
          * @param tx a tx that has reached mindepth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun timedoutHtlcs(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
-            val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec).map { it.add }
-            return if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
+        fun LocalCommit.timedoutHtlcs(localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+            val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, spec).map { it.add }
+            return if (tx.txid == publishableTxs.commitTx.tx.txid) {
                 // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-                (localCommit.spec.htlcs.outgoings() - untrimmedHtlcs).toSet()
+                (spec.htlcs.outgoings() - untrimmedHtlcs).toSet()
             } else {
                 // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                 tx.txIn
@@ -789,7 +789,7 @@ object Helpers {
                     .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
                     .mapNotNull { paymentHash160 ->
                         logger.info { ("extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (htlc-timeout)") }
-                        findTimedOutHtlc(tx,
+                        tx.findTimedOutHtlc(
                             paymentHash160,
                             untrimmedHtlcs,
                             localCommitPublished.htlcTimeoutTxs,
@@ -806,11 +806,11 @@ object Helpers {
          * @param tx a tx that has reached mindepth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun timedoutHtlcs(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
-            val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec).map { it.add }
-            return if (tx.txid == remoteCommit.txid) {
+        fun RemoteCommit.timedoutHtlcs(remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+            val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, spec).map { it.add }
+            return if (tx.txid == txid) {
                 // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-                (remoteCommit.spec.htlcs.incomings() - untrimmedHtlcs).toSet()
+                (spec.htlcs.incomings() - untrimmedHtlcs).toSet()
             } else {
                 // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                 tx.txIn
@@ -818,7 +818,7 @@ object Helpers {
                     .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
                     .mapNotNull { paymentHash160 ->
                         logger.info { "extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (claim-htlc-timeout)" }
-                        findTimedOutHtlc(tx,
+                        tx.findTimedOutHtlc(
                             paymentHash160,
                             untrimmedHtlcs,
                             remoteCommitPublished.claimHtlcTimeoutTxs,
@@ -842,42 +842,6 @@ object Helpers {
             }
 
         /**
-         * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
-         * they will never reach the blockchain.
-         *
-         * Those are only present in the remote's commitment.
-         */
-        fun overriddenOutgoingHtlcs(closing: fr.acinq.eclair.channel.Closing, tx: Transaction): Set<UpdateAddHtlc> {
-            val localCommit = closing.commitments.localCommit
-            val remoteCommit = closing.commitments.remoteCommit
-            val nextRemoteCommit_opt = closing.commitments.remoteNextCommitInfo.left?.nextRemoteCommit
-
-            return when {
-                localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> {
-                    // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
-                    val mostRecentRemoteCommit = nextRemoteCommit_opt ?: remoteCommit
-                    // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
-                    (mostRecentRemoteCommit.spec.htlcs.incomings() - localCommit.spec.htlcs.outgoings()).toSet()
-                }
-                remoteCommit.txid == tx.txid -> {
-                    // their commit got confirmed
-                    nextRemoteCommit_opt?.let {
-                        // we had signed a new commitment but they committed the previous one
-                        // any htlc that we signed in the new commitment that they didn't sign will never reach the chain
-                        (it.spec.htlcs.incomings() - localCommit.spec.htlcs.outgoings()).toSet()
-                    }
-                        // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
-                        ?: emptySet()
-                }
-                nextRemoteCommit_opt?.txid == tx.txid -> {
-                    // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
-                    emptySet()
-                }
-                else -> emptySet()
-            }
-        }
-
-        /**
          * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
          * local commit scenario and keep track of it.
          *
@@ -887,21 +851,21 @@ object Helpers {
          *
          * @param tx a transaction that has been irrevocably confirmed
          */
-        fun updateLocalCommitPublished(localCommitPublished: LocalCommitPublished, tx: Transaction): LocalCommitPublished {
+        fun LocalCommitPublished.updateLocalCommitPublished(tx: Transaction): LocalCommitPublished {
             // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
             // over all of them to check if they are relevant
             val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
                 // is this the commit tx itself ? (we could do this outside of the loop...)
-                val isCommitTx = localCommitPublished.commitTx.txid == tx.txid
+                val isCommitTx = commitTx.txid == tx.txid
                 // does the tx spend an output of the local commitment tx?
-                val spendsTheCommitTx = localCommitPublished.commitTx.txid == outPoint.txid
+                val spendsTheCommitTx = commitTx.txid == outPoint.txid
                 // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
                 // is itself spending the output of the commitment tx)
-                val is3rdStageDelayedTx = localCommitPublished.claimHtlcDelayedTxs.map { it.txid }.contains(tx.txid)
+                val is3rdStageDelayedTx = claimHtlcDelayedTxs.map { it.txid }.contains(tx.txid)
                 isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
             }
             // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-            return localCommitPublished.copy(irrevocablySpent = localCommitPublished.irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
+            return copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
         }
 
         /**
@@ -914,18 +878,18 @@ object Helpers {
          *
          * @param tx a transaction that has been irrevocably confirmed
          */
-        fun updateRemoteCommitPublished(remoteCommitPublished: RemoteCommitPublished, tx: Transaction): RemoteCommitPublished {
+        fun RemoteCommitPublished.updateRemoteCommitPublished(tx: Transaction): RemoteCommitPublished {
             // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
             // over all of them to check if they are relevant
             val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
                 // is this the commit tx itself ? (we could do this outside of the loop...)
-                val isCommitTx = remoteCommitPublished.commitTx.txid == tx.txid
+                val isCommitTx = commitTx.txid == tx.txid
                 // does the tx spend an output of the remote commitment tx?
-                val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid
+                val spendsTheCommitTx = commitTx.txid == outPoint.txid
                 isCommitTx || spendsTheCommitTx
             }
             // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-            return remoteCommitPublished.copy(irrevocablySpent = remoteCommitPublished.irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
+            return copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
         }
 
         /**
@@ -938,79 +902,21 @@ object Helpers {
          *
          * @param tx a transaction that has been irrevocably confirmed
          */
-        fun updateRevokedCommitPublished(revokedCommitPublished: RevokedCommitPublished, tx: Transaction): RevokedCommitPublished {
+        fun RevokedCommitPublished.updateRevokedCommitPublished(tx: Transaction): RevokedCommitPublished {
             // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
             // over all of them to check if they are relevant
             val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
                 // is this the commit tx itself ? (we could do this outside of the loop...)
-                val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
+                val isCommitTx = commitTx.txid == tx.txid
                 // does the tx spend an output of the remote commitment tx?
-                val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
+                val spendsTheCommitTx = commitTx.txid == outPoint.txid
                 // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
                 // is itself spending the output of the commitment tx)
-                val is3rdStageDelayedTx = revokedCommitPublished.claimHtlcDelayedPenaltyTxs.map { it.txid }.contains(tx.txid)
+                val is3rdStageDelayedTx = claimHtlcDelayedPenaltyTxs.map { it.txid }.contains(tx.txid)
                 isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
             }
             // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-            return revokedCommitPublished.copy(irrevocablySpent = revokedCommitPublished.irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
-        }
-
-        /**
-         * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before
-         * the whole closing process finishes (e.g. there may still be delayed or unconfirmed child transactions). It can
-         * save us from attempting to publish some transactions.
-         *
-         * Note that we can't tell for mutual close before it is already final, because only one tx needs to be confirmed.
-         *
-         * @param closing channel state data
-         * @return the channel closing type, if applicable
-         */
-        fun isClosingTypeAlreadyKnown(closing: fr.acinq.eclair.channel.Closing): ClosingType? {
-            // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
-            // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
-            // the type of closing.
-            fun LocalCommitPublished.isLocalCommitConfirmed(): Boolean {
-                val confirmedTxs = irrevocablySpent.values.toSet()
-                return buildList {
-                    add(commitTx)
-                    claimMainDelayedOutputTx?.let { add(it) }
-                    addAll(htlcSuccessTxs)
-                    addAll(htlcTimeoutTxs)
-                    addAll(claimHtlcDelayedTxs)
-                }.any { tx -> confirmedTxs.contains(tx.txid) }
-            }
-
-            fun RemoteCommitPublished.isRemoteCommitConfirmed(): Boolean {
-                val confirmedTxs = irrevocablySpent.values.toSet()
-                return buildList {
-                    add(commitTx)
-                    claimMainOutputTx?.let { add(it) }
-                    addAll(claimHtlcSuccessTxs)
-                    addAll(claimHtlcTimeoutTxs)
-                }.any { tx -> confirmedTxs.contains(tx.txid) }
-            }
-
-            return when {
-                closing.localCommitPublished != null && closing.localCommitPublished.isLocalCommitConfirmed() ->
-                    LocalClose(closing.commitments.localCommit, closing.localCommitPublished)
-                closing.remoteCommitPublished != null && closing.remoteCommitPublished.isRemoteCommitConfirmed() ->
-                    CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished)
-                closing.nextRemoteCommitPublished != null &&
-                        closing.commitments.remoteNextCommitInfo.isLeft &&
-                        closing.nextRemoteCommitPublished.isRemoteCommitConfirmed() ->
-                    NextRemoteClose(
-                        closing.commitments.remoteNextCommitInfo.left?.nextRemoteCommit
-                            ?: error("nextRemoteCommit must be defined"),
-                        closing.nextRemoteCommitPublished
-                    )
-                closing.futureRemoteCommitPublished != null && closing.futureRemoteCommitPublished.isRemoteCommitConfirmed() ->
-                    RecoveryClose(closing.futureRemoteCommitPublished)
-                closing.revokedCommitPublished.any { rcp -> rcp.irrevocablySpent.values.toSet().contains(rcp.commitTx.txid) } ->
-                    RevokedClose(closing.revokedCommitPublished.first { rcp ->
-                        rcp.irrevocablySpent.values.toSet().contains(rcp.commitTx.txid)
-                    })
-                else -> null
-            }
+            return copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
         }
 
         /**
@@ -1025,75 +931,10 @@ object Helpers {
          * @param irrevocablySpent a map of known spent outpoints
          * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
          */
-        fun inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map<OutPoint, ByteVector32>): Boolean {
-            require(tx.txIn.size == 1) { "only tx with one input is supported" }
-            val outPoint = tx.txIn.first().outPoint
+        fun Transaction.inputsAlreadySpent(irrevocablySpent: Map<OutPoint, ByteVector32>): Boolean {
+            require(txIn.size == 1) { "only tx with one input is supported" }
+            val outPoint = txIn.first().outPoint
             return irrevocablySpent.contains(outPoint)
-        }
-
-        /**
-         * This helper function returns the fee paid by the given transaction.
-         *
-         * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
-         *
-         * @param tx a tx for which we want to compute the fee
-         * @param closing  current channel data
-         * @return if the parent tx is found, a tuple (fee, description)
-         */
-        fun networkFeePaid(tx: Transaction, closing: fr.acinq.eclair.channel.Closing): Pair<Satoshi, String>? {
-            // only funder pays the fee
-            if (!closing.commitments.localParams.isFunder) return null
-
-            // we build a map with all known txes (that's not particularly efficient, but it doesn't really matter)
-            val txes = buildList {
-                closing.mutualClosePublished.map { it to "mutual" }.forEach { add(it) }
-                closing.localCommitPublished?.let { localCommitPublished ->
-                    add(localCommitPublished.commitTx to  "local-commit")
-                    localCommitPublished.claimMainDelayedOutputTx?.let { add(it to "local-main-delayed") }
-                    localCommitPublished.htlcSuccessTxs.forEach { add(it to "local-htlc-success") }
-                    localCommitPublished.htlcTimeoutTxs.forEach { add(it to "local-htlc-timeout") }
-                    localCommitPublished.claimHtlcDelayedTxs.forEach { add(it to "local-htlc-delayed") }
-                }
-                closing.remoteCommitPublished?.let { remoteCommitPublished ->
-                    add(remoteCommitPublished.commitTx to  "remote-commit")
-                    remoteCommitPublished.claimMainOutputTx?.let { add(it to "remote-main") }
-                    remoteCommitPublished.claimHtlcSuccessTxs.forEach { add(it to "remote-htlc-success") }
-                    remoteCommitPublished.claimHtlcTimeoutTxs.forEach { add(it to "remote-htlc-timeout") }
-                }
-                closing.nextRemoteCommitPublished?.let { nextRemoteCommitPublished ->
-                    add(nextRemoteCommitPublished.commitTx to  "remote-commit")
-                    nextRemoteCommitPublished.claimMainOutputTx?.let { add(it to "remote-main") }
-                    nextRemoteCommitPublished.claimHtlcSuccessTxs.forEach { add(it to "remote-htlc-success") }
-                    nextRemoteCommitPublished.claimHtlcTimeoutTxs.forEach { add(it to "remote-htlc-timeout") }
-                }
-                closing.revokedCommitPublished.forEach {revokedCommitPublished ->
-                    add(revokedCommitPublished.commitTx to "revoked-commit")
-                    revokedCommitPublished.claimMainOutputTx?.let { add(it to "revoked-main") }
-                    revokedCommitPublished.mainPenaltyTx?.let { add(it to "revoked-main-penalty") }
-                    revokedCommitPublished.htlcPenaltyTxs.forEach { add(it to "revoked-htlc-penalty") }
-                    revokedCommitPublished.claimHtlcDelayedPenaltyTxs.forEach { add(it to "revoked-htlc-penalty-delayed") }
-                }
-            }
-                // will allow easy lookup of parent transaction
-                .map { (tx, desc) -> tx.txid to (tx to desc) }
-                .toMap()
-
-            fun fee(child: Transaction): Satoshi? {
-                require(child.txIn.size == 1) { "transaction must have exactly one input" }
-                val outPoint = child.txIn.first().outPoint
-                val parentTxOut_opt = if (outPoint == closing.commitments.commitInput.outPoint) {
-                    closing.commitments.commitInput.txOut
-                } else {
-                    txes[outPoint.txid]?.let { (parent, _) ->
-                        parent.txOut[outPoint.index.toInt()]
-                    }
-                }
-                return parentTxOut_opt?.let { txOut -> txOut.amount - child.txOut.map { it.amount }.sum() }
-            }
-
-            return txes[tx.txid]?.let { (_, desc) ->
-                fee(tx)?.let { it to desc }
-            }
         }
 
         /**
