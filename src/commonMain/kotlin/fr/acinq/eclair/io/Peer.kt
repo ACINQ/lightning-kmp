@@ -79,7 +79,7 @@ class Peer(
     // pending incoming payments, indexed by payment hash
     private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
-    // pending outgoing payments, indexed by payment payment hash
+    // pending outgoing payments, indexed by payment hash
     private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
 
     // encapsulates logic for validating payments
