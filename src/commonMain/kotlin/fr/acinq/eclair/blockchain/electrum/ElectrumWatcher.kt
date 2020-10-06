@@ -148,7 +148,10 @@ private data class WatcherRunning(
                                 when {
                                     existingStatus == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
                                     status.isEmpty() -> logger.verbose { "empty status for scriptHash=$scriptHash" }
-                                    else -> add(AskForScriptHashHistory(scriptHash))
+                                    else -> {
+                                        logger.verbose { "scriptHash=$scriptHash at height=$height" }
+                                        add(AskForScriptHashHistory(scriptHash))
+                                    }
                                 }
                             }
                         }
@@ -189,7 +192,7 @@ private data class WatcherRunning(
                                 watches.filterIsInstance<WatchConfirmed>()
                                     .filter { it.txId == tx.txid }
                                     .forEach { w ->
-                                        if (w.minDepth == 0L) {
+                                        if (w.event is BITCOIN_FUNDING_DEPTHOK && w.minDepth == 0L) {
                                             // special case for mempool watches (min depth = 0)
                                             val (dummyHeight, dummyTxIndex) = makeDummyShortChannelId(w.txId)
                                             notifyWatchConfirmedList.add(
@@ -278,13 +281,13 @@ private data class WatcherRunning(
                             .filter { it.txId == txid && confirmations >= it.minDepth }
 
                         val notifyWatchConfirmedList = tx?.let {
-                             triggered.map { w ->
-                                    logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
-                                    NotifyWatch(
-                                        watchEvent = WatchEventConfirmed(w.channelId, w.event, txheight, pos, tx),
-                                        broadcastNotification = w.channelNotification
-                                    )
-                                }
+                            triggered.map { w ->
+                                logger.info { "txid=${w.txId} had confirmations=$confirmations in block=$txheight pos=$pos" }
+                                NotifyWatch(
+                                    watchEvent = WatchEventConfirmed(w.channelId, w.event, txheight, pos, tx),
+                                    broadcastNotification = w.channelNotification
+                                )
+                            }
                         } ?: emptyList()
 
                         newState {
