@@ -1968,13 +1968,34 @@ data class Closing(
                 Pair(this, listOf())
             }
             event is ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+            event is ExecuteCommand && event.command is CMD_ADD_HTLC -> {
+                logger.info { "rejecting htlc request in state=$this" }
+                val error = ChannelUnavailable(channelId)
+                // we don't provide a channel_update: this will be a permanent channel failure
+                handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, Origin.Local(event.command.id), null, event.command))
+            }
+            event is ExecuteCommand && event.command is CMD_FULFILL_HTLC -> {
+                when(val result = commitments.sendFulfill(event.command)) {
+                    is Try.Success -> {
+                        logger.info {"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
+                        // TODO: update and republish HTLC transactions
+                        val nextState = this.copy(commitments = result.get().first)
+                        Pair(nextState, listOf(StoreState(nextState)))
+                    }
+                    is Try.Failure -> {
+                        handleCommandError(event.command, result.error)
+                    }
+                }
+            }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        TODO("Not yet implemented")
+        logger.error(t) { "error processing $event in state $this" }
+        // TODO: is it the right thing to do ?
+        return Pair(this, listOf())
     }
 
     /**

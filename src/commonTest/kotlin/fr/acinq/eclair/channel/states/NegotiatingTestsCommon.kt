@@ -28,39 +28,17 @@ class NegotiatingTestsCommon {
         assertEquals((alice1 as Negotiating).closingTxProposed.last().map { it.localClosingSigned }, alice.closingTxProposed.last().map { it.localClosingSigned } + listOf(aliceCloseSig1))
     }
 
-    private tailrec fun converge(a: ChannelState, b: ChannelState, aliceCloseSig: ClosingSigned?): Boolean {
-        return when {
-            a !is HasCommitments || b !is HasCommitments -> false
-            a is Closing && b is Closing -> true
-            aliceCloseSig != null -> {
-                val (b1, actions) = b.process(MessageReceived(aliceCloseSig))
-                val bobCloseSig = actions.hasOutgoingMessage<ClosingSigned>()
-                if (bobCloseSig != null) {
-                    val (a1, actions2) = a.process(MessageReceived(bobCloseSig))
-                    return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
-                }
-                val bobClosingTx = actions.filterIsInstance<PublishTx>().map { it.tx }.firstOrNull()
-                if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.localCommit.publishableTxs.commitTx.input.outPoint && a !is Closing) {
-                    // Bob just spent the funding tx
-                    val (a1, actions2) = a.process(WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
-                    return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
-                }
-                converge(a, b1, null)
-            }
-            else -> false
-        }
-    }
 
     @Test
     fun `recv ClosingSigned (theirCloseFee == ourCloseFee)`() {
         val (alice, bob, aliceCloseSig) = init()
-        assertTrue { converge(alice, bob, aliceCloseSig) }
+        assertTrue { converge(alice, bob, aliceCloseSig) != null }
     }
 
     @Test
     fun `recv ClosingSigned (theirCloseFee == ourCloseFee)(different fee parameters)`() {
         val (alice, bob, aliceCloseSig) = init(true)
-        assertTrue { converge(alice, bob, aliceCloseSig) }
+        assertTrue { converge(alice, bob, aliceCloseSig) != null }
     }
 
     companion object {
@@ -90,6 +68,29 @@ class NegotiatingTestsCommon {
             val (bob4, _) = bob3.process(MessageReceived(shutdown1))
             assertTrue { bob4 is Negotiating }
             return Triple(alice3 as Negotiating, bob4 as Negotiating, closingSigned)
+        }
+
+        tailrec fun converge(a: ChannelState, b: ChannelState, aliceCloseSig: ClosingSigned?): Pair<Closing, Closing>? {
+            return when {
+                a !is HasCommitments || b !is HasCommitments -> null
+                a is Closing && b is Closing -> Pair(a, b)
+                aliceCloseSig != null -> {
+                    val (b1, actions) = b.process(MessageReceived(aliceCloseSig))
+                    val bobCloseSig = actions.hasOutgoingMessage<ClosingSigned>()
+                    if (bobCloseSig != null) {
+                        val (a1, actions2) = a.process(MessageReceived(bobCloseSig))
+                        return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
+                    }
+                    val bobClosingTx = actions.filterIsInstance<PublishTx>().map { it.tx }.firstOrNull()
+                    if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.localCommit.publishableTxs.commitTx.input.outPoint && a !is Closing) {
+                        // Bob just spent the funding tx
+                        val (a1, actions2) = a.process(WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
+                        return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
+                    }
+                    converge(a, b1, null)
+                }
+                else -> null
+            }
         }
     }
 }
