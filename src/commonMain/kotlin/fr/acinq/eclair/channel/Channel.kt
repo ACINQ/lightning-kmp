@@ -168,6 +168,9 @@ interface HasCommitments {
                 subclass(WaitForFundingConfirmed::class)
                 subclass(WaitForFundingLocked::class)
                 subclass(WaitForRemotePublishFutureComitment::class)
+                subclass(ShuttingDown::class)
+                subclass(Negotiating::class)
+                subclass(Closing::class)
             }
         }
 
@@ -886,7 +889,7 @@ data class WaitForAcceptChannel(
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -966,7 +969,7 @@ data class WaitForFundingInternal(
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -1003,10 +1006,9 @@ data class WaitForFundingSigned(
                 val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
                 val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
                 val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
-                val result = Transactions.checkSpendable(signedLocalCommitTx)
-                when (result) {
+                when (val result = Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> {
-                        Pair(this, listOf(HandleError(result.error)))
+                        handleLocalError(event, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx))
                     }
                     is Try.Success -> {
                         val commitInput = localCommitTx.input
@@ -1052,9 +1054,9 @@ data class WaitForFundingSigned(
             }
             event is MessageReceived && event.message is Error -> {
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
+                Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf())
+            event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
@@ -1063,7 +1065,7 @@ data class WaitForFundingSigned(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -1099,11 +1101,11 @@ data class WaitForFundingConfirmed(
                         }
                         if (result is Try.Failure) {
                             logger.error { "funding tx verification failed: ${result.error}" }
-                            if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
+                            return if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
                                 logger.error { "ignoring this error on regtest" }
-                                return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
+                                handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                             } else {
-                                return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
+                                handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                             }
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
@@ -1489,7 +1491,7 @@ data class Normal(
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
         // TODO: this is wrong, we need to publish and spend our local commit tx and transition to Closing state
-        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates ), listOf(SendMessage(error)))
+        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 }
 
@@ -1901,9 +1903,9 @@ data class Closing(
     override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            event is WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT -> {
-                when {
+        return when (event) {
+            is WatchReceived -> when {
+                event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT -> when {
                     mutualClosePublished.contains(event.watch.tx) -> {
                         // we already know about this tx, probably because we have published it ourselves after successful negotiation
                         Pair(this, listOf())
@@ -1922,72 +1924,79 @@ data class Closing(
                         TODO("handle this: remote node published their commit tx or a revoked commit tx")
                     }
                 }
-            }
-            event is WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_OUTPUT_SPENT -> {
-                // one of the outputs of the local/remote/revoked commit was spent
-                // we just put a watch to be notified when it is confirmed
-                val actions = listOf(SendWatch(WatchConfirmed(channelId, event.watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(event.watch.tx))))
-                logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${event.watch.tx.txid} tx=${event.watch.tx}" }
-                // TODO: claim revoked HTLC outputs (if any)
-                Pair(this, actions)
-            }
-            event is WatchReceived && event.watch is WatchEventConfirmed && event.watch.event is BITCOIN_TX_CONFIRMED -> {
-                logger.info { "txid=${event.watch.tx.txid} has reached mindepth, updating closing state" }
-                when (val closingType = isClosed(event.watch.tx)) {
-                    null -> {
-                        val nextState = this.copy(
-                            localCommitPublished = this.localCommitPublished?.update(event.watch.tx),
-                            remoteCommitPublished = this.remoteCommitPublished?.update(event.watch.tx),
-                            nextRemoteCommitPublished = this.nextRemoteCommitPublished?.update(event.watch.tx),
-                            futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(event.watch.tx),
-                            revokedCommitPublished = this.revokedCommitPublished.map { it.update(event.watch.tx) }
-                        )
-                        Pair(nextState, listOf(StoreState(nextState)))
-                    }
-                    else -> {
-                        logger.info { "channel $channelId is now closed" }
-                        if (closingType !is MutualClose) {
-                            logger.info { "last known remoteChannelData=${commitments.remoteChannelData}" }
+                event.watch is WatchEventSpent && event.watch.event is BITCOIN_OUTPUT_SPENT -> {
+                    // one of the outputs of the local/remote/revoked commit was spent
+                    // we just put a watch to be notified when it is confirmed
+                    val actions = listOf(SendWatch(WatchConfirmed(channelId, event.watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(event.watch.tx))))
+                    logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${event.watch.tx.txid} tx=${event.watch.tx}" }
+                    // TODO: claim revoked HTLC outputs (if any)
+                    Pair(this, actions)
+                }
+                event.watch is WatchEventConfirmed && event.watch.event is BITCOIN_TX_CONFIRMED -> {
+                    logger.info { "txid=${event.watch.tx.txid} has reached mindepth, updating closing state" }
+                    when (val closingType = isClosed(event.watch.tx)) {
+                        null -> {
+                            val nextState = this.copy(
+                                localCommitPublished = this.localCommitPublished?.update(event.watch.tx),
+                                remoteCommitPublished = this.remoteCommitPublished?.update(event.watch.tx),
+                                nextRemoteCommitPublished = this.nextRemoteCommitPublished?.update(event.watch.tx),
+                                futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(event.watch.tx),
+                                revokedCommitPublished = this.revokedCommitPublished.map { it.update(event.watch.tx) }
+                            )
+                            Pair(nextState, listOf(StoreState(nextState)))
                         }
-                        val nextState = Closed(this)
-                        Pair(nextState, listOf(StoreState(nextState)))
+                        else -> {
+                            logger.info { "channel $channelId is now closed" }
+                            if (closingType !is MutualClose) {
+                                logger.info { "last known remoteChannelData=${commitments.remoteChannelData}" }
+                            }
+                            val nextState = Closed(this)
+                            Pair(nextState, listOf(StoreState(nextState)))
+                        }
                     }
                 }
+                else -> unhandled(event)
             }
-            event is MessageReceived && event.message is ChannelReestablish -> {
-                // they haven't detected that we were closing and are trying to reestablish a connection
-                // we give them one of the published txes as a hint
-                // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
-                val exc = FundingTxSpent(channelId, spendingTxes.first())
-                val error = Error(channelId, exc.message)
-                Pair(this, listOf(SendMessage(error)))
+            is MessageReceived -> when (event.message) {
+                is ChannelReestablish -> {
+                    // they haven't detected that we were closing and are trying to reestablish a connection
+                    // we give them one of the published txes as a hint
+                    // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
+                    val exc = FundingTxSpent(channelId, spendingTxes.first())
+                    val error = Error(channelId, exc.message)
+                    Pair(this, listOf(SendMessage(error)))
+                }
+                is Error -> {
+                    logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                    // nothing to do, there is already a spending tx published
+                    Pair(this, listOf())
+                }
+                else -> unhandled(event)
             }
-            event is MessageReceived && event.message is Error -> {
-                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
-                // nothing to do, there is already a spending tx published
-                Pair(this, listOf())
-            }
-            event is ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
-            event is ExecuteCommand && event.command is CMD_ADD_HTLC -> {
-                logger.info { "rejecting htlc request in state=$this" }
-                val error = ChannelUnavailable(channelId)
-                // we don't provide a channel_update: this will be a permanent channel failure
-                handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, Origin.Local(event.command.id), null, event.command))
-            }
-            event is ExecuteCommand && event.command is CMD_FULFILL_HTLC -> {
-                when(val result = commitments.sendFulfill(event.command)) {
-                    is Try.Success -> {
-                        logger.info {"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
-                        // TODO: update and republish HTLC transactions
-                        val nextState = this.copy(commitments = result.get().first)
-                        Pair(nextState, listOf(StoreState(nextState)))
-                    }
-                    is Try.Failure -> {
-                        handleCommandError(event.command, result.error)
+            is ExecuteCommand -> when (event.command) {
+                is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+                is CMD_ADD_HTLC -> {
+                    logger.info { "rejecting htlc request in state=$this" }
+                    val error = ChannelUnavailable(channelId)
+                    // we don't provide a channel_update: this will be a permanent channel failure
+                    handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, Origin.Local(event.command.id), null, event.command))
+                }
+                is CMD_FULFILL_HTLC -> {
+                    when (val result = commitments.sendFulfill(event.command)) {
+                        is Try.Success -> {
+                            logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
+                            // TODO: update and republish HTLC transactions
+                            val nextState = this.copy(commitments = result.get().first)
+                            Pair(nextState, listOf(StoreState(nextState)))
+                        }
+                        is Try.Failure -> {
+                            handleCommandError(event.command, result.error)
+                        }
                     }
                 }
+                else -> unhandled(event)
             }
-            event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             else -> unhandled(event)
         }
     }
