@@ -127,7 +127,7 @@ sealed class ChannelState {
     }
 
     internal fun handleFundingPublishFailed(): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "" } // TODO
+        require(this is HasCommitments) { "$this must be type of HasCommitments" }
         logger.error { "failed to publish funding tx" }
         val exc = ChannelFundingError(channelId)
         val error = Error(channelId, exc.message)
@@ -141,7 +141,7 @@ sealed class ChannelState {
     }
 
     internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "" } // TODO
+        require(this is HasCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx hasn't been confirmed in time, cancelling channel delay=${fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE}" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
@@ -153,7 +153,7 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
-        require(this is HasCommitments) { "" } // TODO
+        require(this is HasCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
@@ -191,7 +191,7 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "" } // TODO
+        require(this is HasCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitments.remoteNextCommitInfo.isLeft) { "next remote commit must be defined" }
         val remoteCommit = commitments.remoteNextCommitInfo.left?.nextRemoteCommit
@@ -223,7 +223,7 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "" } // TODO
+        require(this is HasCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx spent in txid=${tx.txid}" }
 
         val onChainFeeConf = staticParams.nodeParams.onChainFeeConf
