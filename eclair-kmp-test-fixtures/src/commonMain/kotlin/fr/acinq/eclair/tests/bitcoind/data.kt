@@ -85,7 +85,8 @@ data class GetRawTransaction(val txid: String) : BitcoindRequest(txid) {
         )
 }
 data class GetRawTransactionResponse(val tx: Transaction) : BitcoindResponse()
-data class SendRawTransaction(val tx: Transaction) : BitcoindRequest(tx.toString()) {
+data class SendRawTransaction(val rawTx: String) : BitcoindRequest(rawTx) {
+    constructor(tx: Transaction) : this(tx.toString())
     override val method: String = "sendrawtransaction"
     override fun parseResponse(rpcResponse: JsonRPCResponse): SendRawTransactionResponse =
         SendRawTransactionResponse(rpcResponse.result.jsonPrimitive.content)

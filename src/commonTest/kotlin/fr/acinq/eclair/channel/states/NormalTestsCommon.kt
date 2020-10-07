@@ -12,6 +12,7 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
+import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.transactions.Transactions
@@ -467,7 +468,7 @@ class NormalTestsCommon {
     @Test
     fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
-        val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat,
             alice.staticParams.nodeParams.nodeId,
             currentBlockHeight)
@@ -672,7 +673,7 @@ class NormalTestsCommon {
     @Test
     fun `recv RevokeAndAck (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
-        val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat,
             alice.staticParams.nodeParams.nodeId,
             currentBlockHeight)
@@ -918,22 +919,22 @@ class NormalTestsCommon {
 
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
-        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (alice0, bob0) = reachNormal()
 
-        val (nodes0, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+        val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
         val (alice1, bob1) = nodes0
-        val (nodes1, preimage_alice2bob_2, _) = TestsHelper.addHtlc(100_000_000.msat, payer = alice1, payee = bob1)
+        val (nodes1, preimage_alice2bob_2, _) = addHtlc(100_000_000.msat, payer = alice1, payee = bob1)
         val (alice2, bob2) = nodes1
-        val (nodes2, _, _) = TestsHelper.addHtlc(10_000.msat, payer = alice2, payee = bob2)
+        val (nodes2, _, _) = addHtlc(10_000.msat, payer = alice2, payee = bob2)
         val (alice3, bob3) = nodes2
-        val (nodes3, preimage_bob2alice_1, _) = TestsHelper.addHtlc(50_000_000.msat, payer = bob3, payee = alice3)
+        val (nodes3, preimage_bob2alice_1, _) = addHtlc(50_000_000.msat, payer = bob3, payee = alice3)
         val (bob4, alice4) = nodes3
-        val (nodes4, _, _) = TestsHelper.addHtlc(55_000_000.msat, payer = bob4, payee = alice4)
+        val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = bob4, payee = alice4)
         val (bob5, alice5) = nodes4
 
-        val (alice6, bob6) = TestsHelper.crossSign(alice5, bob5)
-        val (alice7, bob7) = TestsHelper.fulfillHtlc(1, preimage_alice2bob_2, payer = alice6, payee = bob6)
-        val (bob8, alice8) = TestsHelper.fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
+        val (alice6, bob6) = crossSign(alice5, bob5)
+        val (alice7, bob7) = fulfillHtlc(1, preimage_alice2bob_2, payer = alice6, payee = bob6)
+        val (bob8, alice8) = fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
 
         // at this point here is the situation from alice pov and what she should do when bob publishes his commit tx:
         // balances :
@@ -992,22 +993,22 @@ class NormalTestsCommon {
 
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (their *next* commit with htlc)`() {
-        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (alice0, bob0) = reachNormal()
 
-        val (nodes0, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+        val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
         val (alice1, bob1) = nodes0
-        val (nodes1, preimage_alice2bob_2, _) = TestsHelper.addHtlc(100_000_000.msat, payer = alice1, payee = bob1)
+        val (nodes1, preimage_alice2bob_2, _) = addHtlc(100_000_000.msat, payer = alice1, payee = bob1)
         val (alice2, bob2) = nodes1
-        val (nodes2, _, _) = TestsHelper.addHtlc(10_000.msat, payer = alice2, payee = bob2)
+        val (nodes2, _, _) = addHtlc(10_000.msat, payer = alice2, payee = bob2)
         val (alice3, bob3) = nodes2
-        val (nodes3, preimage_bob2alice_1, _) = TestsHelper.addHtlc(50_000_000.msat, payer = bob3, payee = alice3)
+        val (nodes3, preimage_bob2alice_1, _) = addHtlc(50_000_000.msat, payer = bob3, payee = alice3)
         val (bob4, alice4) = nodes3
-        val (nodes4, _, _) = TestsHelper.addHtlc(55_000_000.msat, payer = bob4, payee = alice4)
+        val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = bob4, payee = alice4)
         val (bob5, alice5) = nodes4
 
-        val (alice6, bob6) = TestsHelper.crossSign(alice5, bob5)
-        val (alice7, bob7) = TestsHelper.fulfillHtlc(1, preimage_alice2bob_2, payer = alice6, payee = bob6)
-        val (bob8, alice8) = TestsHelper.fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
+        val (alice6, bob6) = crossSign(alice5, bob5)
+        val (alice7, bob7) = fulfillHtlc(1, preimage_alice2bob_2, payer = alice6, payee = bob6)
+        val (bob8, alice8) = fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
 
         // alice sign but we intercept bob's revocation
         val (alice9, aActions8) = alice8.process(ExecuteCommand(CMD_SIGN))
@@ -1075,15 +1076,15 @@ class NormalTestsCommon {
 
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
-        var (alice, bob) = TestsHelper.reachNormal()
+        var (alice, bob) = reachNormal()
         // initially we have :
         // alice = 800 000
         //   bob = 200 000
         fun send(): Transaction {
             // alice sends 8 000 sat
-            TestsHelper.addHtlc(10_000_000.msat, payer = alice, payee = bob)
+            addHtlc(10_000_000.msat, payer = alice, payee = bob)
                 .first.run { alice = first as Normal; bob = second as Normal }
-            TestsHelper.crossSign(alice, bob)
+            crossSign(alice, bob)
                 .run { alice = first as Normal; bob = second as Normal }
 
             return bob.commitments.localCommit.publishableTxs.commitTx.tx
@@ -1148,7 +1149,7 @@ class NormalTestsCommon {
 
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {
-        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (alice0, bob0) = reachNormal()
         // initially we have :
         // alice = 800 000
         //   bob = 200 000
@@ -1158,16 +1159,16 @@ class NormalTestsCommon {
             alice0.currentBlockHeight.toLong()
         )
 
-        val (alice1, bob1) = TestsHelper.addHtlc(cmdAdd = cmdAddHtlc, payer = alice0, payee = bob0)
-        val (alice2, bob2) = TestsHelper.addHtlc(cmdAdd = cmdAddHtlc, payer = alice1, payee = bob1)
+        val (alice1, bob1) = addHtlc(cmdAdd = cmdAddHtlc, payer = alice0, payee = bob0)
+        val (alice2, bob2) = addHtlc(cmdAdd = cmdAddHtlc, payer = alice1, payee = bob1)
 
-        val (alice3, bob3) = TestsHelper.crossSign(alice2, bob2)
+        val (alice3, bob3) = crossSign(alice2, bob2)
 
         // bob will publish this tx after it is revoked
         val revokedTx = (bob3 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
-        val (alice4, bob4) = TestsHelper.addHtlc(amount = 10000000.msat, payer = alice3, payee = bob3).first
-        val (alice5, bob5) = TestsHelper.crossSign(alice4, bob4)
+        val (alice4, bob4) = addHtlc(amount = 10000000.msat, payer = alice3, payee = bob3).first
+        val (alice5, bob5) = crossSign(alice4, bob4)
 
         // channel state for this revoked tx is as follows:
         // alice = 780 000
