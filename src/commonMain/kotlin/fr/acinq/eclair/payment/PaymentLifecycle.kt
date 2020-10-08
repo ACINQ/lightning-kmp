@@ -28,7 +28,7 @@ class PaymentLifecycle(
     }
 
     data class ProcessResult(
-        val id: UUID, // corresponds to the original SendPayment.id command sent to eclair (from Phoenix layer)
+        val paymentId: UUID,
         val status: ProcessedStatus,
         val fees: MilliSatoshi, // we can inform user as payment fees increase during retries
         val actions: List<PeerEvent>
@@ -311,7 +311,7 @@ class PaymentLifecycle(
     ): ProcessResult {
 
         val failedResult = ProcessResult(
-            id = sendPayment.id,
+            paymentId = sendPayment.id,
             status = ProcessedStatus.FAILED,
             fees = MilliSatoshi(0),
             actions = listOf()
@@ -343,7 +343,7 @@ class PaymentLifecycle(
 
         pending[paymentAttempt.id] = paymentAttempt
         return ProcessResult(
-            id = paymentAttempt.id,
+            paymentId = paymentAttempt.id,
             status = ProcessedStatus.SENDING,
             fees = paymentAttempt.totalFees(),
             actions = actions
@@ -397,7 +397,7 @@ class PaymentLifecycle(
             // Fees have been increased. Send new payment.
             val action = actionify(channel, paymentAttempt, trampolinePaymentAttempt, currentBlockHeight)
             return ProcessResult(
-                id = paymentAttempt.id,
+                paymentId = paymentAttempt.id,
                 status = ProcessedStatus.SENDING,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf(action)
@@ -420,7 +420,7 @@ class PaymentLifecycle(
             // We lack the capacity to complete the payment (as a whole), including the required fees.
             pending.remove(paymentAttempt.id)
             return ProcessResult(
-                id = paymentAttempt.id,
+                paymentId = paymentAttempt.id,
                 status = ProcessedStatus.FAILED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
@@ -433,7 +433,7 @@ class PaymentLifecycle(
         // - a payment failed on channel X (marking that channel as dead - for this paymentAttempt)
         // - but there are other available channels we can still use to complete the payment
         return ProcessResult(
-            id = paymentAttempt.id,
+            paymentId = paymentAttempt.id,
             status = ProcessedStatus.SENDING,
             fees = paymentAttempt.totalFees(),
             actions = actions
@@ -465,7 +465,7 @@ class PaymentLifecycle(
             // Paid in full !
             pending.remove(paymentAttempt.id)
             return ProcessResult(
-                id = paymentAttempt.id,
+                paymentId = paymentAttempt.id,
                 status = ProcessedStatus.SUCCEEDED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
@@ -479,7 +479,7 @@ class PaymentLifecycle(
             // We lack the capacity to complete the payment (as a whole), including the required fees.
             pending.remove(paymentAttempt.id)
             return ProcessResult(
-                id = paymentAttempt.id,
+                paymentId = paymentAttempt.id,
                 status = ProcessedStatus.FAILED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
@@ -494,7 +494,7 @@ class PaymentLifecycle(
         //   in order to meet channel capacity restrictions & increased fee requirements
         // - thus when all in-flight payments succeeded, we still had a remaining balance obligation
         return ProcessResult(
-            id = paymentAttempt.id,
+            paymentId = paymentAttempt.id,
             status = ProcessedStatus.SENDING,
             fees = paymentAttempt.totalFees(),
             actions = actions
