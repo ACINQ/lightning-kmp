@@ -523,7 +523,7 @@ class Peer(
                 if (result.status == PaymentLifecycle.ProcessedStatus.SENDING) {
                     // I don't think `pendingOutgoingPayments` is needed anymore...
                     pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
-                    listenerEventChannel.send(SendingPayment(event.id, event.paymentRequest))
+                    listenerEventChannel.send(SendingPayment(event.paymentId, event.paymentRequest))
                 }
                 for (action in result.actions) {
                     input.send(action)

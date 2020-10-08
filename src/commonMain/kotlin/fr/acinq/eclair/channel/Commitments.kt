@@ -602,8 +602,8 @@ data class Commitments(
         remoteChanges.signed.forEach {
             when (it) {
                 is UpdateAddHtlc -> actions += ProcessAdd(it)
-                is UpdateFailHtlc -> actions += ProcessFail(it, originChannels[it.id])
-                is UpdateFailMalformedHtlc -> actions += ProcessFailMalformed(it, originChannels[it.id])
+                is UpdateFailHtlc -> actions += ProcessFail(it, payments[it.id])
+                is UpdateFailMalformedHtlc -> actions += ProcessFailMalformed(it, payments[it.id])
                 else -> Unit
             }
         }

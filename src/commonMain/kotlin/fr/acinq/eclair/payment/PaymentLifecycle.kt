@@ -8,7 +8,6 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.io.WrappedChannelEvent
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.utils.*
@@ -107,7 +106,7 @@ class PaymentLifecycle(
      *   with directions to forward payment to Bob
      */
     class PaymentAttempt(sendPayment: SendPayment) {
-        val id: UUID = sendPayment.id
+        val paymentId: UUID = sendPayment.paymentId
         val invoice: PaymentRequest = sendPayment.paymentRequest
         val invoiceAmount = invoice.amount!! // sanity check already performed in processSendPayment
         val trampolinePaymentSecret = Eclair.randomBytes32() // must be different from invoice.paymentSecret
@@ -311,7 +310,7 @@ class PaymentLifecycle(
     ): ProcessResult {
 
         val failedResult = ProcessResult(
-            paymentId = sendPayment.id,
+            paymentId = sendPayment.paymentId,
             status = ProcessedStatus.FAILED,
             fees = MilliSatoshi(0),
             actions = listOf()
@@ -323,7 +322,7 @@ class PaymentLifecycle(
             return failedResult
         }
 
-        if (pending.containsKey(sendPayment.id)) {
+        if (pending.containsKey(sendPayment.paymentId)) {
             logger.error { "contract violation: payment request is recycling uuid's" }
             return failedResult
         }
@@ -341,9 +340,9 @@ class PaymentLifecycle(
             return failedResult
         }
 
-        pending[paymentAttempt.id] = paymentAttempt
+        pending[paymentAttempt.paymentId] = paymentAttempt
         return ProcessResult(
-            paymentId = paymentAttempt.id,
+            paymentId = paymentAttempt.paymentId,
             status = ProcessedStatus.SENDING,
             fees = paymentAttempt.totalFees(),
             actions = actions
@@ -356,15 +355,15 @@ class PaymentLifecycle(
         currentBlockHeight: Int
     ): ProcessResult? {
 
-        val origin: Origin?
+        val paymentId: UUID?
         val channelId: ByteVector32
         when (event) {
             is ProcessFail -> {
-                origin = event.origin
+                paymentId = event.paymentId
                 channelId = event.fail.channelId
             }
             is ProcessFailMalformed -> {
-                origin = event.origin
+                paymentId = event.paymentId
                 channelId = event.fail.channelId
             }
             else -> {
@@ -373,7 +372,7 @@ class PaymentLifecycle(
             }
         }
 
-        val paymentAttempt = if (origin is Origin.Local) pending[origin.id] else null
+        val paymentAttempt = paymentId?.let { pending[it] }
         if (paymentAttempt == null) {
             logger.error { "ProcessFail.origin doesn't match any known paymentAttempt" }
             return null
@@ -397,7 +396,7 @@ class PaymentLifecycle(
             // Fees have been increased. Send new payment.
             val action = actionify(channel, paymentAttempt, trampolinePaymentAttempt, currentBlockHeight)
             return ProcessResult(
-                paymentId = paymentAttempt.id,
+                paymentId = paymentAttempt.paymentId,
                 status = ProcessedStatus.SENDING,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf(action)
@@ -418,9 +417,9 @@ class PaymentLifecycle(
 
         if (actions.isEmpty()) {
             // We lack the capacity to complete the payment (as a whole), including the required fees.
-            pending.remove(paymentAttempt.id)
+            pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
-                paymentId = paymentAttempt.id,
+                paymentId = paymentAttempt.paymentId,
                 status = ProcessedStatus.FAILED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
@@ -433,7 +432,7 @@ class PaymentLifecycle(
         // - a payment failed on channel X (marking that channel as dead - for this paymentAttempt)
         // - but there are other available channels we can still use to complete the payment
         return ProcessResult(
-            paymentId = paymentAttempt.id,
+            paymentId = paymentAttempt.paymentId,
             status = ProcessedStatus.SENDING,
             fees = paymentAttempt.totalFees(),
             actions = actions
@@ -446,7 +445,7 @@ class PaymentLifecycle(
         currentBlockHeight: Int
     ): ProcessResult? {
 
-        val paymentAttempt = if (event.origin is Origin.Local) pending[event.origin.id] else null
+        val paymentAttempt = event.paymentId?.let { pending[it] }
         if (paymentAttempt == null) {
             logger.error { "ProcessFail.origin doesn't match any known paymentAttempt" }
             return null
@@ -463,9 +462,9 @@ class PaymentLifecycle(
         val paidAmount = paymentAttempt.totalAmount(includingFees = false)
         if (paidAmount >= paymentAttempt.invoiceAmount) {
             // Paid in full !
-            pending.remove(paymentAttempt.id)
+            pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
-                paymentId = paymentAttempt.id,
+                paymentId = paymentAttempt.paymentId,
                 status = ProcessedStatus.SUCCEEDED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
@@ -477,9 +476,9 @@ class PaymentLifecycle(
 
         if (actions.isEmpty()) {
             // We lack the capacity to complete the payment (as a whole), including the required fees.
-            pending.remove(paymentAttempt.id)
+            pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
-                paymentId = paymentAttempt.id,
+                paymentId = paymentAttempt.paymentId,
                 status = ProcessedStatus.FAILED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
@@ -494,7 +493,7 @@ class PaymentLifecycle(
         //   in order to meet channel capacity restrictions & increased fee requirements
         // - thus when all in-flight payments succeeded, we still had a remaining balance obligation
         return ProcessResult(
-            paymentId = paymentAttempt.id,
+            paymentId = paymentAttempt.paymentId,
             status = ProcessedStatus.SENDING,
             fees = paymentAttempt.totalFees(),
             actions = actions
@@ -690,7 +689,7 @@ class PaymentLifecycle(
             )
         )
         val (cmdAddHtlc, _) = OutgoingPacket.buildCommand(
-            id = paymentAttempt.id,
+            paymentId = paymentAttempt.paymentId,
             paymentHash = paymentAttempt.invoice.paymentHash,
             hops = channelHops,
             finalPayload = trampolinePayload

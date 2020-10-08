@@ -43,7 +43,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
             expirySeconds = expirySeconds
         )
 
-        return SendPayment(id = UUID.randomUUID(), paymentRequest = paymentRequest)
+        return SendPayment(paymentId = UUID.randomUUID(), paymentRequest = paymentRequest)
     }
 
     private fun expectedTrampolineFees(
