@@ -10,10 +10,7 @@ import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.payment.IncomingPayment
-import fr.acinq.eclair.payment.OutgoingPacket
-import fr.acinq.eclair.payment.PaymentHandler
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.payment.*
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -84,6 +81,9 @@ class Peer(
 
     // encapsulates logic for validating payments
     private val paymentHandler = PaymentHandler(nodeParams)
+
+    // encapsulates logic for sending payments
+    private val paymentLifecycle = PaymentLifecycle(nodeParams)
 
     private val features = Features(
         setOf(
@@ -464,13 +464,23 @@ class Peer(
                                         input.send(action)
                                     }
                                 }
-                                it is ProcessFulfill && !pendingOutgoingPayments.containsKey(it.fulfill.paymentPreimage.sha256()) -> {
-                                    logger.warning { "received ${it.fulfill} } for which we don't have a payment hash" }
+                                it is ProcessFail || it is ProcessFailMalformed -> {
+                                    paymentLifecycle.processFailure(it, channels, currentTip.first)?.let { result ->
+
+                                        if (result.status == PaymentLifecycle.ProcessedStatus.FAILED) {
+                                        //  listenerEventChannel.send(PaymentNotSent(result.id))
+                                        }
+                                        result.actions.forEach { input.send(it) }
+                                    }
                                 }
                                 it is ProcessFulfill -> {
-                                    val payment = pendingOutgoingPayments[it.fulfill.paymentPreimage.sha256()]!!
-                                    logger.info { "received ${it.fulfill} } for payment $payment" }
-                                    listenerEventChannel.send(PaymentSent(payment.paymentId, payment.paymentRequest))
+                                    paymentLifecycle.processFulfill(it, channels, currentTip.first)?.let { result ->
+
+                                        if (result.status == PaymentLifecycle.ProcessedStatus.SUCCEEDED) {
+                                        //  listenerEventChannel.send(PaymentSent(result.id, result.invoice))
+                                        }
+                                        result.actions.forEach { input.send(it) }
+                                    }
                                 }
                             }
                         }
@@ -507,44 +517,16 @@ class Peer(
             //
             // send payments
             //
-            event is SendPayment && channels.isEmpty() -> {
-                logger.error { "no channels to send payments with" }
-            }
-            event is SendPayment && event.paymentRequest.amount == null -> {
-                // TODO: support amount-less payment requests
-                logger.error { "payment request does not include an amount" }
-            }
             event is SendPayment -> {
-                logger.info { "sending ${event.paymentRequest.amount} to ${event.paymentRequest.nodeId}" }
+                val result = paymentLifecycle.processSendPayment(event, channels, currentTip.first)
 
-                // find a channel with enough outgoing capacity
-                channels.values
-                    .filterIsInstance<Normal>()
-                    .forEach { logger.info { "channel ${it.channelId} available for send ${it.commitments.availableBalanceForSend()}" } }
-                val channel = channels.values
-                    .filterIsInstance<Normal>()
-                    .find { it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! }
-                if (channel == null) logger.error { "cannot find channel with enough capacity" } else {
-                    val paymentId = event.paymentId
-                    val expiryDelta = CltvExpiryDelta(35) // TODO: read value from payment request
-                    val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
-                    val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId
-                    val finalPayload = when (isDirectPayment) {
-                        true -> FinalPayload.createSinglePartPayload(event.paymentRequest.amount!!, expiry)
-                        false -> TODO("implement trampoline payment")
-                    }
-                    // one hop: this a direct payment to our peer
-                    val hops = listOf(ChannelHop(nodeParams.nodeId, remoteNodeId, channel.channelUpdate))
-                    val (cmd, _) = OutgoingPacket.buildCommand(paymentId, event.paymentRequest.paymentHash!!, hops, finalPayload)
-                    val (state1, actions) = channel.process(ExecuteCommand(cmd))
-                    channels = channels + (channel.channelId to state1)
-                    send(actions)
-                    store(actions)
-                    sendToSelf(channel.channelId, actions)
+                if (result.status == PaymentLifecycle.ProcessedStatus.SENDING) {
+                    // I don't think `pendingOutgoingPayments` is needed anymore...
                     pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
-                    logger.info { "channel ${channel.channelId} new state $state1" }
-
-                    listenerEventChannel.send(SendingPayment(paymentId, event.paymentRequest))
+                    listenerEventChannel.send(SendingPayment(event.id, event.paymentRequest))
+                }
+                for (action in result.actions) {
+                    input.send(action)
                 }
             }
             event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
