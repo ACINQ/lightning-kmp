@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.payment.relay.Origin
+import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.wire.AnnouncementSignatures
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -75,6 +75,6 @@ data class CommitmentSyncError                 (override val channelId: ByteVect
 data class RevocationSyncError                 (override val channelId: ByteVector32) : ChannelException(channelId, "revocation sync error")
 data class InvalidFailureCode                  (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment         (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
-data class AddHtlcFailed                       (override val channelId: ByteVector32, val paymentHash: ByteVector32, val t: Throwable, val origin: Origin, val channelUpdate: ChannelUpdate?, val originalCommand: CMD_ADD_HTLC?) : ChannelException(channelId, "cannot add htlc with origin=$origin reason=${t.message}")
+data class AddHtlcFailed                       (override val channelId: ByteVector32, val paymentHash: ByteVector32, val t: Throwable, val paymentId: UUID, val channelUpdate: ChannelUpdate?, val originalCommand: CMD_ADD_HTLC?) : ChannelException(channelId, "cannot add htlc with origin=$paymentId reason=${t.message}")
 data class CommandUnavailableInThisState       (override val channelId: ByteVector32, val command: String, val state: String) : ChannelException(channelId, "cannot execute command=$command in state=$state")
 // @formatter:on

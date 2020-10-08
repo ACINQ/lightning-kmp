@@ -6,7 +6,6 @@ import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.CommitmentSpecTestsCommon
@@ -43,7 +42,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         val currentBlockHeight = 144L
         val cmdAdd = TestsHelper.makeCmdAdd(a - htlcOutputFee - 1000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight).second
-        val (ac1, add) = ac0.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
         val bc1 = bc0.receiveAdd(add).get()
         val (_, commit1) = ac1.sendCommit(alice.staticParams.nodeParams.keyManager, logger).get()
         val (bc2, _) = bc1.receiveCommit(commit1, bob.staticParams.nodeParams.keyManager, logger).get()
@@ -72,7 +71,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         val currentBlockHeight = 144L
         val (payment_preimage, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add) = ac0.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
         assertEquals(ac1.availableBalanceForSend(), a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
@@ -159,7 +158,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         val currentBlockHeight = 144L
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add) = ac0.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
         assertEquals(ac1.availableBalanceForSend(), a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
@@ -249,17 +248,17 @@ class CommitmentsTestsCommon : EclairTestSuite() {
         val currentBlockHeight = 144L
 
         val (payment_preimage1, cmdAdd1) = TestsHelper.makeCmdAdd(p1, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add1) = ac0.sendAdd(cmdAdd1, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (ac1, add1) = ac0.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight).get()
         assertEquals(ac1.availableBalanceForSend(), a - p1 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
         val (_, cmdAdd2) = TestsHelper.makeCmdAdd(p2, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac2, add2) = ac1.sendAdd(cmdAdd2, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (ac2, add2) = ac1.sendAdd(cmdAdd2, UUID.randomUUID(), currentBlockHeight).get()
         assertEquals(ac2.availableBalanceForSend(), a - p1 - fee - p2 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
         val (payment_preimage3, cmdAdd3) = TestsHelper.makeCmdAdd(p3, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (bc1, add3) = bc0.sendAdd(cmdAdd3, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (bc1, add3) = bc0.sendAdd(cmdAdd3, UUID.randomUUID(), currentBlockHeight).get()
         assertEquals(bc1.availableBalanceForSend(), b - p3) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(bc1.availableBalanceForReceive(), a)
 
@@ -382,7 +381,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
         val currentBlockHeight = 144L
         val c = makeCommitments(100000000.msat, 50000000.msat, 2500, 546.sat, isFunder)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
-        val (c1, _) = c.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight).get()
+        val (c1, _) = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
         assertEquals(c1.availableBalanceForSend(), 0.msat)
 
         // We should be able to handle a fee increase.
@@ -390,7 +389,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
         val (_, cmdAdd1) = TestsHelper.makeCmdAdd(100.msat, randomKey().publicKey(), currentBlockHeight)
-        val e = (c2.sendAdd(cmdAdd1, Origin.Local(UUID.randomUUID()), currentBlockHeight) as Try.Failure<Pair<Commitments, UpdateAddHtlc>>).error
+        val e = (c2.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight) as Try.Failure<Pair<Commitments, UpdateAddHtlc>>).error
         assertTrue(e is InsufficientFunds)
     }
 
@@ -400,7 +399,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
         listOf(true, false).forEach {
             val c = makeCommitments(702000000.msat, 52000000.msat, 2679, 546.sat, it)
             val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
-            val result = c.sendAdd(cmdAdd, Origin.Local(UUID.randomUUID()), currentBlockHeight)
+            val result = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight)
             assertTrue(result.isSuccess)
         }
     }
@@ -450,7 +449,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
                 RemoteChanges(listOf(), listOf(), listOf()),
                 localNextHtlcId = 1,
                 remoteNextHtlcId = 1,
-                originChannels = mapOf(),
+                payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 commitInput = commitmentInput,
                 remotePerCommitmentSecrets = ShaChain.init,
@@ -489,7 +488,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
                 RemoteChanges(listOf(), listOf(), listOf()),
                 localNextHtlcId = 1,
                 remoteNextHtlcId = 1,
-                originChannels = mapOf(),
+                payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 commitInput = commitmentInput,
                 remotePerCommitmentSecrets = ShaChain.init,
