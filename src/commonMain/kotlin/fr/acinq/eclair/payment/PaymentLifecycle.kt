@@ -604,7 +604,7 @@ class PaymentLifecycle(
     ): WrappedChannelEvent {
 
         val finalExpiryDelta = paymentAttempt.invoice.minFinalExpiryDelta
-            ?: CltvExpiryDelta(18) // default value if unspecified, as per Bolt 11
+            ?: Channel.MIN_CLTV_EXPIRY_DELTA // default value if unspecified, as per Bolt 11
         val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
 
         val trampolineExpiryDelta = trampolinePaymentAttempt.cltvExpiryDelta + finalExpiryDelta
