@@ -240,7 +240,8 @@ sealed class ChannelState {
             val error = Error(channelId, exc.message)
 
             val nextState = when(this) {
-                is Closing -> copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
+                is Closing -> if (this.revokedCommitPublished.contains(revokedCommitPublished))  this
+                else copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
                 // TODO
                 //  is Negotiating -> {}
                 // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed so we don't have the case where fundingTx is defined
