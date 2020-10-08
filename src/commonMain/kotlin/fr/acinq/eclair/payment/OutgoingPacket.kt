@@ -105,8 +105,8 @@ object OutgoingPacket {
      *
      * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
      */
-    fun buildCommand(id: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, List<Pair<ByteVector32, PublicKey>>> {
+    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, List<Pair<ByteVector32, PublicKey>>> {
         val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, OnionRoutingPacket.PaymentPacketLength)
-        return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, id, commit = true), onion.sharedSecrets)
+        return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
     }
 }

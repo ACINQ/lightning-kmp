@@ -10,7 +10,6 @@ import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
@@ -682,7 +681,7 @@ data class WaitForFundingCreated(
                                     RemoteChanges(listOf(), listOf(), listOf()),
                                     localNextHtlcId = 0L,
                                     remoteNextHtlcId = 0L,
-                                    originChannels = mapOf(),
+                                    payments = mapOf(),
                                     remoteNextCommitInfo = Either.Right(Eclair.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
                                     commitInput,
                                     ShaChain.init,
@@ -890,7 +889,7 @@ data class WaitForFundingSigned(
                             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, listOf())), remoteCommit,
                             LocalChanges(listOf(), listOf(), listOf()), RemoteChanges(listOf(), listOf(), listOf()),
                             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
-                            originChannels = mapOf(),
+                            payments = mapOf(),
                             remoteNextCommitInfo = Either.Right(Eclair.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                             commitInput, ShaChain.init, channelId, event.message.channelData
                         )
@@ -1093,7 +1092,7 @@ data class Normal(
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
                         // TODO: handle shutdown in progress
-                        when (val result = commitments.sendAdd(event.command, Origin.Local(event.command.id), currentBlockHeight.toLong())) {
+                        when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
                             }

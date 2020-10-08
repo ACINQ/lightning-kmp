@@ -17,7 +17,6 @@ import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.*
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
@@ -74,7 +73,7 @@ data class Commitments(
     val remoteChanges: RemoteChanges,
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
-    val originChannels: Map<Long, Origin>, // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
+    val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymenId
     val remoteNextCommitInfo: Either<WaitingForRevocation, @Serializable(with = PublicKeyKSerializer::class) PublicKey>,
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
@@ -195,7 +194,7 @@ data class Commitments(
      * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
      */
     @OptIn(ExperimentalUnsignedTypes::class)
-    fun sendAdd(cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Try<Pair<Commitments, UpdateAddHtlc>> {
+    fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Try<Pair<Commitments, UpdateAddHtlc>> {
         // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
         val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
         if (cmd.cltvExpiry < minExpiry) {
@@ -216,7 +215,7 @@ data class Commitments(
         // let's compute the current commitment *as seen by them* with this change taken into account
         val add = UpdateAddHtlc(channelId, localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
         // we increment the local htlc index and add an entry to the origins map
-        val commitments1 = addLocalProposal(add).copy(localNextHtlcId = localNextHtlcId + 1, originChannels = originChannels + mapOf(add.id to origin))
+        val commitments1 = addLocalProposal(add).copy(localNextHtlcId = localNextHtlcId + 1, payments = payments + mapOf(add.id to paymentId))
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
         val remoteCommit1 = when (remoteNextCommitInfo) {
             is Either.Left -> remoteNextCommitInfo.value.nextRemoteCommit
@@ -341,10 +340,12 @@ data class Commitments(
         }
     }
 
-    fun receiveFulfill(fulfill: UpdateFulfillHtlc): Try<Triple<Commitments, Origin, UpdateAddHtlc>> {
+    fun receiveFulfill(fulfill: UpdateFulfillHtlc): Try<Triple<Commitments, UUID, UpdateAddHtlc>> {
         val htlc = getOutgoingHtlcCrossSigned(fulfill.id) ?: return Try.Failure(UnknownHtlcId(channelId, fulfill.id))
         return when {
-            htlc.paymentHash.contentEquals(sha256(fulfill.paymentPreimage)) -> runTrying { Triple(addRemoteProposal(fulfill), originChannels[fulfill.id]!!, htlc) }
+            htlc.paymentHash.contentEquals(sha256(fulfill.paymentPreimage)) -> runTrying {
+                Triple(addRemoteProposal(fulfill), payments[fulfill.id]!!, htlc)
+            }
             else -> Try.Failure(InvalidHtlcPreimage(channelId, fulfill.id))
         }
     }
@@ -392,16 +393,16 @@ data class Commitments(
         }
     }
 
-    fun receiveFail(fail: UpdateFailHtlc): Try<Triple<Commitments, Origin, UpdateAddHtlc>> {
+    fun receiveFail(fail: UpdateFailHtlc): Try<Triple<Commitments, UUID, UpdateAddHtlc>> {
         val htlc = getOutgoingHtlcCrossSigned(fail.id) ?: return Try.Failure(UnknownHtlcId(channelId, fail.id))
-        return runTrying { Triple(addRemoteProposal(fail), originChannels[fail.id]!!, htlc) }
+        return runTrying { Triple(addRemoteProposal(fail), payments[fail.id]!!, htlc) }
     }
 
-    fun receiveFailMalformed(fail: UpdateFailMalformedHtlc): Try<Triple<Commitments, Origin, UpdateAddHtlc>> {
+    fun receiveFailMalformed(fail: UpdateFailMalformedHtlc): Try<Triple<Commitments, UUID, UpdateAddHtlc>> {
         // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
         if ((fail.failureCode and FailureMessage.BADONION) == 0) return Try.Failure(InvalidFailureCode(channelId))
         val htlc = getOutgoingHtlcCrossSigned(fail.id) ?: return Try.Failure(UnknownHtlcId(channelId, fail.id))
-        return runTrying { Triple(addRemoteProposal(fail), originChannels[fail.id]!!, htlc) }
+        return runTrying { Triple(addRemoteProposal(fail), payments[fail.id]!!, htlc) }
     }
 
     fun sendFee(cmd: CMD_UPDATE_FEE): Try<Pair<Commitments, UpdateFee>> {
@@ -596,7 +597,7 @@ data class Commitments(
         // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
         val completedOutgoingHtlcs = remoteCommit.spec.htlcs.incomings().map { it.id } - theirNextCommit.spec.htlcs.incomings().map { it.id }
         // we remove the newly completed htlcs from the origin map
-        val originChannels1 = originChannels - completedOutgoingHtlcs
+        val payments1 = payments - completedOutgoingHtlcs
         val actions: MutableList<ChannelAction> = ArrayList<ChannelAction>().toMutableList()
         remoteChanges.signed.forEach {
             when (it) {
@@ -612,7 +613,7 @@ data class Commitments(
             remoteCommit = theirNextCommit,
             remoteNextCommitInfo = Either.Right(revocation.nextPerCommitmentPoint),
             remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommit.index),
-            originChannels = originChannels1
+            payments = payments1
         )
         return Try.Success(Pair(commitments1, actions.toList()))
     }
