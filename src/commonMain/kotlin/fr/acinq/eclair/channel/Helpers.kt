@@ -7,8 +7,7 @@ import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.blockchain.fee.FeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
@@ -307,7 +306,7 @@ object Helpers {
          * @param commitments our commitment data, which include payment preimages
          * @return a list of transactions (one per HTLC that we can claim)
          */
-        fun claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets): LocalCommitPublished {
+        fun claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnchainFeerates): LocalCommitPublished {
             val localCommit = commitments.localCommit
             val localParams = commitments.localParams
             val channelVersion = commitments.channelVersion
@@ -316,7 +315,7 @@ object Helpers {
             val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index)
             val localRevocationPubkey = Generators.revocationPubKey(commitments.remoteParams.revocationBasepoint, localPerCommitmentPoint)
             val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-            val feeratePerKwDelayed = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+            val feeratePerKwDelayed = feerates.claimMainFeeratePerKw
 
             // first we will claim our main output as soon as the delay is over
             val mainDelayedTx = generateTx("main-delayed-output") {
@@ -393,7 +392,7 @@ object Helpers {
          * @param tx           the remote commitment transaction that has just been published
          * @return a list of transactions (one per HTLC that we can claim)
          */
-        fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets): RemoteCommitPublished {
+        fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnchainFeerates): RemoteCommitPublished {
             val channelVersion = commitments.channelVersion
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
@@ -411,7 +410,7 @@ object Helpers {
             val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteCommit.spec)
 
             // we need to use a rather high fee for htlc-claim because we compete with the counterparty
-            val feeratePerKwHtlc = feeEstimator.getFeeratePerKw(target = 2)
+            val feeratePerKwHtlc = feerates.commitmentFeeratePerKw
 
             // those are the preimages to existing received htlcs
             val preimages = commitments.localChanges.all.filterIsInstance<UpdateFulfillHtlc>().map { it.paymentPreimage }
@@ -465,7 +464,7 @@ object Helpers {
             return if (channelVersion.hasStaticRemotekey) {
                 RemoteCommitPublished(commitTx = tx, claimHtlcSuccessTxs = claimHtlcSuccessTxs, claimHtlcTimeoutTxs = claimHtlcTimeoutTxs)
             } else {
-                claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
+                claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feerates.claimMainFeeratePerKw).copy(
                     claimHtlcSuccessTxs = claimHtlcSuccessTxs,
                     claimHtlcTimeoutTxs = claimHtlcTimeoutTxs
                 )
@@ -482,10 +481,9 @@ object Helpers {
          * @param tx                       the remote commitment transaction that has just been published
          * @return a list of transactions (one per HTLC that we can claim)
          */
-        private fun claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets): RemoteCommitPublished {
+        private fun claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, claimMainFeeratePerKw: Long): RemoteCommitPublished {
             val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
             val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-            val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
             val mainTx = generateTx("claim-p2wpkh-output") {
                 Transactions.makeClaimP2WPKHOutputTx(
@@ -493,7 +491,7 @@ object Helpers {
                     commitments.localParams.dustLimit,
                     localPubkey,
                     commitments.localParams.defaultFinalScriptPubKey.toByteArray(),
-                    feeratePerKwMain
+                    claimMainFeeratePerKw
                 )
             }?.let {
                 val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
@@ -512,7 +510,7 @@ object Helpers {
          *
          * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
          */
-        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets): RevokedCommitPublished? {
+        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnchainFeerates): RevokedCommitPublished? {
             val channelVersion = commitments.channelVersion
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
@@ -521,7 +519,7 @@ object Helpers {
 
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
             val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
-            val localPaymentPoint =  if (channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)) {
+            val localPaymentPoint = if (channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)) {
                 localParams.localPaymentBasepoint ?: error("localParams.localPaymentBasepoint must be not be null")
             } else {
                 keyManager.paymentPoint(channelKeyPath).publicKey
@@ -549,9 +547,9 @@ object Helpers {
 //            val localHtlcPubkey =
 //                Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
-            val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+            val feeratePerKwMain = feerates.claimMainFeeratePerKw
             // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
-            val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 2)
+            val feeratePerKwPenalty = feerates.fastFeeratePerKw
 
             // first we will claim our main output right away
             val mainTx = when {
@@ -651,7 +649,7 @@ object Helpers {
          * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
          * this is the purpose of this method.
          */
-        fun claimRevokedHtlcTxOutputs(keyManager: KeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feeEstimator: FeeEstimator): Pair<RevokedCommitPublished, Transaction?> {
+        fun claimRevokedHtlcTxOutputs(keyManager: KeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: OnchainFeerates): Pair<RevokedCommitPublished, Transaction?> {
             val claimTxes = buildList {
                 revokedCommitPublished.claimMainOutputTx?.let { add(it) }
                 revokedCommitPublished.mainPenaltyTx?.let { add(it) }
@@ -659,7 +657,8 @@ object Helpers {
             }
 
             if (htlcTx.txIn.map { it.outPoint.txid }.contains(revokedCommitPublished.commitTx.txid) &&
-                !claimTxes.map { it.txid }.toSet().contains(htlcTx.txid)) {
+                !claimTxes.map { it.txid }.toSet().contains(htlcTx.txid)
+            ) {
                 logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val localParams = commitments.localParams
@@ -691,7 +690,7 @@ object Helpers {
                 )
 
                 // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
-                val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 1)
+                val feeratePerKwPenalty = feerates.fastFeeratePerKw
 
                 val signedTx = generateTx("claim-htlc-delayed-penalty") {
                     Transactions.makeClaimDelayedOutputPenaltyTx(

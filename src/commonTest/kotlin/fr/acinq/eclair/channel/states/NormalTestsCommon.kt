@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
@@ -81,6 +80,7 @@ class NormalTestsCommon {
         // It's usually dangerous for Bob to accept HTLCs that are expiring soon. However it's not Alice's decision to reject
         // them when she's asked to relay; she should forward those HTLCs to Bob, and Bob will choose whether to fail them
         // or fulfill them (Bob could be #reckless and fulfill HTLCs with a very low expiry delta).
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
         val expiryTooSmall = CltvExpiry(currentBlockHeight + 3)
 
         val add = CMD_ADD_HTLC().copy(cltvExpiry = expiryTooSmall)
@@ -93,6 +93,7 @@ class NormalTestsCommon {
     fun `recv CMD_ADD_HTLC (expiry too big)`() {
         val (alice0, bob0) = reachNormal()
 
+        val currentBlockHeight = alice0.currentBlockHeight.toLong()
         val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
         val add = CMD_ADD_HTLC().copy(cltvExpiry = expiryTooBig)
 
@@ -192,13 +193,13 @@ class NormalTestsCommon {
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs and 0 balance)`() {
         val (alice0, bob0) = reachNormal()
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 50_000_000.msat)))
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 500_000_000.msat)))
         actionsAlice1.hasMessage<UpdateAddHtlc>()
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 20_000_000.msat)))
+        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 200_000_000.msat)))
         actionsAlice2.hasMessage<UpdateAddHtlc>()
         val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 64_160_000.msat)))
         actionsAlice3.hasMessage<UpdateAddHtlc>()
-        val (_, actionsAlice4) = alice3.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 1_000_000.msat)))
+        val (_, actionsAlice4) = alice3.process(ExecuteCommand(CMD_ADD_HTLC().copy(amount = 1000_000.msat)))
         val actualError = actionsAlice4.findError<InsufficientFunds>()
         val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1000.sat, reserve = 20_000.sat, fees = 12_400.sat)
         assertEquals(expectedError, actualError)
@@ -981,8 +982,8 @@ class NormalTestsCommon {
 
         // assert the feerate of the claim main is what we expect
         aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
-            val feeTargets = aliceClosing.staticParams.nodeParams.onChainFeeConf.feeTargets
-            val expectedFeeRate = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+            val feerates = aliceClosing.currentOnchainFeerates
+            val expectedFeeRate = feerates.claimMainFeeratePerKw
             val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
             val claimFee = claimMain.txIn.map {
                 bobCommitTx.txOut[it.outPoint.index.toInt()].amount
@@ -1064,8 +1065,8 @@ class NormalTestsCommon {
 
         // assert the feerate of the claim main is what we expect
         aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
-            val feeTargets = aliceClosing.staticParams.nodeParams.onChainFeeConf.feeTargets
-            val expectedFeeRate = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+            val feerates = aliceClosing.currentOnchainFeerates
+            val expectedFeeRate = feerates.claimMainFeeratePerKw
             val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
             val claimFee = claimMain.txIn.map {
                 bobCommitTx.txOut[it.outPoint.index.toInt()].amount

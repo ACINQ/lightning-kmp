@@ -36,9 +36,9 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
         }
     }
 
-    fun isExpired(): Boolean = when (expiry) {
-        null -> timestamp + DEFAULT_EXPIRY_SECONDS <= currentTimestampSeconds()
-        else -> timestamp + expiry <= currentTimestampSeconds()
+    fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean = when (expiry) {
+        null -> timestamp + DEFAULT_EXPIRY_SECONDS <= currentTimestampSeconds
+        else -> timestamp + expiry <= currentTimestampSeconds
     }
 
     private fun hrp() = prefix + encodeAmount(amount)

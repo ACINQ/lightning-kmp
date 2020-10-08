@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eclair.io.eclairSerializersModule
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -16,7 +15,6 @@ import kotlin.test.assertEquals
 class ChannelStateSerializationTestsCommon : EclairTestSuite() {
     val serializationModules = SerializersModule {
         include(eclairSerializersModule)
-        include(ConstantFeeEstimator.testSerializersModule)
     }
 
     val cbor = Cbor {

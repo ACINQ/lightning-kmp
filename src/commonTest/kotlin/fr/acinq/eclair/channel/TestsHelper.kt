@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.ChannelHop
@@ -36,9 +37,19 @@ inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
 internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is HandleError && it.error is T } }
 
 object TestsHelper {
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
-        var alice: ChannelState = WaitForInit(StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
-        var bob: ChannelState = WaitForInit(StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId), currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header))
+    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+        var alice: ChannelState =
+            WaitForInit(
+                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
+                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+                currentOnchainFeerates = OnchainFeerates(10000, 10000, 10000, 10000, 10000)
+            )
+        var bob: ChannelState =
+            WaitForInit(
+                StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
+                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+                currentOnchainFeerates = OnchainFeerates(10000, 10000, 10000, 10000, 10000)
+            )
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams
         var bobChannelParams = TestConstants.Bob.channelParams
@@ -65,12 +76,18 @@ object TestsHelper {
         var rb = bob.process(InitFundee(ByteVector32.Zeroes, bobChannelParams, aliceInit))
         bob = rb.first
         assertTrue { bob is WaitForOpenChannel }
-
         val open = ra.second.findOutgoingMessage<OpenChannel>()
-        rb = bob.process(MessageReceived(open))
+        return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
+    }
+
+    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
+        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
+        var alice = a as ChannelState
+        var bob = b as ChannelState
+        var rb = bob.process(MessageReceived(open))
         bob = rb.first
         val accept = rb.second.findOutgoingMessage<AcceptChannel>()
-        ra = alice.process(MessageReceived(accept))
+        var ra = alice.process(MessageReceived(accept))
         alice = ra.first
         val makeFundingTx = run {
             val candidates = ra.second.filterIsInstance<MakeFundingTx>()

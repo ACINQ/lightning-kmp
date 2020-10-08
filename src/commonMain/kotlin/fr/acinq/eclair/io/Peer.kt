@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchEvent
 import fr.acinq.eclair.blockchain.electrum.*
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.Connected
 import fr.acinq.eclair.crypto.noise.*
@@ -38,6 +39,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 
 data class SendPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
+object CheckPaymentsTimeout : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -93,6 +95,7 @@ class Peer(
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
+    private var onchainFeerates = OnchainFeerates(750, 750, 750, 750, 750)
 
     init {
         val electrumConnectedChannel = watcher.client.openConnectedSubscription()
@@ -112,7 +115,7 @@ class Peer(
         launch {
             channelsDb.listLocalChannels().forEach {
                 logger.info { "restoring $it" }
-                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                 val (state1, actions) = state.process(Restore(it as ChannelState))
                 send(actions)
                 channels = channels + (it.channelId to state1)
@@ -174,6 +177,13 @@ class Peer(
                 }
             }
 
+            suspend fun checkPaymentsTimeout() {
+                while (isActive) {
+                    delay(timeMillis = 30_000)
+                    input.send(CheckPaymentsTimeout)
+                }
+            }
+
             suspend fun listen() {
                 try {
                     while (isActive) {
@@ -202,6 +212,7 @@ class Peer(
                     }
                 }
                 launch { doPing() }
+                launch { checkPaymentsTimeout() }
                 launch { respond() }
 
                 listen()
@@ -247,7 +258,10 @@ class Peer(
         if (actions1.isEmpty()) return
         val state = actions1.last().data
         logger.info { "storing $state" }
-        channelsDb.addOrUpdateChannel(state as HasCommitments)
+        when (state) {
+            is HasCommitments -> channelsDb.addOrUpdateChannel(state as HasCommitments)
+            else -> logger.warning { "cannot store state $state" }
+        }
     }
 
     private suspend fun handshake(
@@ -363,7 +377,8 @@ class Peer(
                         )
                         val state = WaitForInit(
                             StaticParams(nodeParams, remoteNodeId),
-                            Pair(0, Block.RegtestGenesisBlock.header)
+                            Pair(0, Block.RegtestGenesisBlock.header),
+                            onchainFeerates
                         )
                         val (state1, actions1) = state.process(
                             InitFundee(
@@ -385,7 +400,7 @@ class Peer(
                                 is Try.Success -> {
                                     logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
-                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                                     val (state1, actions1) = state.process(Restore(backup as ChannelState))
                                     send(actions1)
                                     store(actions1)
@@ -489,7 +504,7 @@ class Peer(
             //
             event is ReceivePayment -> {
                 logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
-                val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional))
+                val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory))
                 if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
                     invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
                 }
@@ -561,6 +576,10 @@ class Peer(
                 send(actions)
                 store(actions)
                 sendToSelf(event.channelId, actions)
+            }
+            event is CheckPaymentsTimeout -> {
+                val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
+                actions.forEach { input.send(it) }
             }
         }
     }

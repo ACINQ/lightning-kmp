@@ -4,8 +4,6 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -39,8 +37,6 @@ object TestConstants {
             ),
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
-                feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator = ConstantFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
@@ -69,7 +65,7 @@ object TestConstants {
             chainHash = Block.RegtestGenesisBlock.hash,
             channelFlags = 1,
             paymentRequestExpiry = 3600,
-            multiPartPaymentExpiry = 30,
+            multiPartPaymentExpiry = 60,
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
@@ -102,8 +98,6 @@ object TestConstants {
             ),
             dustLimit = 1000.sat,
             onChainFeeConf = OnChainFeeConf(
-                feeTargets = FeeTargets(6, 2, 2, 6),
-                feeEstimator = ConstantFeeEstimator(10000),
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
@@ -112,7 +106,7 @@ object TestConstants {
             maxAcceptedHtlcs = 100,
             expiryDeltaBlocks = CltvExpiryDelta(144),
             fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-            htlcMinimum = 0.msat,
+            htlcMinimum = 1000.msat,
             minDepthBlocks = 3,
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(1000),
@@ -132,7 +126,7 @@ object TestConstants {
             chainHash = Block.RegtestGenesisBlock.hash,
             channelFlags = 1,
             paymentRequestExpiry = 3600,
-            multiPartPaymentExpiry = 30,
+            multiPartPaymentExpiry = 60,
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,

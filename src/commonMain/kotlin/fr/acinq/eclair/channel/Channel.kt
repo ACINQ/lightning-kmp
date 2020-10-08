@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
@@ -100,6 +101,7 @@ data class StaticParams(val nodeParams: NodeParams, @Serializable(with = PublicK
 sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
+    abstract val currentOnchainFeerates: OnchainFeerates
     val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.keyManager.nodeKey.privateKey
@@ -135,7 +137,7 @@ sealed class ChannelState {
         // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
         // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
         return newState {
-            state = Closed(staticParams, currentTip)
+            state = Closed(staticParams, currentTip, currentOnchainFeerates)
             actions = listOf(SendMessage(error))
         }
     }
@@ -147,7 +149,7 @@ sealed class ChannelState {
         val error = Error(channelId, exc.message)
         // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
         return newState {
-            state = Closed(staticParams, currentTip)
+            state = Closed(staticParams, currentTip, currentOnchainFeerates)
             actions = listOf(SendMessage(error))
         }
     }
@@ -158,7 +160,7 @@ sealed class ChannelState {
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
         val onChainFeeConf = staticParams.nodeParams.onChainFeeConf
-        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, onChainFeeConf.feeEstimator, onChainFeeConf.feeTargets)
+        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnchainFeerates)
 
         val nextState = when(this) {
             is Closing -> copy(remoteCommitPublished = remoteCommitPublished)
@@ -169,6 +171,7 @@ sealed class ChannelState {
             is WaitForFundingConfirmed -> Closing(
                 staticParams = staticParams,
                 currentTip = currentTip,
+                currentOnchainFeerates = currentOnchainFeerates,
                 commitments = commitments,
                 fundingTx = fundingTx,
                 waitingSince = currentTimestampMillis(),
@@ -177,6 +180,7 @@ sealed class ChannelState {
             else -> Closing(
                 staticParams = staticParams,
                 currentTip = currentTip,
+                currentOnchainFeerates = currentOnchainFeerates,
                 commitments = commitments,
                 fundingTx = null,
                 waitingSince = currentTimestampMillis(),
@@ -198,8 +202,7 @@ sealed class ChannelState {
         require(remoteCommit != null) { "remote commit must not be null" }
         require(commitTx.txid == remoteCommit.txid) { "txid mismatch" }
 
-        val onChainFeeConf = staticParams.nodeParams.onChainFeeConf
-        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, onChainFeeConf.feeEstimator, onChainFeeConf.feeTargets)
+        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, currentOnchainFeerates)
 
         val nextState = when(this) {
             is Closing -> copy(remoteCommitPublished = remoteCommitPublished)
@@ -209,6 +212,7 @@ sealed class ChannelState {
             else -> Closing(
                 staticParams = staticParams,
                 currentTip = currentTip,
+                currentOnchainFeerates = currentOnchainFeerates,
                 commitments = commitments,
                 fundingTx = null,
                 waitingSince = currentTimestampMillis(),
@@ -232,8 +236,7 @@ sealed class ChannelState {
             keyManager,
             commitments,
             tx,
-            onChainFeeConf.feeEstimator,
-            onChainFeeConf.feeTargets
+            currentOnchainFeerates
         )?.let { revokedCommitPublished ->
             logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
             val exc = FundingTxSpent(channelId, tx)
@@ -249,6 +252,7 @@ sealed class ChannelState {
                     staticParams = staticParams,
                     currentTip = currentTip,
                     commitments = commitments,
+                    currentOnchainFeerates = currentOnchainFeerates,
                     fundingTx = null,
                     waitingSince = currentTimestampMillis(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
@@ -264,7 +268,7 @@ sealed class ChannelState {
         } ?: kotlin.run {
             // the published tx was neither their current commitment nor a revoked one
             logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
-            newState(ErrorInformationLeak(staticParams, currentTip, commitments))
+            newState(ErrorInformationLeak(staticParams, currentTip, currentOnchainFeerates, commitments))
         }
     }
 
@@ -435,7 +439,7 @@ sealed class ChannelState {
             // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
             is HasCommitments -> spendLocalCurrent()
             // when there is no commitment yet, we just go to CLOSED state in case an error occurs
-            else -> newState(Closed(staticParams, currentTip))
+            else -> newState(Closed(staticParams, currentTip, currentOnchainFeerates))
         }
     }
 
@@ -455,14 +459,14 @@ sealed class ChannelState {
                 keyManager,
                 commitments,
                 commitTx,
-                staticParams.nodeParams.onChainFeeConf.feeEstimator,
-                staticParams.nodeParams.onChainFeeConf.feeTargets
+                currentOnchainFeerates
             )
             val nextState = when(this) {
                 is Closing -> copy(localCommitPublished = localCommitPublished)
 //                is Negotiating -> TODO("DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))")
                 is WaitForFundingConfirmed -> Closing(
                     staticParams = staticParams, currentTip = currentTip,
+                    currentOnchainFeerates = currentOnchainFeerates,
                     commitments = commitments,
                     fundingTx = fundingTx,
                     waitingSince = currentTimestampMillis(),
@@ -470,6 +474,7 @@ sealed class ChannelState {
                 )
                 else -> Closing(
                     staticParams = staticParams, currentTip = currentTip,
+                    currentOnchainFeerates = currentOnchainFeerates,
                     commitments = commitments,
                     fundingTx = null,
                     waitingSince = currentTimestampMillis(),
@@ -514,7 +519,6 @@ interface HasCommitments {
             include(Tlv.serializersModule)
             include(KeyManager.serializersModule)
             include(UpdateMessage.serializersModule)
-            include(ConstantFeeEstimator.testSerializersModule)
         }
 
         private val cbor = Cbor {
@@ -534,11 +538,11 @@ interface HasCommitments {
 }
 
 @Serializable
-data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>) : ChannelState() {
+data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnchainFeerates: OnchainFeerates) : ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is InitFundee -> {
-                val nextState = WaitForOpenChannel(staticParams, currentTip, event.temporaryChannelId, event.localParams, event.remoteInit)
+                val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnchainFeerates, event.temporaryChannelId, event.localParams, event.remoteInit)
                 Pair(nextState, listOf())
             }
             event is InitFunder -> {
@@ -578,7 +582,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         }
                     )
                 )
-                val nextState = WaitForAcceptChannel(staticParams, currentTip, event, open)
+                val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnchainFeerates, event, open)
                 Pair(nextState, listOf(SendMessage(open)))
             }
             event is Restore && event.state is HasCommitments -> {
@@ -616,6 +620,8 @@ data class Offline(val state: ChannelState) : ChannelState() {
         get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader>
         get() = state.currentTip
+    override val currentOnchainFeerates: OnchainFeerates
+        get() = state.currentOnchainFeerates
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
@@ -688,6 +694,8 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
         get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader>
         get() = state.currentTip
+    override val currentOnchainFeerates: OnchainFeerates
+        get() = state.currentOnchainFeerates
 
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "syncing processing $event" }
@@ -775,7 +783,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                                     // would punish us by taking all the funds in the channel
                                     val exc = PleasePublishYourCommitment(state.channelId)
                                     val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
-                                    val nextState = WaitForRemotePublishFutureComitment(staticParams, state.currentTip, state.commitments, event.message)
+                                    val nextState = WaitForRemotePublishFutureComitment(staticParams, state.currentTip, state.currentOnchainFeerates, state.commitments, event.message)
                                     val actions = listOf(
                                         StoreState(nextState),
                                         SendMessage(error)
@@ -796,7 +804,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                                 // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
                                 val exc = PleasePublishYourCommitment(state.channelId)
                                 val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
-                                val nextState = WaitForRemotePublishFutureComitment(staticParams, state.currentTip, state.commitments, event.message)
+                                val nextState = WaitForRemotePublishFutureComitment(staticParams, state.currentTip, state.currentOnchainFeerates, state.commitments, event.message)
                                 val actions = listOf(
                                     StoreState(nextState),
                                     SendMessage(error)
@@ -863,6 +871,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
 data class WaitForRemotePublishFutureComitment(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
     val channelReestablish: ChannelReestablish
 ) : ChannelState(), HasCommitments {
@@ -877,6 +886,7 @@ data class WaitForRemotePublishFutureComitment(
 data class WaitForOpenChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteInit: Init
@@ -942,6 +952,7 @@ data class WaitForOpenChannel(
                         val nextState = WaitForFundingCreated(
                             staticParams,
                             currentTip,
+                            currentOnchainFeerates,
                             event.message.temporaryChannelId,
                             localParams,
                             remoteParams,
@@ -975,6 +986,7 @@ data class WaitForOpenChannel(
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -1073,7 +1085,7 @@ data class WaitForFundingCreated(
                                     fundingMinDepth.toLong(),
                                     BITCOIN_FUNDING_DEPTHOK
                                 )
-                                val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                                val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnchainFeerates, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
                                 val actions = listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), SendMessage(fundingSigned), ChannelIdSwitch(temporaryChannelId, channelId), StoreState(nextState))
                                 Pair(nextState, nextState.updateActions(actions))
                             }
@@ -1096,7 +1108,13 @@ data class WaitForFundingCreated(
 }
 
 @Serializable
-data class WaitForAcceptChannel(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, val initFunder: InitFunder, val lastSent: OpenChannel) :
+data class WaitForAcceptChannel(
+    override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
+    val initFunder: InitFunder,
+    val lastSent: OpenChannel
+) :
     ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -1130,6 +1148,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
                         val nextState = WaitForFundingInternal(
                             staticParams,
                             currentTip,
+                            currentOnchainFeerates,
                             initFunder.temporaryChannelId,
                             initFunder.localParams,
                             remoteParams,
@@ -1154,6 +1173,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
 data class WaitForFundingInternal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -1197,6 +1217,7 @@ data class WaitForFundingInternal(
                 val nextState = WaitForFundingSigned(
                     staticParams,
                     currentTip,
+                    currentOnchainFeerates,
                     channelId,
                     localParams,
                     remoteParams,
@@ -1224,6 +1245,7 @@ data class WaitForFundingInternal(
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -1284,7 +1306,7 @@ data class WaitForFundingSigned(
                         // make sure we first persist the commitment that returns back the funds to us in case of problem
                         val publishTx = PublishTx(fundingTx)
 
-                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, commitments, fundingTx, now, null, Either.Left(lastSent))
+                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnchainFeerates, commitments, fundingTx, now, null, Either.Left(lastSent))
 
                         Pair(nextState, listOf(SendWatch(watchSpent), SendWatch(watchConfirmed), StoreState(nextState), publishTx))
                     }
@@ -1303,6 +1325,7 @@ data class WaitForFundingSigned(
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
     val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
@@ -1320,48 +1343,48 @@ data class WaitForFundingConfirmed(
                     else -> Pair(this, listOf())
                 }
             is WatchReceived -> when (val watch = event.watch) {
-                    is WatchEventConfirmed -> {
-                        val result = fr.acinq.eclair.utils.runTrying {
-                            Transaction.correctlySpends(
-                                commitments.localCommit.publishableTxs.commitTx.tx,
-                                listOf(watch.tx),
-                                ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
-                            )
-                        }
-                        if (result is Try.Failure) {
-                            logger.error { "funding tx verification failed: ${result.error}" }
-                            if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
-                                logger.error { "ignoring this error on regtest" }
-                            } else {
-                                return Pair(this, listOf(HandleError(result.error)))
-                            }
-                        }
-                        val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
-                        val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
-                        val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-                        val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
-                        // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
-                        // as soon as it reaches NORMAL state, and before it is announced on the network
-                        // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
-                        val blockHeight = watch.blockHeight
-                        val txIndex = watch.txIndex
-                        val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
-                        val nextState = WaitForFundingLocked(staticParams, currentTip, commitments, shortChannelId, fundingLocked)
-                        val actions = listOf(SendWatch(watchLost), SendMessage(fundingLocked), StoreState(nextState))
-                        if (deferred != null) {
-                            logger.info { "FundingLocked has already been received" }
-                            val resultPair = nextState.process(MessageReceived(deferred))
-                            Pair(resultPair.first, actions + resultPair.second)
+                is WatchEventConfirmed -> {
+                    val result = fr.acinq.eclair.utils.runTrying {
+                        Transaction.correctlySpends(
+                            commitments.localCommit.publishableTxs.commitTx.tx,
+                            listOf(watch.tx),
+                            ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
+                        )
+                    }
+                    if (result is Try.Failure) {
+                        logger.error { "funding tx verification failed: ${result.error}" }
+                        if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
+                            logger.error { "ignoring this error on regtest" }
                         } else {
-                            Pair(nextState, nextState.updateActions(actions))
+                            return Pair(this, listOf(HandleError(result.error)))
                         }
                     }
-                    is WatchEventSpent -> when (watch.tx.txid) {
-                        commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
-                        else -> TODO("handle information leak")
+                    val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
+                    val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+                    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+                    val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
+                    // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
+                    // as soon as it reaches NORMAL state, and before it is announced on the network
+                    // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
+                    val blockHeight = watch.blockHeight
+                    val txIndex = watch.txIndex
+                    val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
+                    val nextState = WaitForFundingLocked(staticParams, currentTip, currentOnchainFeerates, commitments, shortChannelId, fundingLocked)
+                    val actions = listOf(SendWatch(watchLost), SendMessage(fundingLocked), StoreState(nextState))
+                    if (deferred != null) {
+                        logger.info { "FundingLocked has already been received" }
+                        val resultPair = nextState.process(MessageReceived(deferred))
+                        Pair(resultPair.first, actions + resultPair.second)
+                    } else {
+                        Pair(nextState, nextState.updateActions(actions))
                     }
-                    else -> stay
                 }
+                is WatchEventSpent -> when (watch.tx.txid) {
+                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
+                    else -> TODO("handle information leak")
+                }
+                else -> stay
+            }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is Disconnected -> Pair(Offline(this), listOf())
             else -> {
@@ -1376,6 +1399,7 @@ data class WaitForFundingConfirmed(
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
@@ -1413,6 +1437,7 @@ data class WaitForFundingLocked(
                         val nextState = Normal(
                             staticParams,
                             currentTip,
+                            currentOnchainFeerates,
                             commitments.copy(remoteNextCommitInfo = Either.Right(event.message.nextPerCommitmentPoint)),
                             shortChannelId,
                             buried = false,
@@ -1444,6 +1469,7 @@ data class WaitForFundingLocked(
 data class Normal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val buried: Boolean,
@@ -1637,6 +1663,7 @@ data class Normal(
 data class Closing(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
     val waitingSince: Long, // how long since we initiated the closing
@@ -1668,23 +1695,20 @@ data class Closing(
                             val localCommitPublished1 = localCommitPublished?.let {
                                 Helpers.Closing.claimCurrentLocalCommitTxOutputs(
                                     keyManager, commitments1, it.commitTx,
-                                    staticParams.nodeParams.onChainFeeConf.feeEstimator,
-                                    staticParams.nodeParams.onChainFeeConf.feeTargets
+                                    currentOnchainFeerates
                                 )
                             }
                             val remoteCommitPublished1 = remoteCommitPublished?.let {
                                 Helpers.Closing.claimRemoteCommitTxOutputs(
                                     keyManager, commitments1, commitments1.remoteCommit, it.commitTx,
-                                    staticParams.nodeParams.onChainFeeConf.feeEstimator,
-                                    staticParams.nodeParams.onChainFeeConf.feeTargets
+                                    currentOnchainFeerates
                                 )
                             }
                             val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
                                 val remoteCommit = commitments1.remoteNextCommitInfo.left?.nextRemoteCommit ?: error("next remote commit must be defined")
                                 Helpers.Closing.claimRemoteCommitTxOutputs(
                                     keyManager, commitments1, remoteCommit, remoteCommitPublished?.commitTx ?: error("remote commit must be defined"),
-                                    staticParams.nodeParams.onChainFeeConf.feeEstimator,
-                                    staticParams.nodeParams.onChainFeeConf.feeTargets
+                                    currentOnchainFeerates
                                 )
                             }
 
@@ -1750,7 +1774,8 @@ data class Closing(
                             watch.tx.txid == commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
                             // counterparty may attempt to spend its last commit tx at any time
                             commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid == watch.tx.txid -> handleRemoteSpentNext(
-                                watch.tx)
+                                watch.tx
+                            )
                             // counterparty may attempt to spend a revoked commit tx at any time
                             else -> handleRemoteSpentOther(watch.tx)
                         }
@@ -1768,7 +1793,7 @@ data class Closing(
                                 commitments,
                                 rev,
                                 watch.tx,
-                                staticParams.nodeParams.onChainFeeConf.feeEstimator
+                                currentOnchainFeerates
                             )
 
                             tx?.let {
@@ -1828,10 +1853,12 @@ data class Closing(
 //                              )
                         }
                         // for our outgoing payments, let's send events if we know that they will settle on chain
-                        Helpers.Closing.onchainOutgoingHtlcs(commitments.localCommit,
+                        Helpers.Closing.onchainOutgoingHtlcs(
+                            commitments.localCommit,
                             commitments.remoteCommit,
                             commitments.remoteNextCommitInfo.left?.nextRemoteCommit,
-                            bitcoinEvent.tx)
+                            bitcoinEvent.tx
+                        )
                             .forEach { add ->
                                 (commitments.originChannels[add.id] as? Origin.Local)?.let {
                                     // TODO context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash))
@@ -1850,7 +1877,7 @@ data class Closing(
                                 state = d1
                                 actions = listOf(StoreState(d1))
                             }
-                            else -> newState(Closed(staticParams, currentTip))
+                            else -> newState(Closed(staticParams, currentTip, currentOnchainFeerates))
                         }
                     }
                     else -> stay
@@ -2040,7 +2067,8 @@ data class Closing(
 @Serializable
 data class Closed(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
 ) : ChannelState() {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         TODO("Not yet implemented")
@@ -2051,6 +2079,7 @@ data class Closed(
 data class ErrorInformationLeak(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments
 ) : ChannelState(), HasCommitments {
     override fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
