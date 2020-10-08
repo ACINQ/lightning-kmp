@@ -37,15 +37,15 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
-data class SendPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
+data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout: PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
-data class SendingPayment(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
-data class PaymentSent(val id: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
+data class SendingPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
+data class PaymentSent(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -470,7 +470,7 @@ class Peer(
                                 it is ProcessFulfill -> {
                                     val payment = pendingOutgoingPayments[it.fulfill.paymentPreimage.sha256()]!!
                                     logger.info { "received ${it.fulfill} } for payment $payment" }
-                                    listenerEventChannel.send(PaymentSent(payment.id, payment.paymentRequest))
+                                    listenerEventChannel.send(PaymentSent(payment.paymentId, payment.paymentRequest))
                                 }
                             }
                         }
@@ -525,7 +525,7 @@ class Peer(
                     .filterIsInstance<Normal>()
                     .find { it.commitments.availableBalanceForSend() >= event.paymentRequest.amount!! }
                 if (channel == null) logger.error { "cannot find channel with enough capacity" } else {
-                    val paymentId = event.id
+                    val paymentId = event.paymentId
                     val expiryDelta = CltvExpiryDelta(35) // TODO: read value from payment request
                     val expiry = expiryDelta.toCltvExpiry(channel.currentBlockHeight.toLong())
                     val isDirectPayment = event.paymentRequest.nodeId == remoteNodeId

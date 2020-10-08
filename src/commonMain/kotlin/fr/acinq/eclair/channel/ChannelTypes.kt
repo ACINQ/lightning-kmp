@@ -39,7 +39,7 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
     }
 }
 data class CMD_FAIL_MALFORMED_HTLC(override val id: Long, val onionHash: ByteVector32, val failureCode: Int, val commit: Boolean = false) : HasHtlcId()
-data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val id: UUID, val commit: Boolean = false, val previousFailures: List<AddHtlcFailed> = emptyList()) : Command()
+data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false, val previousFailures: List<AddHtlcFailed> = emptyList()) : Command()
 data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
 object CMD_SIGN : Command()
 data class CMD_CLOSE(val scriptPubKey: ByteVector?) : Command()

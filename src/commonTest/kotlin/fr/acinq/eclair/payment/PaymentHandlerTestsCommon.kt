@@ -54,7 +54,7 @@ class PaymentHandlerTestsCommon : EclairTestSuite() {
     ): CMD_ADD_HTLC {
 
         return OutgoingPacket.buildCommand(
-            id = UUID.randomUUID(),
+            paymentId = UUID.randomUUID(),
             paymentHash = paymentHash,
             hops = channelHops(destination),
             finalPayload = finalPayload
