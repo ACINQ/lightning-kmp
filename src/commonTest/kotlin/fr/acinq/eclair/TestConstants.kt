@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
+import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.PeerChannels
@@ -35,6 +36,11 @@ object TestConstants {
                 )
             ),
             dustLimit = 1100.sat,
+            onChainFeeConf = OnChainFeeConf(
+                maxFeerateMismatch = 1.5,
+                closeOnOfflineMismatch = true,
+                updateFeeMinDiffRatio = 0.1
+            ),
             maxHtlcValueInFlightMsat = 150000000L,
             maxAcceptedHtlcs = 100,
             expiryDeltaBlocks = CltvExpiryDelta(144),
@@ -80,7 +86,7 @@ object TestConstants {
         val keyManager = LocalKeyManager(Alice.seed, Block.RegtestGenesisBlock.hash)
         val nodeParams = NodeParams(
             keyManager = keyManager,
-            alias = "alice",
+            alias = "bob",
             features = Features(
                 setOf(
                     ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
@@ -91,6 +97,11 @@ object TestConstants {
                 )
             ),
             dustLimit = 1100.sat,
+            onChainFeeConf = OnChainFeeConf(
+                maxFeerateMismatch = 1.5,
+                closeOnOfflineMismatch = true,
+                updateFeeMinDiffRatio = 0.1
+            ),
             maxHtlcValueInFlightMsat = Long.MAX_VALUE,
             maxAcceptedHtlcs = 100,
             expiryDeltaBlocks = CltvExpiryDelta(144),
