@@ -467,7 +467,7 @@ class Peer(
                                 it is ProcessFail || it is ProcessFailMalformed -> {
                                     paymentLifecycle.processFailure(it, channels, currentTip.first)?.let { result ->
 
-                                        if (result.status == PaymentLifecycle.ProcessedStatus.FAILED) {
+                                        if (result.status == PaymentLifecycle.Status.FAILED) {
                                         //  listenerEventChannel.send(PaymentNotSent(result.id))
                                         }
                                         result.actions.forEach { input.send(it) }
@@ -476,7 +476,7 @@ class Peer(
                                 it is ProcessFulfill -> {
                                     paymentLifecycle.processFulfill(it, channels, currentTip.first)?.let { result ->
 
-                                        if (result.status == PaymentLifecycle.ProcessedStatus.SUCCEEDED) {
+                                        if (result.status == PaymentLifecycle.Status.SUCCEEDED) {
                                         //  listenerEventChannel.send(PaymentSent(result.id, result.invoice))
                                         }
                                         result.actions.forEach { input.send(it) }
@@ -520,7 +520,7 @@ class Peer(
             event is SendPayment -> {
                 val result = paymentLifecycle.processSendPayment(event, channels, currentTip.first)
 
-                if (result.status == PaymentLifecycle.ProcessedStatus.SENDING) {
+                if (result.status == PaymentLifecycle.Status.INFLIGHT) {
                     // I don't think `pendingOutgoingPayments` is needed anymore...
                     pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
                     listenerEventChannel.send(SendingPayment(event.paymentId, event.paymentRequest))

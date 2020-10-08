@@ -20,15 +20,15 @@ class PaymentLifecycle(
     val nodeParams: NodeParams
 ) {
 
-    enum class ProcessedStatus {
-        SENDING,
+    enum class Status {
+        INFLIGHT,
         SUCCEEDED,
         FAILED
     }
 
     data class ProcessResult(
         val paymentId: UUID,
-        val status: ProcessedStatus,
+        val status: Status,
         val fees: MilliSatoshi, // we can inform user as payment fees increase during retries
         val actions: List<PeerEvent>
     )
@@ -74,12 +74,6 @@ class PaymentLifecycle(
         }
     }
 
-    enum class TrampolinePaymentStatus {
-        INFLIGHT,
-        SUCCEEDED,
-        FAILED
-    }
-
     /**
      * Encapsulates a current payment attempt (using trampoline), and occurring over a particular channel.
      * For a particular payment, there may be multiple parts going over different channels (mpp).
@@ -90,7 +84,7 @@ class PaymentLifecycle(
         val amount: MilliSatoshi,
         val nextAmount: MilliSatoshi,
         val cltvExpiryDelta: CltvExpiryDelta,
-        val status: TrampolinePaymentStatus = TrampolinePaymentStatus.INFLIGHT,
+        val status: Status = Status.INFLIGHT,
         val failedAttempts: Int = 0
     )
 
@@ -148,7 +142,7 @@ class PaymentLifecycle(
             availableForSend: MilliSatoshi
         ): TrampolinePaymentAttempt? {
 
-            val idx = parts.indexOfFirst { it.channelId == channelId && it.status == TrampolinePaymentStatus.INFLIGHT }
+            val idx = parts.indexOfFirst { it.channelId == channelId && it.status == Status.INFLIGHT }
             if (idx < 0) {
                 return null
             }
@@ -159,7 +153,7 @@ class PaymentLifecycle(
 
             val recalculation = schedule?.let {
                 val targetAmount = invoiceAmount - parts.filter {
-                    (it.status != TrampolinePaymentStatus.FAILED) && (it != failedPart)
+                    (it.status != Status.FAILED) && (it != failedPart)
                 }.map {
                     it.nextAmount
                 }.sum()
@@ -176,7 +170,7 @@ class PaymentLifecycle(
                     failedPart.copy(
                         amount = MilliSatoshi(0),
                         cltvExpiryDelta = CltvExpiryDelta(0),
-                        status = TrampolinePaymentStatus.FAILED,
+                        status = Status.FAILED,
                         failedAttempts = failedAttempts
                     )
                 }
@@ -200,13 +194,13 @@ class PaymentLifecycle(
          */
         fun succeed(channelId: ByteVector32): TrampolinePaymentAttempt? {
 
-            val idx = parts.indexOfFirst { it.channelId == channelId && it.status == TrampolinePaymentStatus.INFLIGHT }
+            val idx = parts.indexOfFirst { it.channelId == channelId && it.status == Status.INFLIGHT }
             if (idx < 0) {
                 return null
             }
 
             val part = parts[idx]
-            val updatedPart = part.copy(status = TrampolinePaymentStatus.SUCCEEDED)
+            val updatedPart = part.copy(status = Status.SUCCEEDED)
 
             parts[idx] = updatedPart
             return updatedPart
@@ -217,7 +211,7 @@ class PaymentLifecycle(
          */
         fun totalAmount(includingFees: Boolean = true): MilliSatoshi {
             return parts.filter {
-                it.status != TrampolinePaymentStatus.FAILED
+                it.status != Status.FAILED
             }.map {
                 if (includingFees) it.amount else it.nextAmount
             }.sum()
@@ -230,18 +224,18 @@ class PaymentLifecycle(
          */
         fun totalFees(): MilliSatoshi {
             return parts.filter {
-                it.status != TrampolinePaymentStatus.FAILED
+                it.status != Status.FAILED
             }.map {
                 it.amount - it.nextAmount
             }.sum()
         }
 
         fun hasFailedPaymentAttempt(channelId: ByteVector32): Boolean {
-            return parts.any { it.channelId == channelId && it.status == TrampolinePaymentStatus.FAILED }
+            return parts.any { it.channelId == channelId && it.status == Status.FAILED }
         }
 
         fun hasInFlightPaymentAttempts(): Boolean {
-            return parts.any { it.status == TrampolinePaymentStatus.INFLIGHT }
+            return parts.any { it.status == Status.INFLIGHT }
         }
 
         /**
@@ -311,7 +305,7 @@ class PaymentLifecycle(
 
         val failedResult = ProcessResult(
             paymentId = sendPayment.paymentId,
-            status = ProcessedStatus.FAILED,
+            status = Status.FAILED,
             fees = MilliSatoshi(0),
             actions = listOf()
         )
@@ -343,7 +337,7 @@ class PaymentLifecycle(
         pending[paymentAttempt.paymentId] = paymentAttempt
         return ProcessResult(
             paymentId = paymentAttempt.paymentId,
-            status = ProcessedStatus.SENDING,
+            status = Status.INFLIGHT,
             fees = paymentAttempt.totalFees(),
             actions = actions
         )
@@ -392,12 +386,12 @@ class PaymentLifecycle(
         )
 
         // If trampolinePaymentAttempt is non-null, then we have a new payment we can make on this channel.
-        if (trampolinePaymentAttempt != null && trampolinePaymentAttempt.status == TrampolinePaymentStatus.INFLIGHT) {
+        if (trampolinePaymentAttempt != null && trampolinePaymentAttempt.status == Status.INFLIGHT) {
             // Fees have been increased. Send new payment.
             val action = actionify(channel, paymentAttempt, trampolinePaymentAttempt, currentBlockHeight)
             return ProcessResult(
                 paymentId = paymentAttempt.paymentId,
-                status = ProcessedStatus.SENDING,
+                status = Status.INFLIGHT,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf(action)
             )
@@ -420,7 +414,7 @@ class PaymentLifecycle(
             pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
                 paymentId = paymentAttempt.paymentId,
-                status = ProcessedStatus.FAILED,
+                status = Status.FAILED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
             )
@@ -433,7 +427,7 @@ class PaymentLifecycle(
         // - but there are other available channels we can still use to complete the payment
         return ProcessResult(
             paymentId = paymentAttempt.paymentId,
-            status = ProcessedStatus.SENDING,
+            status = Status.INFLIGHT,
             fees = paymentAttempt.totalFees(),
             actions = actions
         )
@@ -465,7 +459,7 @@ class PaymentLifecycle(
             pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
                 paymentId = paymentAttempt.paymentId,
-                status = ProcessedStatus.SUCCEEDED,
+                status = Status.SUCCEEDED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
             )
@@ -479,7 +473,7 @@ class PaymentLifecycle(
             pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
                 paymentId = paymentAttempt.paymentId,
-                status = ProcessedStatus.FAILED,
+                status = Status.FAILED,
                 fees = paymentAttempt.totalFees(),
                 actions = listOf()
             )
@@ -494,7 +488,7 @@ class PaymentLifecycle(
         // - thus when all in-flight payments succeeded, we still had a remaining balance obligation
         return ProcessResult(
             paymentId = paymentAttempt.paymentId,
-            status = ProcessedStatus.SENDING,
+            status = Status.INFLIGHT,
             fees = paymentAttempt.totalFees(),
             actions = actions
         )
