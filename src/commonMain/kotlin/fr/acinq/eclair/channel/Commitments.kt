@@ -195,11 +195,6 @@ data class Commitments(
      */
     @OptIn(ExperimentalUnsignedTypes::class)
     fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Try<Pair<Commitments, UpdateAddHtlc>> {
-        // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
-        val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
-        if (cmd.cltvExpiry < minExpiry) {
-            return Try.Failure(ExpiryTooSmall(channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
-        }
         val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
         // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
         if (cmd.cltvExpiry >= maxExpiry) {
