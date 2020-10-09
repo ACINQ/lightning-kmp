@@ -257,11 +257,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     }
                     null -> {
                         val commitments = event.state.commitments
-                        var actions = listOf<ChannelAction>(
+                        val actions = mutableListOf<ChannelAction>(
                             SendWatch(WatchSpent(event.state.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)),
                             //SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
                         )
-                        actions = actions + event.state.mutualClosePublished.map { publishActions(it, event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }.flatten()
+                        actions.addAll(event.state.mutualClosePublished.map { publishActions(it, event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }.flatten())
                         Pair(event.state, actions)
                     }
                     else -> {
@@ -1242,9 +1242,9 @@ data class Normal(
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
+                                val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += ProcessCommand(CMD_SIGN)
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -1257,9 +1257,9 @@ data class Normal(
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
+                                val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += ProcessCommand(CMD_SIGN)
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -1272,9 +1272,9 @@ data class Normal(
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
-                                var actions = listOf<ChannelAction>(SendMessage(result.result.second))
+                                val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
                                 if (event.command.commit) {
-                                    actions += ProcessCommand(CMD_SIGN)
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(newState, actions)
                             }
@@ -1339,8 +1339,7 @@ data class Normal(
                             is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result)
-                                var actions = listOf<ChannelAction>()
-                                Pair(newState, actions)
+                                Pair(newState, listOf())
                             }
                         }
                     }
@@ -1367,12 +1366,11 @@ data class Normal(
                                     // TODO: publish "balance updated" event
                                 }
                                 val nextState = this.copy(commitments = result.result.first)
-                                var actions = listOf<ChannelAction>(
-                                    SendMessage(result.result.second),
-                                    StoreState(nextState)
-                                )
+                                val actions = mutableListOf<ChannelAction>()
+                                actions.add(SendMessage(result.result.second))
+                                actions.add(StoreState(nextState))
                                 if (result.result.first.localHasChanges()) {
-                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(nextState, actions)
                             }
@@ -1384,9 +1382,10 @@ data class Normal(
                             is Try.Success -> {
                                 // TODO: handle shutdown
                                 val nextState = this.copy(commitments = result.result.first)
-                                var actions = listOf<ChannelAction>(StoreState(nextState)) + result.result.second
+                                val actions = mutableListOf<ChannelAction>(StoreState(nextState))
+                                actions.addAll(result.get().second)
                                 if (result.result.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
-                                    actions += listOf<ChannelAction>(ProcessCommand(CMD_SIGN))
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 Pair(nextState, actions)
                             }
@@ -1432,9 +1431,9 @@ data class Normal(
                             }
                             else -> {
                                 // so we don't have any unsigned outgoing htlcs
-                                var actions = listOf<ChannelAction>()
+                                val actions = mutableListOf<ChannelAction>()
                                 val localShutdown = this.localShutdown ?: Shutdown(channelId, commitments.localParams.defaultFinalScriptPubKey)
-                                if (this.localShutdown == null) actions = actions + listOf(SendMessage(localShutdown))
+                                if (this.localShutdown == null) actions.add(SendMessage(localShutdown))
                                 val commitments1 = commitments.copy(remoteChannelData = event.message.channelData)
 
                                 when {
@@ -1456,18 +1455,18 @@ data class Normal(
                                             listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))),
                                             bestUnpublishedClosingTx = null
                                         )
-                                        actions = actions + listOf(StoreState(nextState), SendMessage(closingSigned))
+                                        actions.addAll(listOf(StoreState(nextState), SendMessage(closingSigned)))
                                         Pair(nextState, actions)
                                     }
                                     commitments1.hasNoPendingHtlcs() -> {
                                         val nextState = Negotiating(staticParams, currentTip, currentOnchainFeerates, commitments1, localShutdown, event.message, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
-                                        actions = actions + listOf(StoreState(nextState))
+                                        actions.add(StoreState(nextState))
                                         Pair(nextState, actions)
                                     }
                                     else -> {
                                         // there are some pending signed htlcs, we need to fail/fulfill them
                                         val nextState = ShuttingDown(staticParams, currentTip, currentOnchainFeerates, commitments1, localShutdown, event.message)
-                                        actions = listOf(StoreState(nextState)) + actions
+                                        actions.add(StoreState(nextState))
                                         Pair(nextState, actions)
                                     }
                                 }
@@ -1556,10 +1555,10 @@ data class ShuttingDown(
                                     }
                                     else -> {
                                         val nextState = this.copy(commitments = commitments1)
-                                        var actions = listOf(StoreState(nextState), SendMessage(revocation))
+                                        val actions = mutableListOf(StoreState(nextState), SendMessage(revocation))
                                         if (commitments1.localHasChanges()) {
                                             // if we have newly acknowledged changes let's sign them
-                                            actions = actions + listOf(ProcessCommand(CMD_SIGN))
+                                            actions.add(ProcessCommand(CMD_SIGN))
                                         }
                                         Pair(nextState, actions)
                                     }
@@ -1572,6 +1571,7 @@ data class ShuttingDown(
                             is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
                                 val (commitments1, actions) = result.get()
+                                val actions1 = actions.toMutableList()
                                 when {
                                     commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
@@ -1591,19 +1591,19 @@ data class ShuttingDown(
                                             listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))),
                                             bestUnpublishedClosingTx = null
                                         )
-                                        val actions1 = actions + listOf(StoreState(nextState), SendMessage(closingSigned))
+                                        actions1.addAll(listOf(StoreState(nextState), SendMessage(closingSigned)))
                                         Pair(nextState, actions1)
                                     }
                                     commitments1.hasNoPendingHtlcs() -> {
                                         val nextState = Negotiating(staticParams, currentTip, currentOnchainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
-                                        val actions1 = actions + listOf(StoreState(nextState))
+                                        actions1.add(StoreState(nextState))
                                         Pair(nextState, actions1)
                                     }
                                     else -> {
                                         val nextState = this.copy(commitments = commitments1)
-                                        var actions1 = actions + listOf(StoreState(nextState))
+                                        actions1.add(StoreState(nextState))
                                         if (commitments1.localHasChanges() && commitments1.remoteNextCommitInfo.isLeft && commitments1.remoteNextCommitInfo.left!!.reSignAsap) {
-                                            actions1 = actions1 + listOf(ProcessCommand(CMD_SIGN))
+                                            actions1.add(ProcessCommand(CMD_SIGN))
                                         }
                                         Pair(nextState, actions1)
                                     }
@@ -1649,13 +1649,14 @@ data class ShuttingDown(
                         when (val result = commitments.sendFulfill(event.command)) {
                             is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
-                                var actions = listOf<ChannelAction>()
+                                val actions = mutableListOf<ChannelAction>()
                                 if (event.command.commit) {
-                                    actions = actions + listOf(ProcessCommand(CMD_SIGN))
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 val commitments1 = result.get().first
                                 val fulfill = result.get().second
-                                Pair(this.updateCommitments(commitments1) as ShuttingDown, actions + listOf(SendMessage(fulfill)))
+                                actions.add(SendMessage(fulfill))
+                                Pair(this.updateCommitments(commitments1) as ShuttingDown, actions)
                             }
                         }
                     }
@@ -1663,13 +1664,14 @@ data class ShuttingDown(
                         when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
                             is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> {
-                                var actions = listOf<ChannelAction>()
+                                val actions = mutableListOf<ChannelAction>()
                                 if (event.command.commit) {
-                                    actions = actions + listOf(ProcessCommand(CMD_SIGN))
+                                    actions.add(ProcessCommand(CMD_SIGN))
                                 }
                                 val commitments1 = result.get().first
                                 val fail = result.get().second
-                                Pair(this.copy(commitments = commitments1), actions + listOf(SendMessage(fail)))
+                                actions.add(SendMessage(fail))
+                                Pair(this.copy(commitments = commitments1), actions)
                             }
                         }
                     }
@@ -1979,7 +1981,7 @@ data class Closing(
                     logger.info { "rejecting htlc request in state=$this" }
                     val error = ChannelUnavailable(channelId)
                     // we don't provide a channel_update: this will be a permanent channel failure
-                    handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, Origin.Local(event.command.id), null, event.command))
+                    handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, event.command.paymentId, null, event.command))
                 }
                 is CMD_FULFILL_HTLC -> {
                     when (val result = commitments.sendFulfill(event.command)) {
