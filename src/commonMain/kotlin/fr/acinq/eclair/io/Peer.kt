@@ -39,7 +39,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object CheckPaymentsTimeout: PeerEvent()
+object CheckPaymentsTimeout : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -95,7 +95,7 @@ class Peer(
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
-    private var onchainFeerates = OnchainFeerates(750, 750, 750, 750)
+    private var onchainFeerates = OnchainFeerates(750, 750, 750, 750, 750)
 
     init {
         val electrumConnectedChannel = watcher.client.openConnectedSubscription()

@@ -296,6 +296,9 @@ data class ChannelVersion(val bits: BitField) {
     // TODO: This is baaad performance! The copy needs to be optimized out.
     fun isSet(bit: Int) = bits.getRight(bit)
 
+    val hasPubkeyKeyPath: Boolean by lazy { isSet(USE_PUBKEY_KEYPATH_BIT) }
+    val hasStaticRemotekey: Boolean by lazy { isSet(USE_STATIC_REMOTEKEY_BIT) }
+
     companion object {
         val SIZE_BYTE = 4
         val ZEROES = ChannelVersion(BitField(SIZE_BYTE))

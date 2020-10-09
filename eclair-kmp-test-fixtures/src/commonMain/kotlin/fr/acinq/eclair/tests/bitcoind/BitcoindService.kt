@@ -37,6 +37,13 @@ class BitcoindService {
         check(blockCount == response.blocks.size)
     }
 
+    suspend fun sendRawTransaction(rawTx: String): Transaction {
+        val sendRawTransactionResponse: SendRawTransactionResponse = client.sendRequest(SendRawTransaction(rawTx))
+        val transaction: GetRawTransactionResponse =
+            client.sendRequest(GetRawTransaction(sendRawTransactionResponse.txid))
+        return transaction.tx
+    }
+
     suspend fun sendRawTransaction(tx: Transaction): Transaction {
         val sendRawTransactionResponse: SendRawTransactionResponse = client.sendRequest(SendRawTransaction(tx))
         val transaction: GetRawTransactionResponse =

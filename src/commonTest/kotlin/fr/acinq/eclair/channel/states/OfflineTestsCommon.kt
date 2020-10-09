@@ -29,7 +29,7 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertTrue { alice2 is Syncing }
         val channelReestablishA = (actions[0] as SendMessage).message as ChannelReestablish
         val (bob2, actions1) = bob1.process(Connected(remoteInit, localInit))
-        assertTrue { bob2 is Syncing}
+        assertTrue { bob2 is Syncing }
         val channelReestablishB = (actions1[0] as SendMessage).message as ChannelReestablish
 
         val bobCommitments = bob.commitments
@@ -87,10 +87,10 @@ class OfflineTestsCommon : EclairTestSuite() {
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(Connected(localInit, remoteInit))
-        assertTrue { alice2 is Syncing}
+        assertTrue { alice2 is Syncing }
         val channelReestablishA = (actions[0] as SendMessage).message as ChannelReestablish
         val (bob2, actions1) = bob1.process(Connected(remoteInit, localInit))
-        assertTrue { bob2 is Syncing}
+        assertTrue { bob2 is Syncing }
         val channelReestablishB = (actions1[0] as SendMessage).message as ChannelReestablish
 
         val bobCommitments = bob.commitments

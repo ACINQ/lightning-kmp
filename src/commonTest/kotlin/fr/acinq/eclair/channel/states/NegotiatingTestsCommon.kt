@@ -45,9 +45,9 @@ class NegotiatingTestsCommon {
         fun init(tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
             val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
 
-            fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate))
+            fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
 
-            fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate))
+            fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
 
             val alice1 = alice.updateFeerate(if (tweakFees) 4319 else 10000)
             val bob1 = bob.updateFeerate(if (tweakFees) 4319 else 10000)

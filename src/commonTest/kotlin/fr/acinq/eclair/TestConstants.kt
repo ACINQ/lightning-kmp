@@ -96,7 +96,7 @@ object TestConstants {
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
                 )
             ),
-            dustLimit = 1100.sat,
+            dustLimit = 1000.sat,
             onChainFeeConf = OnChainFeeConf(
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
@@ -106,7 +106,7 @@ object TestConstants {
             maxAcceptedHtlcs = 100,
             expiryDeltaBlocks = CltvExpiryDelta(144),
             fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-            htlcMinimum = 0.msat,
+            htlcMinimum = 1000.msat,
             minDepthBlocks = 3,
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(1000),
