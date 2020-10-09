@@ -17,7 +17,8 @@ import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
-import fr.acinq.eclair.transactions.*
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
@@ -26,6 +27,8 @@ import fr.acinq.eclair.transactions.Transactions.htlcOutputFee
 import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.transactions.Transactions.offeredHtlcTrimThreshold
 import fr.acinq.eclair.transactions.Transactions.receivedHtlcTrimThreshold
+import fr.acinq.eclair.transactions.incomings
+import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
@@ -100,13 +103,12 @@ data class Commitments(
         }
     }
 
-    val isZeroReserve: Boolean
-        get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
+    val isZeroReserve: Boolean get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
 
     /**
-     * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
+     * Incoming HTLCs that are close to timing out are potentially dangerous. If we released the pre-image for those
      * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
-     * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+     * Otherwise when we get close to the timeout, we risk an on-chain race condition between their HTLC timeout
      * and our HTLC success in case of a force-close.
      */
     fun almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> =
@@ -115,13 +117,6 @@ data class Commitments(
             .filter { blockheight >= (it.cltvExpiry - fulfillSafety).toLong() }
             .toSet()
 
-    /**
-     * Add a change to our proposed change list.
-     *
-     * @param commitments current commitments.
-     * @param proposal    proposed change to add.
-     * @return an updated commitment instance.
-     */
     fun addLocalProposal(proposal: UpdateMessage): Commitments =
         copy(localChanges = localChanges.copy(proposed = localChanges.proposed + proposal))
 
@@ -188,10 +183,10 @@ data class Commitments(
     }
 
     /**
-     *
-     * @param commitments current commitments
      * @param cmd         add HTLC command
-     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
+     * @param paymentId   id of the payment
+     * @param blockHeight current block height
+     * @return either Failure(failureMessage) with a BOLT #4 failure or Success(new commitments, updateAddHtlc)
      */
     @OptIn(ExperimentalUnsignedTypes::class)
     fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Try<Pair<Commitments, UpdateAddHtlc>> {
@@ -245,8 +240,7 @@ data class Commitments(
             }
         }
 
-        // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
-        val htlcValueInFlight = outgoingHtlcs.toList().map { it.amountMsat }.sum()
+        val htlcValueInFlight = outgoingHtlcs.map { it.amountMsat }.sum()
         if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toLong()) {
             // TODO: this should be a specific UPDATE error
             return Try.Failure(HtlcValueTooHighInFlight(channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight))
@@ -354,8 +348,7 @@ data class Commitments(
             }
             else -> {
                 // we need to decrypt the payment onion to obtain the shared secret to build the error packet
-                val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength)
-                when (result) {
+                when (val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength)) {
                     is Either.Right -> {
                         val reason = when (cmd.reason) {
                             is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(cmd.reason.bytes.toByteArray(), result.value.sharedSecret)
@@ -613,41 +606,6 @@ data class Commitments(
         return Try.Success(Pair(commitments1, actions.toList()))
     }
 
-    fun changes2String(): String = """
-        commitments:
-            localChanges:
-                proposed: ${localChanges.proposed.map { msg2String(it) }.joinToString(" ")}
-                signed: ${localChanges.signed.map { msg2String(it) }.joinToString(" ")}
-                acked: ${localChanges.acked.map { msg2String(it) }.joinToString(" ")}
-            remoteChanges:
-                proposed: ${remoteChanges.proposed.map { msg2String(it) }.joinToString(" ")}
-                acked: ${remoteChanges.acked.map { msg2String(it) }.joinToString(" ")}
-                signed: ${remoteChanges.signed.map { msg2String(it) }.joinToString(" ")}
-            nextHtlcId:
-                local: $localNextHtlcId
-                remote: $remoteNextHtlcId""${'"'}.stripMargin
-        
-    """.trimIndent()
-
-    fun specs2String(commitments: Commitments): String = """
-        specs:
-        localcommit:
-          toLocal: ${commitments.localCommit.spec.toLocal}
-          toRemote: ${commitments.localCommit.spec.toRemote}
-          htlcs:
-            ${commitments.localCommit.spec.htlcs.map { "${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }.joinToString("\n            ")}
-        remotecommit:
-          toLocal: ${commitments.remoteCommit.spec.toLocal}
-          toRemote: ${commitments.remoteCommit.spec.toRemote}
-          htlcs:
-            ${commitments.remoteCommit.spec.htlcs.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }.joinToString("\n            ")}
-        next remotecommit:
-          toLocal: ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.toLocal ?: "N/A"}
-          toRemote: ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.toRemote ?: "N/A"}
-          htlcs:
-            ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.htlcs?.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }?.joinToString("\n            ") ?: "N/A"}
-    """.trimIndent()
-
     companion object {
 
         fun alreadyProposed(changes: List<UpdateMessage>, id: Long): Boolean = changes.any {
@@ -703,18 +661,6 @@ data class Commitments(
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(channelKeyPath).publicKey, !localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feeratePerKw, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
-        }
-
-        fun msg2String(msg: LightningMessage): String = when (msg) {
-            is UpdateAddHtlc -> "add-${msg.id}"
-            is UpdateFulfillHtlc -> "ful-${msg.id}"
-            is UpdateFailHtlc -> "fail-${msg.id}"
-            is UpdateFee -> "fee"
-            is CommitSig -> "sig"
-            is RevokeAndAck -> "rev"
-            is Error -> "err"
-            is FundingLocked -> "funding_locked"
-            else -> "???"
         }
     }
 }
