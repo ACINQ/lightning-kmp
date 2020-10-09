@@ -70,9 +70,9 @@ data class SendMessage(val message: LightningMessage) : ChannelAction()
 data class SendWatch(val watch: Watch) : ChannelAction()
 data class ProcessCommand(val command: Command) : ChannelAction()
 data class ProcessAdd(val add: UpdateAddHtlc) : ChannelAction()
-data class ProcessFail(val fail: UpdateFailHtlc, val paymentId: UUID?) : ChannelAction()
-data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, val paymentId: UUID?) : ChannelAction()
-data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID?) : ChannelAction()
+data class ProcessFail(val fail: UpdateFailHtlc, val paymentId: UUID) : ChannelAction()
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, val paymentId: UUID) : ChannelAction()
+data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : ChannelAction()
@@ -1193,7 +1193,7 @@ data class Normal(
                         // README: we consider that a payment is fulfilled as soon as we have the preimage (we don't wait for a commit signature)
                         when (val result = commitments.receiveFulfill(event.message)) {
                             is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
-                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message, commitments.payments[event.message.id])))
+                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message, result.result.second)))
                         }
                     }
                     is UpdateFailHtlc -> {

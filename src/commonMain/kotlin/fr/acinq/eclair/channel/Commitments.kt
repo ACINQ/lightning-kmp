@@ -598,12 +598,12 @@ data class Commitments(
         val completedOutgoingHtlcs = remoteCommit.spec.htlcs.incomings().map { it.id } - theirNextCommit.spec.htlcs.incomings().map { it.id }
         // we remove the newly completed htlcs from the origin map
         val payments1 = payments - completedOutgoingHtlcs
-        val actions: MutableList<ChannelAction> = ArrayList<ChannelAction>().toMutableList()
+        val actions = mutableListOf<ChannelAction>()
         remoteChanges.signed.forEach {
             when (it) {
                 is UpdateAddHtlc -> actions += ProcessAdd(it)
-                is UpdateFailHtlc -> actions += ProcessFail(it, payments[it.id])
-                is UpdateFailMalformedHtlc -> actions += ProcessFailMalformed(it, payments[it.id])
+                is UpdateFailHtlc -> actions += ProcessFail(it, payments[it.id]!!)
+                is UpdateFailMalformedHtlc -> actions += ProcessFailMalformed(it, payments[it.id]!!)
                 else -> Unit
             }
         }
