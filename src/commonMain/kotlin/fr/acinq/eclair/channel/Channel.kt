@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
@@ -11,10 +10,6 @@ import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.Channel.publishActions
 import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.eclair.channel.Helpers.Closing.isClosed
-import fr.acinq.eclair.channel.Helpers.Closing.updateLocalCommitPublished
-import fr.acinq.eclair.channel.Helpers.Closing.updateRemoteCommitPublished
-import fr.acinq.eclair.channel.Helpers.Closing.updateRevokedCommitPublished
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
@@ -203,10 +198,10 @@ sealed class ChannelState {
             )
         }
 
-        return nextState to buildList {
+        return Pair(nextState, buildList {
             add(StoreState(nextState))
             addAll(doPublish(remoteCommitPublished, channelId))
-        }
+        })
     }
 
     internal fun handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
@@ -235,10 +230,10 @@ sealed class ChannelState {
             )
         }
 
-        return nextState to buildList {
+        return Pair(nextState, buildList {
             add(StoreState(nextState))
             addAll(doPublish(remoteCommitPublished, channelId))
-        }
+        })
     }
 
     internal fun handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
@@ -274,11 +269,11 @@ sealed class ChannelState {
                 )
             }
 
-            nextState to buildList {
+            return Pair(nextState, buildList {
                 add(StoreState(nextState))
                 addAll(doPublish(revokedCommitPublished, channelId))
                 add(SendMessage(error))
-            }
+            })
 
         } ?: kotlin.run {
             // the published tx was neither their current commitment nor a revoked one
@@ -497,10 +492,10 @@ sealed class ChannelState {
                 )
             }
 
-            nextState to buildList {
+            Pair(nextState, buildList {
                 add(StoreState(nextState))
                 addAll(doPublish(localCommitPublished, channelId))
-            }
+            })
         }
     }
 
