@@ -340,7 +340,6 @@ class Peer(
                         logger.info { "received $msg" }
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
                         output.send(LightningMessage.encode(pong)!!)
-
                     }
                     msg is Pong -> {
                         logger.info { "received $msg" }

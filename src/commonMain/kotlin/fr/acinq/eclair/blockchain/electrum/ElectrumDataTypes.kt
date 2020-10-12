@@ -29,12 +29,21 @@ sealed class ElectrumRequest(vararg params: Any) {
     abstract val method: String
     private val parameters = params.toList()
 
-    fun asJsonRPCRequest(id: Int = 0): String =
-        JsonRPCRequest(
+    fun asJsonRPCRequest(id: Int = 0): String {
+        val request = JsonRPCRequest(
             id = id,
             method = method,
             params = parameters.asJsonRPCParameters()
-        ).encode()
+        )
+        return buildString {
+            append(json.encodeToString(JsonRPCRequest.serializer(), request))
+            appendLine()
+        }
+    }
+
+    companion object {
+        private val json = Json { encodeDefaults = true }
+    }
 }
 sealed class ElectrumResponse : ElectrumMessage()
 
@@ -295,11 +304,3 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             HeaderSubscriptionResponse(height, BlockHeader.read(hex))
         }
     }
-
-/**
- * Utils
- */
-private fun JsonRPCRequest.encode(): String = buildString {
-    append(Json.encodeToString(JsonRPCRequest.serializer(), this@encode))
-    appendLine()
-}
