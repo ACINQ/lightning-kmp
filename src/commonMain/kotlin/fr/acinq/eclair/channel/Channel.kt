@@ -158,12 +158,7 @@ interface HasCommitments {
         }
 
         fun serialize(state: HasCommitments): ByteArray {
-            try {
-                return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
-            } catch(t: Throwable) {
-                println("AIE AIE AIE AIE AIE!")
-                throw IllegalStateException("AIE AIE AIE AIE AIE!", t)
-            }
+            return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
         }
 
         fun deserialize(bin: ByteArray): HasCommitments {
