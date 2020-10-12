@@ -304,25 +304,6 @@ sealed class ChannelState {
         }
     }
 
-    fun handleMutualClose(closingTx: Transaction, data: Either<Negotiating, Closing>) {
-
-    }
-
-    /**
-     *
-
-    def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
-    log.info(s"closing tx published: closingTxId=${closingTx.txid}")
-
-    val nextData = d match {
-    case Left(negotiating) => DATA_CLOSING(negotiating.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), mutualClosePublished = closingTx :: Nil)
-    case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
-    }
-
-    goto(CLOSING) using nextData storing() calling (doPublish(closingTx))
-    }
-     */
-
     internal fun doPublish(localCommitPublished: LocalCommitPublished, channelId: ByteVector32): List<ChannelAction> {
         val (commitTx, claimMainDelayedOutputTx, claimHtlcSuccessTxs, claimHtlcTimeoutTxs, claimHtlcDelayedTxs, irrevocablySpent) = localCommitPublished
 
