@@ -1629,7 +1629,12 @@ data class Normal(
             is ExecuteCommand -> {
                 when (event.command) {
                     is CMD_ADD_HTLC -> {
-                        // TODO: handle shutdown in progress
+                        if (localShutdown != null || remoteShutdown != null) {
+                            // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
+                            // but we want to converge as fast as possible and they would probably not route them anyway
+                            val error = NoMoreHtlcsClosingInProgress(channelId)
+                            return handleCommandError(event.command, error)
+                        }
                         when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
                             is Try.Failure -> {
                                 Pair(this, listOf(HandleError(result.error)))
@@ -1818,7 +1823,7 @@ data class Normal(
                                     }
                                     is Either.Right -> {
                                         // no, let's sign right away
-                                        val newState = this.copy(remoteShutdown = remoteShutdown, commitments = commitments.copy(remoteChannelData = event.message.channelData))
+                                        val newState = this.copy(remoteShutdown = event.message, commitments = commitments.copy(remoteChannelData = event.message.channelData))
                                         Pair(newState, listOf(ProcessCommand(CMD_SIGN)))
                                     }
                                 }

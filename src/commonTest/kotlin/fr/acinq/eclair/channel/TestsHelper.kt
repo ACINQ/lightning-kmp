@@ -42,7 +42,11 @@ internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { 
 // Errors
 inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
     filterIsInstance<HandleError>().map { it.error }.firstOrNull { it is T } as T? ?: fail("cannot find HandleError ${T::class}.")
+
 internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is HandleError && it.error is T } }
+
+inline fun <reified T : Throwable> List<ChannelAction>.findCommandError(): T? =
+    filterIsInstance<HandleCommandFailed>().map { it.error }.firstOrNull { it is T } as T?
 
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {

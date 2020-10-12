@@ -285,43 +285,32 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (after having sent Shutdown)`() {
         val (alice0, bob0) = reachNormal()
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_CLOSE(null)))
+        val shutdown = actionsAlice1.findOutgoingMessage<Shutdown>()
+        assertTrue { alice1 is Normal && alice1.localShutdown != null && alice1.remoteShutdown == null  }
 
-        val (_, cmdAdd1) = makeCmdAdd(300_000_000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
-        val (alice1, actions) = alice0.process(ExecuteCommand(cmdAdd1))
-        val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()
-        val (bob1, _) = bob0.process(MessageReceived(htlc1))
-
-        val (alice2, bob2) = crossSign(alice1, bob1)
-
-        val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_CLOSE(null)))
-        val shutdown = actionsAlice3.findOutgoingMessage<Shutdown>()
-        val (_, actionsBob3) = bob2.process(MessageReceived(shutdown))
-        val shutdown1 = actionsBob3.findOutgoingMessage<Shutdown>()
-        val (alice4, _) = alice3.process(MessageReceived(shutdown1))
-        assertTrue { alice4 is ShuttingDown }
-
-        val (_, actionsAlice5) = alice4.process(ExecuteCommand(CMD_ADD_HTLC))
-        val error = actionsAlice5.findError<NoMoreHtlcsClosingInProgress>()
-
-        /**
-         * val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-        sender.send(alice, CMD_CLOSE(None))
-        sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
-        alice2bob.expectMsgType[Shutdown]
-        awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined && alice.stateData.asInstanceOf[DATA_NORMAL].remoteShutdown.isEmpty)
-
-        // actual test starts here
-        val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
-        sender.send(alice, add)
-        val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-        sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
-        alice2bob.expectNoMsg(200 millis)
-         */
+        val (_, cmdAdd) = makeCmdAdd(500000000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
+        val (_, actionsAlice2) = alice1.process(ExecuteCommand(cmdAdd))
+        assertNotNull(actionsAlice2.findCommandError<NoMoreHtlcsClosingInProgress>())
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (after having received Shutdown)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+
+        // let's make alice send an htlc
+        val (_, cmdAdd1) = makeCmdAdd(500000000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
+        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(cmdAdd1))
+        actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
+
+        // at the same time bob initiates a closing
+        val (_, actionsBob1) = bob0.process(ExecuteCommand(CMD_CLOSE(null)))
+        val shutdown = actionsBob1.findOutgoingMessage<Shutdown>()
+
+        val (alice2, _) = alice1.process(MessageReceived(shutdown))
+        val (_, cmdAdd2) = makeCmdAdd(100000000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
+        val (_, actionsAlice3) = alice2.process(ExecuteCommand(cmdAdd2))
+        assertNotNull(actionsAlice3.findCommandError<NoMoreHtlcsClosingInProgress>())
     }
 
     @Test
