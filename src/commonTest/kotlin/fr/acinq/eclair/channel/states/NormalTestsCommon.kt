@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.Feature
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
@@ -12,6 +13,7 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
+import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -20,11 +22,7 @@ import fr.acinq.eclair.transactions.Transactions.weight2fee
 import fr.acinq.eclair.transactions.incomings
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
-import fr.acinq.eclair.wire.CommitSig
-import fr.acinq.eclair.wire.RevokeAndAck
-import fr.acinq.eclair.wire.UpdateAddHtlc
-import fr.acinq.eclair.wire.UpdateFulfillHtlc
-import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
 @ExperimentalUnsignedTypes
@@ -140,7 +138,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
     @Ignore
     fun `recv CMD_ADD_HTLC (increasing balance but still below reserve)`() {
-        TODO("tag no_push_msat need to be applied here")
+        TODO("later")
     }
 
     @Test
@@ -281,15 +279,47 @@ class NormalTestsCommon : EclairTestSuite() {
 
     @Ignore
     fun `recv CMD_ADD_HTLC (channel feerate mismatch)`() {
-        TODO("not implemented yet!")
+        TODO("later")
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_ADD_HTLC (after having sent Shutdown)`() {
-        TODO("not implemented yet!")
+        val (alice0, bob0) = reachNormal()
+
+        val (_, cmdAdd1) = makeCmdAdd(300_000_000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
+        val (alice1, actions) = alice0.process(ExecuteCommand(cmdAdd1))
+        val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()
+        val (bob1, _) = bob0.process(MessageReceived(htlc1))
+
+        val (alice2, bob2) = crossSign(alice1, bob1)
+
+        val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_CLOSE(null)))
+        val shutdown = actionsAlice3.findOutgoingMessage<Shutdown>()
+        val (_, actionsBob3) = bob2.process(MessageReceived(shutdown))
+        val shutdown1 = actionsBob3.findOutgoingMessage<Shutdown>()
+        val (alice4, _) = alice3.process(MessageReceived(shutdown1))
+        assertTrue { alice4 is ShuttingDown }
+
+        val (_, actionsAlice5) = alice4.process(ExecuteCommand(CMD_ADD_HTLC))
+        val error = actionsAlice5.findError<NoMoreHtlcsClosingInProgress>()
+
+        /**
+         * val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+        sender.send(alice, CMD_CLOSE(None))
+        sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+        alice2bob.expectMsgType[Shutdown]
+        awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined && alice.stateData.asInstanceOf[DATA_NORMAL].remoteShutdown.isEmpty)
+
+        // actual test starts here
+        val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+        sender.send(alice, add)
+        val error = NoMoreHtlcsClosingInProgress(channelId(alice))
+        sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+        alice2bob.expectNoMsg(200 millis)
+         */
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_ADD_HTLC (after having received Shutdown)`() {
         TODO("not implemented yet!")
     }
@@ -335,7 +365,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(4, commitSig.htlcSignatures.size)
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_SIGN (check htlc info are persisted)`() {
         val (alice0, bob0) = reachNormal()
         // for the test to be really useful we have constraint on parameters
@@ -361,22 +391,44 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val (alice1, bob1) = addHtlc(a2b_1.toMilliSatoshi(), alice0, bob0).first
         val (alice2, bob2) = addHtlc(a2b_2.toMilliSatoshi(), alice1, bob1).first
-        val (alice3, bob3) = addHtlc(b2a_1.toMilliSatoshi(), bob2, alice2).first
-        val (alice4, bob4) = addHtlc(b2a_2.toMilliSatoshi(), bob3, alice3).first
+        val (bob3, alice3) = addHtlc(b2a_1.toMilliSatoshi(), bob2, alice2).first
+        val (bob4, alice4) = addHtlc(b2a_2.toMilliSatoshi(), bob3, alice3).first
 
-        val (alice5, bob5) = crossSign(alice4, bob4)
-        // depending on who starts signing first, there will be one or two commitments because both sides have changes
-        alice5 as HasCommitments; bob5 as HasCommitments
-        assertEquals(1, alice5.commitments.localCommit.index)
-        assertEquals(2, bob5.commitments.localCommit.index)
+        val (alice5, aActions5) = alice4.process(ExecuteCommand(CMD_SIGN))
+        val commitSig0 = aActions5.findOutgoingMessage<CommitSig>()
 
-        /* TODO test DB channels ?
-                assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
-                assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 2)
-                assert(alice.underlyingActor.nodeParams.db.channels.listHtlcInfos(alice.stateData.asInstanceOf[DATA_NORMAL].channelId, 2).size == 4)
-                assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 0).size == 0)
-                assert(bob.underlyingActor.nodeParams.db.channels.listHtlcInfos(bob.stateData.asInstanceOf[DATA_NORMAL].channelId, 1).size == 3)
-         */
+        val (bob5, bActions5) = bob4.process(MessageReceived(commitSig0))
+        val revokeAndAck0 = bActions5.findOutgoingMessage<RevokeAndAck>()
+        val commandSign0 = bActions5.findProcessCommand<CMD_SIGN>()
+
+        val (alice6, _) = alice5.process(MessageReceived(revokeAndAck0))
+        val (bob6, bActions6) = bob5.process(ExecuteCommand(commandSign0))
+        val commitSig1 = bActions6.findOutgoingMessage<CommitSig>()
+
+        val (alice7, aActions7) = alice6.process(MessageReceived(commitSig1))
+        val revokeAndAck1 = aActions7.findOutgoingMessage<RevokeAndAck>()
+        val (bob7, _) = bob6.process(MessageReceived(revokeAndAck1))
+
+        val commandSign1 = aActions7.findProcessCommand<CMD_SIGN>()
+        val (alice8, aActions8) = alice7.process(ExecuteCommand(commandSign1))
+        val commitSig2 = aActions8.findOutgoingMessage<CommitSig>()
+
+        val (bob8, bActions8) = bob7.process(MessageReceived(commitSig2))
+        val revokeAndAck2 = bActions8.findOutgoingMessage<RevokeAndAck>()
+        val (alice9, _) = alice8.process(MessageReceived(revokeAndAck2))
+
+        val aliceHtlcInfos = buildList {
+            addAll(aActions5.filterIsInstance<StoreHtlcInfos>())
+            addAll(aActions8.filterIsInstance<StoreHtlcInfos>())
+        }.map { it.htlcs }.flatten()
+
+        val bobHtlcInfos = bActions6.filterIsInstance<StoreHtlcInfos>().map { it.htlcs }.flatten()
+
+        assertEquals(0, aliceHtlcInfos.count { it.channelId == alice0.channelId && it.commitmentNumber == 0L })
+        assertEquals(2, aliceHtlcInfos.count { it.channelId == alice0.channelId && it.commitmentNumber == 1L })
+        assertEquals(4, aliceHtlcInfos.count { it.channelId == alice0.channelId && it.commitmentNumber == 2L })
+        assertEquals(0, bobHtlcInfos.count { it.channelId == bob0.channelId && it.commitmentNumber == 0L })
+        assertEquals(3, bobHtlcInfos.count { it.channelId == bob0.channelId && it.commitmentNumber == 1L })
     }
 
     @Test
@@ -431,7 +483,7 @@ class NormalTestsCommon : EclairTestSuite() {
         (alice2 as HasCommitments)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left
-        assertEquals(false, waitForRevocation?.reSignAsap)
+        assertEquals(false, waitForRevocation?.reSignAsap) // TODO
 
         val (alice3, _) = alice2.process(ExecuteCommand(CMD_SIGN))
         assertEquals(Either.Left(waitForRevocation), (alice3 as HasCommitments).commitments.remoteNextCommitInfo)
@@ -449,7 +501,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left
         assertNotNull(waitForRevocation)
-        assertFalse(waitForRevocation.reSignAsap)
+        assertFalse(waitForRevocation.reSignAsap) // TODO
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob1).first
         val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
@@ -459,21 +511,19 @@ class NormalTestsCommon : EclairTestSuite() {
 
     @Ignore
     fun `recv CMD_SIGN (going above reserve)`() {
-        val (_, _) = reachNormal()
-        // TODO channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
-//                assertEquals(false, Announcements.isEnabled(bob0.channelUpdate.channelFlags))
+        TODO("later")
     }
 
     @Ignore
     fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
-        TODO("not implemented yet!")
+        TODO("later")
     }
 
     @Test
     fun `recv CMD_SIGN (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
         val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
-        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat,
+        val (_, cmdAdd) = makeCmdAdd(50000000.msat,
             alice.staticParams.nodeParams.nodeId,
             currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
@@ -551,7 +601,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
     @Ignore
     fun `recv CommitSig (only fee update)`() {
-        TODO("not implemented yet!")
+        TODO("later")
     }
 
     @Test
@@ -605,9 +655,22 @@ class NormalTestsCommon : EclairTestSuite() {
 
         assertTrue(bob1 is Closing)
         actionsBob1.hasMessage<Error>()
+
         assertEquals(2, actionsBob1.filterIsInstance<PublishTx>().count())
+        assertEquals(tx, actionsBob1.filterIsInstance<PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+
         assertEquals(2, actionsBob1.watches<WatchConfirmed>().count())
-        assertTrue { actionsBob1.filterIsInstance<PublishTx>().any { it.tx == tx } }
+        actionsBob1.watches<WatchConfirmed>().first().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx, e.tx)
+        }
+        actionsBob1.watches<WatchConfirmed>().last().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        }
     }
 
     @Test
@@ -621,9 +684,22 @@ class NormalTestsCommon : EclairTestSuite() {
 
         assertTrue(bob1 is Closing)
         actionsBob1.hasMessage<Error>()
+
         assertEquals(2, actionsBob1.filterIsInstance<PublishTx>().count())
+        assertEquals(tx, actionsBob1.filterIsInstance<PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+
         assertEquals(2, actionsBob1.watches<WatchConfirmed>().count())
-        assertTrue { actionsBob1.filterIsInstance<PublishTx>().any { it.tx == tx } }
+        actionsBob1.watches<WatchConfirmed>().first().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx, e.tx)
+        }
+        actionsBob1.watches<WatchConfirmed>().last().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        }
     }
 
     @Test
@@ -640,9 +716,22 @@ class NormalTestsCommon : EclairTestSuite() {
 
         assertTrue(bob2 is Closing)
         actionsBob2.hasMessage<Error>()
+
         assertEquals(2, actionsBob2.filterIsInstance<PublishTx>().count())
+        assertEquals(tx, actionsBob2.filterIsInstance<PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+
         assertEquals(2, actionsBob2.watches<WatchConfirmed>().count())
-        assertTrue { actionsBob2.filterIsInstance<PublishTx>().any { it.tx == tx } }
+        actionsBob2.watches<WatchConfirmed>().first().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx, e.tx)
+        }
+        actionsBob2.watches<WatchConfirmed>().last().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        }
     }
 
     @Test
@@ -658,16 +747,29 @@ class NormalTestsCommon : EclairTestSuite() {
 
         assertTrue(bob2 is Closing)
         actionsBob2.hasMessage<Error>()
+
         assertEquals(2, actionsBob2.filterIsInstance<PublishTx>().count())
+        assertEquals(tx, actionsBob2.filterIsInstance<PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+
         assertEquals(2, actionsBob2.watches<WatchConfirmed>().count())
-        assertTrue { actionsBob2.filterIsInstance<PublishTx>().any { it.tx == tx } }
+        actionsBob2.watches<WatchConfirmed>().first().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx, e.tx)
+        }
+        actionsBob2.watches<WatchConfirmed>().last().run {
+            val e = event as? BITCOIN_TX_CONFIRMED
+            assertNotNull(e)
+            assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        }
     }
 
     @Test
     fun `recv RevokeAndAck (channel backup, zero-reserve channel, fundee)`() {
         val currentBlockHeight = 500L
         val (alice, bob) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
-        val (_, cmdAdd) = TestsHelper.makeCmdAdd(50000000.msat,
+        val (_, cmdAdd) = makeCmdAdd(50000000.msat,
             alice.staticParams.nodeParams.nodeId,
             currentBlockHeight)
         val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
@@ -825,23 +927,16 @@ class NormalTestsCommon : EclairTestSuite() {
     }
 
     @Ignore
-    fun `recv RevokeAndAck (forward UpdateFailHtlc)`() {
-        TODO("?")
-    }
-
-    @Ignore
-    fun `recv RevokeAndAck (forward UpdateFailMalformedHtlc)`() {
-        TODO("?")
-    }
-
-    @Ignore
     fun `recv RevokeAndAck (one htlc sent, static_remotekey)`() {
-        TODO("?")
+        val (alice0, bob0) = reachNormal()
+
+        assertTrue {  alice0.commitments.localParams.features.hasFeature(Feature.StaticRemoteKey) } // TODO FALSE!
+        assertTrue {  bob0.commitments.localParams.features.hasFeature(Feature.StaticRemoteKey) }
     }
 
     @Ignore
     fun `recv RevocationTimeout`() {
-        TODO("?")
+        TODO("later")
     }
 
     @Test
@@ -1027,8 +1122,8 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.watches<WatchConfirmed>()[1].event)
         assertEquals(2, actions.watches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
 
-        assertEquals(0, aliceClosing.remoteCommitPublished?.claimHtlcSuccessTxs?.size)
-        assertEquals(2, aliceClosing.remoteCommitPublished?.claimHtlcTimeoutTxs?.size)
+        assertEquals(0, aliceClosing.nextRemoteCommitPublished?.claimHtlcSuccessTxs?.size)
+        assertEquals(2, aliceClosing.nextRemoteCommitPublished?.claimHtlcTimeoutTxs?.size)
 
         // assert the feerate of the claim main is what we expect
         aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
@@ -1121,7 +1216,7 @@ class NormalTestsCommon : EclairTestSuite() {
         // initially we have :
         // alice = 800 000
         //   bob = 200 000
-        val (_, cmdAddHtlc) = TestsHelper.makeCmdAdd(
+        val (_, cmdAddHtlc) = makeCmdAdd(
             10_000_000.msat,
             bob0.staticParams.nodeParams.nodeId,
             alice0.currentBlockHeight.toLong()
