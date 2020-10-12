@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.crypto.sphinx.PacketAndSecrets
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.io.WrappedChannelEvent
@@ -366,7 +367,7 @@ class PaymentLifecycle(
             }
         }
 
-        val paymentAttempt = paymentId?.let { pending[it] }
+        val paymentAttempt = pending[paymentId]
         if (paymentAttempt == null) {
             logger.error { "ProcessFail.origin doesn't match any known paymentAttempt" }
             return null
@@ -439,7 +440,7 @@ class PaymentLifecycle(
         currentBlockHeight: Int
     ): ProcessResult? {
 
-        val paymentAttempt = event.paymentId?.let { pending[it] }
+        val paymentAttempt = pending[event.paymentId]
         if (paymentAttempt == null) {
             logger.error { "ProcessFail.origin doesn't match any known paymentAttempt" }
             return null
@@ -605,75 +606,73 @@ class PaymentLifecycle(
         val trampolineExpiry = trampolineExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
 
         val features = paymentAttempt.invoice.features?.let { Features(it) } ?: Features(setOf())
+        val recipientSupportsMpp = features.hasFeature(Feature.BasicMultiPartPayment)
         val recipientSupportsTrampoline = features.hasFeature(Feature.TrampolinePayment)
 
-        val trampolinePayload: FinalPayload
-        if (recipientSupportsTrampoline) {
+        val paymentSecret = paymentAttempt.invoice.paymentSecret
+
+        // The matrix of possibilities:
+        //                          supportsMpp:YES   | supportsMpp:NO
+        // ----------------------------------------------------------------
+        // supportsTrampoline:YES | Full trampoline!  | ????              |
+        // ---------------------------------------------------------------
+        // supportsTrampoline:NO  | Legacy trampoline | Legacy trampoline |
+        //
+        // It's theoretically possible that a client supports trampoline, but not mpp.
+        // We could optimize for this, and attempt to send a full payment over a single channel using trampoline.
+        // But if we don't have enough capacity in a single channel, the legacy trampoline is our only fallback.
+        //
+        // In practice, this scenario (payee supports trampoline but not mpp) is highly unlikely to ever occur.
+        // Because the mpp spec was made official long before trampoline.
+        // So we're simply going use a legacy trampoline in this case.
+
+        val finalPayload = FinalPayload.createSinglePartPayload(
+            amount = paymentAttempt.invoiceAmount,
+            expiry = finalExpiry,
+            paymentSecret = paymentAttempt.invoice.paymentSecret
+        )
+        val nodeHops = listOf(
+            NodeHop(
+                nodeId = channel.staticParams.nodeParams.nodeId, // us
+                nextNodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
+                cltvExpiryDelta = trampolinePaymentAttempt.cltvExpiryDelta, // per node cltv
+                fee = trampolinePaymentAttempt.nextAmount - trampolinePaymentAttempt.amount // per node fee
+            ),
+            NodeHop(
+                nodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
+                nextNodeId = paymentAttempt.invoice.nodeId, // final recipient
+                cltvExpiryDelta = finalExpiryDelta, // per node cltv
+                fee = MilliSatoshi(0) // per node fee
+            )
+        )
+
+        val trampolineOnion: PacketAndSecrets
+        if (recipientSupportsTrampoline && recipientSupportsMpp && paymentSecret != null) {
             // Full trampoline! Full privacy!
-            val nodes: List<PublicKey> = listOf(
-                channel.staticParams.remoteNodeId, // trampoline node (acinq)
-                paymentAttempt.invoice.nodeId, // final recipient
-            )
-            val payloads: List<PerHopPayload> = listOf(
-                NodeRelayPayload.create(
-                    amount = trampolinePaymentAttempt.amount, // includes trampoline fees
-                    expiry = trampolineExpiry,
-                    nextNodeId = nodes[0]
-                ),
-                NodeRelayPayload.create(
-                    amount = trampolinePaymentAttempt.nextAmount,
-                    expiry = finalExpiry,
-                    nextNodeId = nodes[1]
-                )
-            )
-            val trampolineOnion = OutgoingPacket.buildOnion(
-                nodes = nodes,
-                payloads = payloads,
-                associatedData = paymentAttempt.invoice.paymentHash,
+            val triple = OutgoingPacket.buildPacket(
+                paymentHash = paymentAttempt.invoice.paymentHash,
+                hops = nodeHops,
+                finalPayload = finalPayload,
                 payloadLength = OnionRoutingPacket.TrampolinePacketLength
             )
-            trampolinePayload = FinalPayload.createTrampolinePayload(
-                amount = trampolinePaymentAttempt.amount,
-                totalAmount = paymentAttempt.invoiceAmount,
-                expiry = trampolineExpiry,
-                paymentSecret = paymentAttempt.trampolinePaymentSecret,
-                trampolinePacket = trampolineOnion.packet
-            )
-
+            trampolineOnion = triple.third
         } else {
-            // Legacy workaround.
-            val nodeHops = listOf(
-                NodeHop(
-                    nodeId = channel.staticParams.nodeParams.nodeId, // us
-                    nextNodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
-                    cltvExpiryDelta = trampolinePaymentAttempt.cltvExpiryDelta, // per node cltv
-                    fee = trampolinePaymentAttempt.nextAmount - trampolinePaymentAttempt.amount // per node fee
-                ),
-                NodeHop(
-                    nodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
-                    nextNodeId = paymentAttempt.invoice.nodeId, // final recipient
-                    cltvExpiryDelta = finalExpiryDelta, // per node cltv
-                    fee = MilliSatoshi(0) // per node fee
-                )
-            )
-            val finalPayload = FinalPayload.createSinglePartPayload(
-                amount = paymentAttempt.invoiceAmount,
-                expiry = finalExpiry,
-                paymentSecret = paymentAttempt.invoice.paymentSecret
-            )
-            val (_, _, trampolineOnion) = OutgoingPacket.buildTrampolineToLegacyPacket(
+            // Legacy workaround
+            var triple = OutgoingPacket.buildTrampolineToLegacyPacket(
                 invoice = paymentAttempt.invoice,
                 hops = nodeHops,
                 finalPayload = finalPayload
             )
-            trampolinePayload = FinalPayload.createTrampolinePayload(
-                amount = trampolinePaymentAttempt.amount,
-                totalAmount = paymentAttempt.invoiceAmount,
-                expiry = trampolineExpiry,
-                paymentSecret = paymentAttempt.trampolinePaymentSecret,
-                trampolinePacket = trampolineOnion.packet
-            )
+            trampolineOnion = triple.third
         }
+
+        val trampolinePayload = FinalPayload.createTrampolinePayload(
+            amount = trampolinePaymentAttempt.amount,
+            totalAmount = paymentAttempt.totalAmount(includingFees = true),
+            expiry = trampolineExpiry,
+            paymentSecret = paymentAttempt.trampolinePaymentSecret,
+            trampolinePacket = trampolineOnion.packet
+        )
 
         val channelHops: List<ChannelHop> = listOf(
             ChannelHop(
