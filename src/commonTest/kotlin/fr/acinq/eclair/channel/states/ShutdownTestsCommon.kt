@@ -4,7 +4,6 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat

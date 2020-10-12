@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat

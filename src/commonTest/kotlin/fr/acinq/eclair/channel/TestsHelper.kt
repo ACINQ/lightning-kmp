@@ -16,6 +16,34 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
+// LN Message
+inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage(): T? {
+    val candidates = this.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
+    return candidates.firstOrNull()
+}
+inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
+    return hasOutgoingMessage() ?: throw IllegalArgumentException("cannot find ${T::class}")
+}
+internal inline fun <reified T> List<ChannelAction>.hasMessage() = assertTrue { any { it is SendMessage && it.message is T } }
+internal inline fun <reified T> List<ChannelAction>.messages() = filterIsInstance<SendMessage>().filter { it.message is T }.map { it.message }
+internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance<SendWatch>().filter { it.watch is T }.map { it.watch }
+inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {
+    val candidates = this.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<T>()
+    if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
+    return candidates.first()
+}
+
+// Commands
+inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
+    filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
+
+internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { any { it is ProcessCommand && it.command is T } }
+
+// Errors
+inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
+    filterIsInstance<HandleError>().map { it.error }.firstOrNull { it is T } as T? ?: fail("cannot find HandleError ${T::class}.")
+internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is HandleError && it.error is T } }
+
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState =
@@ -119,24 +147,6 @@ object TestsHelper {
         val (alice2, _) = alice1.process(MessageReceived(revack))
         return Pair(alice2, bob1)
     }
-
-    inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage(): T? {
-        val candidates = this.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
-        return candidates.firstOrNull()
-    }
-
-    inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
-        return hasOutgoingMessage() ?: throw IllegalArgumentException("cannot find ${T::class}")
-    }
-
-    inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {
-        val candidates = this.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<T>()
-        if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
-        return candidates.first()
-    }
-
-    inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
-        filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
 
     fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = Eclair.randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, CMD_ADD_HTLC> {
         val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()

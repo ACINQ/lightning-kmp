@@ -5,8 +5,6 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
-import fr.acinq.eclair.channel.TestsHelper.hasOutgoingMessage
 import fr.acinq.eclair.wire.ClosingSigned
 import fr.acinq.eclair.wire.Shutdown
 import kotlin.test.Test

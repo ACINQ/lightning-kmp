@@ -9,8 +9,6 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingWatch
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.AcceptChannel

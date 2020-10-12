@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.channel.TestsHelper.findOutgoingMessage
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.ChannelTlv
 import fr.acinq.eclair.wire.Error
