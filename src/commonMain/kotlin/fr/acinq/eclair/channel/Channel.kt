@@ -173,11 +173,17 @@ sealed class ChannelState {
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnchainFeerates)
 
         val nextState = when (this) {
-            is Closing -> copy(remoteCommitPublished = remoteCommitPublished)
-            // TODO
-            //  is Negotiating -> {}
-            //  case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None,
-            //  waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
+            is Closing -> this.copy(remoteCommitPublished = remoteCommitPublished)
+            is Negotiating -> Closing(
+                staticParams = staticParams,
+                currentTip = currentTip,
+                currentOnchainFeerates = currentOnchainFeerates,
+                commitments = commitments,
+                fundingTx = null,
+                waitingSince = currentTimestampMillis(),
+                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                remoteCommitPublished = remoteCommitPublished
+            )
             is WaitForFundingConfirmed -> Closing(
                 staticParams = staticParams,
                 currentTip = currentTip,
@@ -215,9 +221,17 @@ sealed class ChannelState {
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, currentOnchainFeerates)
 
         val nextState = when (this) {
-            is Closing -> copy(remoteCommitPublished = remoteCommitPublished)
-            // TODO
-            //  is Negotiating -> {}
+            is Closing -> copy(nextRemoteCommitPublished = remoteCommitPublished)
+            is Negotiating -> Closing(
+                staticParams = staticParams,
+                currentTip = currentTip,
+                currentOnchainFeerates = currentOnchainFeerates,
+                commitments = commitments,
+                fundingTx = null,
+                waitingSince = currentTimestampMillis(),
+                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                nextRemoteCommitPublished = remoteCommitPublished
+            )
             // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed so we don't have the case where fundingTx is defined
             else -> Closing(
                 staticParams = staticParams,
@@ -226,7 +240,7 @@ sealed class ChannelState {
                 commitments = commitments,
                 fundingTx = null,
                 waitingSince = currentTimestampMillis(),
-                remoteCommitPublished = remoteCommitPublished
+                nextRemoteCommitPublished = remoteCommitPublished
             )
         }
 
@@ -255,8 +269,16 @@ sealed class ChannelState {
             val nextState = when (this) {
                 is Closing -> if (this.revokedCommitPublished.contains(revokedCommitPublished)) this
                 else copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
-                // TODO
-                //  is Negotiating -> {}
+                is Negotiating -> Closing(
+                    staticParams = staticParams,
+                    currentTip = currentTip,
+                    currentOnchainFeerates = currentOnchainFeerates,
+                    commitments = commitments,
+                    fundingTx = null,
+                    waitingSince = currentTimestampMillis(),
+                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                    revokedCommitPublished = listOf(revokedCommitPublished)
+                )
                 // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed so we don't have the case where fundingTx is defined
                 else -> Closing(
                     staticParams = staticParams,
@@ -281,6 +303,25 @@ sealed class ChannelState {
             Pair(ErrorInformationLeak(staticParams, currentTip, currentOnchainFeerates, commitments), listOf())
         }
     }
+
+    fun handleMutualClose(closingTx: Transaction, data: Either<Negotiating, Closing>) {
+
+    }
+
+    /**
+     *
+
+    def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
+    log.info(s"closing tx published: closingTxId=${closingTx.txid}")
+
+    val nextData = d match {
+    case Left(negotiating) => DATA_CLOSING(negotiating.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), mutualClosePublished = closingTx :: Nil)
+    case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
+    }
+
+    goto(CLOSING) using nextData storing() calling (doPublish(closingTx))
+    }
+     */
 
     internal fun doPublish(localCommitPublished: LocalCommitPublished, channelId: ByteVector32): List<ChannelAction> {
         val (commitTx, claimMainDelayedOutputTx, claimHtlcSuccessTxs, claimHtlcTimeoutTxs, claimHtlcDelayedTxs, irrevocablySpent) = localCommitPublished
@@ -444,8 +485,16 @@ sealed class ChannelState {
 
         return when (this) {
             is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
-//          TODO // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
-//           is Negotiating -> handleMutualClose(bestUnpublishedClosingTx, Either.Left(negotiating))
+            is Negotiating -> Closing(
+                staticParams = staticParams,
+                currentTip = currentTip,
+                currentOnchainFeerates = currentOnchainFeerates,
+                commitments = commitments,
+                fundingTx = null,
+                waitingSince = currentTimestampMillis(),
+                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
+            ) to emptyList()
             // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
             is HasCommitments -> spendLocalCurrent()
             // when there is no commitment yet, we just go to CLOSED state in case an error occurs
@@ -453,7 +502,7 @@ sealed class ChannelState {
         }
     }
 
-    private fun HasCommitments.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
+    internal fun HasCommitments.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
         val outdatedCommitment = when (this) {
             is WaitForRemotePublishFutureComitment -> true
             is Closing -> this.futureRemoteCommitPublished != null
@@ -473,7 +522,16 @@ sealed class ChannelState {
             )
             val nextState = when (this) {
                 is Closing -> copy(localCommitPublished = localCommitPublished)
-//                is Negotiating -> TODO("DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))")
+                is Negotiating -> Closing(
+                    staticParams = staticParams,
+                    currentTip = currentTip,
+                    currentOnchainFeerates = currentOnchainFeerates,
+                    commitments = commitments,
+                    fundingTx = null,
+                    waitingSince = currentTimestampMillis(),
+                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                    localCommitPublished = localCommitPublished
+                )
                 is WaitForFundingConfirmed -> Closing(
                     staticParams = staticParams, currentTip = currentTip,
                     currentOnchainFeerates = currentOnchainFeerates,
@@ -1853,8 +1911,15 @@ data class Normal(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
-        // TODO: this is wrong, we need to publish and spend our local commit tx and transition to Closing state
-        return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+
+        return when {
+            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+            else -> {
+                spendLocalCurrent().run {
+                    copy(second = second + SendMessage(error))
+                }
+            }
+        }
     }
 }
 
@@ -2193,30 +2258,36 @@ data class Negotiating(
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
-        if (commitments.nothingAtStake()) {
-            return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
+        val error = Error(channelId, t.message)
+
+        return when {
+            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+            bestUnpublishedClosingTx != null -> {
+                // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+                val nextState = Closing(
+                    staticParams,
+                    currentTip,
+                    currentOnchainFeerates,
+                    commitments,
+                    null,
+                    currentTimestampSeconds(),
+                    this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
+                    listOf(bestUnpublishedClosingTx)
+                )
+                val actions = listOf(
+                    StoreState(nextState),
+                    PublishTx(bestUnpublishedClosingTx),
+                    SendWatch(WatchConfirmed(channelId, bestUnpublishedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(bestUnpublishedClosingTx)))
+                )
+
+                Pair(nextState, actions)
+            }
+            else -> {
+                spendLocalCurrent().run {
+                    copy(second = second + SendMessage(error))
+                }
+            }
         }
-        if (bestUnpublishedClosingTx != null) {
-            // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
-            val nextState = Closing(
-                staticParams,
-                currentTip,
-                currentOnchainFeerates,
-                commitments,
-                null,
-                currentTimestampSeconds(),
-                this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
-                listOf(bestUnpublishedClosingTx)
-            )
-            val actions = listOf(
-                StoreState(nextState),
-                PublishTx(bestUnpublishedClosingTx),
-                SendWatch(WatchConfirmed(channelId, bestUnpublishedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(bestUnpublishedClosingTx)))
-            )
-            return Pair(nextState, actions)
-        }
-        // TODO: this is wrong, we need to publish and spend our local commit tx and transition to Closing state
-        return Pair(this, listOf())
     }
 }
 
