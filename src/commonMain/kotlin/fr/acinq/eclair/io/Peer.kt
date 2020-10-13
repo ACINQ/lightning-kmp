@@ -459,7 +459,7 @@ class Peer(
                                         input.send(action)
                                     }
                                 }
-                                it is ProcessFail || it is ProcessFailMalformed -> {
+                                it is ProcessFailure -> {
                                     outgoingPaymentHandler.processFailure(it, channels, currentTip.first)?.let { result ->
 
                                         if (result.status == OutgoingPaymentHandler.Status.FAILED) {

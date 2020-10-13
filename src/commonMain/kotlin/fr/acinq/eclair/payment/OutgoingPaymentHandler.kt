@@ -340,7 +340,7 @@ class OutgoingPaymentHandler(
     }
 
     fun processFailure(
-        event: ChannelAction, // ProcessFail || ProcessFailMalformed
+        event: ProcessFailure, // ProcessFail || ProcessFailMalformed
         channels: Map<ByteVector32, ChannelState>,
         currentBlockHeight: Int
     ): ProcessResult? {
@@ -355,10 +355,6 @@ class OutgoingPaymentHandler(
             is ProcessFailMalformed -> {
                 paymentId = event.paymentId
                 channelId = event.fail.channelId
-            }
-            else -> {
-                require(false) { "event must be of type ProcessFail or ProcessFailMalformed" }
-                return null
             }
         }
 
