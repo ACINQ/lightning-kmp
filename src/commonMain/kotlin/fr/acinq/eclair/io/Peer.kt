@@ -76,9 +76,6 @@ class Peer(
     // pending incoming payments, indexed by payment hash
     private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
-    // pending outgoing payments, indexed by payment hash
-    private val pendingOutgoingPayments: HashMap<ByteVector32, SendPayment> = HashMap()
-
     // encapsulates logic for validating payments
     private val paymentHandler = PaymentHandler(nodeParams)
 
@@ -521,8 +518,6 @@ class Peer(
                 val result = paymentLifecycle.processSendPayment(event, channels, currentTip.first)
 
                 if (result.status == PaymentLifecycle.Status.INFLIGHT) {
-                    // I don't think `pendingOutgoingPayments` is needed anymore...
-                    pendingOutgoingPayments[event.paymentRequest.paymentHash] = event
                     listenerEventChannel.send(SendingPayment(event.paymentId, event.paymentRequest))
                 }
                 for (action in result.actions) {
