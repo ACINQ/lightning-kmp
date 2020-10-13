@@ -31,7 +31,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
-data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
+data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout: PeerEvent()
 

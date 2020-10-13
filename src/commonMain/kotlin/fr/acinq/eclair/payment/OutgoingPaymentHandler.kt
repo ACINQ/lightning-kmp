@@ -111,41 +111,19 @@ class OutgoingPaymentHandler(
      * - so 2 payments, both going to the trampoline node (acinq server),
      *   with directions to forward payment to Bob
      */
-    class PaymentAttempt {
-        val paymentId: UUID
-        val invoice: PaymentRequest
-        val invoiceAmount: MilliSatoshi
+    data class PaymentAttempt(
+        val sendPayment: SendPayment,
         val failedAttempts: Int
-
+    ) {
         val trampolinePaymentSecret = Eclair.randomBytes32() // must be different from invoice.paymentSecret
         val parts = mutableListOf<TrampolinePaymentAttempt>()
 
-        constructor(sendPayment: SendPayment) {
-            paymentId = sendPayment.paymentId
-            invoice = sendPayment.paymentRequest
-            invoiceAmount = invoice.amount!! // sanity check already performed in processSendPayment
-            failedAttempts = 0
-        }
-
-        private constructor(
-            paymentId: UUID,
-            invoice: PaymentRequest,
-            invoiceAmount: MilliSatoshi,
-            failedAttempts: Int
-        ) {
-            this.paymentId = paymentId
-            this.invoice = invoice
-            this.invoiceAmount = invoiceAmount
-            this.failedAttempts = failedAttempts
-        }
+        val paymentId: UUID = sendPayment.paymentId
+        val invoice: PaymentRequest = sendPayment.paymentRequest
+        val paymentAmount: MilliSatoshi = sendPayment.paymentAmount
 
         fun incrementFailedAttempts(): PaymentAttempt {
-            return PaymentAttempt(
-                paymentId = this.paymentId,
-                invoice = this.invoice,
-                invoiceAmount = this.invoiceAmount,
-                failedAttempts = this.failedAttempts + 1
-            )
+            return PaymentAttempt(this.sendPayment, this.failedAttempts + 1)
         }
 
         /**
@@ -333,8 +311,19 @@ class OutgoingPaymentHandler(
         )
 
         val invoiceAmount = sendPayment.paymentRequest.amount
-        if (invoiceAmount == null || invoiceAmount.msat <= 0L) {
-            logger.error { "payment request does not include a valid amount" }
+        if (invoiceAmount != null) {
+            // if non-null, invoiceAmount must be positive, as per spec (& enforced in PaymentRequest.init)
+            if (sendPayment.paymentAmount < invoiceAmount) {
+                logger.warning { "paymentAmount(${sendPayment.paymentAmount}) must be at least invoiceAmount(${invoiceAmount})" }
+                return failedResult
+            }
+            if (sendPayment.paymentAmount > invoiceAmount * 2) {
+                logger.warning { "paymentAmount(${sendPayment.paymentAmount}) cannot exceed invoiceAmount(${invoiceAmount}) * 2" }
+                return failedResult
+            }
+        }
+        if (sendPayment.paymentAmount <= 0.msat) {
+            logger.warning { "paymentAmount(${sendPayment.paymentAmount}) must be positive" }
             return failedResult
         }
 
@@ -343,8 +332,9 @@ class OutgoingPaymentHandler(
             return failedResult
         }
 
-        val schedule = PaymentAdjustmentSchedule.get(0)!!
-        val paymentAttempt = PaymentAttempt(sendPayment)
+        val failedAttempts = 0
+        val schedule = PaymentAdjustmentSchedule.get(failedAttempts)!!
+        val paymentAttempt = PaymentAttempt(sendPayment, failedAttempts)
 
         return setupPaymentAttempt(paymentAttempt, schedule, channels, currentBlockHeight)
     }
@@ -497,12 +487,12 @@ class OutgoingPaymentHandler(
 
 //      val totalAvailableForSend = availableBalancesForSend.values.sum()
         val totalAvailableForSend = availableChannels.map { availableBalancesForSend[it.channelId]!! }.sum()
-        val invoiceAmount = paymentAttempt.invoiceAmount
+        val paymentAmount = paymentAttempt.paymentAmount
 
-        if (totalAvailableForSend < invoiceAmount) {
+        if (totalAvailableForSend < paymentAmount) {
             logger.error {
                 "insufficient capacity to send payment:" +
-                    " invoiceAmount(${invoiceAmount})" +
+                    " paymentAmount(${paymentAmount})" +
                     " available(${totalAvailableForSend})"
             }
             return listOf()
@@ -514,9 +504,9 @@ class OutgoingPaymentHandler(
         // Thus sending a payment (to the trampoline node) over 3 channels instead of 2 will result
         // in higher fees due to the additional feeBase payment.
 
-        val additionalFeesAmount = schedule.feeBaseSat.toMilliSatoshi() + (invoiceAmount * schedule.feePercent)
+        val additionalFeesAmount = schedule.feeBaseSat.toMilliSatoshi() + (paymentAmount * schedule.feePercent)
 
-        var remainingTargetAmount = invoiceAmount
+        var remainingTargetAmount = paymentAmount
         var remainingAdditionalFeesAmount = additionalFeesAmount
 
         for (channel in availableChannels) {
@@ -604,7 +594,7 @@ class OutgoingPaymentHandler(
         // So we're simply going use a legacy trampoline in this case.
 
         val finalPayload = FinalPayload.createSinglePartPayload(
-            amount = paymentAttempt.invoiceAmount,
+            amount = paymentAttempt.paymentAmount,
             expiry = finalExpiry,
             paymentSecret = paymentAttempt.invoice.paymentSecret
         )

@@ -14,13 +14,13 @@ import kotlin.test.*
 
 class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
-    private fun makeSendPayment(
-        payee: PrivateKey,
+    private fun makeInvoice(
+        recipient: PrivateKey,
         amount: MilliSatoshi?,
         supportsTrampoline: Boolean,
         timestamp: Long = currentTimestampSeconds(),
         expirySeconds: Long? = null,
-    ): SendPayment {
+    ): PaymentRequest {
 
         val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
@@ -35,30 +35,28 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
                 ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
             )
         }
-        val paymentRequest = PaymentRequest.create(
+        return PaymentRequest.create(
             chainHash = Block.LivenetGenesisBlock.hash,
             amount = amount,
             paymentHash = paymentHash,
-            privateKey = payee, // Payee creates invoice, sends to payer
+            privateKey = recipient,
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures),
             timestamp = timestamp,
             expirySeconds = expirySeconds
         )
-
-        return SendPayment(paymentId = UUID.randomUUID(), paymentRequest = paymentRequest)
     }
 
-    private fun makeSendPayment(
-        payee: Normal,
+    private fun makeInvoice(
+        recipient: Normal,
         amount: MilliSatoshi?,
         supportsTrampoline: Boolean,
         timestamp: Long = currentTimestampSeconds(),
         expirySeconds: Long? = null,
-    ): SendPayment {
-        val privKey = payee.staticParams.nodeParams.nodePrivateKey
-        return makeSendPayment(privKey, amount, supportsTrampoline, timestamp, expirySeconds)
+    ): PaymentRequest {
+        val recipientPrivKey = recipient.staticParams.nodeParams.nodePrivateKey
+        return makeInvoice(recipientPrivKey, amount, supportsTrampoline, timestamp, expirySeconds)
     }
 
     private fun expectedFees(
@@ -85,13 +83,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val availableForSend = 1_000_000.sat.toMilliSatoshi()
         val targetAmount = 500_000.sat.toMilliSatoshi() // plenty of room for targetAmount & fees
 
-        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
+        val invoice = makeInvoice(recipient = bob, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
 
         for (schedule in OutgoingPaymentHandler.PaymentAdjustmentSchedule.all()) {
 
             val additionalFees = expectedFees(targetAmount, schedule)
 
-            val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+            val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
             val pair = paymentAttempt.add(
                 channelId = alice.channelId,
                 channelUpdate = alice.channelUpdate,
@@ -124,9 +123,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // So we cannot send the targetAmount.
         // But we can still send something on this channel. And we can max it out.
 
-        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
+        val invoice = makeInvoice(recipient = bob, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
 
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
             channelUpdate = alice.channelUpdate,
@@ -153,8 +153,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val targetAmount = 50_000_000.msat
         val additionalFees = 50_000_000.msat
 
-        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val invoice = makeInvoice(recipient = bob, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -187,8 +188,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // There won't be enough room in the channel to send anything.
         // Because, once the fees are taken into account, there's no room for anything else.
 
-        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val invoice = makeInvoice(recipient = bob, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -214,8 +216,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // The target amount is below the channel's configured htlc_minimum_msat.
         // So we won't be able to make the payment.
 
-        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val invoice = makeInvoice(recipient = bob, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -238,8 +241,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val availableForSend = 500_000_000.msat
         val targetAmount = 200_000_000.msat // more than htlcMaximumMsat
 
-        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val invoice = makeInvoice(recipient = bob, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -296,10 +300,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val availableForSend = 1_000_000_000.msat
         val targetAmount = availableForSend / 2
 
-        val sendPayment = makeSendPayment(payee = privKeyC, amount = targetAmount, supportsTrampoline = true)
-        val invoice = sendPayment.paymentRequest
+        val invoice = makeInvoice(recipient = privKeyC, amount = targetAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
 
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
         val pair = paymentAttempt.add(
             channelId = channel.channelId,
             channelUpdate = channel.channelUpdate,
@@ -408,10 +412,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val availableForSend = 1_000_000_000.msat
         val targetAmount = availableForSend / 2
 
-        val sendPayment = makeSendPayment(payee = privKeyC, amount = targetAmount, supportsTrampoline = false)
-        val invoice = sendPayment.paymentRequest
+        val invoice = makeInvoice(recipient = privKeyC, amount = targetAmount, supportsTrampoline = false)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
 
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
         val pair = paymentAttempt.add(
             channelId = channel.channelId,
             channelUpdate = channel.channelUpdate,

@@ -143,7 +143,8 @@ object Node {
                     }
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
-                        peer.send(SendPayment(UUID.randomUUID(), invoice))
+                        val amount = if (tokens.size >= 3) MilliSatoshi(tokens[2].toLong()) else invoice.amount ?: MilliSatoshi(0)
+                        peer.send(SendPayment(UUID.randomUUID(), invoice, amount))
                     }
                     else -> {
                         println("I don't understand $tokens")
