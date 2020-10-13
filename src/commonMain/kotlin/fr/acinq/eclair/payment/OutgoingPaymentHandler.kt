@@ -97,7 +97,7 @@ class OutgoingPaymentHandler(
         val amount: MilliSatoshi,
         val nextAmount: MilliSatoshi,
         val cltvExpiryDelta: CltvExpiryDelta,
-        val status: Status = Status.INFLIGHT
+        val status: Status
     )
 
     /**
@@ -172,7 +172,8 @@ class OutgoingPaymentHandler(
                 channelId = channelId,
                 amount = calculations.trampolineAmount,
                 nextAmount = calculations.payeeAmount,
-                cltvExpiryDelta = cltvExpiryDelta
+                cltvExpiryDelta = cltvExpiryDelta,
+                status = Status.INFLIGHT
             )
             parts.add(part)
             return Pair(part, calculations)
