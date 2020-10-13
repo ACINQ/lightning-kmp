@@ -62,19 +62,24 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         return makeSendPayment(privKey, amount, supportsTrampoline, timestamp, expirySeconds)
     }
 
-    private fun expectedTrampolineFees(
+    private fun expectedFees(
         targetAmount: MilliSatoshi,
-        channelUpdate: ChannelUpdate,
+        channelUpdate: ChannelUpdate
+    ): MilliSatoshi {
+
+        return Eclair.nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, targetAmount)
+    }
+
+    private fun expectedFees(
+        targetAmount: MilliSatoshi,
         schedule: PaymentLifecycle.PaymentAdjustmentSchedule
     ): MilliSatoshi {
 
-        return Eclair.nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, targetAmount) +
-                schedule.feeBaseSat.toMilliSatoshi() +
-                (targetAmount * schedule.feePercent)
+        return schedule.feeBaseSat.toMilliSatoshi() + (targetAmount * schedule.feePercent)
     }
 
     @Test
-    fun `PaymentAttempt calculations - with room for fees`() {
+    fun `payment amount calculations - with room for fees`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
 
@@ -85,29 +90,31 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
 
         for (schedule in PaymentLifecycle.PaymentAdjustmentSchedule.all()) {
 
-            val additionalFeesAmount = schedule.feeBaseSat.toMilliSatoshi() + (targetAmount * schedule.feePercent)
+            val additionalFees = expectedFees(targetAmount, schedule)
 
             val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
             val pair = paymentAttempt.add(
                 channelId = alice.channelId,
                 channelUpdate = alice.channelUpdate,
                 targetAmount = targetAmount,
-                additionalFeesAmount = additionalFeesAmount,
+                additionalFeesAmount = additionalFees,
                 availableForSend = availableForSend,
                 cltvExpiryDelta = CltvExpiryDelta(0)
             )
 
             assertNotNull(pair)
-            val (trampolinePaymentAttempt, _) = pair
-            assertTrue { trampolinePaymentAttempt.nextAmount == targetAmount }
+            val (_, calculations) = pair
+            assertTrue { calculations.payeeAmount == targetAmount }
 
-            val expectedFees = expectedTrampolineFees(targetAmount, alice.channelUpdate, schedule)
-            assertTrue { trampolinePaymentAttempt.amount == (targetAmount + expectedFees) }
+            val channelFees = expectedFees(targetAmount, alice.channelUpdate)
+            assertTrue { calculations.channelFees == channelFees }
+            assertTrue { calculations.additionalFees == additionalFees }
+            assertTrue { calculations.trampolineAmount == (targetAmount + channelFees + additionalFees) }
         }
     }
 
     @Test
-    fun `PaymentAttempt calculations - with room for fees if we reduce targetAmount`() {
+    fun `payment amount calculations - with room for fees if we reduce targetAmount`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
 
@@ -131,21 +138,51 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         )
 
         assertNotNull(pair)
-        val (trampolinePaymentAttempt, _) = pair
-        assertTrue { trampolinePaymentAttempt.amount == availableForSend } // maxed out channel
+        val (_, calculations) = pair
+        assertTrue { calculations.trampolineAmount == availableForSend } // maxed out channel
 
-        val schedule = PaymentLifecycle.PaymentAdjustmentSchedule.get(0)!!
-        val expectedFees = expectedTrampolineFees(trampolinePaymentAttempt.nextAmount, alice.channelUpdate, schedule)
-
-        assertTrue { trampolinePaymentAttempt.nextAmount == (availableForSend - expectedFees) }
+        val channelFees = expectedFees(calculations.payeeAmount, alice.channelUpdate)
+        assertTrue { calculations.payeeAmount == (availableForSend - channelFees) }
     }
 
     @Test
-    fun `PaymentAttempt calculations - no room for payment after fees`() {
+    fun `payment amount calculations - exceed capacity due to additionalFees`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
 
-        val availableForSend = 546_000.msat
+        val availableForSend = 100_000_000.msat
+        val targetAmount = 50_000_000.msat
+        val additionalFees = 50_000_000.msat
+
+        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
+        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+
+        val pair = paymentAttempt.add(
+            channelId = alice.channelId,
+            channelUpdate = alice.channelUpdate,
+            targetAmount = targetAmount,
+            additionalFeesAmount = additionalFees,
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
+        )
+
+        assertNotNull(pair)
+        val (_, calculations) = pair
+        assertTrue { calculations.trampolineAmount == availableForSend } // maxed out channel
+
+        val expectedChannelFees = expectedFees(targetAmount, alice.channelUpdate)
+        assertTrue { calculations.channelFees == expectedChannelFees }
+
+        val expectedAdditionalFees = availableForSend - targetAmount - expectedChannelFees
+        assertTrue { calculations.additionalFees == expectedAdditionalFees }
+    }
+
+    @Test
+    fun `payment amount calculations - no room for payment after fees`() {
+
+        val (alice, bob) = TestsHelper.reachNormal()
+
+        val availableForSend = 546_000.msat // == channel's feeBase
         val targetAmount = 500_000_000.msat
 
         // There won't be enough room in the channel to send anything.
@@ -164,6 +201,59 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         )
 
         assertNull(pair)
+    }
+
+    @Test
+    fun `payment amount calculations - payment too low for htlc_minimum_msat`() {
+
+        val (alice, bob) = TestsHelper.reachNormal()
+        val channelUpdate = alice.channelUpdate.copy(htlcMinimumMsat = MilliSatoshi(100_000))
+
+        val availableForSend = 546_000.msat
+        val targetAmount = 50_000.msat // less than htlcMinimumMsat
+
+        // The target amount is below the channel's configured htlc_minimum_msat.
+        // So we won't be able to make the payment.
+
+        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
+        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+
+        val pair = paymentAttempt.add(
+            channelId = alice.channelId,
+            channelUpdate = channelUpdate,
+            targetAmount = targetAmount,
+            additionalFeesAmount = MilliSatoshi(0),
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
+        )
+
+        assertNull(pair)
+    }
+
+    @Test
+    fun `payment amount calculations - payment capped by htlc_maximum_msat`() {
+
+        val (alice, bob) = TestsHelper.reachNormal()
+        val channelUpdate = alice.channelUpdate.copy(htlcMaximumMsat = MilliSatoshi(100_000_000))
+
+        val availableForSend = 500_000_000.msat
+        val targetAmount = 200_000_000.msat // more than htlcMaximumMsat
+
+        val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
+        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+
+        val pair = paymentAttempt.add(
+            channelId = alice.channelId,
+            channelUpdate = channelUpdate,
+            targetAmount = targetAmount,
+            additionalFeesAmount = MilliSatoshi(0),
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
+        )
+
+        assertNotNull(pair)
+        val (_, calculations) = pair
+        assertTrue { calculations.trampolineAmount == channelUpdate.htlcMaximumMsat!! }
     }
 
     private fun decryptNodeRelay(
