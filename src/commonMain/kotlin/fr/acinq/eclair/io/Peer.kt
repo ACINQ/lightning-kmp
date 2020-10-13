@@ -113,6 +113,13 @@ class Peer(
             }
         }
         launch {
+            val sub = watcher.openNotificationsSubscription()
+            sub.consumeEach {
+                logger.info { "notification: $it" }
+                input.send(WrappedChannelEvent(it.channelId, fr.acinq.eclair.channel.WatchReceived(it)))
+            }
+        }
+        launch {
             // we don't restore closed channels
             channelsDb.listLocalChannels().filterNot { it is Closed }.forEach {
                 logger.info { "restoring $it" }
@@ -205,13 +212,6 @@ class Peer(
             }
 
             coroutineScope {
-                launch {
-                    val sub = watcher.openNotificationsSubscription()
-                    sub.consumeEach {
-                        logger.info { "notification: $it" }
-                        input.send(WrappedChannelEvent(it.channelId, fr.acinq.eclair.channel.WatchReceived(it)))
-                    }
-                }
                 launch { doPing() }
                 launch { checkPaymentsTimeout() }
                 launch { respond() }
