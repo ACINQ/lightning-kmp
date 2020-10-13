@@ -169,7 +169,6 @@ sealed class ChannelState {
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
-        val onChainFeeConf = staticParams.nodeParams.onChainFeeConf
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnchainFeerates)
 
         val nextState = when (this) {

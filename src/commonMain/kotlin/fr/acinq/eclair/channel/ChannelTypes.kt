@@ -81,11 +81,11 @@ data class LocalCommitPublished(
     fun update(tx: Transaction): LocalCommitPublished {
         // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
-        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter {
+        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
             // is this the commit tx itself ? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
             // does the tx spend an output of the local commitment tx?
-            val spendsTheCommitTx = commitTx.txid == it.txid
+            val spendsTheCommitTx = commitTx.txid == outPoint.txid
             // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
             // is itself spending the output of the commitment tx)
             val is3rdStageDelayedTx = claimHtlcDelayedTxs.map { it.txid }.contains(tx.txid)
@@ -110,8 +110,8 @@ data class LocalCommitPublished(
 
         // which htlc delayed txes can we expect to be confirmed?
         val unconfirmedHtlcDelayedTxes = claimHtlcDelayedTxs
-            .filter {
-                (it.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
+            .filter { tx ->
+                (tx.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
             } // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
             .filterNot {
                 irrevocablySpent.values.toSet().contains(it.txid)
@@ -172,7 +172,7 @@ data class RemoteCommitPublished(
 
         // are there remaining spendable outputs from the commitment tx?
         val commitOutputsSpendableByUs = (listOfNotNull(claimMainOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs)
-            .flatMap { it.txIn.map { it.outPoint }.toSet() - irrevocablySpent.keys }
+            .flatMap { it.txIn.map(TxIn::outPoint) }.toSet() - irrevocablySpent.keys
 
         return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty()
     }
@@ -210,11 +210,11 @@ data class RevokedCommitPublished(
     fun update(tx: Transaction): RevokedCommitPublished {
         // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
-        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter {
+        val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
             // is this the commit tx itself ? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
             // does the tx spend an output of the local commitment tx?
-            val spendsTheCommitTx = commitTx.txid == it.txid
+            val spendsTheCommitTx = commitTx.txid == outPoint.txid
             // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
             // is itself spending the output of the commitment tx)
             val is3rdStageDelayedTx = claimHtlcDelayedPenaltyTxs.map { it.txid }.contains(tx.txid)
@@ -233,12 +233,12 @@ data class RevokedCommitPublished(
         val isCommitTxConfirmed = irrevocablySpent.values.toSet().contains(commitTx.txid)
         // are there remaining spendable outputs from the commitment tx?
         val commitOutputsSpendableByUs = (listOfNotNull(claimMainOutputTx) + listOfNotNull(mainPenaltyTx) + htlcPenaltyTxs)
-            .flatMap { it.txIn.map { it.outPoint } }.toSet() - irrevocablySpent.keys
+            .flatMap { it.txIn.map(TxIn::outPoint) }.toSet() - irrevocablySpent.keys
 
         // which htlc delayed txes can we expect to be confirmed?
         val unconfirmedHtlcDelayedTxes = claimHtlcDelayedPenaltyTxs
-            .filter {
-                (it.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
+            .filter { tx ->
+                (tx.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
             } // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
             .filterNot {
                 irrevocablySpent.values.toSet().contains(it.txid)
