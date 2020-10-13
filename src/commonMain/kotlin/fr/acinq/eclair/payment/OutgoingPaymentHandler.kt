@@ -17,7 +17,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 
 
-class PaymentLifecycle(
+class OutgoingPaymentHandler(
     val nodeParams: NodeParams
 ) {
 

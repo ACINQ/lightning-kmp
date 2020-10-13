@@ -11,7 +11,6 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.*
-import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.secp256k1.Hex
@@ -24,8 +23,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
@@ -77,11 +74,11 @@ class Peer(
     // pending incoming payments, indexed by payment hash
     private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
-    // encapsulates logic for validating payments
-    private val paymentHandler = PaymentHandler(nodeParams)
+    // encapsulates logic for validating incoming payments
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
 
     // encapsulates logic for sending payments
-    private val paymentLifecycle = PaymentLifecycle(nodeParams)
+    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams)
 
     private val features = Features(
         setOf(
@@ -449,13 +446,13 @@ class Peer(
                                     val htlc = it.add
                                     val incomingPayment = pendingIncomingPayments[htlc.paymentHash]
 
-                                    val result = paymentHandler.processAdd(htlc, incomingPayment, state1.currentBlockHeight)
+                                    val result = incomingPaymentHandler.processAdd(htlc, incomingPayment, state1.currentBlockHeight)
 
-                                    if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED ||
-                                        result.status == PaymentHandler.ProcessedStatus.REJECTED) {
+                                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED ||
+                                        result.status == IncomingPaymentHandler.Status.REJECTED) {
                                         pendingIncomingPayments.remove(htlc.paymentHash)
                                     }
-                                    if (result.status == PaymentHandler.ProcessedStatus.ACCEPTED) {
+                                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED) {
                                         listenerEventChannel.send(PaymentReceived(incomingPayment!!))
                                     }
                                     for (action in result.actions) {
@@ -463,18 +460,18 @@ class Peer(
                                     }
                                 }
                                 it is ProcessFail || it is ProcessFailMalformed -> {
-                                    paymentLifecycle.processFailure(it, channels, currentTip.first)?.let { result ->
+                                    outgoingPaymentHandler.processFailure(it, channels, currentTip.first)?.let { result ->
 
-                                        if (result.status == PaymentLifecycle.Status.FAILED) {
+                                        if (result.status == OutgoingPaymentHandler.Status.FAILED) {
                                             listenerEventChannel.send(PaymentNotSent(result.paymentId, result.invoice))
                                         }
                                         result.actions.forEach { input.send(it) }
                                     }
                                 }
                                 it is ProcessFulfill -> {
-                                    paymentLifecycle.processFulfill(it)?.let { result ->
+                                    outgoingPaymentHandler.processFulfill(it)?.let { result ->
 
-                                        if (result.status == PaymentLifecycle.Status.SUCCEEDED) {
+                                        if (result.status == OutgoingPaymentHandler.Status.SUCCEEDED) {
                                             listenerEventChannel.send(PaymentSent(result.paymentId, result.invoice))
                                         }
                                         result.actions.forEach { input.send(it) }
@@ -516,9 +513,9 @@ class Peer(
             // send payments
             //
             event is SendPayment -> {
-                val result = paymentLifecycle.processSendPayment(event, channels, currentTip.first)
+                val result = outgoingPaymentHandler.processSendPayment(event, channels, currentTip.first)
 
-                if (result.status == PaymentLifecycle.Status.INFLIGHT) {
+                if (result.status == OutgoingPaymentHandler.Status.INFLIGHT) {
                     listenerEventChannel.send(SendingPayment(event.paymentId, event.paymentRequest))
                 }
                 for (action in result.actions) {
@@ -547,7 +544,7 @@ class Peer(
                 sendToSelf(event.channelId, actions)
             }
             event is CheckPaymentsTimeout -> {
-                val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
+                val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
             }
         }

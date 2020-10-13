@@ -6,14 +6,13 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.SendPayment
-import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
-class PaymentLifecycleTestsCommon : EclairTestSuite() {
+class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun makeSendPayment(
         payee: PrivateKey,
@@ -72,7 +71,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
 
     private fun expectedFees(
         targetAmount: MilliSatoshi,
-        schedule: PaymentLifecycle.PaymentAdjustmentSchedule
+        schedule: OutgoingPaymentHandler.PaymentAdjustmentSchedule
     ): MilliSatoshi {
 
         return schedule.feeBaseSat.toMilliSatoshi() + (targetAmount * schedule.feePercent)
@@ -88,11 +87,11 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
 
-        for (schedule in PaymentLifecycle.PaymentAdjustmentSchedule.all()) {
+        for (schedule in OutgoingPaymentHandler.PaymentAdjustmentSchedule.all()) {
 
             val additionalFees = expectedFees(targetAmount, schedule)
 
-            val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+            val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
             val pair = paymentAttempt.add(
                 channelId = alice.channelId,
                 channelUpdate = alice.channelUpdate,
@@ -127,7 +126,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
 
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
             channelUpdate = alice.channelUpdate,
@@ -155,7 +154,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val additionalFees = 50_000_000.msat
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -189,7 +188,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         // Because, once the fees are taken into account, there's no room for anything else.
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -216,7 +215,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         // So we won't be able to make the payment.
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -240,7 +239,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val targetAmount = 200_000_000.msat // more than htlcMaximumMsat
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
 
         val pair = paymentAttempt.add(
             channelId = alice.channelId,
@@ -300,7 +299,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val sendPayment = makeSendPayment(payee = privKeyC, amount = targetAmount, supportsTrampoline = true)
         val invoice = sendPayment.paymentRequest
 
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
         val pair = paymentAttempt.add(
             channelId = channel.channelId,
             channelUpdate = channel.channelUpdate,
@@ -322,7 +321,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val expiryBC = expiryDeltaBC.toCltvExpiry(blockHeight)
         val expiryAB = expiryDeltaAB.toCltvExpiry(blockHeight)
 
-        val paymentLifecycle = PaymentLifecycle(channel.staticParams.nodeParams)
+        val paymentLifecycle = OutgoingPaymentHandler(channel.staticParams.nodeParams)
         val wrappedChannelEvent = paymentLifecycle.actionify(
             channel = channel,
             paymentAttempt = paymentAttempt,
@@ -412,7 +411,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val sendPayment = makeSendPayment(payee = privKeyC, amount = targetAmount, supportsTrampoline = false)
         val invoice = sendPayment.paymentRequest
 
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment)
         val pair = paymentAttempt.add(
             channelId = channel.channelId,
             channelUpdate = channel.channelUpdate,
@@ -434,7 +433,7 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val expiryBC = expiryDeltaBC.toCltvExpiry(blockHeight)
         val expiryAB = expiryDeltaAB.toCltvExpiry(blockHeight)
 
-        val paymentLifecycle = PaymentLifecycle(channel.staticParams.nodeParams)
+        val paymentLifecycle = OutgoingPaymentHandler(channel.staticParams.nodeParams)
         val wrappedChannelEvent = paymentLifecycle.actionify(
             channel = channel,
             paymentAttempt = paymentAttempt,
