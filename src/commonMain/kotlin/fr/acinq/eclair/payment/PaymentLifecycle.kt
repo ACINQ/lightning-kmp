@@ -29,6 +29,7 @@ class PaymentLifecycle(
 
     data class ProcessResult(
         val paymentId: UUID,
+        val invoice: PaymentRequest,
         val status: Status,
         val fees: MilliSatoshi, // we can inform user as payment fees increase during retries
         val actions: List<PeerEvent>
@@ -324,6 +325,7 @@ class PaymentLifecycle(
 
         val failedResult = ProcessResult(
             paymentId = sendPayment.paymentId,
+            invoice = sendPayment.paymentRequest,
             status = Status.FAILED,
             fees = MilliSatoshi(0),
             actions = listOf()
@@ -390,6 +392,7 @@ class PaymentLifecycle(
             pending.remove(paymentAttempt.paymentId)
             return ProcessResult(
                 paymentId = paymentAttempt.paymentId,
+                invoice = paymentAttempt.invoice,
                 status = Status.FAILED,
                 fees = MilliSatoshi(0),
                 actions = listOf()
@@ -421,6 +424,7 @@ class PaymentLifecycle(
         pending.remove(paymentAttempt.paymentId)
         return ProcessResult(
             paymentId = paymentAttempt.paymentId,
+            invoice = paymentAttempt.invoice,
             status = Status.SUCCEEDED,
             fees = paymentAttempt.totalFees(),
             actions = listOf()
@@ -443,6 +447,7 @@ class PaymentLifecycle(
             // We don't have enough capacity (either outright, or after fees are taken into account).
             return ProcessResult(
                 paymentId = paymentAttempt.paymentId,
+                invoice = paymentAttempt.invoice,
                 status = Status.FAILED,
                 fees = MilliSatoshi(0),
                 actions = listOf()
@@ -452,6 +457,7 @@ class PaymentLifecycle(
         pending[paymentAttempt.paymentId] = paymentAttempt
         return ProcessResult(
             paymentId = paymentAttempt.paymentId,
+            invoice = paymentAttempt.invoice,
             status = Status.INFLIGHT,
             fees = paymentAttempt.totalFees(),
             actions = actions

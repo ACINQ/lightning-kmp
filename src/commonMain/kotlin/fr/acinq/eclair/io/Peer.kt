@@ -43,6 +43,7 @@ data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val reque
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
 data class SendingPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 data class PaymentSent(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
+data class PaymentNotSent(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -465,7 +466,7 @@ class Peer(
                                     paymentLifecycle.processFailure(it, channels, currentTip.first)?.let { result ->
 
                                         if (result.status == PaymentLifecycle.Status.FAILED) {
-                                        //  listenerEventChannel.send(PaymentNotSent(result.id))
+                                            listenerEventChannel.send(PaymentNotSent(result.paymentId, result.invoice))
                                         }
                                         result.actions.forEach { input.send(it) }
                                     }
@@ -474,7 +475,7 @@ class Peer(
                                     paymentLifecycle.processFulfill(it)?.let { result ->
 
                                         if (result.status == PaymentLifecycle.Status.SUCCEEDED) {
-                                        //  listenerEventChannel.send(PaymentSent(result.id, result.invoice))
+                                            listenerEventChannel.send(PaymentSent(result.paymentId, result.invoice))
                                         }
                                         result.actions.forEach { input.send(it) }
                                     }
