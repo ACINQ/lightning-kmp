@@ -474,7 +474,7 @@ class Peer(
                                     }
                                 }
                                 it is ProcessFulfill -> {
-                                    paymentLifecycle.processFulfill(it, channels, currentTip.first)?.let { result ->
+                                    paymentLifecycle.processFulfill(it)?.let { result ->
 
                                         if (result.status == PaymentLifecycle.Status.SUCCEEDED) {
                                         //  listenerEventChannel.send(PaymentSent(result.id, result.invoice))

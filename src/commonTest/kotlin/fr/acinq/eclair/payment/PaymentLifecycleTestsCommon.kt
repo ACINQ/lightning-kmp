@@ -82,27 +82,23 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val targetAmount = 500_000.sat.toMilliSatoshi() // plenty of room for targetAmount & fees
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
 
-        var trampolinePaymentAttempt: PaymentLifecycle.TrampolinePaymentAttempt? = null
         for (schedule in PaymentLifecycle.PaymentAdjustmentSchedule.all()) {
 
-            trampolinePaymentAttempt = if (trampolinePaymentAttempt == null) {
-                paymentAttempt.add(
-                    channelId = alice.channelId,
-                    channelUpdate = alice.channelUpdate,
-                    targetAmount = targetAmount,
-                    availableForSend = availableForSend
-                )
-            } else {
-                paymentAttempt.fail(
-                    channelId = alice.channelId,
-                    channelUpdate = alice.channelUpdate,
-                    availableForSend = availableForSend
-                )
-            }
+            val additionalFeesAmount = schedule.feeBaseSat.toMilliSatoshi() + (targetAmount * schedule.feePercent)
 
-            assertNotNull(trampolinePaymentAttempt)
+            val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+            val pair = paymentAttempt.add(
+                channelId = alice.channelId,
+                channelUpdate = alice.channelUpdate,
+                targetAmount = targetAmount,
+                additionalFeesAmount = additionalFeesAmount,
+                availableForSend = availableForSend,
+                cltvExpiryDelta = CltvExpiryDelta(0)
+            )
+
+            assertNotNull(pair)
+            val (trampolinePaymentAttempt, _) = pair
             assertTrue { trampolinePaymentAttempt.nextAmount == targetAmount }
 
             val expectedFees = expectedTrampolineFees(targetAmount, alice.channelUpdate, schedule)
@@ -123,16 +119,19 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         // But we can still send something on this channel. And we can max it out.
 
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
-        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
 
-        val trampolinePaymentAttempt = paymentAttempt.add(
+        val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
+        val pair = paymentAttempt.add(
             channelId = alice.channelId,
             channelUpdate = alice.channelUpdate,
             targetAmount = targetAmount,
-            availableForSend = availableForSend
+            additionalFeesAmount = MilliSatoshi(0),
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
         )
 
-        assertNotNull(trampolinePaymentAttempt)
+        assertNotNull(pair)
+        val (trampolinePaymentAttempt, _) = pair
         assertTrue { trampolinePaymentAttempt.amount == availableForSend } // maxed out channel
 
         val schedule = PaymentLifecycle.PaymentAdjustmentSchedule.get(0)!!
@@ -155,14 +154,16 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val sendPayment = makeSendPayment(payee = bob, amount = targetAmount, supportsTrampoline = true)
         val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
 
-        val trampolinePaymentAttempt = paymentAttempt.add(
+        val pair = paymentAttempt.add(
             channelId = alice.channelId,
             channelUpdate = alice.channelUpdate,
             targetAmount = targetAmount,
-            availableForSend = availableForSend
+            additionalFeesAmount = MilliSatoshi(0),
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
         )
 
-        assertNull(trampolinePaymentAttempt)
+        assertNull(pair)
     }
 
     private fun decryptNodeRelay(
@@ -210,14 +211,17 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val invoice = sendPayment.paymentRequest
 
         val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
-        val trampolinePaymentAttempt = paymentAttempt.add(
+        val pair = paymentAttempt.add(
             channelId = channel.channelId,
             channelUpdate = channel.channelUpdate,
             targetAmount = targetAmount,
-            availableForSend = availableForSend
+            additionalFeesAmount = MilliSatoshi(0),
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
         )
 
-        assertNotNull(trampolinePaymentAttempt)
+        assertNotNull(pair)
+        val (trampolinePaymentAttempt, _) = pair
 
         val amountAB = trampolinePaymentAttempt.amount
         val amountBC = trampolinePaymentAttempt.nextAmount
@@ -319,14 +323,17 @@ class PaymentLifecycleTestsCommon : EclairTestSuite() {
         val invoice = sendPayment.paymentRequest
 
         val paymentAttempt = PaymentLifecycle.PaymentAttempt(sendPayment)
-        val trampolinePaymentAttempt = paymentAttempt.add(
+        val pair = paymentAttempt.add(
             channelId = channel.channelId,
             channelUpdate = channel.channelUpdate,
             targetAmount = targetAmount,
-            availableForSend = availableForSend
+            additionalFeesAmount = MilliSatoshi(0),
+            availableForSend = availableForSend,
+            cltvExpiryDelta = CltvExpiryDelta(0)
         )
 
-        assertNotNull(trampolinePaymentAttempt)
+        assertNotNull(pair)
+        val (trampolinePaymentAttempt, _) = pair
 
         val amountAB = trampolinePaymentAttempt.amount
 //      val amountBC = trampolinePaymentAttempt.nextAmount
