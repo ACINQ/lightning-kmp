@@ -7,8 +7,8 @@ import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.JsonElement
 
-class BitcoindService {
-    private val client = BitcoinJsonRPCClient()
+object BitcoindService {
+    private val client = BitcoinJsonRPCClient
 
     suspend fun getNetworkInfo(): JsonElement = client.sendRequest<GetNetworkInfoResponse>(GetNetworkInfo).result
     suspend fun getBlockCount(): Int = client.sendRequest<GetBlockCountResponse>(GetBlockCount).blockcount

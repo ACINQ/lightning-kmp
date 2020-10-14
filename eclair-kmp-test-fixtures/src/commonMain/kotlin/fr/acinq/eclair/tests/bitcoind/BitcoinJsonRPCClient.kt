@@ -12,13 +12,12 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
 
-class BitcoinJsonRPCClient(
-    private val user: String = "foo",
-    private val pwd: String = "bar",
-    host: String = "127.0.0.1",
-    port: Int = 18443,
-    ssl: Boolean = false
-) {
+object BitcoinJsonRPCClient {
+    private const val user: String = "foo"
+    private const val pwd: String = "bar"
+    private const val host: String = "127.0.0.1"
+    private const val port: Int = 18443
+    private const val ssl: Boolean = false
 
     private val scheme = if (ssl) "https" else "http"
     private val serviceUri = "$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
@@ -35,6 +34,8 @@ class BitcoinJsonRPCClient(
         }
     }
 
+    private val logger = newEclairLogger()
+
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
             logger.verbose { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
@@ -43,10 +44,6 @@ class BitcoinJsonRPCClient(
         logger.verbose { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T
-    }
-
-    companion object {
-        private val logger = newEclairLogger()
     }
 }
 

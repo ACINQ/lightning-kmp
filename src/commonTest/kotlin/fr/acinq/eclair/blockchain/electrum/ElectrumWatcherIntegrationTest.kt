@@ -31,7 +31,7 @@ import kotlin.time.seconds
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
-    private val bitcoincli = BitcoindService()
+    private val bitcoincli = BitcoindService
 
     init {
         runSuspendBlocking {
