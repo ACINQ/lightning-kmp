@@ -48,7 +48,7 @@ object Node {
         ),
         dustLimit = 100.sat,
         onChainFeeConf = OnChainFeeConf(
-            maxFeerateMismatch = 1.5,
+            maxFeerateMismatch = 1000.0,
             closeOnOfflineMismatch = true,
             updateFeeMinDiffRatio = 0.1
         ),
