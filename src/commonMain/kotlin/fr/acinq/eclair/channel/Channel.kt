@@ -2409,23 +2409,23 @@ data class Closing(
                     }
                     watch is WatchEventConfirmed && watch.event is BITCOIN_TX_CONFIRMED -> {
                         logger.info { "txid=${watch.tx.txid} has reached mindepth, updating closing state" }
-                        when (val closingType = isClosed(watch.tx)) {
+                        val closing1 = this.copy(
+                            localCommitPublished = this.localCommitPublished?.update(watch.tx),
+                            remoteCommitPublished = this.remoteCommitPublished?.update(watch.tx),
+                            nextRemoteCommitPublished = this.nextRemoteCommitPublished?.update(watch.tx),
+                            futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
+                            revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
+                        )
+                        when (val closingType = closing1.isClosed(watch.tx)) {
                             null -> {
-                                val nextState = this.copy(
-                                    localCommitPublished = this.localCommitPublished?.update(watch.tx),
-                                    remoteCommitPublished = this.remoteCommitPublished?.update(watch.tx),
-                                    nextRemoteCommitPublished = this.nextRemoteCommitPublished?.update(watch.tx),
-                                    futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
-                                    revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
-                                )
-                                Pair(nextState, listOf(StoreState(nextState)))
+                                Pair(closing1, listOf(StoreState(closing1)))
                             }
                             else -> {
                                 logger.info { "channel $channelId is now closed" }
                                 if (closingType !is MutualClose) {
                                     logger.info { "last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
-                                val nextState = Closed(this)
+                                val nextState = Closed(closing1)
                                 Pair(nextState, listOf(StoreState(nextState)))
                             }
                         }
