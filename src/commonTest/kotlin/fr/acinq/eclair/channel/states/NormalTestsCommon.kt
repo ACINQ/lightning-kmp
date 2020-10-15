@@ -86,8 +86,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val add = CMD_ADD_HTLC.copy(cltvExpiry = expiryTooSmall)
         val (alice1, actions1) = alice0.process(ExecuteCommand(add))
-        actions1.hasError<ExpiryTooSmall>()
-        assertEquals(alice0, alice1)
+        assertTrue { actions1.hasOutgoingMessage<UpdateAddHtlc>() != null }
     }
 
     @Test
@@ -149,7 +148,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val actualError = actions.findError<InsufficientFunds>()
         val expectError = InsufficientFunds(alice0.channelId,
             amount = Int.MAX_VALUE.msat,
-            missing = 1_379_883.sat,
+            missing = 1388_843.sat,
             reserve = 20_000.sat,
             fees = 8960.sat)
         assertEquals(expectError, actualError)
@@ -175,20 +174,24 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)`() {
         val (alice0, bob0) = reachNormal()
-        val (alice1, bob1) = addHtlc(767_600_000.msat, alice0, bob0).first
+        val (alice1, bob1) = addHtlc(758_640_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
         assertEquals(0.msat, (alice2 as HasCommitments).commitments.availableBalanceForSend())
+
+        tailrec fun loop(bob: ChannelState, count: Int): ChannelState = if (count == 0) bob else {
+            val (bob1, actions1) = bob.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_000_000.msat)))
+            assertTrue { actions1.hasOutgoingMessage<UpdateAddHtlc>() != null }
+            loop(bob1, count - 1)
+        }
 
         // actual test begins
         // at this point alice has the minimal amount to sustain a channel
         // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first two HTLCs should be allowed
-        val (bob3, actionsBob3) = bob2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_000_000.msat)))
-        actionsBob3.hasMessage<UpdateAddHtlc>()
+        val bob3 = loop(bob2, 7)
+
+        // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
         val (bob4, actionsBob4) = bob3.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_500_000.msat)))
-        actionsBob4.hasMessage<UpdateAddHtlc>()
-        // but this one will dip alice below her reserve: we must wait for the two previous HTLCs to settle before sending any more
-        val (_, actionsBob5) = bob4.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 11_000_000.msat)))
-        actionsBob5.hasError<RemoteCannotAffordFeesForNewHtlc>()
+        actionsBob4.hasError<RemoteCannotAffordFeesForNewHtlc>()
     }
 
     @Test
@@ -198,7 +201,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice1.hasMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 200_000_000.msat)))
         actionsAlice2.hasMessage<UpdateAddHtlc>()
-        val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 64_160_000.msat)))
+        val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 51_760_000.msat)))
         actionsAlice3.hasMessage<UpdateAddHtlc>()
         val (_, actionsAlice4) = alice3.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1000_000.msat)))
         val actualError = actionsAlice4.findError<InsufficientFunds>()
@@ -215,7 +218,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice2.hasMessage<UpdateAddHtlc>()
         val (_, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 500_000_000.msat)))
         val actualError = actionsAlice3.findError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 335_840.sat, reserve = 20_000.sat, fees = 12_400.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 348240.sat, reserve = 20_000.sat, fees = 12_400.sat)
         assertEquals(expectError, actualError)
     }
 
@@ -273,7 +276,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val failAdd = CMD_ADD_HTLC.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(ExecuteCommand(failAdd))
         val actualError = actionsAlice3.findError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 567_453.sat, 20_000.sat, 10_680.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 578_133.sat, 20_000.sat, 10_680.sat)
         assertEquals(expectedError, actualError)
     }
 
