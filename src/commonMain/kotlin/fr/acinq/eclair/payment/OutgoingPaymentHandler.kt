@@ -334,7 +334,7 @@ class OutgoingPaymentHandler(
 
         // Check for channel cap restrictions
 
-        selectedChannel.channelUpdate.htlcMinimumMsat?.let { htlcMinimumMsat ->
+        selectedChannel.channelUpdate.htlcMinimumMsat.let { htlcMinimumMsat ->
             if ((recipientAmount + trampolineFees) < htlcMinimumMsat) {
                 logger.error {
                     "payment is below channel's htlcMinimumMsat:" +
@@ -394,7 +394,7 @@ class OutgoingPaymentHandler(
 
         val finalExpiryDelta = paymentAttempt.invoice.minFinalExpiryDelta
             ?: Channel.MIN_CLTV_EXPIRY_DELTA // default value if unspecified, as per Bolt 11
-        val finalExpiry = (part.cltvExpiryDelta + finalExpiryDelta).toCltvExpiry(currentBlockHeight.toLong())
+        val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
 
         val features = paymentAttempt.invoice.features?.let { Features(it) } ?: Features(setOf())
         val recipientSupportsMpp = features.hasFeature(Feature.BasicMultiPartPayment)
@@ -426,17 +426,18 @@ class OutgoingPaymentHandler(
             NodeHop(
                 nodeId = channel.staticParams.nodeParams.nodeId, // us
                 nextNodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
-                cltvExpiryDelta = part.cltvExpiryDelta, // per node cltv
-                fee = part.trampolineFees // per node fee
+                cltvExpiryDelta = CltvExpiryDelta(0), // per node cltv (ignored)
+                fee = MilliSatoshi(0) // per node fee (ignored)
             ),
             NodeHop(
                 nodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
                 nextNodeId = paymentAttempt.invoice.nodeId, // final recipient
-                cltvExpiryDelta = finalExpiryDelta, // per node cltv
-                fee = MilliSatoshi(0) // per node fee
+                cltvExpiryDelta = part.cltvExpiryDelta, // per node cltv
+                fee = part.trampolineFees // per node fee
             )
         )
 
+        val trampolineExpiry: CltvExpiry
         val trampolineOnion: PacketAndSecrets
         if (recipientSupportsTrampoline && recipientSupportsMpp && paymentSecret != null) {
             // Full trampoline! Full privacy!
@@ -446,6 +447,7 @@ class OutgoingPaymentHandler(
                 finalPayload = finalPayload,
                 payloadLength = OnionRoutingPacket.TrampolinePacketLength
             )
+            trampolineExpiry = triple.second
             trampolineOnion = triple.third
         } else {
             // Legacy workaround
@@ -454,13 +456,14 @@ class OutgoingPaymentHandler(
                 hops = nodeHops,
                 finalPayload = finalPayload
             )
+            trampolineExpiry = triple.second
             trampolineOnion = triple.third
         }
 
         val trampolinePayload = FinalPayload.createTrampolinePayload(
             amount = part.amount,
             totalAmount = paymentAttempt.totalAmount(includingFees = true),
-            expiry = part.cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong()),
+            expiry = trampolineExpiry,
             paymentSecret = paymentAttempt.trampolinePaymentSecret,
             trampolinePacket = trampolineOnion.packet
         )

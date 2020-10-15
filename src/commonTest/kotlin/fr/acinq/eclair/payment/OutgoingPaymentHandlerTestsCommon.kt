@@ -290,7 +290,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val innerPayload = NodeRelayPayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
         return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
     }
-/*
+
     @Test
     fun `PaymentLifecycle actionify - full trampoline`() {
 
@@ -323,14 +323,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             status = OutgoingPaymentHandler.Status.INFLIGHT
         )
 
-        val amountAB = part.amount
-        val amountBC = part.amount - part.trampolineFees
+        val expectedAmountAtB = part.amount
+        val expectedAmountAtC = part.amount - part.trampolineFees
 
-        val expiryDeltaBC = Channel.MIN_CLTV_EXPIRY_DELTA
-        val expiryDeltaAB = expiryDeltaBC + part.cltvExpiryDelta
+        val expectedExpiryDeltaAtC = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+        val expectedExpiryDeltaAtB = expectedExpiryDeltaAtC + part.cltvExpiryDelta
 
-        val expiryBC = expiryDeltaBC.toCltvExpiry(blockHeight)
-        val expiryAB = expiryDeltaAB.toCltvExpiry(blockHeight)
+        val expectedExpiryAtC = expectedExpiryDeltaAtC.toCltvExpiry(blockHeight)
+        val expectedExpiryAtB = expectedExpiryDeltaAtB.toCltvExpiry(blockHeight)
 
         val paymentLifecycle = OutgoingPaymentHandler(channel.staticParams.nodeParams)
         val wrappedChannelEvent = paymentLifecycle.actionify(
@@ -345,8 +345,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         assertNotNull(cmdAddHtlc)
 
-        assertTrue { cmdAddHtlc.amount == amountAB }
-//      assertTrue { cmdAddHtlc.cltvExpiry == expiryAB }
+        assertTrue { cmdAddHtlc.amount == expectedAmountAtB }
+        assertTrue { cmdAddHtlc.cltvExpiry == expectedExpiryAtB }
 
         // When nodeB receives the packet, it will be decrypted, and we expect to find:
         // - isLastPacket == true (last on channel-hop sequence)
@@ -354,11 +354,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // - trampoline packet requests a trampoline-forward to nodeC
 
         val (outerB, innerB, packetC) = decryptNodeRelay(cmdAddHtlc.onion, cmdAddHtlc.paymentHash, privKeyB)
-        assertEquals(amountAB, outerB.amount)
-        assertEquals(amountAB, outerB.totalAmount)
-//      assertEquals(expiryAB, outerB.expiry)
-        assertEquals(amountBC, innerB.amountToForward)
-//      assertEquals(expiryBC, innerB.outgoingCltv)
+        assertEquals(expectedAmountAtB, outerB.amount)
+        assertEquals(expectedAmountAtB, outerB.totalAmount)
+        assertEquals(expectedExpiryAtB, outerB.expiry)
+        assertEquals(expectedAmountAtC, innerB.amountToForward)
+        assertEquals(expectedExpiryAtC, innerB.outgoingCltv)
         assertEquals(pubKeyC, innerB.outgoingNodeId)
         assertNull(innerB.invoiceRoutingInfo)
         assertNull(innerB.invoiceFeatures)
@@ -368,13 +368,18 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // It doesn't matter which route is used to forward the packet.
 
         val lastTrampolinePayload = FinalPayload.createTrampolinePayload(
-            amount = amountBC,
-            totalAmount = amountBC,
-            expiry = expiryBC,
+            amount = innerB.amountToForward,
+            totalAmount = innerB.amountToForward,
+            expiry = innerB.outgoingCltv,
             paymentSecret = Eclair.randomBytes32(), // real paymentSecret is inside trampoline (packetC)
             trampolinePacket = packetC
         )
-        val lastTrampolineHop = NodeHop(pubKeyB, pubKeyC, expiryDeltaBC, MilliSatoshi(0))
+        val lastTrampolineHop = NodeHop(
+            nodeId = pubKeyB,
+            nextNodeId = pubKeyC,
+            cltvExpiryDelta = innerB.outgoingCltv - outerB.expiry,
+            fee = MilliSatoshi(0) // not unit testing this - decided by trampoline
+        )
         val (amountC, expiryC, onionC) = OutgoingPacket.buildPacket(
             paymentHash = invoice.paymentHash,
             hops = listOf(lastTrampolineHop),
@@ -392,7 +397,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
                 TlvStream(
                     listOf(
                         OnionTlv.AmountToForward(targetAmount),
-                        OnionTlv.OutgoingCltv(expiryBC),
+                        OnionTlv.OutgoingCltv(expectedExpiryAtC),
                         OnionTlv.PaymentData(sendPayment.paymentRequest.paymentSecret!!, targetAmount)
                     )
                 )
@@ -431,14 +436,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             status = OutgoingPaymentHandler.Status.INFLIGHT
         )
 
-        val amountAB = part.amount
-//      val amountBC = part.amount - part.trampolineFees
+        val expectedAmountAtB = part.amount
+        val expectedAmountAtC = part.amount - part.trampolineFees
 
-        val expiryDeltaBC = Channel.MIN_CLTV_EXPIRY_DELTA
-        val expiryDeltaAB = expiryDeltaBC + part.cltvExpiryDelta
+        val expectedExpiryDeltaAtC = Channel.MIN_CLTV_EXPIRY_DELTA
+        val expectedExpiryDeltaAtB = expectedExpiryDeltaAtC + part.cltvExpiryDelta
 
-        val expiryBC = expiryDeltaBC.toCltvExpiry(blockHeight)
-        val expiryAB = expiryDeltaAB.toCltvExpiry(blockHeight)
+        val expectedExpiryAtC = expectedExpiryDeltaAtC.toCltvExpiry(blockHeight)
+        val expectedExpiryAtB = expectedExpiryDeltaAtB.toCltvExpiry(blockHeight)
 
         val paymentLifecycle = OutgoingPaymentHandler(channel.staticParams.nodeParams)
         val wrappedChannelEvent = paymentLifecycle.actionify(
@@ -453,8 +458,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         assertNotNull(cmdAddHtlc)
 
-        assertTrue { cmdAddHtlc.amount == amountAB }
-        assertTrue { cmdAddHtlc.cltvExpiry == expiryAB }
+        assertTrue { cmdAddHtlc.amount == expectedAmountAtB }
+        assertTrue { cmdAddHtlc.cltvExpiry == expectedExpiryAtB }
 
         // When nodeB receives the packet, it will be decrypted, and we expect to find:
         // - isLastPacket == true (last on channel-hop sequence)
@@ -462,13 +467,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // - trampoline packet requests a legacy (non-trampoline) forward to nodeC
 
         val (outerB, innerB, _) = decryptNodeRelay(cmdAddHtlc.onion, cmdAddHtlc.paymentHash, privKeyB)
-        assertEquals(amountAB, outerB.amount)
-        assertEquals(amountAB, outerB.totalAmount)
-        assertEquals(expiryAB, outerB.expiry)
+        assertEquals(expectedAmountAtB, outerB.amount)
+        assertEquals(expectedAmountAtB, outerB.totalAmount)
+        assertEquals(expectedExpiryAtB, outerB.expiry)
         assertNotEquals(invoice.paymentSecret, outerB.paymentSecret)
-        assertEquals(targetAmount, innerB.amountToForward)
-        assertEquals(targetAmount, innerB.totalAmount)
-        assertEquals(expiryBC, innerB.outgoingCltv)
+        assertEquals(expectedAmountAtC, innerB.amountToForward)
+        assertEquals(expectedAmountAtC, innerB.totalAmount)
+        assertEquals(expectedExpiryAtC, innerB.outgoingCltv)
         assertEquals(pubKeyC, innerB.outgoingNodeId)
         assertEquals(invoice.paymentSecret, innerB.paymentSecret)
         assertEquals(invoice.features!!, innerB.invoiceFeatures)
@@ -479,5 +484,4 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(it, innerB.invoiceRoutingInfo)
         }
     }
-*/
 }
