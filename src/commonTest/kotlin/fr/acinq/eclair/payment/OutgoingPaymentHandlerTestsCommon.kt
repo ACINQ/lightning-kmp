@@ -334,8 +334,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `increase trampolineFees according to schedule`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
+        val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
-        val currentBlockHeight = TestConstants.defaultBlockHeight
 
         val invoiceAmount = 100_000.msat
         val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
@@ -375,6 +375,29 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_ROUTE_TO_RECIPIENT }
         }
+    }
+
+    @Test
+    fun `successful trampoline response`() {
+
+        val (alice, bob) = TestsHelper.reachNormal()
+        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val channels = mapOf(alice.channelId to alice)
+
+        val invoiceAmount = 100_000.msat
+        val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, invoiceAmount)
+
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
+
+        var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+        assertTrue { result is OutgoingPaymentHandler.Result.Progress }
+
+        val updateFulfillHtlc = UpdateFulfillHtlc(alice.channelId, 0, Eclair.randomBytes32())
+        val processFulfill = ProcessFulfill(fulfill = updateFulfillHtlc, paymentId = sendPayment.paymentId)
+
+        result = outgoingPaymentHandler.processFulfill(processFulfill)
+        assertTrue { result is OutgoingPaymentHandler.Result.Success }
     }
 
     private fun decryptNodeRelay(
