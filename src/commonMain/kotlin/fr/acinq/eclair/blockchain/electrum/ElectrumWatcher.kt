@@ -18,20 +18,18 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 import kotlin.math.max
 
 sealed class WatcherEvent
 private object StartWatcher: WatcherEvent()
-public class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
+class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
 data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
-public class ReceiveWatch(val watch: Watch) : WatcherEvent()
-public class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
-public class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
-public class ClientStateUpdate(val connection: Connection) : WatcherEvent()
+class ReceiveWatch(val watch: Watch) : WatcherEvent()
+class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
+class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
+class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
 internal sealed class WatcherAction
 private object AskForClientStatusUpdate : WatcherAction()
@@ -67,9 +65,9 @@ private sealed class WatcherState {
 }
 private data class WatcherDisconnected(
     val watches: Set<Watch> = setOf(),
-    val publishQueue: List<PublishAsap> = emptyList(),
+    val publishQueue: Set<PublishAsap> = setOf(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
-    val getTxQueue: List<GetTxWithMeta> = emptyList()
+    val getTxQueue: List<GetTxWithMeta> = listOf()
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when(event) {
@@ -108,7 +106,7 @@ private data class WatcherRunning(
     val watches: Set<Watch> = setOf(),
     val scriptHashStatus: Map<ByteVector32, String> = mapOf(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
-    val sent: List<Transaction> = ArrayDeque()
+    val sent: Set<Transaction> = setOf()
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
@@ -220,16 +218,6 @@ private data class WatcherRunning(
                                         }
                                     }
 
-                                logger.info {
-                                    """Tx notification for ${tx.txid}
-                                    |txIn: ${tx.txIn}
-                                    |txOut: ${tx.txOut}
-                                    |watches: $watches
-                                    |NotifyWatchSpentList: $notifyWatchSpentList
-                                    |NotifyWatchConfirmedList: $notifyWatchConfirmedList
-                                """.trimMargin()
-                                }
-
                                 newState {
                                     // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
                                     // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
@@ -261,7 +249,7 @@ private data class WatcherRunning(
                             }
                             else -> logger.error { "broadcast failed for txid=${tx.txid} tx=$tx with error=$errorOpt" }
                         }
-                        newState(copy(sent = ArrayDeque(sent - tx)))
+                        newState(copy(sent = sent - tx))
                     }
                     message is ServerError && message.request is GetTransaction && message.request.contextOpt is GetTxWithMeta -> {
                         message.request.contextOpt.response.complete(
@@ -366,7 +354,7 @@ private data class WatcherRunning(
                 if (event.connection == Connection.CLOSED) newState(
                     WatcherDisconnected(
                         watches = watches,
-                        publishQueue = sent.map { PublishAsap(it) },
+                        publishQueue = sent.map { PublishAsap(it) }.toSet(),
                         block2tx = block2tx
                     )
                 ) else returnState()
@@ -423,12 +411,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     }
 
     private var state: WatcherState = WatcherDisconnected()
-        set(value) {
-            if (value != field) logger.info { """Updated State 
-                |prev: $field 
-                |new:  $value""".trimMargin() }
-            field = value
-        }
 
     private var runJob: Job? = null
     init {
