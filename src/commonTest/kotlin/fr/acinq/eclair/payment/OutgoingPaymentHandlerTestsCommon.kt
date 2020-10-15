@@ -1,11 +1,15 @@
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.SendPayment
+import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
@@ -79,7 +83,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `error conditions - bad paymentAmount`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val currentBlockHeight = alice.currentBlockHeight
 
         val invoiceAmount = 100_000.msat
         val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
@@ -120,7 +124,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `error conditions - no available channels`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val currentBlockHeight = alice.currentBlockHeight
 
         val invoiceAmount = 100_000.msat
         val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
@@ -139,8 +143,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `error conditions - insufficient capacity base`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
+        val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
-        val currentBlockHeight = TestConstants.defaultBlockHeight
 
         val invoiceAmount = alice.commitments.availableBalanceForSend() + 1.msat
         val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
@@ -158,9 +162,15 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `error conditions - insufficient capacity fees`() {
 
-        val (alice, bob) = TestsHelper.reachNormal()
+        var (alice, bob) = TestsHelper.reachNormal()
+        // Make sure that htlcMaximumMsat & maxHtlcValueInFlightMsat don't interfer with our test
+        val channelUpdate = alice.channelUpdate.copy(htlcMaximumMsat = MilliSatoshi(Long.MAX_VALUE))
+        val nodeParams = alice.staticParams.nodeParams.copy(maxHtlcValueInFlightMsat = Long.MAX_VALUE)
+        val staticParams = alice.staticParams.copy(nodeParams = nodeParams)
+        alice = alice.copy(channelUpdate = channelUpdate, staticParams = staticParams)
+
+        val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
-        val currentBlockHeight = TestConstants.defaultBlockHeight
 
         val invoiceAmount = alice.commitments.availableBalanceForSend()
         val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
@@ -195,8 +205,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         var (alice, bob) = TestsHelper.reachNormal()
         alice = alice.copy(channelUpdate = alice.channelUpdate.copy(htlcMinimumMsat = htlcMininumMsat))
 
+        val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
-        val currentBlockHeight = TestConstants.defaultBlockHeight
 
         val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, paymentAmount)
@@ -220,8 +230,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         var (alice, bob) = TestsHelper.reachNormal()
         alice = alice.copy(channelUpdate = alice.channelUpdate.copy(htlcMaximumMsat = htlcMaximumMsat))
 
+        val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
-        val currentBlockHeight = TestConstants.defaultBlockHeight
 
         val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, paymentAmount)
@@ -234,6 +244,90 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val failure = result as OutgoingPaymentHandler.Result.Failure
 
         assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+    }
+
+    @Test
+    fun `error conditions - channel cap restrictions - maxAccpetedHtlcs`() {
+
+        var (alice, bob) = TestsHelper.reachNormal()
+        val nodeParams = alice.staticParams.nodeParams.copy(maxAcceptedHtlcs = 1)
+        alice = alice.copy(staticParams = alice.staticParams.copy(nodeParams = nodeParams))
+
+        val currentBlockHeight = alice.currentBlockHeight
+
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
+
+        run {
+            val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
+            val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
+
+            val channels = mapOf(alice.channelId to alice)
+            var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+            assertTrue { result is OutgoingPaymentHandler.Result.Progress }
+            val progress = result as OutgoingPaymentHandler.Result.Progress
+
+            val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
+            channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
+                var processResult = alice.process(executeCommand)
+
+                assertTrue { processResult.first is Normal }
+                alice = processResult.first as Normal
+            }
+        }
+        run {
+            val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
+            val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
+
+            val channels = mapOf(alice.channelId to alice)
+            var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+
+            assertTrue { result is OutgoingPaymentHandler.Result.Failure }
+            val failure = result as OutgoingPaymentHandler.Result.Failure
+
+            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+        }
+    }
+
+    @Test
+    fun `error conditions - channel cap restrictions - maxHtlcValueInFlight`() {
+
+        var (alice, bob) = TestsHelper.reachNormal()
+        val nodeParams = alice.staticParams.nodeParams.copy(maxHtlcValueInFlightMsat = 150_000)
+        alice = alice.copy(staticParams = alice.staticParams.copy(nodeParams = nodeParams))
+
+        val currentBlockHeight = alice.currentBlockHeight
+
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
+
+        run {
+            val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
+            val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
+
+            val channels = mapOf(alice.channelId to alice)
+            var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+            assertTrue { result is OutgoingPaymentHandler.Result.Progress }
+            val progress = result as OutgoingPaymentHandler.Result.Progress
+
+            val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
+            channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
+                var processResult = alice.process(executeCommand)
+
+                assertTrue { processResult.first is Normal }
+                alice = processResult.first as Normal
+            }
+        }
+        run {
+            val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
+            val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
+
+            val channels = mapOf(alice.channelId to alice)
+            var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+
+            assertTrue { result is OutgoingPaymentHandler.Result.Failure }
+            val failure = result as OutgoingPaymentHandler.Result.Failure
+
+            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+        }
     }
 
     @Test
@@ -267,6 +361,19 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             val expectedTrampolineFees = expectedFees(sendPayment.paymentAmount, schedule)
             assertTrue { progress.trampolineFees == expectedTrampolineFees }
+        }
+
+        run {
+
+            val updateFailHtlc = UpdateFailHtlc(alice.channelId, 0, Eclair.randomBytes32())
+            val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
+
+            result = outgoingPaymentHandler.processFailure(processFail, channels, currentBlockHeight)
+
+            assertTrue { result is OutgoingPaymentHandler.Result.Failure }
+            val failure = result as OutgoingPaymentHandler.Result.Failure
+
+            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_ROUTE_TO_RECIPIENT }
         }
     }
 

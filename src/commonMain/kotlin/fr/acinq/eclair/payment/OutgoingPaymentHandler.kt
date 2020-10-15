@@ -10,9 +10,11 @@ import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.incomings
 import fr.acinq.eclair.utils.*
-import fr.acinq.eclair.wire.*
-import kotlin.math.ceil
+import fr.acinq.eclair.wire.FinalPayload
+import fr.acinq.eclair.wire.OnionRoutingPacket
 
 
 class OutgoingPaymentHandler(
@@ -27,6 +29,7 @@ class OutgoingPaymentHandler(
         INSUFFICIENT_CAPACITY_BASE, // Not enough capacity in channel(s) to support paymentAmount
         INSUFFICIENT_CAPACITY_FEES, // Not enough capacity in channel(s) after accounting for fees
         CHANNEL_CAP_RESTRICTION, // e.g. htlcMaximumAmount, maxHtlcValueInFlight, maxAcceptedHtlcs
+        NO_ROUTE_TO_RECIPIENT // trampoline was unable to find an acceptable route
     }
 
     sealed class Result {
@@ -155,16 +158,15 @@ class OutgoingPaymentHandler(
         }
 
         /**
-         * The total amount we're paying. Can be fetched either including or excluding fees.
+         * The total amount we're paying to the trampoline node (including paymentAmount + fees).
          */
-        fun totalAmount(includingFees: Boolean = true): MilliSatoshi {
-            return parts.map {
-                if (includingFees) it.amount else (it.amount - it.trampolineFees)
-            }.sum()
+        fun totalTrampolineAmount(): MilliSatoshi {
+            return parts.map { it.amount }.sum()
         }
 
         /**
-         * The total amount of fees we're paying to the trampoline node.
+         * The total amount of fees we're paying.
+         * This includes fees to the trampoline node, and fees to other unknown channels along the way.
          */
         fun totalFees(): MilliSatoshi {
             return parts.map {
@@ -245,7 +247,7 @@ class OutgoingPaymentHandler(
         val failedAttempts = paymentAttempt.failedAttempts + 1
         val schedule = PaymentAdjustmentSchedule.get(failedAttempts)
         if (schedule == null) {
-            return Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_CAPACITY_FEES)
+            return Result.Failure(paymentAttempt.sendPayment, FailureReason.NO_ROUTE_TO_RECIPIENT)
         }
 
         val newPaymentAttempt = PaymentAttempt(paymentAttempt.sendPayment, failedAttempts)
@@ -285,47 +287,93 @@ class OutgoingPaymentHandler(
             return Result.Failure(paymentAttempt.sendPayment, FailureReason.NO_AVAILABLE_CHANNELS)
         }
 
+        // Channels have a capacity, but they also have other "caps" (hard limits).
+        // And these other limits affect a channel's effective capacity for sending.
+        data class ChannelCapacity(
+            val availableBalanceForSend: MilliSatoshi,
+            val maxHtlcValue: MilliSatoshi,
+            val currentHtlcValue: MilliSatoshi,
+            val maxHtlcsCount: Int,
+            val currentHtlcsCount: Int
+        ) {
+            fun effectiveAvailableBalanceForSend(): MilliSatoshi {
+                if (currentHtlcsCount >= maxHtlcsCount) {
+                    return MilliSatoshi(0)
+                }
+                val limit = maxHtlcValue - currentHtlcValue
+                return availableBalanceForSend.coerceAtMost(limit)
+            }
+            fun hasCap(): Boolean {
+                return effectiveAvailableBalanceForSend() < availableBalanceForSend
+            }
+        }
+
         // Calculating the `availableBalanceForSend` in each channel requires a bit of work.
         // And we need to reference this info repeatedly below, so we calculate it once here.
-        val availableBalancesForSend = availableChannels.associateBy(keySelector = {
+        val channelCapacities = availableChannels.associateBy(keySelector = {
             it.channelId
         }, valueTransform = {
-            it.commitments.availableBalanceForSend()
+            val availableBalanceForSend = it.commitments.availableBalanceForSend()
+
+            val currentHtlcsCount: Int
+            val currentHtlcValue: MilliSatoshi
+            it.commitments.run {
+                // we need to base the next current commitment on the last sig we sent,
+                // even if we didn't yet receive their revocation
+                val remoteCommit = when (remoteNextCommitInfo) {
+                    is Either.Left -> remoteNextCommitInfo.value.nextRemoteCommit
+                    is Either.Right -> remoteCommit
+                }
+                val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+                // the HTLC we are about to create is outgoing, but from their point of view it is incoming
+                val outgoingHtlcs = reduced.htlcs.incomings()
+
+                currentHtlcsCount = outgoingHtlcs.size
+                currentHtlcValue = outgoingHtlcs.map { it.amountMsat }.sum()
+            }
+
+            ChannelCapacity(
+                availableBalanceForSend = availableBalanceForSend,
+                maxHtlcsCount = it.staticParams.nodeParams.maxAcceptedHtlcs,
+                maxHtlcValue = MilliSatoshi(it.staticParams.nodeParams.maxHtlcValueInFlightMsat),
+                currentHtlcsCount = currentHtlcsCount,
+                currentHtlcValue = currentHtlcValue
+            )
         })
 
         // Sort the channels by send capacity.
         // The channel with the highest/most availableForSend will be at the beginning of the array (index 0)
         availableChannels.sortWith(compareBy<Normal> {
-            availableBalancesForSend[it.channelId]!!
+            channelCapacities[it.channelId]!!.effectiveAvailableBalanceForSend()
         }.reversed().thenBy {
             // If multiple channels have the same balance, we use shortChannelId to sort deterministically
             it.shortChannelId
         })
 
-        availableBalancesForSend.forEach {
-            logger.info { "channel(${it.key}): available for send = ${it.value}" }
+        channelCapacities.forEach {
+            logger.info { "channel(${it.key}): available for send = ${it.value.availableBalanceForSend}" }
         }
 
         // Phase 1: No mpp.
         // We're only sending over a single channel for right now.
 
         val selectedChannel = availableChannels[0] // already tested for empty array above
-        val availableForSend = availableBalancesForSend[selectedChannel.channelId]!!
+        val channelCapacity = channelCapacities[selectedChannel.channelId]!!
 
         val recipientAmount = paymentAttempt.paymentAmount
         val trampolineFees = schedule.feeBaseSat.toMilliSatoshi() + (recipientAmount * schedule.feePercent)
 
-        if ((recipientAmount + trampolineFees) > availableForSend) {
+        if ((recipientAmount + trampolineFees) > channelCapacity.availableBalanceForSend) {
             logger.error {
                 "insufficient capacity to send payment:" +
-                    " attempted(${recipientAmount + trampolineFees})" +
-                    " available(${availableForSend})"
+                        " attempted(${recipientAmount + trampolineFees})" +
+                        " available(${channelCapacity.availableBalanceForSend})"
             }
-            // The average user (non-bitcoin-pro) is accustomed to the credit card model,
+            // The average user (non-techie) is accustomed to the credit card model,
             // where the merchant pays fees, but the customer does not.
             // Receiving a generic "insufficient capacity" error message could easily be confusing
             // if the base capacity exists. Thus differentiating these cases could prove useful for the UI.
-            return if (recipientAmount > availableForSend) {
+            return if (recipientAmount > channelCapacity.availableBalanceForSend) {
                 Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_CAPACITY_BASE)
             } else {
                 Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_CAPACITY_FEES)
@@ -333,6 +381,16 @@ class OutgoingPaymentHandler(
         }
 
         // Check for channel cap restrictions
+
+        if ((recipientAmount + trampolineFees) > channelCapacity.effectiveAvailableBalanceForSend()) {
+            logger.error {
+                "insufficient capacity to send payment:" +
+                        " attempted(${recipientAmount + trampolineFees})" +
+                        " available(${channelCapacity.availableBalanceForSend})" +
+                        " cappedAvailable(${channelCapacity.effectiveAvailableBalanceForSend()})"
+            }
+            return Result.Failure(paymentAttempt.sendPayment, FailureReason.CHANNEL_CAP_RESTRICTION)
+        }
 
         selectedChannel.channelUpdate.htlcMinimumMsat.let { htlcMinimumMsat ->
             if ((recipientAmount + trampolineFees) < htlcMinimumMsat) {
@@ -462,7 +520,7 @@ class OutgoingPaymentHandler(
 
         val trampolinePayload = FinalPayload.createTrampolinePayload(
             amount = part.amount,
-            totalAmount = paymentAttempt.totalAmount(includingFees = true),
+            totalAmount = paymentAttempt.totalTrampolineAmount(),
             expiry = trampolineExpiry,
             paymentSecret = paymentAttempt.trampolinePaymentSecret,
             trampolinePacket = trampolineOnion.packet
