@@ -21,6 +21,7 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.collect
@@ -61,15 +62,15 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
-    private val input = Channel<PeerEvent>(10)
-    private val output = Channel<ByteArray>(3)
+    private val input = Channel<PeerEvent>(BUFFERED)
+    private val output = Channel<ByteArray>(BUFFERED)
 
     private val logger = newEclairLogger()
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
 
     private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
-    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
+    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
@@ -231,17 +232,17 @@ class Peer(
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
     private suspend fun send(actions: List<ChannelAction>) {
-        actions.forEach {
+        actions.forEach { action ->
             when {
-                it is SendMessage -> {
-                    val encoded = LightningMessage.encode(it.message)
+                action is SendMessage && connected == Connection.ESTABLISHED -> {
+                    val encoded = LightningMessage.encode(action.message)
                     encoded?.let { bin ->
-                        logger.info { "sending ${it.message} encoded as ${Hex.encode(bin)}" }
+                        logger.info { "sending ${action.message} encoded as ${Hex.encode(bin)}" }
                         output.send(bin)
                     }
                 }
-                it is SendWatch -> watcher.watch(it.watch)
-                it is PublishTx -> watcher.send(PublishAsapEvent(it.tx))
+                action is SendWatch -> watcher.watch(action.watch)
+                action is PublishTx -> watcher.publish(action.tx)
                 else -> Unit
             }
         }
