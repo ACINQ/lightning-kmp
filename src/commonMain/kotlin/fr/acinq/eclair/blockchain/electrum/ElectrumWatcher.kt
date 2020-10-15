@@ -478,6 +478,11 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
         launch { eventChannel.send(message) }
     }
 
+    fun publish(tx: Transaction) {
+        launch {
+            eventChannel.send(PublishAsapEvent(tx))
+        }
+    }
     fun watch(watch: Watch) {
         launch {
             eventChannel.send(ReceiveWatch(watch))
