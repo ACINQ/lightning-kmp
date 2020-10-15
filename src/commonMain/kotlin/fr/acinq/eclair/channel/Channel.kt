@@ -460,7 +460,7 @@ sealed class ChannelState {
 
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
-        logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
+        logger.error { "peer send error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
         // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e), isFatal = true))
 
         return when (this) {
