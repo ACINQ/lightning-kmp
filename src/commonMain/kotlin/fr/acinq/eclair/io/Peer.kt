@@ -38,9 +38,9 @@ object CheckPaymentsTimeout: PeerEvent()
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
-data class SendingPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
-data class PaymentSent(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
-data class PaymentNotSent(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerListenerEvent()
+data class PaymentProgress(val payment: SendPayment, val trampolineFees: MilliSatoshi) : PeerListenerEvent()
+data class PaymentSent(val payment: SendPayment, val trampolineFees: MilliSatoshi) : PeerListenerEvent()
+data class PaymentNotSent(val payment: SendPayment, val reason: OutgoingPaymentHandler.FailureReason) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -460,21 +460,36 @@ class Peer(
                                     }
                                 }
                                 it is ProcessFailure -> {
-                                    outgoingPaymentHandler.processFailure(it, channels, currentTip.first)?.let { result ->
-
-                                        if (result.status == OutgoingPaymentHandler.Status.FAILED) {
-                                            listenerEventChannel.send(PaymentNotSent(result.paymentId, result.invoice))
+                                    val result = outgoingPaymentHandler.processFailure(it, channels, currentTip.first)
+                                    when (result) {
+                                        is OutgoingPaymentHandler.Result.Progress -> {
+                                            listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
+                                            for (action in result.actions) {
+                                                input.send(action)
+                                            }
                                         }
-                                        result.actions.forEach { input.send(it) }
+                                        is OutgoingPaymentHandler.Result.Failure -> {
+                                            listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                                        }
+                                        else -> Unit
                                     }
                                 }
                                 it is ProcessFulfill -> {
-                                    outgoingPaymentHandler.processFulfill(it)?.let { result ->
-
-                                        if (result.status == OutgoingPaymentHandler.Status.SUCCEEDED) {
-                                            listenerEventChannel.send(PaymentSent(result.paymentId, result.invoice))
+                                    val result = outgoingPaymentHandler.processFulfill(it)
+                                    when (result) {
+                                        is OutgoingPaymentHandler.Result.Progress -> {
+                                            listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
+                                            for (action in result.actions) {
+                                                input.send(action)
+                                            }
                                         }
-                                        result.actions.forEach { input.send(it) }
+                                        is OutgoingPaymentHandler.Result.Success -> {
+                                            listenerEventChannel.send(PaymentSent(result.payment, result.trampolineFees))
+                                        }
+                                        is OutgoingPaymentHandler.Result.Failure -> {
+                                            listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                                        }
+                                        else -> Unit
                                     }
                                 }
                             }
@@ -514,12 +529,17 @@ class Peer(
             //
             event is SendPayment -> {
                 val result = outgoingPaymentHandler.processSendPayment(event, channels, currentTip.first)
-
-                if (result.status == OutgoingPaymentHandler.Status.INFLIGHT) {
-                    listenerEventChannel.send(SendingPayment(event.paymentId, event.paymentRequest))
-                }
-                for (action in result.actions) {
-                    input.send(action)
+                when (result) {
+                    is OutgoingPaymentHandler.Result.Progress -> {
+                        listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
+                        for (action in result.actions) {
+                            input.send(action)
+                        }
+                    }
+                    is OutgoingPaymentHandler.Result.Failure -> {
+                        listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                    }
+                    else -> Unit
                 }
             }
             event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
