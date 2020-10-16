@@ -219,27 +219,14 @@ class OutgoingPaymentHandler(
         currentBlockHeight: Int
     ): Result {
 
-        val paymentId: UUID
-        val channelId: ByteVector32
-        when (event) {
-            is ProcessFail -> {
-                paymentId = event.paymentId
-                channelId = event.fail.channelId
-            }
-            is ProcessFailMalformed -> {
-                paymentId = event.paymentId
-                channelId = event.fail.channelId
-            }
-        }
-
-        val paymentAttempt = pending[paymentId]
+        val paymentAttempt = pending[event.paymentId]
         if (paymentAttempt == null) {
-            logger.error { "ProcessFailure.origin doesn't match any known paymentAttempt" }
+            logger.error { "ProcessFailure.paymentId doesn't match any known paymentAttempt" }
             return Result.FailureUnknownPayment
         }
 
         // Mark the TrampolinePaymentPart.status as FAILED
-        paymentAttempt.fail(channelId)
+        paymentAttempt.fail(event.channelId)
 
         // Now that all the parts have failed, we can try to start another paymentAttempt.
         pending.remove(paymentAttempt.paymentId)

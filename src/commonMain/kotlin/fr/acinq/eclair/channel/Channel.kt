@@ -70,9 +70,16 @@ data class SendMessage(val message: LightningMessage) : ChannelAction()
 data class SendWatch(val watch: Watch) : ChannelAction()
 data class ProcessCommand(val command: Command) : ChannelAction()
 data class ProcessAdd(val add: UpdateAddHtlc) : ChannelAction()
-sealed class ProcessFailure : ChannelAction()
-data class ProcessFail(val fail: UpdateFailHtlc, val paymentId: UUID) : ProcessFailure()
-data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, val paymentId: UUID) : ProcessFailure()
+sealed class ProcessFailure() : ChannelAction() {
+    abstract val channelId: ByteVector32
+    abstract val paymentId: UUID
+}
+data class ProcessFail(val fail: UpdateFailHtlc, override val paymentId: UUID) : ProcessFailure() {
+    override val channelId: ByteVector32 get() = fail.channelId
+}
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val paymentId: UUID) : ProcessFailure() {
+    override val channelId: ByteVector32 get() = fail.channelId
+}
 data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
