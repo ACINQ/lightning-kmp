@@ -740,6 +740,43 @@ data class Offline(val state: ChannelState) : ChannelState() {
                     else -> unhandled(event)
                 }
             }
+            event is WatchReceived -> {
+                val watch = event.watch
+                when {
+                    watch is WatchEventSpent && state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
+                        logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
+                        val nextState = Closing(
+                            staticParams,
+                            currentTip,
+                            currentOnchainFeerates,
+                            state.commitments,
+                            null,
+                            currentTimestampSeconds(),
+                            state.closingTxProposed.flatten().map { it.unsignedTx },
+                            listOf(watch.tx)
+                        )
+                        val actions = listOf(StoreState(nextState), PublishTx(watch.tx), SendWatch(WatchConfirmed(state.channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx))))
+                        Pair(nextState, actions)
+                    }
+                    watch is WatchEventSpent && state is HasCommitments && watch.tx.txid == state.commitments.remoteCommit.txid -> {
+                        state.handleRemoteSpentCurrent(watch.tx)
+                    }
+                    watch is WatchEventSpent && state is HasCommitments && watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> {
+                        state.handleRemoteSpentNext(watch.tx)
+                    }
+                    watch is WatchEventSpent && state is WaitForRemotePublishFutureComitment -> {
+                        TODO("handle remote spent future tx")
+                    }
+                    watch is WatchEventSpent && state is HasCommitments -> {
+                        state.handleRemoteSpentOther(watch.tx)
+                    }
+                    watch is WatchEventConfirmed && (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) -> {
+                        // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
+                        Pair(this, listOf())
+                    }
+                    else -> unhandled(event)
+                }
+            }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
