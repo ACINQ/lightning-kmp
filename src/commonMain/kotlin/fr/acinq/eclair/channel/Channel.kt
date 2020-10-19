@@ -735,8 +735,8 @@ data class Offline(val state: ChannelState) : ChannelState() {
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
-        return when {
-            event is Connected -> {
+        return when (event) {
+            is Connected -> {
                 when {
                     state is WaitForRemotePublishFutureComitment -> {
                         // they already proved that we have an outdated commitment
@@ -771,7 +771,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                     else -> unhandled(event)
                 }
             }
-            event is WatchReceived -> {
+            is WatchReceived -> {
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent && state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
@@ -808,7 +808,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                     else -> unhandled(event)
                 }
             }
-            event is NewBlock -> {
+            is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, actions) = state.process(event)
                 Pair(Offline(newState), listOf())
@@ -1037,18 +1037,61 @@ data class WaitForRemotePublishFutureComitment(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
-    val channelReestablish: ChannelReestablish
+    val remoteChannelReestablish: ChannelReestablish
 ) : ChannelState(), HasCommitments {
     override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        TODO("Not yet implemented")
+        return when {
+            event is WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT -> {
+                handleRemoteSpentFuture(event.watch.tx)
+            }
+            else -> unhandled(event)
+        }
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
+    }
+
+    private fun handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
+        return if (commitments.channelVersion.paysDirectlyToWallet) {
+            val remoteCommitPublished = RemoteCommitPublished(tx, null, listOf(), listOf(), mapOf())
+            val nextState = Closing(
+                staticParams = staticParams,
+                currentTip = currentTip,
+                commitments = commitments,
+                currentOnchainFeerates = currentOnchainFeerates,
+                fundingTx = null,
+                waitingSince = currentTimestampMillis(),
+                remoteCommitPublished = remoteCommitPublished
+            )
+            Pair(nextState, listOf(StoreState(nextState)))
+        } else {
+            val remotePerCommitmentPoint = remoteChannelReestablish.myCurrentPerCommitmentPoint
+            val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(
+                keyManager,
+                commitments,
+                remotePerCommitmentPoint,
+                tx,
+                currentOnchainFeerates.claimMainFeeratePerKw
+            )
+            val nextState = Closing(
+                staticParams = staticParams,
+                currentTip = currentTip,
+                commitments = commitments,
+                currentOnchainFeerates = currentOnchainFeerates,
+                fundingTx = null,
+                waitingSince = currentTimestampMillis(),
+                futureRemoteCommitPublished = remoteCommitPublished
+            )
+            val actions = mutableListOf<ChannelAction>(StoreState(nextState))
+            actions.addAll(doPublish(remoteCommitPublished, channelId))
+            Pair(nextState, actions)
+        }
     }
 }
 

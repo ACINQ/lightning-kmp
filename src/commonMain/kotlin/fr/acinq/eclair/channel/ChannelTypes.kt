@@ -298,13 +298,17 @@ data class ChannelVersion(val bits: BitField) {
 
     val hasPubkeyKeyPath: Boolean by lazy { isSet(USE_PUBKEY_KEYPATH_BIT) }
     val hasStaticRemotekey: Boolean by lazy { isSet(USE_STATIC_REMOTEKEY_BIT) }
+    val hasAnchorOutputs: Boolean by lazy{ isSet(USE_ANCHOR_OUTPUTS_BIT) }
+    //  True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses.
+    val paysDirectlyToWallet: Boolean by lazy { hasStaticRemotekey && !hasAnchorOutputs }
 
     companion object {
-        val SIZE_BYTE = 4
+        const val SIZE_BYTE = 4
         val ZEROES = ChannelVersion(BitField(SIZE_BYTE))
-        val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
-        val USE_STATIC_REMOTEKEY_BIT = 1
-        val ZERO_RESERVE_BIT = 3
+        const val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+        const val USE_STATIC_REMOTEKEY_BIT = 1
+        const val USE_ANCHOR_OUTPUTS_BIT = 2
+        const val ZERO_RESERVE_BIT = 3
 
         fun fromBit(bit: Int) = ChannelVersion(BitField(SIZE_BYTE).apply { setRight(bit) })
 
