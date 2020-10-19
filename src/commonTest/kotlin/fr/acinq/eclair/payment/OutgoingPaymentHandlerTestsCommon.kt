@@ -73,10 +73,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun expectedFees(
         targetAmount: MilliSatoshi,
-        schedule: OutgoingPaymentHandler.PaymentAdjustmentSchedule
+        params: OutgoingPaymentHandler.TrampolineParams
     ): MilliSatoshi {
 
-        return schedule.feeBaseSat.toMilliSatoshi() + (targetAmount * schedule.feePercent)
+        return params.feeBaseSat.toMilliSatoshi() + (targetAmount * params.feePercent)
     }
 
     @Test
@@ -324,7 +324,20 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
         var result: OutgoingPaymentHandler.Result? = null
 
-        for (schedule in OutgoingPaymentHandler.PaymentAdjustmentSchedule.all()) {
+        var allParams = mutableListOf<OutgoingPaymentHandler.TrampolineParams>()
+        run {
+            var i = 0
+            while (true) {
+                val params = OutgoingPaymentHandler.TrampolineParams.get(i++)
+                if (params == null) {
+                    break
+                } else {
+                    allParams.add(params)
+                }
+            }
+        }
+
+        for (params in allParams) {
 
             if (result == null) {
                 result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
@@ -339,7 +352,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { result is OutgoingPaymentHandler.Result.Progress }
             val progress = result as OutgoingPaymentHandler.Result.Progress
 
-            val expectedTrampolineFees = expectedFees(sendPayment.paymentAmount, schedule)
+            val expectedTrampolineFees = expectedFees(sendPayment.paymentAmount, params)
             assertTrue { progress.trampolineFees == expectedTrampolineFees }
         }
 

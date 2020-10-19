@@ -63,7 +63,7 @@ class OutgoingPaymentHandler(
      * If that fails, we increase the fee(s) and retry (up to a point).
      * This class encapsulates the increase that occurs at a particular retry.
      */
-    data class PaymentAdjustmentSchedule(
+    data class TrampolineParams(
         val feeBaseSat: Satoshi,
         val feePercent: Double,
         val cltvExpiryDelta: CltvExpiryDelta
@@ -74,27 +74,17 @@ class OutgoingPaymentHandler(
         companion object {
 
             // Todo: Fetch this from the server first, and have it passed into us somehow...
-            fun get(failedAttempts: Int): PaymentAdjustmentSchedule? {
-                return when (failedAttempts) {
-                    0 -> PaymentAdjustmentSchedule(0, 0.0, 576)
-                    1 -> PaymentAdjustmentSchedule(1, 0.0001, 576)
-                    2 -> PaymentAdjustmentSchedule(3, 0.0001, 576)
-                    3 -> PaymentAdjustmentSchedule(5, 0.0005, 576)
-                    4 -> PaymentAdjustmentSchedule(5, 0.001, 576)
-                    5 -> PaymentAdjustmentSchedule(5, 0.0012, 576)
-                    else -> null
-                }
-            }
+            val attempts = listOf(
+                TrampolineParams(0, 0.0, 576),
+                TrampolineParams(1, 0.0001, 576),
+                TrampolineParams(3, 0.0001, 576),
+                TrampolineParams(5, 0.0005, 576),
+                TrampolineParams(5, 0.001, 576),
+                TrampolineParams(5, 0.0012, 576)
+            )
 
-            fun all(): List<PaymentAdjustmentSchedule> {
-                var results = mutableListOf<PaymentAdjustmentSchedule>()
-                var failedAttempts = 0
-                var schedule = get(failedAttempts)
-                while (schedule != null) {
-                    results.add(schedule)
-                    schedule = get(++failedAttempts)
-                }
-                return results
+            fun get(failedAttempts: Int): TrampolineParams? {
+                return if (failedAttempts < attempts.size) attempts[failedAttempts] else null
             }
         }
     }
@@ -191,10 +181,10 @@ class OutgoingPaymentHandler(
         }
 
         val failedAttempts = 0
-        val schedule = PaymentAdjustmentSchedule.get(failedAttempts)!!
+        val params = TrampolineParams.get(failedAttempts)!!
         val paymentAttempt = PaymentAttempt(sendPayment, failedAttempts)
 
-        return setupPaymentAttempt(paymentAttempt, schedule, channels, currentBlockHeight)
+        return setupPaymentAttempt(paymentAttempt, params, channels, currentBlockHeight)
     }
 
     fun processFailure(
@@ -216,13 +206,13 @@ class OutgoingPaymentHandler(
         pending.remove(paymentAttempt.paymentId)
 
         val failedAttempts = paymentAttempt.failedAttempts + 1
-        val schedule = PaymentAdjustmentSchedule.get(failedAttempts)
-        if (schedule == null) {
+        val params = TrampolineParams.get(failedAttempts)
+        if (params == null) {
             return Result.Failure(paymentAttempt.sendPayment, FailureReason.NO_ROUTE_TO_RECIPIENT)
         }
 
         val newPaymentAttempt = PaymentAttempt(paymentAttempt.sendPayment, failedAttempts)
-        return setupPaymentAttempt(newPaymentAttempt, schedule, channels, currentBlockHeight)
+        return setupPaymentAttempt(newPaymentAttempt, params, channels, currentBlockHeight)
     }
 
     fun processFulfill(
@@ -248,7 +238,7 @@ class OutgoingPaymentHandler(
 
     private fun setupPaymentAttempt(
         paymentAttempt: PaymentAttempt,
-        schedule: PaymentAdjustmentSchedule,
+        params: TrampolineParams,
         channels: Map<ByteVector32, ChannelState>,
         currentBlockHeight: Int
     ): Result {
@@ -332,7 +322,7 @@ class OutgoingPaymentHandler(
         val channelCapacity = channelCapacities[selectedChannel.channelId]!!
 
         val recipientAmount = paymentAttempt.paymentAmount
-        val trampolineFees = schedule.feeBaseSat.toMilliSatoshi() + (recipientAmount * schedule.feePercent)
+        val trampolineFees = params.feeBaseSat.toMilliSatoshi() + (recipientAmount * params.feePercent)
 
         if ((recipientAmount + trampolineFees) > channelCapacity.availableBalanceForSend) {
             logger.error {
@@ -381,7 +371,7 @@ class OutgoingPaymentHandler(
             channelId = selectedChannel.channelId,
             amount = recipientAmount + trampolineFees,
             trampolineFees = trampolineFees,
-            cltvExpiryDelta = schedule.cltvExpiryDelta,
+            cltvExpiryDelta = params.cltvExpiryDelta,
             status = Status.INFLIGHT
         )
         paymentAttempt.parts.add(part)
