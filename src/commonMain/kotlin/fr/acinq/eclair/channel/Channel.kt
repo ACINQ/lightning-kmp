@@ -303,6 +303,11 @@ sealed class ChannelState {
         }
     }
 
+    internal fun doPublish(tx: Transaction, channelId: ByteVector32): List<ChannelAction> = listOf(
+        PublishTx(tx),
+        SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
+    )
+
     internal fun doPublish(localCommitPublished: LocalCommitPublished, channelId: ByteVector32): List<ChannelAction> {
         val (commitTx, claimMainDelayedOutputTx, claimHtlcSuccessTxs, claimHtlcTimeoutTxs, claimHtlcDelayedTxs, irrevocablySpent) = localCommitPublished
 
@@ -372,7 +377,7 @@ sealed class ChannelState {
         }
     }
 
-    private fun doPublish(revokedCommitPublished: RevokedCommitPublished, channelId: ByteVector32): List<ChannelAction> {
+    internal fun doPublish(revokedCommitPublished: RevokedCommitPublished, channelId: ByteVector32): List<ChannelAction> {
         val (commitTx, claimMainOutputTx, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent) = revokedCommitPublished
 
         val publishQueue = buildList {
@@ -642,22 +647,48 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             event is Restore && event.state is Closing -> {
                 val closingType = event.state.closingTypeAlreadyKnown()
                 logger.info { "channel is closing (closing type = ${closingType ?: "unknown yet"}" }
+                // if the closing type is known:
+                // - there is no need to watch the funding tx because it has already been spent and the spending tx has
+                //   already reached mindepth
+                // - there is no need to attempt to publish transactions for other type of closes
                 when (closingType) {
                     is MutualClose -> {
                         Pair(event.state, publishActions(closingType.tx, event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()))
                     }
+                    is LocalClose -> {
+                        val actions = doPublish(closingType.localCommitPublished, event.state.channelId)
+                        Pair(event.state, actions)
+                    }
+                    is RemoteClose -> {
+                        val actions = doPublish(closingType.remoteCommitPublished, event.state.channelId)
+                        Pair(event.state, actions)
+                    }
+                    is RevokedClose -> {
+                        val actions = doPublish(closingType.revokedCommitPublished, event.state.channelId)
+                        Pair(event.state, actions)
+                    }
+                    is RecoveryClose -> {
+                        val actions = doPublish(closingType.remoteCommitPublished, event.state.channelId)
+                        Pair(event.state, actions)
+                    }
                     null -> {
+                        // in all other cases we need to be ready for any type of closing
                         val commitments = event.state.commitments
                         val actions = mutableListOf<ChannelAction>(
                             SendWatch(WatchSpent(event.state.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)),
                             //SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
                         )
-                        actions.addAll(event.state.mutualClosePublished.map { publishActions(it, event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }.flatten())
+                        event.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
+                        event.state.localCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
+                        event.state.remoteCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
+                        event.state.nextRemoteCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
+                        event.state.revokedCommitPublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
+                        event.state.futureRemoteCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
+                        // if commitment number is zero, we also need to make sure that the funding tx has been published
+                        if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
+                            // TODO ask watcher for the funding tx
+                        }
                         Pair(event.state, actions)
-                    }
-                    else -> {
-                        // TODO: handle other closing types
-                        unhandled(event)
                     }
                 }
             }
