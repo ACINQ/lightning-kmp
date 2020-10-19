@@ -29,7 +29,7 @@ class OutgoingPaymentHandler(
         NO_ROUTE_TO_RECIPIENT // trampoline was unable to find an acceptable route
     }
 
-    sealed class Result {
+    sealed class SendPaymentResult {
 
         // The `Progress` result is emitted throughout the payment attempt.
         // It includes information about the fees we're paying, which may increase as we re-try our payment.
@@ -37,19 +37,43 @@ class OutgoingPaymentHandler(
             val payment: SendPayment,
             val trampolineFees: MilliSatoshi,
             val actions: List<PeerEvent>
-        ): Result()
-
-        data class Success(
-            val payment: SendPayment,
-            val trampolineFees: MilliSatoshi
-        ): Result()
+        ): SendPaymentResult()
 
         data class Failure(
             val payment: SendPayment,
             val reason: FailureReason
-        ): Result()
+        ): SendPaymentResult()
+    }
 
-        object FailureUnknownPayment: Result()
+    sealed class ProcessFailureResult {
+
+        data class Progress(
+            val payment: SendPayment,
+            val trampolineFees: MilliSatoshi,
+            val actions: List<PeerEvent>
+        ): ProcessFailureResult()
+
+        data class Failure(
+            val payment: SendPayment,
+            val reason: FailureReason
+        ): ProcessFailureResult()
+
+        object UnknownPaymentFailure: ProcessFailureResult()
+    }
+
+    sealed class ProcessFulfillResult {
+
+        data class Success(
+            val payment: SendPayment,
+            val trampolineFees: MilliSatoshi
+        ): ProcessFulfillResult()
+
+        data class Failure(
+            val payment: SendPayment,
+            val reason: FailureReason
+        ): ProcessFulfillResult()
+
+        object UnknownPaymentFailure: ProcessFulfillResult()
     }
 
     enum class Status {
@@ -169,34 +193,41 @@ class OutgoingPaymentHandler(
         sendPayment: SendPayment,
         channels: Map<ByteVector32, ChannelState>,
         currentBlockHeight: Int
-    ): Result {
+    ): SendPaymentResult {
 
         if (sendPayment.paymentAmount <= 0.msat) {
             logger.warning { "paymentAmount(${sendPayment.paymentAmount}) must be positive" }
-            return Result.Failure(sendPayment, FailureReason.INVALID_PARAMETER)
+            return SendPaymentResult.Failure(sendPayment, FailureReason.INVALID_PARAMETER)
         }
         if (pending.containsKey(sendPayment.paymentId)) {
             logger.error { "contract violation: caller is recycling uuid's" }
-            return Result.Failure(sendPayment, FailureReason.INVALID_PARAMETER)
+            return SendPaymentResult.Failure(sendPayment, FailureReason.INVALID_PARAMETER)
         }
 
         val failedAttempts = 0
         val params = TrampolineParams.get(failedAttempts)!!
         val paymentAttempt = PaymentAttempt(sendPayment, failedAttempts)
 
-        return setupPaymentAttempt(paymentAttempt, params, channels, currentBlockHeight)
+        return when (val either = setupPaymentAttempt(paymentAttempt, params, channels, currentBlockHeight)) {
+            is Either.Left -> SendPaymentResult.Failure(sendPayment, either.value)
+            is Either.Right -> SendPaymentResult.Progress(
+                payment = paymentAttempt.sendPayment,
+                trampolineFees = paymentAttempt.totalFees(),
+                actions = either.value
+            )
+        }
     }
 
     fun processFailure(
         event: ProcessFailure, // ProcessFail || ProcessFailMalformed
         channels: Map<ByteVector32, ChannelState>,
         currentBlockHeight: Int
-    ): Result {
+    ): ProcessFailureResult {
 
         val paymentAttempt = pending[event.paymentId]
         if (paymentAttempt == null) {
             logger.error { "ProcessFailure.paymentId doesn't match any known paymentAttempt" }
-            return Result.FailureUnknownPayment
+            return ProcessFailureResult.UnknownPaymentFailure
         }
 
         // Mark the TrampolinePaymentPart.status as FAILED
@@ -208,21 +239,28 @@ class OutgoingPaymentHandler(
         val failedAttempts = paymentAttempt.failedAttempts + 1
         val params = TrampolineParams.get(failedAttempts)
         if (params == null) {
-            return Result.Failure(paymentAttempt.sendPayment, FailureReason.NO_ROUTE_TO_RECIPIENT)
+            return ProcessFailureResult.Failure(paymentAttempt.sendPayment, FailureReason.NO_ROUTE_TO_RECIPIENT)
         }
 
         val newPaymentAttempt = PaymentAttempt(paymentAttempt.sendPayment, failedAttempts)
-        return setupPaymentAttempt(newPaymentAttempt, params, channels, currentBlockHeight)
+        return when (val either = setupPaymentAttempt(newPaymentAttempt, params, channels, currentBlockHeight)) {
+            is Either.Left -> ProcessFailureResult.Failure(paymentAttempt.sendPayment, either.value)
+            is Either.Right -> ProcessFailureResult.Progress(
+                payment = newPaymentAttempt.sendPayment,
+                trampolineFees = newPaymentAttempt.totalFees(),
+                actions = either.value
+            )
+        }
     }
 
     fun processFulfill(
         event: ProcessFulfill
-    ): Result {
+    ): ProcessFulfillResult {
 
         val paymentAttempt = pending[event.paymentId]
         if (paymentAttempt == null) {
             logger.error { "ProcessFail.origin doesn't match any known paymentAttempt" }
-            return Result.FailureUnknownPayment
+            return ProcessFulfillResult.UnknownPaymentFailure
         }
 
         // Mark the TrampolinePaymentPart.status as SUCCEEDED
@@ -230,7 +268,7 @@ class OutgoingPaymentHandler(
 
         // Now that all the parts have succeeded, we can announce success
         pending.remove(paymentAttempt.paymentId)
-        return Result.Success(
+        return ProcessFulfillResult.Success(
             payment = paymentAttempt.sendPayment,
             trampolineFees = paymentAttempt.totalFees()
         )
@@ -241,11 +279,11 @@ class OutgoingPaymentHandler(
         params: TrampolineParams,
         channels: Map<ByteVector32, ChannelState>,
         currentBlockHeight: Int
-    ): Result {
+    ): Either<FailureReason, List<PeerEvent>> {
 
         val availableChannels = channels.values.filterIsInstance<Normal>().toMutableList()
         if (availableChannels.size == 0) {
-            return Result.Failure(paymentAttempt.sendPayment, FailureReason.NO_AVAILABLE_CHANNELS)
+            return Either.Left(FailureReason.NO_AVAILABLE_CHANNELS)
         }
 
         // Channels have a capacity, but they also have other "caps" (hard limits).
@@ -330,7 +368,7 @@ class OutgoingPaymentHandler(
                         " attempted(${recipientAmount + trampolineFees})" +
                         " available(${channelCapacity.availableBalanceForSend})"
             }
-            return Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_BALANCE)
+            return Either.Left(FailureReason.INSUFFICIENT_BALANCE)
         }
 
         // Check for channel cap restrictions
@@ -342,7 +380,7 @@ class OutgoingPaymentHandler(
                         " available(${channelCapacity.availableBalanceForSend})" +
                         " cappedAvailable(${channelCapacity.effectiveAvailableBalanceForSend()})"
             }
-            return Result.Failure(paymentAttempt.sendPayment, FailureReason.CHANNEL_CAP_RESTRICTION)
+            return Either.Left(FailureReason.CHANNEL_CAP_RESTRICTION)
         }
 
         selectedChannel.channelUpdate.htlcMinimumMsat.let { htlcMinimumMsat ->
@@ -352,7 +390,7 @@ class OutgoingPaymentHandler(
                             " attempted(${recipientAmount + trampolineFees})" +
                             " htlcMinimumMsat(${htlcMinimumMsat})"
                 }
-                return@setupPaymentAttempt Result.Failure(paymentAttempt.sendPayment, FailureReason.CHANNEL_CAP_RESTRICTION)
+                return@setupPaymentAttempt Either.Left(FailureReason.CHANNEL_CAP_RESTRICTION)
             }
         }
 
@@ -363,7 +401,7 @@ class OutgoingPaymentHandler(
                         " attempted(${recipientAmount + trampolineFees})" +
                         " htlcMaximumMsat(${htlcMaximumMsat})"
                 }
-                return@setupPaymentAttempt Result.Failure(paymentAttempt.sendPayment, FailureReason.CHANNEL_CAP_RESTRICTION)
+                return@setupPaymentAttempt Either.Left(FailureReason.CHANNEL_CAP_RESTRICTION)
             }
         }
 
@@ -382,11 +420,7 @@ class OutgoingPaymentHandler(
         )
 
         pending[paymentAttempt.paymentId] = paymentAttempt
-        return Result.Progress(
-            payment = paymentAttempt.sendPayment,
-            trampolineFees = paymentAttempt.totalFees(),
-            actions = actions
-        )
+        return Either.Right(actions)
     }
 
     /**

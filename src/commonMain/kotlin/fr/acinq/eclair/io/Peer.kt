@@ -462,34 +462,32 @@ class Peer(
                                 it is ProcessFailure -> {
                                     val result = outgoingPaymentHandler.processFailure(it, channels, currentTip.first)
                                     when (result) {
-                                        is OutgoingPaymentHandler.Result.Progress -> {
+                                        is OutgoingPaymentHandler.ProcessFailureResult.Progress -> {
                                             listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
                                             for (action in result.actions) {
                                                 input.send(action)
                                             }
                                         }
-                                        is OutgoingPaymentHandler.Result.Failure -> {
+                                        is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
                                             listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
                                         }
-                                        else -> Unit
+                                        is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
+                                            logger.error { "UnknownPaymentFailure" }
+                                        }
                                     }
                                 }
                                 it is ProcessFulfill -> {
                                     val result = outgoingPaymentHandler.processFulfill(it)
                                     when (result) {
-                                        is OutgoingPaymentHandler.Result.Progress -> {
-                                            listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
-                                            for (action in result.actions) {
-                                                input.send(action)
-                                            }
-                                        }
-                                        is OutgoingPaymentHandler.Result.Success -> {
+                                        is OutgoingPaymentHandler.ProcessFulfillResult.Success -> {
                                             listenerEventChannel.send(PaymentSent(result.payment, result.trampolineFees))
                                         }
-                                        is OutgoingPaymentHandler.Result.Failure -> {
+                                        is OutgoingPaymentHandler.ProcessFulfillResult.Failure -> {
                                             listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
                                         }
-                                        else -> Unit
+                                        is OutgoingPaymentHandler.ProcessFulfillResult.UnknownPaymentFailure -> {
+                                            logger.error { "UnknownPaymentFailure" }
+                                        }
                                     }
                                 }
                             }
@@ -530,16 +528,15 @@ class Peer(
             event is SendPayment -> {
                 val result = outgoingPaymentHandler.processSendPayment(event, channels, currentTip.first)
                 when (result) {
-                    is OutgoingPaymentHandler.Result.Progress -> {
+                    is OutgoingPaymentHandler.SendPaymentResult.Progress -> {
                         listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
                         for (action in result.actions) {
                             input.send(action)
                         }
                     }
-                    is OutgoingPaymentHandler.Result.Failure -> {
+                    is OutgoingPaymentHandler.SendPaymentResult.Failure -> {
                         listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
                     }
-                    else -> Unit
                 }
             }
             event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
