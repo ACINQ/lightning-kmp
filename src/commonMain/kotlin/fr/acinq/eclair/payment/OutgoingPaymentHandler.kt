@@ -23,8 +23,6 @@ class OutgoingPaymentHandler(
 
     enum class FailureReason {
         INVALID_PARAMETER, // e.g. (paymentAmount < 0), (recycled paymentId)
-        PAYMENT_AMOUNT_TOO_SMALL, // paymentAmount < invoiceAmount
-        PAYMENT_AMOUNT_TOO_BIG, // paymentAmount > invoiceAmount * 2 (bolt 4)
         NO_AVAILABLE_CHANNELS, // There are zero channels in Normal mode
         INSUFFICIENT_CAPACITY_BASE, // Not enough capacity in channel(s) to support paymentAmount
         INSUFFICIENT_CAPACITY_FEES, // Not enough capacity in channel(s) after accounting for fees
@@ -191,19 +189,6 @@ class OutgoingPaymentHandler(
         if (pending.containsKey(sendPayment.paymentId)) {
             logger.error { "contract violation: caller is recycling uuid's" }
             return Result.Failure(sendPayment, FailureReason.INVALID_PARAMETER)
-        }
-
-        val invoiceAmount = sendPayment.paymentRequest.amount
-        if (invoiceAmount != null) {
-            // if invoiceAmount is non-null, it must be positive, as per spec (& enforced in PaymentRequest.init)
-            if (sendPayment.paymentAmount < invoiceAmount) {
-                logger.warning { "paymentAmount(${sendPayment.paymentAmount}) must be at least invoiceAmount(${invoiceAmount})" }
-                return Result.Failure(sendPayment, FailureReason.PAYMENT_AMOUNT_TOO_SMALL)
-            }
-            if (sendPayment.paymentAmount > invoiceAmount * 2) {
-                logger.warning { "paymentAmount(${sendPayment.paymentAmount}) cannot exceed invoiceAmount(${invoiceAmount}) * 2" }
-                return Result.Failure(sendPayment, FailureReason.PAYMENT_AMOUNT_TOO_BIG)
-            }
         }
 
         val failedAttempts = 0

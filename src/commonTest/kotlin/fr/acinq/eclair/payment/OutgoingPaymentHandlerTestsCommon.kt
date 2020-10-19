@@ -98,26 +98,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INVALID_PARAMETER }
         }
-        run {
-            val tooLow = invoiceAmount - 1.msat
-            val sendPayment = SendPayment(UUID.randomUUID(), invoice, tooLow)
-            var result = outgoingPaymentHandler.processSendPayment(sendPayment, mapOf(), currentBlockHeight)
-
-            assertTrue { result is OutgoingPaymentHandler.Result.Failure }
-            val failure = result as OutgoingPaymentHandler.Result.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.PAYMENT_AMOUNT_TOO_SMALL }
-        }
-        run {
-            val tooBig = invoiceAmount * 2 + 1.msat
-            val sendPayment = SendPayment(UUID.randomUUID(), invoice, tooBig)
-            var result = outgoingPaymentHandler.processSendPayment(sendPayment, mapOf(), currentBlockHeight)
-
-            assertTrue { result is OutgoingPaymentHandler.Result.Failure }
-            val failure = result as OutgoingPaymentHandler.Result.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.PAYMENT_AMOUNT_TOO_BIG }
-        }
     }
 
     @Test
