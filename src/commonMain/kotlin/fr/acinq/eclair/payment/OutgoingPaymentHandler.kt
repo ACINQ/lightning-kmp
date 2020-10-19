@@ -418,25 +418,7 @@ class OutgoingPaymentHandler(
         val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
 
         val features = paymentAttempt.invoice.features?.let { Features(it) } ?: Features(setOf())
-        val recipientSupportsMpp = features.hasFeature(Feature.BasicMultiPartPayment)
         val recipientSupportsTrampoline = features.hasFeature(Feature.TrampolinePayment)
-
-        val paymentSecret = paymentAttempt.invoice.paymentSecret
-
-        // The matrix of possibilities:
-        //                          supportsMpp:YES   | supportsMpp:NO
-        // ----------------------------------------------------------------
-        // supportsTrampoline:YES | Full trampoline!  | ????              |
-        // ---------------------------------------------------------------
-        // supportsTrampoline:NO  | Legacy trampoline | Legacy trampoline |
-        //
-        // It's theoretically possible that a client supports trampoline, but not mpp.
-        // We could optimize for this, and attempt to send a full payment over a single channel using trampoline.
-        // But if we don't have enough capacity in a single channel, the legacy trampoline is our only fallback.
-        //
-        // In practice, this scenario is highly unlikely to ever occur,
-        // because the mpp spec was made official long before trampoline.
-        // So we're always just use a legacy trampoline in this case.
 
         val finalPayload = FinalPayload.createSinglePartPayload(
             amount = paymentAttempt.paymentAmount,
@@ -460,7 +442,7 @@ class OutgoingPaymentHandler(
 
         val trampolineExpiry: CltvExpiry
         val trampolineOnion: PacketAndSecrets
-        if (recipientSupportsTrampoline && recipientSupportsMpp && paymentSecret != null) {
+        if (recipientSupportsTrampoline) {
             // Full trampoline! Full privacy!
             val triple = OutgoingPacket.buildPacket(
                 paymentHash = paymentAttempt.invoice.paymentHash,
@@ -472,13 +454,7 @@ class OutgoingPaymentHandler(
             trampolineOnion = triple.third
         } else {
             // Legacy workaround
-            var triple = OutgoingPacket.buildTrampolineToLegacyPacket(
-                invoice = paymentAttempt.invoice,
-                hops = nodeHops,
-                finalPayload = finalPayload
-            )
-            trampolineExpiry = triple.second
-            trampolineOnion = triple.third
+            throw RuntimeException("Not implemented")
         }
 
         val trampolinePayload = FinalPayload.createTrampolinePayload(
