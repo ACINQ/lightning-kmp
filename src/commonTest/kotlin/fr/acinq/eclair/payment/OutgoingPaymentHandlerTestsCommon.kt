@@ -120,7 +120,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `error conditions - insufficient capacity base`() {
+    fun `error conditions - insufficient capacity - base`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
@@ -136,11 +136,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue { result is OutgoingPaymentHandler.Result.Failure }
         val failure = result as OutgoingPaymentHandler.Result.Failure
 
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INSUFFICIENT_CAPACITY_BASE }
+        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INSUFFICIENT_BALANCE }
     }
 
     @Test
-    fun `error conditions - insufficient capacity fees`() {
+    fun `error conditions - insufficient capacity - fees`() {
 
         var (alice, bob) = TestsHelper.reachNormal()
         // Make sure that htlcMaximumMsat & maxHtlcValueInFlightMsat don't interfer with our test
@@ -172,7 +172,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { result is OutgoingPaymentHandler.Result.Failure }
             val failure = result as OutgoingPaymentHandler.Result.Failure
 
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INSUFFICIENT_CAPACITY_FEES }
+            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INSUFFICIENT_BALANCE }
         }
     }
 

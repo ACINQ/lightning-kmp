@@ -24,8 +24,7 @@ class OutgoingPaymentHandler(
     enum class FailureReason {
         INVALID_PARAMETER, // e.g. (paymentAmount < 0), (recycled paymentId)
         NO_AVAILABLE_CHANNELS, // There are zero channels in Normal mode
-        INSUFFICIENT_CAPACITY_BASE, // Not enough capacity in channel(s) to support paymentAmount
-        INSUFFICIENT_CAPACITY_FEES, // Not enough capacity in channel(s) after accounting for fees
+        INSUFFICIENT_BALANCE, // Not enough capacity in channel(s) to support payment
         CHANNEL_CAP_RESTRICTION, // e.g. htlcMaximumAmount, maxHtlcValueInFlight, maxAcceptedHtlcs
         NO_ROUTE_TO_RECIPIENT // trampoline was unable to find an acceptable route
     }
@@ -341,15 +340,7 @@ class OutgoingPaymentHandler(
                         " attempted(${recipientAmount + trampolineFees})" +
                         " available(${channelCapacity.availableBalanceForSend})"
             }
-            // The average user (non-techie) is accustomed to the credit card model,
-            // where the merchant pays fees, but the customer does not.
-            // Receiving a generic "insufficient capacity" error message could easily be confusing
-            // if the base capacity exists. Thus differentiating these cases could prove useful for the UI.
-            return if (recipientAmount > channelCapacity.availableBalanceForSend) {
-                Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_CAPACITY_BASE)
-            } else {
-                Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_CAPACITY_FEES)
-            }
+            return Result.Failure(paymentAttempt.sendPayment, FailureReason.INSUFFICIENT_BALANCE)
         }
 
         // Check for channel cap restrictions
