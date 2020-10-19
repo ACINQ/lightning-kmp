@@ -456,7 +456,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val expectedExpiryAtB = expectedExpiryDeltaAtB.toCltvExpiry(blockHeight)
 
         val paymentLifecycle = OutgoingPaymentHandler(channel.staticParams.nodeParams)
-        val wrappedChannelEvent = paymentLifecycle.actionify(
+        val wrappedChannelEvent = paymentLifecycle.createHtlc(
             channel = channel,
             paymentAttempt = paymentAttempt,
             part = part,

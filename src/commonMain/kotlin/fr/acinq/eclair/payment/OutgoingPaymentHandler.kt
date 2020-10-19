@@ -377,8 +377,8 @@ class OutgoingPaymentHandler(
         paymentAttempt.parts.add(part)
 
         val actions = listOf<PeerEvent>(
-            // actionify: part => (onion w/ trampoline) => CMD_ADD_HTLC => WrappedChannelEvent
-            actionify(selectedChannel, paymentAttempt, part, currentBlockHeight)
+            // createHtlc: part => (onion w/ trampoline) => CMD_ADD_HTLC => WrappedChannelEvent
+            createHtlc(selectedChannel, paymentAttempt, part, currentBlockHeight)
         )
 
         pending[paymentAttempt.paymentId] = paymentAttempt
@@ -396,7 +396,7 @@ class OutgoingPaymentHandler(
      * - Creating the CMD_ADD_HTLC
      * - Creating the WrappedChannelEvent
      */
-    fun actionify(
+    fun createHtlc(
         channel: Normal,
         paymentAttempt: PaymentAttempt,
         part: TrampolinePaymentPart,
@@ -419,14 +419,14 @@ class OutgoingPaymentHandler(
             NodeHop(
                 nodeId = channel.staticParams.nodeParams.nodeId, // us
                 nextNodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
-                cltvExpiryDelta = CltvExpiryDelta(0), // per node cltv (ignored)
-                fee = MilliSatoshi(0) // per node fee (ignored)
+                cltvExpiryDelta = CltvExpiryDelta(0), // ignored
+                fee = MilliSatoshi(0) // ignored
             ),
             NodeHop(
                 nodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
                 nextNodeId = paymentAttempt.invoice.nodeId, // final recipient
-                cltvExpiryDelta = part.cltvExpiryDelta, // per node cltv
-                fee = part.trampolineFees // per node fee
+                cltvExpiryDelta = part.cltvExpiryDelta,
+                fee = part.trampolineFees
             )
         )
 
