@@ -65,16 +65,24 @@ function btc_remove {
   docker rm bitcoind
 }
 
+function btc_logs {
+  docker logs bitcoind -f
+}
+
 function elx_create {
+  docker build \
+    -t electrumx electrumx
+
   docker create \
     --name electrumx \
     --net eclair-net \
     -e DAEMON_URL=http://foo:bar@bitcoind:18443 \
     -e COIN=BitcoinSegwit \
     -e NET=regtest \
+    -e LOG_LEVEL=debug \
     -p 51001:50001 \
     -p 51002:50002 \
-    acinq/electrumx
+    electrumx
 }
 
 function elx_start {
@@ -87,6 +95,10 @@ function elx_stop {
 
 function elx_remove {
   docker rm electrumx
+}
+
+function elx_logs {
+  docker logs electrumx -f
 }
 
 function ecl_create {
@@ -168,6 +180,9 @@ function cmd {
       btc-remove)
         btc_remove
         ;;
+      btc-logs)
+        btc_logs
+        ;;
       elx-create)
         elx_create
         ;;
@@ -179,6 +194,9 @@ function cmd {
         ;;
       elx-remove)
         elx_remove
+        ;;
+      elx-logs)
+        elx_logs
         ;;
       ecl-create)
         ecl_create

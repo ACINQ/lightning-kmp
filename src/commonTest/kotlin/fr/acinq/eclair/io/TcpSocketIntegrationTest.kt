@@ -20,12 +20,11 @@ class TcpSocketIntegrationTest : EclairTestSuite() {
     }.toByteArray()
 
     @Test
-    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 5.seconds) {
+    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 250.seconds) {
         val socket = TcpSocket.Builder().connect("localhost", 51001)
         socket.send(serverVersionRpc)
         val ba = ByteArray(8192)
         val size = socket.receiveAvailable(ba)
-        println(ba.subArray(size).decodeToString())
         assertTrue { size > 0 }
         socket.close()
     }
