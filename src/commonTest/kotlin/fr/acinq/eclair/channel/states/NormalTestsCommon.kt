@@ -50,11 +50,11 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(0, htlc.id)
         assertEquals(h, htlc.paymentHash)
 
-//        assertEquals(alice0.copy(commitments = alice0.commitments.copy(
-//            localNextHtlcId = 1,
-//            localChanges = alice0.commitments.localChanges.copy(proposed = listOf(htlc)),
-////            originChannels = mapOf(0L, add.origin)
-//        )), alice1)
+        assertEquals(alice0.copy(commitments = alice0.commitments.copy(
+            localNextHtlcId = 1,
+            localChanges = alice0.commitments.localChanges.copy(proposed = listOf(htlc)),
+            payments = mapOf(0L to add.paymentId)
+        )), alice1)
     }
 
     @Test

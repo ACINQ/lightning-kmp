@@ -796,7 +796,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
                         state.handleRemoteSpentNext(watch.tx)
                     }
                     watch is WatchEventSpent && state is WaitForRemotePublishFutureComitment -> {
-                        TODO("handle remote spent future tx")
+                        state.handleRemoteSpentFuture(watch.tx)
                     }
                     watch is WatchEventSpent && state is HasCommitments -> {
                         state.handleRemoteSpentOther(watch.tx)
@@ -1056,7 +1056,7 @@ data class WaitForRemotePublishFutureComitment(
         return Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf(SendMessage(error)))
     }
 
-    private fun handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
+    internal fun handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
         return if (commitments.channelVersion.paysDirectlyToWallet) {
             val remoteCommitPublished = RemoteCommitPublished(tx, null, listOf(), listOf(), mapOf())
