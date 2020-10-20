@@ -5,6 +5,7 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
 import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.wire.ClosingSigned
 import fr.acinq.eclair.wire.Shutdown
 import kotlin.test.Test
@@ -42,30 +43,7 @@ class NegotiatingTestsCommon {
     companion object {
         fun init(tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
             val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
-
-            fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
-
-            fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
-
-            val alice1 = alice.updateFeerate(if (tweakFees) 4319 else 10000)
-            val bob1 = bob.updateFeerate(if (tweakFees) 4319 else 10000)
-
-            // Bob is fundee and initiates the closing
-            val (bob2, actions) = bob1.process(ExecuteCommand(CMD_CLOSE(null)))
-            val shutdown = actions.findOutgoingMessage<Shutdown>()
-
-            // Alice is funder, she will sign the first closing tx
-            val (alice2, actions1) = alice1.process(MessageReceived(shutdown))
-            assertTrue { alice2 is Negotiating }
-            val shutdown1 = actions1.findOutgoingMessage<Shutdown>()
-            val closingSigned = actions1.findOutgoingMessage<ClosingSigned>()
-
-            val alice3 = (alice2 as Negotiating).updateFeerate(if (tweakFees) 4316 else 5000)
-            val bob3 = (bob2 as Normal).updateFeerate(if (tweakFees) 4316 else 5000)
-
-            val (bob4, _) = bob3.process(MessageReceived(shutdown1))
-            assertTrue { bob4 is Negotiating }
-            return Triple(alice3 as Negotiating, bob4 as Negotiating, closingSigned)
+            return mutualClose(alice, bob, tweakFees)
         }
 
         tailrec fun converge(a: ChannelState, b: ChannelState, aliceCloseSig: ClosingSigned?): Pair<Closing, Closing>? {

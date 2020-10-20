@@ -2,9 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
-import fr.acinq.eclair.blockchain.Watch
-import fr.acinq.eclair.blockchain.WatchConfirmed
-import fr.acinq.eclair.blockchain.WatchEventConfirmed
+import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
@@ -12,9 +10,7 @@ import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.test.fail
+import kotlin.test.*
 
 // LN Message
 inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage(): T? {
@@ -25,8 +21,8 @@ inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessag
     return hasOutgoingMessage() ?: throw IllegalArgumentException("cannot find ${T::class}")
 }
 internal inline fun <reified T> List<ChannelAction>.hasMessage() = assertTrue { any { it is SendMessage && it.message is T } }
-internal inline fun <reified T> List<ChannelAction>.messages() = filterIsInstance<SendMessage>().filter { it.message is T }.map { it.message }
-internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance<SendWatch>().filter { it.watch is T }.map { it.watch }
+internal inline fun <reified T> List<ChannelAction>.messages() = filterIsInstance<SendMessage>().filter { it.message is T }.map { it.message as T }
+internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance<SendWatch>().filter { it.watch is T }.map { it.watch as T }
 inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {
     val candidates = this.filterIsInstance<SendWatch>().map { it.watch }.filterIsInstance<T>()
     if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
@@ -47,6 +43,8 @@ internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { an
 
 inline fun <reified T : Throwable> List<ChannelAction>.findCommandError(): T? =
     filterIsInstance<HandleCommandFailed>().map { it.error }.firstOrNull { it is T } as T?
+
+internal inline fun <reified T> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
@@ -141,6 +139,119 @@ object TestsHelper {
         bob = rb.first
 
         return Pair(alice as Normal, bob as Normal)
+    }
+
+    fun mutualClose(alice: Normal, bob: Normal, tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
+        fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
+        fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
+
+        val alice1 = alice.updateFeerate(if (tweakFees) 4319 else 10000)
+        val bob1 = bob.updateFeerate(if (tweakFees) 4319 else 10000)
+
+        // Bob is fundee and initiates the closing
+        val (bob2, actions) = bob1.process(ExecuteCommand(CMD_CLOSE(null)))
+        val shutdown = actions.findOutgoingMessage<Shutdown>()
+
+        // Alice is funder, she will sign the first closing tx
+        val (alice2, actions1) = alice1.process(MessageReceived(shutdown))
+        assertTrue { alice2 is Negotiating }
+        val shutdown1 = actions1.findOutgoingMessage<Shutdown>()
+        val closingSigned = actions1.findOutgoingMessage<ClosingSigned>()
+
+        val alice3 = (alice2 as Negotiating).updateFeerate(if (tweakFees) 4316 else 5000)
+        val bob3 = (bob2 as Normal).updateFeerate(if (tweakFees) 4316 else 5000)
+
+        val (bob4, _) = bob3.process(MessageReceived(shutdown1))
+        assertTrue { bob4 is Negotiating }
+        return Triple(alice3 as Negotiating, bob4 as Negotiating, closingSigned)
+    }
+
+    fun localClose(s: ChannelState) : Pair<Closing, LocalCommitPublished> {
+        require(s is HasCommitments)
+        // an error occurs and alice publishes her commit tx
+        val sCommitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
+        val (s1, actions1) = s.process(MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        actions1.has<PublishTx>()
+        assertTrue { s1 is Closing }; s1 as Closing
+
+        val localCommitPublished = s1.localCommitPublished
+        assertNotNull(localCommitPublished)
+
+        assertEquals(actions1.filterIsInstance<PublishTx>()[0], PublishTx(localCommitPublished.commitTx))
+        assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
+        assertEquals(actions1.filterIsInstance<PublishTx>()[1],
+            PublishTx(localCommitPublished.claimMainDelayedOutputTx!!))
+        // all htlcs success/timeout should be published
+        (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs)
+            .forEach { tx ->
+                actions1.contains(PublishTx(tx))
+            }
+        // and their outputs should be claimed
+        localCommitPublished.claimHtlcDelayedTxs.forEach { tx ->
+            actions1.contains(PublishTx(tx))
+        }
+
+        // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
+        val watchConfirmedList = actions1.watches<WatchConfirmed>()
+        assertEquals(BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), watchConfirmedList[0].event)
+        assertEquals(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), watchConfirmedList[1].event)
+        assertEquals(
+            localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it) }.toSet(),
+            actions1.watches<WatchConfirmed>().drop(2).map { it.event }.toSet()
+        )
+
+        // we watch outputs of the commitment tx that both parties may spend
+        val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).map { it.txIn.first().outPoint.index }
+        val spentWatches = htlcOutputIndexes.zip(actions1.watches<WatchSpent>())
+        spentWatches.forEach {(_, watch) ->
+            assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
+            assertEquals(watch.txId, sCommitTx.txid)
+        }
+        assertEquals(htlcOutputIndexes.toSet(), spentWatches.map { it.second.outputIndex.toLong() }.toSet())
+
+        return s1 to localCommitPublished
+    }
+
+    fun remotClose(rCommitTx: Transaction, s: ChannelState) : Pair<Closing, RemoteCommitPublished> {
+        require(s is HasCommitments)
+        // we make s believe r unilaterally closed the channel
+        val (s1, actions1) = s.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, rCommitTx)))
+        assertTrue { s1 is Closing } ; s1 as Closing
+
+        val remoteCommitPublished = s1.remoteCommitPublished ?: s1.nextRemoteCommitPublished ?: s1.futureRemoteCommitPublished
+        assertNotNull(remoteCommitPublished)
+        assertNull(s1.localCommitPublished)
+
+        // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
+        remoteCommitPublished.claimMainOutputTx?.let { tx ->
+            Transaction.correctlySpends(tx, listOf(rCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            assertEquals(PublishTx(tx), actions1.filterIsInstance<PublishTx>().first())
+        }
+        // all htlcs success/timeout should be claimed
+        val claimHtlcTxes = (remoteCommitPublished.claimHtlcSuccessTxs + remoteCommitPublished.claimHtlcTimeoutTxs)
+        claimHtlcTxes.forEach { tx ->
+            Transaction.correctlySpends(tx, listOf(rCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+        assertTrue { actions1.containsAll(claimHtlcTxes.map { PublishTx(it) }) }
+
+        // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
+        val watchConfirmedList = actions1.watches<WatchConfirmed>()
+        assertEquals(BITCOIN_TX_CONFIRMED(rCommitTx), watchConfirmedList.first().event)
+        remoteCommitPublished.claimMainOutputTx?.let { tx ->
+            assertEquals(BITCOIN_TX_CONFIRMED(tx), watchConfirmedList.drop(1).first().event)
+        }
+
+        // we watch outputs of the commitment tx that both parties may spend
+        val htlcOutputIndexes = claimHtlcTxes.map { it.txIn.first().outPoint.index }
+        val spentWatches = htlcOutputIndexes.zip(actions1.watches<WatchSpent>())
+        spentWatches.forEach {(_, watch) ->
+            assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
+            assertEquals(watch.txId, rCommitTx.txid)
+        }
+        assertEquals(htlcOutputIndexes.toSet(), spentWatches.map { it.second.outputIndex.toLong() }.toSet())
+
+        // s is now in CLOSING state with txes pending for confirmation before going in CLOSED state
+        return s1 to remoteCommitPublished
     }
 
     fun signAndRevack(alice: ChannelState, bob: ChannelState): Pair<ChannelState, ChannelState> {
