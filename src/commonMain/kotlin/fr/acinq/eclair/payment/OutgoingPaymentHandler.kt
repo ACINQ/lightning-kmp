@@ -363,7 +363,7 @@ class OutgoingPaymentHandler(
      * - Creating the CMD_ADD_HTLC
      * - Creating the WrappedChannelEvent
      */
-    fun createHtlc(
+    private fun createHtlc(
         channel: Normal,
         paymentAttempt: PaymentAttempt,
         part: TrampolinePaymentPart,

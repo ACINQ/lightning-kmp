@@ -461,7 +461,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `successful trampoline response`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
-        val currentBlockHeight = TestConstants.defaultBlockHeight
+        val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
 
         val invoiceAmount = 100_000.msat
@@ -514,6 +514,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // a -> b      c
 
         val (channel, _) = TestsHelper.reachNormal()
+        val currentBlockHeight = channel.currentBlockHeight
+        val channels = mapOf(channel.channelId to channel)
 
         val privKeyB = TestConstants.Bob.nodeParams.nodePrivateKey
         val pubKeyB = privKeyB.publicKey()
@@ -522,39 +524,31 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val blockHeight = channel.currentBlockHeight.toLong()
 
-        val availableForSend = 1_000_000_000.msat
+        val availableForSend = channel.commitments.availableBalanceForSend()
         val targetAmount = availableForSend / 2
 
         val invoice = makeInvoice(recipient = privKeyC, amount = targetAmount, supportsTrampoline = true)
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
 
-        val failedAttempts = 0
-        val trampolineParams = OutgoingPaymentHandler.TrampolineParams.get(failedAttempts)!!
+        val trampolineParams = OutgoingPaymentHandler.TrampolineParams.get(0)!!
 
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, trampolineParams, failedAttempts)
-        val part = OutgoingPaymentHandler.TrampolinePaymentPart(
-            channelId = channel.channelId,
-            amount = targetAmount,
-            trampolineFees = MilliSatoshi(0),
-            cltvExpiryDelta = CltvExpiryDelta(576)
-        )
-
-        val expectedAmountAtB = part.amount
-        val expectedAmountAtC = part.amount - part.trampolineFees
+        val expectedAmountAtB = targetAmount
+        val expectedAmountAtC = targetAmount
 
         val expectedExpiryDeltaAtC = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
-        val expectedExpiryDeltaAtB = expectedExpiryDeltaAtC + part.cltvExpiryDelta
+        val expectedExpiryDeltaAtB = expectedExpiryDeltaAtC + trampolineParams.cltvExpiryDelta
 
         val expectedExpiryAtC = expectedExpiryDeltaAtC.toCltvExpiry(blockHeight)
         val expectedExpiryAtB = expectedExpiryDeltaAtB.toCltvExpiry(blockHeight)
 
-        val paymentLifecycle = OutgoingPaymentHandler(channel.staticParams.nodeParams)
-        val wrappedChannelEvent = paymentLifecycle.createHtlc(
-            channel = channel,
-            paymentAttempt = paymentAttempt,
-            part = part,
-            currentBlockHeight = channel.currentBlockHeight
-        )
+        val outgoingPaymentHandler = OutgoingPaymentHandler(channel.staticParams.nodeParams)
+        val result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+
+        assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
+        val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
+
+        val wrappedChannelEvent = progress.actions.filterIsInstance<WrappedChannelEvent>().firstOrNull()
+        assertNotNull(wrappedChannelEvent)
 
         val executeCommand = wrappedChannelEvent.channelEvent as? ExecuteCommand
         val cmdAddHtlc = executeCommand?.command as? CMD_ADD_HTLC
