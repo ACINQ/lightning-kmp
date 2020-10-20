@@ -9,6 +9,7 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.SendPayment
+import fr.acinq.eclair.io.WrappedChannelError
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -167,7 +168,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val updateFailHtlc = UpdateFailHtlc(alice.channelId, 0, Eclair.randomBytes32())
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
-            val result = outgoingPaymentHandler.processFailure(processFail, channels, currentBlockHeight)
+            val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
 
             assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Failure }
             val failure = result as OutgoingPaymentHandler.ProcessFailureResult.Failure
@@ -198,7 +199,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
         val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
 
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
     }
 
     @Test
@@ -223,28 +224,37 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
         val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
 
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
     }
 
     @Test
     fun `error conditions - channel cap restrictions - maxAccpetedHtlcs`() {
 
         var (alice, bob) = TestsHelper.reachNormal()
-        val nodeParams = alice.staticParams.nodeParams.copy(maxAcceptedHtlcs = 1)
-        alice = alice.copy(staticParams = alice.staticParams.copy(nodeParams = nodeParams))
+
+        val remoteParams = alice.commitments.remoteParams.copy(maxAcceptedHtlcs = 1)
+        val commitments = alice.commitments.copy(remoteParams = remoteParams)
+        alice = alice.copy(commitments = commitments)
 
         val currentBlockHeight = alice.currentBlockHeight
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         run {
+
+            // Send payment 1 of 2.
+            // This should go thru fine because we're still under the maxAccpetedHtlcs
+
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
             val channels = mapOf(alice.channelId to alice)
             var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+
             assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
             val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
+
+            // Push the CMD_ADD_HTLC thru the channel so it can update its state.
 
             val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
             channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
@@ -255,16 +265,48 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             }
         }
         run {
+
+            // Send payment 2 of 2.
+            // This should exceed the configured maxAccpetedHtlcs.
+
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
-            val channels = mapOf(alice.channelId to alice)
-            var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+            var channels = mapOf(alice.channelId to alice)
+            var result1 = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
 
-            assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-            val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
+            // At first, the result will be progress
+            assertTrue { result1 is OutgoingPaymentHandler.SendPaymentResult.Progress }
+            val progress = result1 as OutgoingPaymentHandler.SendPaymentResult.Progress
 
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+            // We push the CMD_ADD_HTLC thru the channel.
+            // We're expecting the channel to return an error.
+
+            val executeCommand = progress.actions.filterIsInstance<WrappedChannelEvent>().mapNotNull {
+                it.channelEvent as? ExecuteCommand
+            }.firstOrNull()
+
+            assertNotNull(executeCommand)
+            var processResult = alice.process(executeCommand)
+
+            assertTrue { processResult.first is Normal }
+            alice = processResult.first as Normal
+
+            val handleError = processResult.second.filterIsInstance<HandleError>().firstOrNull()
+            assertNotNull(handleError)
+
+            val channelError = WrappedChannelError(alice.channelId, handleError.error, executeCommand)
+            assertNotNull(channelError)
+
+            // Now the channelError gets sent back to the OutgoingPaymentHandler.
+
+            channels = mapOf(alice.channelId to alice)
+            val result2 = outgoingPaymentHandler.processLocalFailure(channelError, channels, currentBlockHeight)
+
+            assertTrue { result2 is OutgoingPaymentHandler.ProcessFailureResult.Failure }
+            val failure = result2 as OutgoingPaymentHandler.ProcessFailureResult.Failure
+
+            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
         }
     }
 
@@ -272,14 +314,20 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `error conditions - channel cap restrictions - maxHtlcValueInFlight`() {
 
         var (alice, bob) = TestsHelper.reachNormal()
-        val nodeParams = alice.staticParams.nodeParams.copy(maxHtlcValueInFlightMsat = 150_000)
-        alice = alice.copy(staticParams = alice.staticParams.copy(nodeParams = nodeParams))
+
+        val remoteParams = alice.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 10_000)
+        val commitments = alice.commitments.copy(remoteParams = remoteParams)
+        alice = alice.copy(commitments = commitments)
 
         val currentBlockHeight = alice.currentBlockHeight
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         run {
+
+            // Send payment 1 of 2.
+            // This should go thru fine because we're still under the maxHtlcValueInFlightMsat
+
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
@@ -287,6 +335,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
             assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
             val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
+
+            // Push the CMD_ADD_HTLC thru the channel so it can update its state.
 
             val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
             channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
@@ -297,16 +347,48 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             }
         }
         run {
+
+            // Send payment 2 of 2.
+            // This should exceed the configured maxHtlcValueInFlightMsat.
+
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
-            val channels = mapOf(alice.channelId to alice)
-            var result = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
+            var channels = mapOf(alice.channelId to alice)
+            var result1 = outgoingPaymentHandler.processSendPayment(sendPayment, channels, currentBlockHeight)
 
-            assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-            val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
+            // At first, the result will be progress
+            assertTrue { result1 is OutgoingPaymentHandler.SendPaymentResult.Progress }
+            val progress = result1 as OutgoingPaymentHandler.SendPaymentResult.Progress
 
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.CHANNEL_CAP_RESTRICTION }
+            // We push the CMD_ADD_HTLC thru the channel.
+            // We're expecting the channel to return an error.
+
+            val executeCommand = progress.actions.filterIsInstance<WrappedChannelEvent>().mapNotNull {
+                it.channelEvent as? ExecuteCommand
+            }.firstOrNull()
+
+            assertNotNull(executeCommand)
+            var processResult = alice.process(executeCommand)
+
+            assertTrue { processResult.first is Normal }
+            alice = processResult.first as Normal
+
+            val handleError = processResult.second.filterIsInstance<HandleError>().firstOrNull()
+            assertNotNull(handleError)
+
+            val channelError = WrappedChannelError(alice.channelId, handleError.error, executeCommand)
+            assertNotNull(channelError)
+
+            // Now the channelError gets sent back to the OutgoingPaymentHandler.
+
+            channels = mapOf(alice.channelId to alice)
+            val result2 = outgoingPaymentHandler.processLocalFailure(channelError, channels, currentBlockHeight)
+
+            assertTrue { result2 is OutgoingPaymentHandler.ProcessFailureResult.Failure }
+            val failure = result2 as OutgoingPaymentHandler.ProcessFailureResult.Failure
+
+            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
         }
     }
 
@@ -351,7 +433,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
                 val updateFailHtlc = UpdateFailHtlc(alice.channelId, 0, Eclair.randomBytes32())
                 val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
-                val result = outgoingPaymentHandler.processFailure(processFail, channels, currentBlockHeight)
+                val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
 
                 assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Progress }
                 val progress = result as OutgoingPaymentHandler.ProcessFailureResult.Progress
@@ -366,7 +448,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val updateFailHtlc = UpdateFailHtlc(alice.channelId, 0, Eclair.randomBytes32())
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
-            val result = outgoingPaymentHandler.processFailure(processFail, channels, currentBlockHeight)
+            val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
 
             assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Failure }
             val failure = result as OutgoingPaymentHandler.ProcessFailureResult.Failure
@@ -446,13 +528,15 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val invoice = makeInvoice(recipient = privKeyC, amount = targetAmount, supportsTrampoline = true)
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
 
-        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, 0)
+        val failedAttempts = 0
+        val trampolineParams = OutgoingPaymentHandler.TrampolineParams.get(failedAttempts)!!
+
+        val paymentAttempt = OutgoingPaymentHandler.PaymentAttempt(sendPayment, trampolineParams, failedAttempts)
         val part = OutgoingPaymentHandler.TrampolinePaymentPart(
             channelId = channel.channelId,
             amount = targetAmount,
             trampolineFees = MilliSatoshi(0),
-            cltvExpiryDelta = CltvExpiryDelta(576),
-            status = OutgoingPaymentHandler.Status.INFLIGHT
+            cltvExpiryDelta = CltvExpiryDelta(576)
         )
 
         val expectedAmountAtB = part.amount
