@@ -543,7 +543,7 @@ class Peer(
             // send payments
             //
             event is SendPayment -> {
-                val result = outgoingPaymentHandler.processSendPayment(event, channels, currentTip.first)
+                val result = outgoingPaymentHandler.sendPayment(event, channels, currentTip.first)
                 when (result) {
                     is OutgoingPaymentHandler.SendPaymentResult.Progress -> {
                         listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
