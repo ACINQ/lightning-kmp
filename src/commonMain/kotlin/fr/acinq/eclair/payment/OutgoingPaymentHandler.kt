@@ -397,6 +397,7 @@ class OutgoingPaymentHandler(
             )
         )
 
+        val trampolineAmount: MilliSatoshi
         val trampolineExpiry: CltvExpiry
         val trampolineOnion: PacketAndSecrets
         if (recipientSupportsTrampoline) {
@@ -407,6 +408,7 @@ class OutgoingPaymentHandler(
                 finalPayload = finalPayload,
                 payloadLength = OnionRoutingPacket.TrampolinePacketLength
             )
+            trampolineAmount = triple.first
             trampolineExpiry = triple.second
             trampolineOnion = triple.third
         } else {
@@ -415,8 +417,8 @@ class OutgoingPaymentHandler(
         }
 
         val trampolinePayload = FinalPayload.createTrampolinePayload(
-            amount = part.amount,
-            totalAmount = paymentAttempt.paymentAmount + paymentAttempt.totalFees(),
+            amount = trampolineAmount,
+            totalAmount = trampolineAmount,
             expiry = trampolineExpiry,
             paymentSecret = paymentAttempt.trampolinePaymentSecret,
             trampolinePacket = trampolineOnion.packet
