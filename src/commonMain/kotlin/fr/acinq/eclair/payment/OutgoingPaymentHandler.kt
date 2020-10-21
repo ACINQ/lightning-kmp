@@ -392,7 +392,11 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             )
         } else {
             // Legacy workaround
-            throw RuntimeException("Not implemented")
+            OutgoingPacket.buildTrampolineToLegacyPacket(
+                invoice = paymentAttempt.invoice,
+                hops = nodeHops,
+                finalPayload = finalPayload
+            )
         }
 
         val trampolinePayload = FinalPayload.createTrampolinePayload(
