@@ -323,12 +323,12 @@ class ClosingTestsCommon {
 
     @Ignore
     fun `recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)`() {
-        TODO("not implemented yet!")
+        TODO("implement this when channels can retrieve htlc infos")
     }
 
     @Ignore
     fun `recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)`() {
-        TODO("not implemented yet!")
+        TODO("implement this when channels can retrieve htlc infos")
     }
 
     @Test
@@ -722,106 +722,12 @@ class ClosingTestsCommon {
 
     @Ignore
     fun `recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published HtlcSuccess tx)`() {
-        val (alice, _, bobCommitTxes) = init(withPayments = true)
-
-        // bob publishes one of his revoked txes
-        val bobRevokedTx = bobCommitTxes.first()
-        val (alice1, aliceActions1) = alice.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobRevokedTx.commitTx.tx)))
-
-        // alice publishes and watches the penalty tx
-        assertTrue { alice1 is Closing } ; alice1 as Closing
-
-        // alice publishes and watches the penalty tx
-        val penalties = aliceActions1.filterIsInstance<PublishTx>().map { it.tx }
-        val claimMainTx = penalties[0]
-        val mainPenaltyTx = penalties[1]
-        // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
-        //        val htlcPenaltyTx = penalties[2]
-
-        penalties.forEach { penaltyTx ->
-            Transaction.correctlySpends(penaltyTx, bobCommitTxes.first().commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        }
-
-        assertEquals(bobCommitTxes.first().commitTx.tx.txid, aliceActions1.watches<WatchConfirmed>()[0].txId)
-        assertEquals(claimMainTx.txid, aliceActions1.watches<WatchConfirmed>()[1].txId)
-        assertEquals(mainPenaltyTx.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[0].outputIndex.toLong())
-        // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
-        //        assertEquals(htlcPenaltyTx.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[1].outputIndex)
-
-        assertEquals(bobRevokedTx.commitTx.tx, alice1.revokedCommitPublished.first().commitTx)
-
-        val (alice2, _) = alice1.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(bobRevokedTx.commitTx.tx),
-            0,
-            0,
-            bobRevokedTx.commitTx.tx
-        )))
-        val (alice3, _) = alice2.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(claimMainTx),
-            0,
-            0,
-            claimMainTx
-        )))
-        val (_, _) = alice3.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(mainPenaltyTx),
-            0,
-            0,
-            mainPenaltyTx
-        )))
-        /* TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
-                val (alice5,_)=alice4.process(WatchReceived(WatchEventSpent(
-                    ByteVector32.Zeroes,
-                    BITCOIN_OUTPUT_SPENT,
-                    htlcPenaltyTx
-                ))) // we published this
-                assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === htlcPenaltyTx.txid)
-                assert(bobRevokedTx.commitTx.tx.txOut.size === 3)
-                val bobHtlcSuccessTx = bobRevokedTx.htlcTxsAndSigs.head.txinfo.tx
-                alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, bobHtlcSuccessTx) // bob published his htlc-success tx
-                assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobHtlcSuccessTx.txid)
-                val claimHtlcDelayedPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx // we publish a tx spending the output of bob's htlc-success tx
-                Transaction.correctlySpends(claimHtlcDelayedPenaltyTx, bobHtlcSuccessTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-                val watchOutput = alice2blockchain.expectMsgType[WatchSpent]
-                assert(watchOutput.txId === claimHtlcDelayedPenaltyTx.txIn.head.outPoint.txid)
-                assert(watchOutput.outputIndex === claimHtlcDelayedPenaltyTx.txIn.head.outPoint.index)
-                alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx), 0, 0, bobHtlcSuccessTx) // bob won
-                alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTx), 0, 0, claimHtlcDelayedPenaltyTx) // but alice claims the htlc output
-                awaitCond(alice.stateName == CLOSED)
-         */
+        TODO("implement this when channels can retrieve htlc infos")
     }
 
     @Ignore
     fun `recv BITCOIN_TX_CONFIRMED (one revoked tx)`() {
-        /*
-        assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelVersion === channelVersion)
-    // bob publishes one of his revoked txes
-    val bobRevokedTx = bobCommitTxes.head
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx.commitTx.tx)
-    // alice publishes and watches the penalty tx
-    val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
-    val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
-    val htlcPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
-    for (penaltyTx <- Seq(claimMainTx, mainPenaltyTx, htlcPenaltyTx)) {
-      Transaction.correctlySpends(penaltyTx, bobRevokedTx.commitTx.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    }
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobRevokedTx.commitTx.tx.txid)
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMainTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === mainPenaltyTx.txIn.head.outPoint.index)
-    assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === htlcPenaltyTx.txIn.head.outPoint.index)
-    alice2blockchain.expectNoMsg(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.commitTx == bobRevokedTx.commitTx.tx)
-
-    // actual test starts here
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobRevokedTx.commitTx.tx), 0, 0, bobRevokedTx.commitTx.tx)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0, claimMainTx)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(mainPenaltyTx), 0, 0, mainPenaltyTx)
-    alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, htlcPenaltyTx)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcPenaltyTx), 0, 0, htlcPenaltyTx)
-    awaitCond(alice.stateName == CLOSED)
-         */
+        TODO("implement this when channels can retrieve htlc infos")
     }
 
     @Test
