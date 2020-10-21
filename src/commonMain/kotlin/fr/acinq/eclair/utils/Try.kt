@@ -1,21 +1,30 @@
 package fr.acinq.eclair.utils
 
 
-sealed class Try<out T> {
+sealed class Try<T> {
     abstract val isSuccess: Boolean
     val isFailure: Boolean get() = !isSuccess
     abstract fun get(): T
+    abstract fun getOrElse(f: () -> T): T
+    abstract fun <R> map(f: (T) -> R): Try<R>
 
-    data class Success<out T>(val result: T) : Try<T>() {
+    data class Success<T>(val result: T) : Try<T>() {
         override val isSuccess: Boolean = true
         override fun get(): T = result
+        override fun getOrElse(f: () -> T): T = result
+        override fun <R> map(f: (T) -> R): Try<R> = runTrying { f(result) }
     }
 
-    data class Failure<out T>(val error: Throwable) : Try<T>() {
+    data class Failure<T>(val error: Throwable) : Try<T>() {
         override val isSuccess: Boolean = false
         override fun get(): T {
             throw error
         }
+
+        override fun getOrElse(f: () -> T): T = f()
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <R> map(f: (T) -> R): Try<R> = this as Try<R>
     }
 }
 

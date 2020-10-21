@@ -1,22 +1,18 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
+import fr.acinq.eclair.channel.CMD_CLOSE
 import fr.acinq.eclair.channel.ChannelState
+import fr.acinq.eclair.channel.ExecuteCommand
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.utils.ServerAddress
-import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.*
+import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -35,6 +31,12 @@ import kotlin.concurrent.thread
 object Node {
     val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
     val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val defaultClosingPrivateKey = run {
+        val master = DeterministicWallet.generate(seed)
+        DeterministicWallet.derivePrivateKey(master, "m/84'/1'/0'/0/0").privateKey
+    }
+    val defaultClosingPubkeyScript = Script.write(Script.pay2wpkh(defaultClosingPrivateKey.publicKey()))
+
     val nodeParams = NodeParams(
         keyManager = keyManager,
         alias = "alice",
@@ -45,6 +47,11 @@ object Node {
             )
         ),
         dustLimit = 100.sat,
+        onChainFeeConf = OnChainFeeConf(
+            maxFeerateMismatch = 1000.0,
+            closeOnOfflineMismatch = true,
+            updateFeeMinDiffRatio = 0.1
+        ),
         maxHtlcValueInFlightMsat = 150000000L,
         maxAcceptedHtlcs = 100,
         expiryDeltaBlocks = CltvExpiryDelta(144),
@@ -129,7 +136,7 @@ object Node {
 
         suspend fun readLoop(peer: Peer) {
             println("node ${nodeParams.nodeId} is ready:")
-            for(tokens in commandChannel) {
+            for (tokens in commandChannel) {
                 println("got tokens $tokens")
                 when (tokens.first()) {
                     "connect" -> {
@@ -144,6 +151,9 @@ object Node {
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
                         peer.send(SendPayment(UUID.randomUUID(), invoice))
+                    }
+                    "close" -> {
+                        runTrying { ByteVector32(Hex.decode(tokens[1])) }.map { GlobalScope.launch { peer.send(WrappedChannelEvent(it, ExecuteCommand(CMD_CLOSE(null)))) } }
                     }
                     else -> {
                         println("I don't understand $tokens")

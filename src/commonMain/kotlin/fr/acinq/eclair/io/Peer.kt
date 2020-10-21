@@ -3,11 +3,10 @@ package fr.acinq.eclair.io
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchEvent
-import fr.acinq.eclair.blockchain.electrum.AskForHeaderSubscriptionUpdate
-import fr.acinq.eclair.blockchain.electrum.AskForStatusUpdate
-import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
+import fr.acinq.eclair.blockchain.electrum.*
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.channel.Connected
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.IncomingPayment
@@ -17,10 +16,12 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
+import fr.acinq.eclair.wire.Ping
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.collect
@@ -39,7 +40,7 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object CheckPaymentsTimeout: PeerEvent()
+object CheckPaymentsTimeout : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -61,15 +62,15 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
-    private val input = Channel<PeerEvent>(10)
-    private val output = Channel<ByteArray>(3)
+    private val input = Channel<PeerEvent>(BUFFERED)
+    private val output = Channel<ByteArray>(BUFFERED)
 
     private val logger = newEclairLogger()
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
 
     private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
-    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(Channel.BUFFERED)
+    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
@@ -95,6 +96,7 @@ class Peer(
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
+    private var onchainFeerates = OnchainFeerates(750, 750, 750, 750, 750)
 
     init {
         val electrumConnectedChannel = watcher.client.openConnectedSubscription()
@@ -112,9 +114,17 @@ class Peer(
             }
         }
         launch {
-            channelsDb.listLocalChannels().forEach {
+            val sub = watcher.openNotificationsSubscription()
+            sub.consumeEach {
+                logger.info { "notification: $it" }
+                input.send(WrappedChannelEvent(it.channelId, fr.acinq.eclair.channel.WatchReceived(it)))
+            }
+        }
+        launch {
+            // we don't restore closed channels
+            channelsDb.listLocalChannels().filterNot { it is Closed }.forEach {
                 logger.info { "restoring $it" }
-                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                 val (state1, actions) = state.process(Restore(it as ChannelState))
                 send(actions)
                 channels = channels + (it.channelId to state1)
@@ -203,13 +213,6 @@ class Peer(
             }
 
             coroutineScope {
-                launch {
-                    val sub = watcher.openNotificationsSubscription()
-                    sub.consumeEach {
-                        logger.info { "notification: $it" }
-                        input.send(WrappedChannelEvent(it.channelId, fr.acinq.eclair.channel.WatchReceived(it)))
-                    }
-                }
                 launch { doPing() }
                 launch { checkPaymentsTimeout() }
                 launch { respond() }
@@ -229,16 +232,17 @@ class Peer(
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
     private suspend fun send(actions: List<ChannelAction>) {
-        actions.forEach {
+        actions.forEach { action ->
             when {
-                it is SendMessage -> {
-                    val encoded = LightningMessage.encode(it.message)
+                action is SendMessage && connected == Connection.ESTABLISHED -> {
+                    val encoded = LightningMessage.encode(action.message)
                     encoded?.let { bin ->
-                        logger.info { "sending ${it.message} encoded as ${Hex.encode(bin)}" }
+                        logger.info { "sending ${action.message} encoded as ${Hex.encode(bin)}" }
                         output.send(bin)
                     }
                 }
-                it is SendWatch -> watcher.watch(it.watch)
+                action is SendWatch -> watcher.watch(action.watch)
+                action is PublishTx -> watcher.publish(action.tx)
                 else -> Unit
             }
         }
@@ -256,7 +260,10 @@ class Peer(
         if (actions1.isEmpty()) return
         val state = actions1.last().data
         logger.info { "storing $state" }
-        channelsDb.addOrUpdateChannel(state as HasCommitments)
+        when (state) {
+            is HasCommitments -> channelsDb.addOrUpdateChannel(state as HasCommitments)
+            else -> logger.warning { "cannot store state $state" }
+        }
     }
 
     private suspend fun handshake(
@@ -342,9 +349,12 @@ class Peer(
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }
                     }
                     msg is OpenChannel -> {
+                        val fundingKeyPath = KeyPath("/1/2/3")
+                        val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
+                        val defaultFinalScriptPubKey = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey).toByteVector()
                         val localParams = LocalParams(
                             nodeParams.nodeId,
-                            KeyPath("/1/2/3"),
+                            fundingKeyPath,
                             nodeParams.dustLimit,
                             nodeParams.maxHtlcValueInFlightMsat,
                             Satoshi(600),
@@ -352,7 +362,7 @@ class Peer(
                             nodeParams.toRemoteDelayBlocks,
                             nodeParams.maxAcceptedHtlcs,
                             false,
-                            ByteVector.empty,
+                            defaultFinalScriptPubKey,
                             PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey(),
                             Features(
                                 setOf(
@@ -368,7 +378,8 @@ class Peer(
                         )
                         val state = WaitForInit(
                             StaticParams(nodeParams, remoteNodeId),
-                            Pair(0, Block.RegtestGenesisBlock.header)
+                            currentTip,
+                            onchainFeerates
                         )
                         val (state1, actions1) = state.process(
                             InitFundee(
@@ -390,7 +401,7 @@ class Peer(
                                 is Try.Success -> {
                                     logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
-                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip)
+                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                                     val (state1, actions1) = state.process(Restore(backup as ChannelState))
                                     send(actions1)
                                     store(actions1)

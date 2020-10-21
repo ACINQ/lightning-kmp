@@ -10,10 +10,10 @@ import kotlinx.coroutines.flow.flow
 @OptIn(ExperimentalStdlibApi::class)
 interface TcpSocket {
 
-    sealed class IOException(override val message: String) : Exception(message) {
-        class ConnectionRefused: IOException("Connection refused")
-        class ConnectionClosed: IOException("Connection closed")
-        class Unknown(message: String?): IOException(message ?: "Unknown")
+    sealed class IOException(override val message: String, cause: Throwable? = null) : Exception(message, cause) {
+        class ConnectionRefused(cause: Throwable? = null): IOException("Connection refused", cause)
+        class ConnectionClosed(cause: Throwable? = null): IOException("Connection closed", cause)
+        class Unknown(message: String?, cause: Throwable? = null): IOException(message ?: "Unknown", cause)
     }
 
     suspend fun send(bytes: ByteArray?, flush: Boolean = true)

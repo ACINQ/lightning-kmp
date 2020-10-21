@@ -900,6 +900,7 @@ data class Shutdown(
         override fun write(message: Shutdown, out: Output) {
             writeBytes(message.channelId, out)
             writeU16(message.scriptPubKey.size(), out)
+            writeBytes(message.scriptPubKey, out)
             writeChannelData(message.channelData, out)
         }
     }

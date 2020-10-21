@@ -2,6 +2,7 @@ package fr.acinq.eclair.io
 
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
+import fr.acinq.eclair.utils.subArray
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Ignore
@@ -19,10 +20,11 @@ class TcpSocketIntegrationTest : EclairTestSuite() {
     }.toByteArray()
 
     @Test
-    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 5.seconds) {
+    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 250.seconds) {
         val socket = TcpSocket.Builder().connect("localhost", 51001)
         socket.send(serverVersionRpc)
-        val size = socket.receiveAvailable(ByteArray(32))
+        val ba = ByteArray(8192)
+        val size = socket.receiveAvailable(ba)
         assertTrue { size > 0 }
         socket.close()
     }
@@ -31,7 +33,7 @@ class TcpSocketIntegrationTest : EclairTestSuite() {
     fun `SSL connection`() = runSuspendTest(timeout = 5.seconds) {
         val socket = TcpSocket.Builder().connect("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
         socket.send(serverVersionRpc)
-        val size = socket.receiveAvailable(ByteArray(32))
+        val size = socket.receiveAvailable(ByteArray(8192))
         assertTrue { size > 0 }
         socket.close()
     }

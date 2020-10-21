@@ -9,9 +9,7 @@ import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.withContext
-import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
 import java.security.cert.X509Certificate
@@ -27,29 +25,34 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
                 if (bytes != null) writeChannel.writeFully(bytes, 0, bytes.size)
                 if (flush) writeChannel.flush()
             } catch (ex: java.io.IOException) {
-                throw TcpSocket.IOException.ConnectionClosed()
-            } catch (t: Throwable) {
-                throw TcpSocket.IOException.Unknown(t.message)
+                throw TcpSocket.IOException.ConnectionClosed(ex)
+            } catch (ex: Throwable) {
+                throw TcpSocket.IOException.Unknown(ex.message, ex)
             }
         }
 
+    private inline fun <R> tryReceive(receive: () -> R): R {
+        try {
+            return receive()
+        } catch (ex: ClosedReceiveChannelException) {
+            throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: SocketException) {
+            throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: Throwable) {
+            throw TcpSocket.IOException.Unknown(ex.message, ex)
+        }
+    }
+
     private suspend fun <R> receive(read: suspend () -> R): R =
         withContext(Dispatchers.IO) {
-            try {
-                read()
-            } catch (_: ClosedReceiveChannelException) {
-                throw TcpSocket.IOException.ConnectionClosed()
-            } catch (_: SocketException) {
-                throw TcpSocket.IOException.ConnectionClosed()
-            } catch (t: Throwable) {
-                throw TcpSocket.IOException.Unknown(t.message)
-            }
+            tryReceive { read() }
         }
 
     override suspend fun receiveFully(buffer: ByteArray): Unit = receive { readChannel.readFully(buffer) }
 
     override suspend fun receiveAvailable(buffer: ByteArray): Int {
-        return readChannel.readAvailable(buffer).takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
+        return tryReceive { readChannel.readAvailable(buffer) }
+            .takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
     }
 
     override fun close() {
