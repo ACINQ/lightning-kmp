@@ -67,14 +67,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun expectedFees(
         targetAmount: MilliSatoshi,
-        channelUpdate: ChannelUpdate
-    ): MilliSatoshi {
-
-        return Eclair.nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, targetAmount)
-    }
-
-    private fun expectedFees(
-        targetAmount: MilliSatoshi,
         params: OutgoingPaymentHandler.TrampolineParams
     ): MilliSatoshi {
 
@@ -93,7 +85,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         run {
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, MilliSatoshi(-1)) // <= negative msats
-            var result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
+            val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
 
             assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
             val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
@@ -113,7 +105,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, invoiceAmount)
-        var result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
 
         assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
         val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
@@ -124,7 +116,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `error conditions - unknown channel failure`() {
 
-        var (alice, bob) = TestsHelper.reachNormal()
+        val (alice, bob) = TestsHelper.reachNormal()
 
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -167,7 +159,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, invoiceAmount)
-        var result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
         assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
         val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
@@ -178,7 +170,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `error conditions - insufficient capacity - fees`() {
 
-        var (alice, bob) = TestsHelper.reachNormal()
+        val (alice, bob) = TestsHelper.reachNormal()
 
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -227,7 +219,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
-        var result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
         assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
         val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
@@ -252,7 +244,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
-        var result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
         assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
         val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
@@ -282,7 +274,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
             val channels = mapOf(alice.channelId to alice)
-            var result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+            val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
             assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
             val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
@@ -291,7 +283,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
             channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
-                var processResult = alice.process(executeCommand)
+                val processResult = alice.process(executeCommand)
 
                 assertTrue { processResult.first is Normal }
                 alice = processResult.first as Normal
@@ -306,7 +298,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
             var channels = mapOf(alice.channelId to alice)
-            var result1 = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+            val result1 = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
             // At first, the result will be progress
             assertTrue { result1 is OutgoingPaymentHandler.SendPaymentResult.Progress }
@@ -320,15 +312,15 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             }.firstOrNull()
 
             assertNotNull(executeCommand)
-            var processResult = alice.process(executeCommand)
+            val processResult = alice.process(executeCommand)
 
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val handleError = processResult.second.filterIsInstance<HandleError>().firstOrNull()
-            assertNotNull(handleError)
+            val localFailure = processResult.second.filterIsInstance<ProcessLocalFailure>().firstOrNull()
+            assertNotNull(localFailure)
 
-            val channelError = WrappedChannelError(alice.channelId, handleError.error, executeCommand)
+            val channelError = WrappedChannelError(alice.channelId, localFailure.error, executeCommand)
             assertNotNull(channelError)
 
             // Now the channelError gets sent back to the OutgoingPaymentHandler.
@@ -365,7 +357,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
             val channels = mapOf(alice.channelId to alice)
-            var result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+            val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
             assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
             val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
 
@@ -373,7 +365,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
             channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
-                var processResult = alice.process(executeCommand)
+                val processResult = alice.process(executeCommand)
 
                 assertTrue { processResult.first is Normal }
                 alice = processResult.first as Normal
@@ -388,7 +380,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
             var channels = mapOf(alice.channelId to alice)
-            var result1 = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+            val result1 = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
             // At first, the result will be progress
             assertTrue { result1 is OutgoingPaymentHandler.SendPaymentResult.Progress }
@@ -402,15 +394,15 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             }.firstOrNull()
 
             assertNotNull(executeCommand)
-            var processResult = alice.process(executeCommand)
+            val processResult = alice.process(executeCommand)
 
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val handleError = processResult.second.filterIsInstance<HandleError>().firstOrNull()
-            assertNotNull(handleError)
+            val localFailure = processResult.second.filterIsInstance<ProcessLocalFailure>().firstOrNull()
+            assertNotNull(localFailure)
 
-            val channelError = WrappedChannelError(alice.channelId, handleError.error, executeCommand)
+            val channelError = WrappedChannelError(alice.channelId, localFailure.error, executeCommand)
             assertNotNull(channelError)
 
             // Now the channelError gets sent back to the OutgoingPaymentHandler.
@@ -439,7 +431,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
-        var allParams = mutableListOf<OutgoingPaymentHandler.TrampolineParams>()
+        val allParams = mutableListOf<OutgoingPaymentHandler.TrampolineParams>()
         run {
             var i = 0
             while (true) {
@@ -510,7 +502,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         run {
-            var result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+            val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
             assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
         }
 

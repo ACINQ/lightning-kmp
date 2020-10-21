@@ -13,25 +13,19 @@ import fr.acinq.eclair.io.WrappedChannelError
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
-import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.incomings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.FinalPayload
 import fr.acinq.eclair.wire.OnionRoutingPacket
 import fr.acinq.eclair.wire.TrampolineExpiryTooSoon
 import fr.acinq.eclair.wire.TrampolineFeeInsufficient
 
-
-class OutgoingPaymentHandler(
-    val nodeParams: NodeParams
-) {
+class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
     enum class FailureReason {
         INVALID_PARAMETER, // e.g. (paymentAmount < 0), (recycled paymentId)
         NO_AVAILABLE_CHANNELS, // There are zero channels in Normal mode
         INSUFFICIENT_BALANCE, // Not enough capacity in channel(s) to support payment
         NO_ROUTE_TO_RECIPIENT, // Trampoline was unable to find an acceptable route
-        PAYMENT_FAILURE, // Some other error occurred
     }
 
     sealed class SendPaymentResult {
@@ -42,12 +36,12 @@ class OutgoingPaymentHandler(
             val payment: SendPayment,
             val trampolineFees: MilliSatoshi,
             val actions: List<PeerEvent>
-        ): SendPaymentResult()
+        ) : SendPaymentResult()
 
         data class Failure(
             val payment: SendPayment,
             val reason: FailureReason
-        ): SendPaymentResult()
+        ) : SendPaymentResult()
     }
 
     sealed class ProcessFailureResult {
@@ -56,14 +50,14 @@ class OutgoingPaymentHandler(
             val payment: SendPayment,
             val trampolineFees: MilliSatoshi,
             val actions: List<PeerEvent>
-        ): ProcessFailureResult()
+        ) : ProcessFailureResult()
 
         data class Failure(
             val payment: SendPayment,
             val reason: FailureReason
-        ): ProcessFailureResult()
+        ) : ProcessFailureResult()
 
-        object UnknownPaymentFailure: ProcessFailureResult()
+        object UnknownPaymentFailure : ProcessFailureResult()
     }
 
     sealed class ProcessFulfillResult {
@@ -71,14 +65,14 @@ class OutgoingPaymentHandler(
         data class Success(
             val payment: SendPayment,
             val trampolineFees: MilliSatoshi
-        ): ProcessFulfillResult()
+        ) : ProcessFulfillResult()
 
         data class Failure(
             val payment: SendPayment,
             val reason: FailureReason
-        ): ProcessFulfillResult()
+        ) : ProcessFulfillResult()
 
-        object UnknownPaymentFailure: ProcessFulfillResult()
+        object UnknownPaymentFailure : ProcessFulfillResult()
     }
 
     /**
@@ -92,7 +86,7 @@ class OutgoingPaymentHandler(
         val cltvExpiryDelta: CltvExpiryDelta
     ) {
         constructor(feeBaseSat: Long, feePercent: Double, cltvExpiryDelta: Int) :
-            this(Satoshi(feeBaseSat), feePercent, CltvExpiryDelta(cltvExpiryDelta))
+                this(Satoshi(feeBaseSat), feePercent, CltvExpiryDelta(cltvExpiryDelta))
 
         companion object {
 
@@ -122,7 +116,7 @@ class OutgoingPaymentHandler(
         val amount: MilliSatoshi,
         val trampolineFees: MilliSatoshi,
         val cltvExpiryDelta: CltvExpiryDelta,
-        val secrets:  List<Pair<ByteVector32, PublicKey>>
+        val secrets: List<Pair<ByteVector32, PublicKey>>
     ) {
         init {
             require(amount >= trampolineFees) { "amount is invalid" }
@@ -229,7 +223,7 @@ class OutgoingPaymentHandler(
     }
 
     fun processRemoteFailure(
-        event: ProcessFailure, // ProcessFail || ProcessFailMalformed
+        event: ProcessRemoteFailure,
         channels: Map<ByteVector32, ChannelState>,
         currentBlockHeight: Int
     ): ProcessFailureResult {
@@ -253,7 +247,7 @@ class OutgoingPaymentHandler(
                 is Try.Failure -> null
                 is Try.Success -> decrypted.result.failureMessage
             }
-            isChannelFailure = when(failureMessage) {
+            isChannelFailure = when (failureMessage) {
                 is TrampolineFeeInsufficient -> false
                 is TrampolineExpiryTooSoon -> false
                 else -> true
@@ -303,7 +297,6 @@ class OutgoingPaymentHandler(
             return ProcessFulfillResult.UnknownPaymentFailure
         }
 
-        // Now that all the parts have succeeded, we can announce success
         pending.remove(paymentAttempt.paymentId)
         return ProcessFulfillResult.Success(
             payment = paymentAttempt.sendPayment,
@@ -334,7 +327,7 @@ class OutgoingPaymentHandler(
             }
             result
         }
-        if (availableChannels.size == 0) {
+        if (availableChannels.isEmpty()) {
             return Either.Left(FailureReason.NO_AVAILABLE_CHANNELS)
         }
 

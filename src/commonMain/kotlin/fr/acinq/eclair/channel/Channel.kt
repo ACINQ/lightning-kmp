@@ -70,21 +70,21 @@ data class SendMessage(val message: LightningMessage) : ChannelAction()
 data class SendWatch(val watch: Watch) : ChannelAction()
 data class ProcessCommand(val command: Command) : ChannelAction()
 data class ProcessAdd(val add: UpdateAddHtlc) : ChannelAction()
-sealed class ProcessFailure() : ChannelAction() {
+sealed class ProcessRemoteFailure : ChannelAction() {
     abstract val channelId: ByteVector32
     abstract val paymentId: UUID
 }
-data class ProcessFail(val fail: UpdateFailHtlc, override val paymentId: UUID) : ProcessFailure() {
+data class ProcessFail(val fail: UpdateFailHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
     override val channelId: ByteVector32 get() = fail.channelId
 }
-data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val paymentId: UUID) : ProcessFailure() {
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
     override val channelId: ByteVector32 get() = fail.channelId
 }
+data class ProcessLocalFailure(val error: Throwable) : ChannelAction()
 data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : ChannelAction()
-data class HandleError(val error: Throwable) : ChannelAction()
 data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : ChannelAction()
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelAction()
 data class PublishTx(val tx: Transaction) : ChannelAction()
@@ -747,7 +747,7 @@ data class WaitForAcceptChannel(override val staticParams: StaticParams, overrid
                     Helpers.validateParamsFunder(staticParams.nodeParams, lastSent, event.message)
                 }
                 when (result) {
-                    is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                    is Try.Failure -> Pair(this, listOf(ProcessLocalFailure(result.error)))
                     is Try.Success -> {
                         // TODO: check equality of temporaryChannelId? or should be done upstream
                         val remoteParams = RemoteParams(
@@ -888,7 +888,7 @@ data class WaitForFundingSigned(
                 val result = Transactions.checkSpendable(signedLocalCommitTx)
                 when (result) {
                     is Try.Failure -> {
-                        Pair(this, listOf(HandleError(result.error)))
+                        Pair(this, listOf(ProcessLocalFailure(result.error)))
                     }
                     is Try.Success -> {
                         val commitInput = localCommitTx.input
@@ -975,7 +975,7 @@ data class WaitForFundingConfirmed(
                             if (staticParams.nodeParams.chainHash == Block.RegtestGenesisBlock.hash) {
                                 logger.error { "ignoring this error on regtest" }
                             } else {
-                                return Pair(this, listOf(HandleError(result.error)))
+                                return Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
@@ -1102,7 +1102,7 @@ data class Normal(
                         // TODO: handle shutdown in progress
                         when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
                             is Try.Failure -> {
-                                Pair(this, listOf(HandleError(result.error)))
+                                Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
@@ -1117,7 +1117,7 @@ data class Normal(
                     is CMD_FULFILL_HTLC -> {
                         when (val result = commitments.sendFulfill(event.command)) {
                             is Try.Failure -> {
-                                Pair(this, listOf(HandleError(result.error)))
+                                Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
@@ -1132,7 +1132,7 @@ data class Normal(
                     is CMD_FAIL_HTLC -> {
                         when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
                             is Try.Failure -> {
-                                Pair(this, listOf(HandleError(result.error)))
+                                Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
@@ -1157,7 +1157,7 @@ data class Normal(
                             else -> {
                                 when (val result = commitments.sendCommit(keyManager, logger)) {
                                     is Try.Failure -> {
-                                        Pair(this, listOf(HandleError(result.error)))
+                                        Pair(this, listOf(ProcessLocalFailure(result.error)))
                                     }
                                     is Try.Success -> {
                                         val commitments1 = result.result.first
@@ -1189,7 +1189,7 @@ data class Normal(
                     is UpdateAddHtlc -> {
                         val htlc = event.message
                         when (val result = commitments.receiveAdd(htlc)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                            is Try.Failure -> Pair(this, listOf(ProcessLocalFailure(result.error)))
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result)
                                 var actions = listOf<ChannelAction>()
@@ -1200,21 +1200,21 @@ data class Normal(
                     is UpdateFulfillHtlc -> {
                         // README: we consider that a payment is fulfilled as soon as we have the preimage (we don't wait for a commit signature)
                         when (val result = commitments.receiveFulfill(event.message)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                            is Try.Failure -> Pair(this, listOf(ProcessLocalFailure(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message, result.result.second)))
                         }
                     }
                     is UpdateFailHtlc -> {
                         // README: we don't relay payments, so we don't need to send failures upstream
                         when (val result = commitments.receiveFail(event.message)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error)))
+                            is Try.Failure -> Pair(this, listOf(ProcessLocalFailure(result.error)))
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
                         }
                     }
                     is CommitSig -> {
                         // README: we don't relay payments, so we don't need to send failures upstream
                         when (val result = commitments.receiveCommit(event.message, keyManager, logger)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
+                            is Try.Failure -> Pair(this, listOf(ProcessLocalFailure(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 if (result.result.first.availableBalanceForSend() != commitments.availableBalanceForSend()) {
                                     // TODO: publish "balance updated" event
@@ -1233,7 +1233,7 @@ data class Normal(
                     }
                     is RevokeAndAck -> {
                         when (val result = commitments.receiveRevocation(event.message)) {
-                            is Try.Failure -> Pair(this, listOf(HandleError(result.error))) // TODO: handle invalid sig!!
+                            is Try.Failure -> Pair(this, listOf(ProcessLocalFailure(result.error))) // TODO: handle invalid sig!!
                             is Try.Success -> {
                                 // TODO: handle shutdown
                                 val nextState = this.copy(commitments = result.result.first)

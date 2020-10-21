@@ -33,14 +33,14 @@ data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSa
 
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent): PeerEvent()
-object CheckPaymentsTimeout: PeerEvent()
+data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
+object CheckPaymentsTimeout : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
-data class PaymentProgress(val payment: SendPayment, val trampolineFees: MilliSatoshi) : PeerListenerEvent()
-data class PaymentSent(val payment: SendPayment, val trampolineFees: MilliSatoshi) : PeerListenerEvent()
+data class PaymentProgress(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
+data class PaymentSent(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val payment: SendPayment, val reason: OutgoingPaymentHandler.FailureReason) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
@@ -53,7 +53,7 @@ class Peer(
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
-        private val prefix: Byte = 0x00
+        private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
     }
 
@@ -249,7 +249,7 @@ class Peer(
                 is ProcessCommand -> {
                     input.send(WrappedChannelEvent(channelId, ExecuteCommand(it.command)))
                 }
-                is HandleError -> {
+                is ProcessLocalFailure -> {
                     input.send(WrappedChannelError(channelId, it.error, trigger))
                 }
                 else -> Unit
@@ -464,8 +464,7 @@ class Peer(
 
                                     val result = incomingPaymentHandler.processAdd(htlc, incomingPayment, state1.currentBlockHeight)
 
-                                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED ||
-                                        result.status == IncomingPaymentHandler.Status.REJECTED) {
+                                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED || result.status == IncomingPaymentHandler.Status.REJECTED) {
                                         pendingIncomingPayments.remove(htlc.paymentHash)
                                     }
                                     if (result.status == IncomingPaymentHandler.Status.ACCEPTED) {
@@ -475,7 +474,7 @@ class Peer(
                                         input.send(action)
                                     }
                                 }
-                                it is ProcessFailure -> {
+                                it is ProcessRemoteFailure -> {
                                     val result = outgoingPaymentHandler.processRemoteFailure(it, channels, currentTip.first)
                                     when (result) {
                                         is OutgoingPaymentHandler.ProcessFailureResult.Progress -> {
@@ -592,8 +591,8 @@ class Peer(
                     is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
                         logger.error { "UnknownPaymentFailure" }
                     }
-                    null -> { // error that didn't affect an outgoing payment
-                        Unit
+                    null -> {
+                        // error that didn't affect an outgoing payment
                     }
                 }
             }
