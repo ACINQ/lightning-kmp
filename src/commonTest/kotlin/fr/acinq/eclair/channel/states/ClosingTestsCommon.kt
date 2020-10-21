@@ -119,7 +119,7 @@ class ClosingTestsCommon {
         assertEquals(aliceClosing, alice1)
     }
 
-    @Ignore
+    @Test
     fun `recv BITCOIN_OUTPUT_SPENT`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, ra1, _) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -138,7 +138,7 @@ class ClosingTestsCommon {
             txOut = emptyList(),
             lockTime = 0)
 
-        val (alice1, _) = aliceClosing.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, claimHtlcSuccessFromCommitTx)))
+        val (alice1, _) = aliceClosing.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_OUTPUT_SPENT, claimHtlcSuccessFromCommitTx)))
         assertEquals(aliceClosing, alice1)
 
         // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
@@ -154,7 +154,7 @@ class ClosingTestsCommon {
             txOut = emptyList(),
             lockTime = 0
         )
-        val (alice2, _) = alice1.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, claimHtlcSuccessTx)))
+        val (alice2, _) = alice1.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_OUTPUT_SPENT, claimHtlcSuccessTx)))
         assertEquals(aliceClosing, alice2) // this was a no-op
     }
 
