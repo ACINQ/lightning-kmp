@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.FailurePacket
-import fr.acinq.eclair.crypto.sphinx.PacketAndSecrets
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.io.WrappedChannelError
@@ -82,22 +81,22 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
      */
     data class TrampolineParams(
         val feeBaseSat: Satoshi,
-        val feePercent: Double,
+        val feePercent: Float,
         val cltvExpiryDelta: CltvExpiryDelta
     ) {
-        constructor(feeBaseSat: Long, feePercent: Double, cltvExpiryDelta: Int) :
+        constructor(feeBaseSat: Long, feePercent: Float, cltvExpiryDelta: Int) :
                 this(Satoshi(feeBaseSat), feePercent, CltvExpiryDelta(cltvExpiryDelta))
 
         companion object {
 
             // Todo: Fetch this from the server first, and have it passed into us somehow...
             val attempts = listOf(
-                TrampolineParams(0, 0.0, 576),
-                TrampolineParams(1, 0.0001, 576),
-                TrampolineParams(3, 0.0001, 576),
-                TrampolineParams(5, 0.0005, 576),
-                TrampolineParams(5, 0.001, 576),
-                TrampolineParams(5, 0.0012, 576)
+                TrampolineParams(0, 0.0f, 576),
+                TrampolineParams(1, 0.0001f, 576),
+                TrampolineParams(3, 0.0001f, 576),
+                TrampolineParams(5, 0.0005f, 576),
+                TrampolineParams(5, 0.001f, 576),
+                TrampolineParams(5, 0.0012f, 576)
             )
 
             fun get(failedAttempts: Int): TrampolineParams? {
@@ -138,6 +137,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         val paymentId: UUID = sendPayment.paymentId
         val invoice: PaymentRequest = sendPayment.paymentRequest
         val paymentAmount: MilliSatoshi = sendPayment.paymentAmount
+        val fees: MilliSatoshi = trampolineParams.feeBaseSat.toMilliSatoshi() + (paymentAmount * trampolineParams.feePercent)
 
         /**
          * Removes the corresponding TrampolinePaymentPart, and adds the channelId to the failed list.
@@ -150,10 +150,6 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             }
 
             failedChannelIds.add(channelId)
-        }
-
-        fun totalFees(): MilliSatoshi {
-            return trampolineParams.feeBaseSat.toMilliSatoshi() + (paymentAmount * trampolineParams.feePercent)
         }
     }
 
@@ -185,7 +181,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             is Either.Left -> SendPaymentResult.Failure(sendPayment, either.value)
             is Either.Right -> SendPaymentResult.Progress(
                 payment = paymentAttempt.sendPayment,
-                trampolineFees = paymentAttempt.totalFees(),
+                trampolineFees = paymentAttempt.fees,
                 actions = either.value
             )
         }
@@ -205,18 +201,18 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         val paymentAttempt = pending[cmdAddHtlc.paymentId]
         if (paymentAttempt == null) {
-            logger.error { "CMD_ADD_HTLC.paymentId doesn't match any known paymentAttempt" }
+            logger.error { "paymentId doesn't match any known payment attempt" }
             return ProcessFailureResult.UnknownPaymentFailure
         }
 
-        // Mark the channel as failed
         paymentAttempt.fail(event.channelId)
+        pending.remove(paymentAttempt.paymentId)
 
         return when (val either = setupPaymentAttempt(paymentAttempt, channels, currentBlockHeight)) {
             is Either.Left -> ProcessFailureResult.Failure(paymentAttempt.sendPayment, either.value)
             is Either.Right -> ProcessFailureResult.Progress(
                 payment = paymentAttempt.sendPayment,
-                trampolineFees = paymentAttempt.totalFees(),
+                trampolineFees = paymentAttempt.fees,
                 actions = either.value
             )
         }
@@ -230,49 +226,46 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         val paymentAttempt = pending[event.paymentId]
         if (paymentAttempt == null) {
-            logger.error { "ProcessFailure.paymentId doesn't match any known paymentAttempt" }
+            logger.error { "paymentId doesn't match any known payment attempt" }
             return ProcessFailureResult.UnknownPaymentFailure
         }
 
-        // What is the failure reason ?
-        // - is trampoline_fee_insufficient || is trampoline_expiry_too_soon -> next trampolineParams
-        // - else -> mark channel as failed (without increasing fees)
-
-        var isChannelFailure = true
-        val part = paymentAttempt.parts.firstOrNull { it.channelId == event.channelId }
-        if (part != null && event is ProcessFail) {
-
-            val decrypted = FailurePacket.decrypt(event.fail.reason.toByteArray(), part.secrets)
-            val failureMessage = when (decrypted) {
-                is Try.Failure -> null
-                is Try.Success -> decrypted.result.failureMessage
+        // There are only two retriable remote failures: trampoline_fee_insufficient or trampoline_expiry_too_soon.
+        // Otherwise we must fail the payment.
+        val shouldRetry = when (event) {
+            is ProcessFail -> {
+                val part = paymentAttempt.parts.firstOrNull { it.channelId == event.channelId }
+                if (part != null) {
+                    when (val decrypted = FailurePacket.decrypt(event.fail.reason.toByteArray(), part.secrets)) {
+                        is Try.Success -> {
+                            val failure = decrypted.result.failureMessage
+                            failure == TrampolineFeeInsufficient || failure == TrampolineExpiryTooSoon
+                        }
+                        is Try.Failure -> false
+                    }
+                } else {
+                    false
+                }
             }
-            isChannelFailure = when (failureMessage) {
-                is TrampolineFeeInsufficient -> false
-                is TrampolineExpiryTooSoon -> false
-                else -> true
-            }
+            is ProcessFailMalformed -> false
         }
 
-        var nextPaymentAttempt: PaymentAttempt? = null
-        if (isChannelFailure) {
-
-            paymentAttempt.fail(event.channelId) // mark channel as failed
-            nextPaymentAttempt = paymentAttempt // and try again with same fee structure
-
-        } else {
-
-            val failedAttempts = paymentAttempt.failedAttempts + 1
-            val trampolineParams = TrampolineParams.get(failedAttempts) // increase fee structure
-            if (trampolineParams != null) {
-                nextPaymentAttempt = paymentAttempt.copy(
-                    trampolineParams = trampolineParams,
-                    failedAttempts = failedAttempts
-                )
+        val nextPaymentAttempt = when (shouldRetry) {
+            true -> {
+                // increase fee structure
+                val failedAttempts = paymentAttempt.failedAttempts + 1
+                TrampolineParams.get(failedAttempts)?.let { trampolineParams ->
+                    paymentAttempt.copy(
+                        trampolineParams = trampolineParams,
+                        failedAttempts = failedAttempts
+                    )
+                }
             }
+            false -> null
         }
 
         pending.remove(paymentAttempt.paymentId)
+
         if (nextPaymentAttempt == null) {
             return ProcessFailureResult.Failure(paymentAttempt.sendPayment, FailureReason.NO_ROUTE_TO_RECIPIENT)
         }
@@ -281,7 +274,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             is Either.Left -> ProcessFailureResult.Failure(nextPaymentAttempt.sendPayment, either.value)
             is Either.Right -> ProcessFailureResult.Progress(
                 payment = nextPaymentAttempt.sendPayment,
-                trampolineFees = nextPaymentAttempt.totalFees(),
+                trampolineFees = nextPaymentAttempt.fees,
                 actions = either.value
             )
         }
@@ -293,14 +286,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         val paymentAttempt = pending[event.paymentId]
         if (paymentAttempt == null) {
-            logger.error { "ProcessFail.origin doesn't match any known paymentAttempt" }
+            logger.error { "paymentId doesn't match any known payment attempt" }
             return ProcessFulfillResult.UnknownPaymentFailure
         }
 
         pending.remove(paymentAttempt.paymentId)
         return ProcessFulfillResult.Success(
             payment = paymentAttempt.sendPayment,
-            trampolineFees = paymentAttempt.totalFees()
+            trampolineFees = paymentAttempt.fees
         )
     }
 
@@ -310,67 +303,39 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         currentBlockHeight: Int
     ): Either<FailureReason, List<PeerEvent>> {
 
-        val recipientAmount = paymentAttempt.paymentAmount
-        val trampolineFees = paymentAttempt.totalFees()
+        val amountToSend = paymentAttempt.paymentAmount + paymentAttempt.fees
 
-        var availableChannels = channels.values.filterIsInstance<Normal>().filterNot {
+        val availableChannels = channels.values.filterIsInstance<Normal>().filterNot {
             paymentAttempt.failedChannelIds.contains(it.channelId)
         }.filter {
-            var result = true
-            if ((recipientAmount + trampolineFees) < it.channelUpdate.htlcMinimumMsat) {
-                result = false
-            }
-            it.channelUpdate.htlcMaximumMsat?.let { htlcMaximumMsat ->
-                if ((recipientAmount + trampolineFees) > htlcMaximumMsat) {
-                    result = false
-                }
-            }
-            result
+            val htlcMinOk = amountToSend >= it.channelUpdate.htlcMinimumMsat
+            val htlcMaxOk = it.channelUpdate.htlcMaximumMsat?.let { htlcMax -> amountToSend <= htlcMax } ?: true
+            htlcMinOk && htlcMaxOk
         }
         if (availableChannels.isEmpty()) {
             return Either.Left(FailureReason.NO_AVAILABLE_CHANNELS)
         }
 
-        // Calculating the `availableBalanceForSend` in each channel requires a bit of work.
-        // And we need to reference this info repeatedly below, so we calculate it once here.
-        val channelBalances = availableChannels.associateBy(keySelector = {
-            it.channelId
-        }, valueTransform = {
-            it.commitments.availableBalanceForSend()
-        })
-
-        // Sort the channels by send capacity.
-        // The channel with the highest/most availableForSend will be at the beginning of the array (index 0)
-
-        availableChannels = availableChannels.sortedWith(compareBy<Normal> {
-            channelBalances[it.channelId]!!
-        }.reversed().thenBy {
-            // If multiple channels have the same balance, we use shortChannelId to sort deterministically
-            it.shortChannelId
-        })
-
-        channelBalances.forEach {
-            logger.info { "channel(${it.key}): available for send = ${it.value}" }
+        val candidateChannels = availableChannels.map {
+            val balance = it.commitments.availableBalanceForSend()
+            logger.info { "channel(${it.channelId}): available for send = $balance" }
+            Pair(it, balance)
+        }.filter {
+            amountToSend <= it.second
+        }.sortedBy {
+            it.second
+        }.reversed()
+        if (candidateChannels.isEmpty()) {
+            return Either.Left(FailureReason.INSUFFICIENT_BALANCE)
         }
 
         // Phase 1: No mpp.
         // We're only sending over a single channel for right now.
 
-        val selectedChannel = availableChannels[0] // already tested for empty array above
-        val availableForSend = channelBalances[selectedChannel.channelId]!!
-
-        if ((recipientAmount + trampolineFees) > availableForSend) {
-            logger.error {
-                "insufficient capacity to send payment:" +
-                        " attempted(${recipientAmount + trampolineFees})" +
-                        " available(${availableForSend})"
-            }
-            return Either.Left(FailureReason.INSUFFICIENT_BALANCE)
-        }
-
+        val selectedChannel = candidateChannels.first() // already tested for empty array above
         val actions = listOf<PeerEvent>(
             // createHtlc: part => (onion w/ trampoline) => CMD_ADD_HTLC => WrappedChannelEvent
-            createHtlc(selectedChannel, paymentAttempt, currentBlockHeight)
+            createHtlc(selectedChannel.first, paymentAttempt, currentBlockHeight)
         )
 
         pending[paymentAttempt.paymentId] = paymentAttempt
@@ -413,24 +378,18 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
                 nodeId = channel.staticParams.remoteNodeId, // trampoline node (acinq)
                 nextNodeId = paymentAttempt.invoice.nodeId, // final recipient
                 cltvExpiryDelta = paymentAttempt.trampolineParams.cltvExpiryDelta,
-                fee = paymentAttempt.totalFees()
+                fee = paymentAttempt.fees
             )
         )
 
-        val trampolineAmount: MilliSatoshi
-        val trampolineExpiry: CltvExpiry
-        val trampolineOnion: PacketAndSecrets
-        if (recipientSupportsTrampoline) {
+        val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (recipientSupportsTrampoline) {
             // Full trampoline! Full privacy!
-            val triple = OutgoingPacket.buildPacket(
+            OutgoingPacket.buildPacket(
                 paymentHash = paymentAttempt.invoice.paymentHash,
                 hops = nodeHops,
                 finalPayload = finalPayload,
                 payloadLength = OnionRoutingPacket.TrampolinePacketLength
             )
-            trampolineAmount = triple.first
-            trampolineExpiry = triple.second
-            trampolineOnion = triple.third
         } else {
             // Legacy workaround
             throw RuntimeException("Not implemented")
@@ -461,7 +420,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         val part = TrampolinePaymentPart(
             channelId = channel.channelId,
             amount = trampolineAmount,
-            trampolineFees = paymentAttempt.totalFees(),
+            trampolineFees = paymentAttempt.fees,
             cltvExpiryDelta = paymentAttempt.trampolineParams.cltvExpiryDelta,
             secrets = secrets
         )

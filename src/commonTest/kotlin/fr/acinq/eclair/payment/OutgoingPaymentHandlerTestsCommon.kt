@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.FailurePacket
@@ -12,7 +11,6 @@ import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.io.WrappedChannelError
 import fr.acinq.eclair.io.WrappedChannelEvent
-import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -65,14 +63,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         return makeInvoice(recipientPrivKey, amount, supportsTrampoline, timestamp, expirySeconds)
     }
 
-    private fun expectedFees(
-        targetAmount: MilliSatoshi,
-        params: OutgoingPaymentHandler.TrampolineParams
-    ): MilliSatoshi {
-
-        return params.feeBaseSat.toMilliSatoshi() + (targetAmount * params.feePercent)
-    }
-
     @Test
     fun `error conditions - bad paymentAmount`() {
 
@@ -83,19 +73,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val invoice = makeInvoice(recipient = bob, amount = invoiceAmount, supportsTrampoline = true)
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
-        run {
-            val sendPayment = SendPayment(UUID.randomUUID(), invoice, MilliSatoshi(-1)) // <= negative msats
-            val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
-
-            assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-            val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INVALID_PARAMETER }
-        }
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, MilliSatoshi(-1)) // <= negative msats
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.INVALID_PARAMETER))
     }
 
     @Test
-    fun `error conditions - no available channels - capacity`() {
+    fun `error conditions - no available channels`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
@@ -105,19 +89,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, invoiceAmount)
-        val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
-
-        assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-        val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
-
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(alice.channelId to Offline(alice)), currentBlockHeight)
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS))
     }
 
     @Test
     fun `error conditions - unknown channel failure`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
-
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
 
@@ -139,11 +118,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-
-            assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Failure }
-            val failure = result as OutgoingPaymentHandler.ProcessFailureResult.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
+            assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_ROUTE_TO_RECIPIENT))
         }
     }
 
@@ -160,11 +135,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, invoiceAmount)
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
-
-        assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-        val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
-
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INSUFFICIENT_BALANCE }
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.INSUFFICIENT_BALANCE))
     }
 
     @Test
@@ -194,11 +165,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-
-            assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Failure }
-            val failure = result as OutgoingPaymentHandler.ProcessFailureResult.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.INSUFFICIENT_BALANCE }
+            assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.INSUFFICIENT_BALANCE))
         }
     }
 
@@ -220,11 +187,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
-
-        assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-        val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
-
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS))
     }
 
     @Test
@@ -245,15 +208,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
-
-        assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Failure }
-        val failure = result as OutgoingPaymentHandler.SendPaymentResult.Failure
-
-        assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS))
     }
 
     @Test
-    fun `error conditions - channel cap restrictions - maxAccpetedHtlcs`() {
+    fun `error conditions - channel cap restrictions - maxAcceptedHtlcs`() {
 
         var (alice, bob) = TestsHelper.reachNormal()
 
@@ -292,7 +251,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
 
             // Send payment 2 of 2.
-            // This should exceed the configured maxAccpetedHtlcs.
+            // This should exceed the configured maxAcceptedHtlcs.
 
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
@@ -327,11 +286,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             channels = mapOf(alice.channelId to alice)
             val result2 = outgoingPaymentHandler.processLocalFailure(channelError, channels, currentBlockHeight)
-
-            assertTrue { result2 is OutgoingPaymentHandler.ProcessFailureResult.Failure }
-            val failure = result2 as OutgoingPaymentHandler.ProcessFailureResult.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
+            assertEquals(result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS))
         }
     }
 
@@ -409,16 +364,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             channels = mapOf(alice.channelId to alice)
             val result2 = outgoingPaymentHandler.processLocalFailure(channelError, channels, currentBlockHeight)
-
-            assertTrue { result2 is OutgoingPaymentHandler.ProcessFailureResult.Failure }
-            val failure = result2 as OutgoingPaymentHandler.ProcessFailureResult.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS }
+            assertEquals(result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_AVAILABLE_CHANNELS))
         }
     }
 
     @Test
-    fun `increase trampolineFees according to schedule`() {
+    fun `increase trampoline fees according to schedule`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
@@ -430,35 +381,28 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val sendPayment = SendPayment(paymentId, invoice, invoiceAmount)
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
+        // these fees were calculated based on the default trampoline parameters for an amount of 100 sat
+        val expectedFees = listOf(
+            0.msat,
+            1010.msat,
+            3010.msat,
+            5050.msat,
+            5100.msat,
+            5120.msat,
+        )
 
-        val allParams = mutableListOf<OutgoingPaymentHandler.TrampolineParams>()
-        run {
-            var i = 0
-            while (true) {
-                val params = OutgoingPaymentHandler.TrampolineParams.get(i++)
-                if (params == null) {
-                    break
-                } else {
-                    allParams.add(params)
-                }
-            }
-        }
-
-        allParams.forEachIndexed { idx, params ->
-
+        for (idx in OutgoingPaymentHandler.TrampolineParams.attempts.indices) {
             if (idx == 0) {
                 val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
                 assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
                 val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
-
-                val expectedTrampolineFees = expectedFees(sendPayment.paymentAmount, params)
-                assertTrue { progress.trampolineFees == expectedTrampolineFees }
+                assertEquals(progress.trampolineFees, expectedFees[idx])
 
             } else {
-                val lastPart = outgoingPaymentHandler.pendingPaymentAttempt(paymentId)!!.parts[0]
+                val previousPart = outgoingPaymentHandler.pendingPaymentAttempt(paymentId)!!.parts[0]
 
-                val reason = FailurePacket.create(lastPart.secrets[0].first, TrampolineFeeInsufficient)
+                val reason = FailurePacket.create(previousPart.secrets[0].first, TrampolineFeeInsufficient)
                 val updateFailHtlc = UpdateFailHtlc(alice.channelId, 0, reason.toByteVector())
                 val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
@@ -466,9 +410,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
                 assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Progress }
                 val progress = result as OutgoingPaymentHandler.ProcessFailureResult.Progress
-
-                val expectedTrampolineFees = expectedFees(sendPayment.paymentAmount, params)
-                assertTrue { progress.trampolineFees == expectedTrampolineFees }
+                assertEquals(progress.trampolineFees, expectedFees[idx])
             }
         }
 
@@ -480,11 +422,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-
-            assertTrue { result is OutgoingPaymentHandler.ProcessFailureResult.Failure }
-            val failure = result as OutgoingPaymentHandler.ProcessFailureResult.Failure
-
-            assertTrue { failure.reason == OutgoingPaymentHandler.FailureReason.NO_ROUTE_TO_RECIPIENT }
+            assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, OutgoingPaymentHandler.FailureReason.NO_ROUTE_TO_RECIPIENT))
         }
     }
 
@@ -515,27 +453,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
     }
 
-    private fun decryptNodeRelay(
-        onion: OnionRoutingPacket,
-        paymentHash: ByteVector32,
-        privateKey: PrivateKey
-    ): Triple<FinalPayload, NodeRelayPayload, OnionRoutingPacket> {
-        val decrypted = Sphinx.peel(privateKey, paymentHash, onion, OnionRoutingPacket.PaymentPacketLength).right!!
-        assertTrue(decrypted.isLastPacket)
-        val outerPayload = FinalPayload.read(ByteArrayInput(decrypted.payload.toByteArray()))
-        assertTrue(outerPayload is FinalTlvPayload)
-        val trampolineOnion = outerPayload.records.get<OnionTlv.TrampolineOnion>()
-        assertNotNull(trampolineOnion)
-        val decryptedInner = Sphinx.peel(
-            privateKey,
-            paymentHash,
-            trampolineOnion.packet,
-            OnionRoutingPacket.TrampolinePacketLength
-        ).right!!
-        val innerPayload = NodeRelayPayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
-        return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
-    }
-
     @Test
     fun `createHtlc - full trampoline`() {
 
@@ -549,7 +466,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val channels = mapOf(channel.channelId to channel)
 
         val privKeyB = TestConstants.Bob.nodeParams.nodePrivateKey
-        val pubKeyB = privKeyB.publicKey()
         val privKeyC = Eclair.randomKey()
         val pubKeyC = privKeyC.publicKey()
 
@@ -566,11 +482,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val expectedAmountAtB = targetAmount
         val expectedAmountAtC = targetAmount
 
-        val expectedExpiryDeltaAtC = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
-        val expectedExpiryDeltaAtB = expectedExpiryDeltaAtC + trampolineParams.cltvExpiryDelta
-
-        val expectedExpiryAtC = expectedExpiryDeltaAtC.toCltvExpiry(blockHeight)
-        val expectedExpiryAtB = expectedExpiryDeltaAtB.toCltvExpiry(blockHeight)
+        val expectedExpiryAtC = invoice.minFinalExpiryDelta!!.toCltvExpiry(blockHeight)
+        val expectedExpiryAtB = expectedExpiryAtC + trampolineParams.cltvExpiryDelta
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(channel.staticParams.nodeParams)
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
@@ -591,10 +504,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // When nodeB receives the packet, it will be decrypted, and we expect to find:
         // - isLastPacket == true (last on channel-hop sequence)
-        // - contains in inner trampoline onion
+        // - contains an inner trampoline onion
         // - trampoline packet requests a trampoline-forward to nodeC
 
-        val (outerB, innerB, packetC) = decryptNodeRelay(cmdAddHtlc.onion, cmdAddHtlc.paymentHash, privKeyB)
+        val add = UpdateAddHtlc(channel.channelId, 0, cmdAddHtlc.amount, cmdAddHtlc.paymentHash, cmdAddHtlc.cltvExpiry, cmdAddHtlc.onion)
+        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(add, privKeyB)
         assertEquals(expectedAmountAtB, outerB.amount)
         assertEquals(expectedAmountAtB, outerB.totalAmount)
         assertEquals(expectedExpiryAtB, outerB.expiry)
@@ -605,44 +519,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertNull(innerB.invoiceFeatures)
         assertNull(innerB.paymentSecret)
 
-        // NodeB will wrap the remaining trampolinePacket, and forward it to nodeC.
-        // It doesn't matter which route is used to forward the packet.
-
-        val lastTrampolinePayload = FinalPayload.createTrampolinePayload(
-            amount = innerB.amountToForward,
-            totalAmount = innerB.amountToForward,
-            expiry = innerB.outgoingCltv,
-            paymentSecret = Eclair.randomBytes32(), // real paymentSecret is inside trampoline (packetC)
-            trampolinePacket = packetC
-        )
-        val lastTrampolineHop = NodeHop(
-            nodeId = pubKeyB,
-            nextNodeId = pubKeyC,
-            cltvExpiryDelta = innerB.outgoingCltv - outerB.expiry,
-            fee = MilliSatoshi(0) // not unit testing this - decided by trampoline
-        )
-        val (amountC, expiryC, onionC) = OutgoingPacket.buildPacket(
-            paymentHash = invoice.paymentHash,
-            hops = listOf(lastTrampolineHop),
-            finalPayload = lastTrampolinePayload,
-            payloadLength = OnionRoutingPacket.PaymentPacketLength
-        )
-        val addC = UpdateAddHtlc(Eclair.randomBytes32(), 0, amountC, invoice.paymentHash, expiryC, onionC.packet)
-
-        // Nodec should be able to decrypt the trampoline.
-        // And the finalPayload should match our expectations.
-
-        val payloadC = IncomingPacket.decrypt(addC, privKeyC).right!!
-        assertEquals(
-            payloadC, FinalTlvPayload(
-                TlvStream(
-                    listOf(
-                        OnionTlv.AmountToForward(targetAmount),
-                        OnionTlv.OutgoingCltv(expectedExpiryAtC),
-                        OnionTlv.PaymentData(sendPayment.paymentRequest.paymentSecret!!, targetAmount)
-                    )
-                )
-            )
-        )
+        // NodeC should be able to decrypt the trampoline packet.
+        val payloadBytesC = Sphinx.peel(privKeyC, invoice.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
+        val payloadC = FinalPayload.read(payloadBytesC.payload.toByteArray())
+        assertEquals(payloadC.amount, expectedAmountAtC)
+        assertEquals(payloadC.expiry, expectedExpiryAtC)
+        assertEquals(payloadC.totalAmount, payloadC.amount)
+        assertEquals(payloadC.paymentSecret, invoice.paymentSecret)
     }
 }
