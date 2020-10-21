@@ -7,8 +7,8 @@ import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.JsonElement
 
-class BitcoindService {
-    private val client = BitcoinJsonRPCClient()
+object BitcoindService {
+    private val client = BitcoinJsonRPCClient
 
     suspend fun getNetworkInfo(): JsonElement = client.sendRequest<GetNetworkInfoResponse>(GetNetworkInfo).result
     suspend fun getBlockCount(): Int = client.sendRequest<GetBlockCountResponse>(GetBlockCount).blockcount
@@ -35,6 +35,13 @@ class BitcoindService {
         val (address, _) = getNewAddress()
         val response: GenerateToAddressResponse = client.sendRequest(GenerateToAddress(blockCount, address))
         check(blockCount == response.blocks.size)
+    }
+
+    suspend fun sendRawTransaction(rawTx: String): Transaction {
+        val sendRawTransactionResponse: SendRawTransactionResponse = client.sendRequest(SendRawTransaction(rawTx))
+        val transaction: GetRawTransactionResponse =
+            client.sendRequest(GetRawTransaction(sendRawTransactionResponse.txid))
+        return transaction.tx
     }
 
     suspend fun sendRawTransaction(tx: Transaction): Transaction {

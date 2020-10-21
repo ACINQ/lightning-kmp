@@ -7,7 +7,6 @@ import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeEstimator
-import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
@@ -17,7 +16,8 @@ import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
-import fr.acinq.eclair.transactions.*
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
@@ -26,6 +26,8 @@ import fr.acinq.eclair.transactions.Transactions.htlcOutputFee
 import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.transactions.Transactions.offeredHtlcTrimThreshold
 import fr.acinq.eclair.transactions.Transactions.receivedHtlcTrimThreshold
+import fr.acinq.eclair.transactions.incomings
+import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
@@ -88,6 +90,16 @@ data class Commitments(
 
     fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo.isRight
 
+    /**
+     * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
+     */
+    fun nothingAtStake(): Boolean = localCommit.index == 0L &&
+            localCommit.spec.toLocal == 0.msat &&
+            remoteCommit.index == 0L &&
+            remoteCommit.spec.toRemote == 0.msat &&
+            remoteNextCommitInfo.isRight
+
+
     fun timedOutOutgoingHtlcs(blockheight: Long): Set<UpdateAddHtlc> {
         fun expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong()
 
@@ -100,13 +112,12 @@ data class Commitments(
         }
     }
 
-    val isZeroReserve: Boolean
-        get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
+    val isZeroReserve: Boolean get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
 
     /**
-     * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
+     * Incoming HTLCs that are close to timing out are potentially dangerous. If we released the pre-image for those
      * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
-     * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+     * Otherwise when we get close to the timeout, we risk an on-chain race condition between their HTLC timeout
      * and our HTLC success in case of a force-close.
      */
     fun almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> =
@@ -115,13 +126,6 @@ data class Commitments(
             .filter { blockheight >= (it.cltvExpiry - fulfillSafety).toLong() }
             .toSet()
 
-    /**
-     * Add a change to our proposed change list.
-     *
-     * @param commitments current commitments.
-     * @param proposal    proposed change to add.
-     * @return an updated commitment instance.
-     */
     fun addLocalProposal(proposal: UpdateMessage): Commitments =
         copy(localChanges = localChanges.copy(proposed = localChanges.proposed + proposal))
 
@@ -129,6 +133,32 @@ data class Commitments(
         copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed + proposal))
 
     val announceChannel: Boolean get() = (channelFlags and 0x01).toInt() != 0
+
+    // NB: when computing availableBalanceForSend and availableBalanceForReceive, the funder keeps an extra buffer on top
+    // of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
+    // https://github.com/lightningnetwork/lightning-rfc/issues/728 for details).
+    //
+    // This extra buffer (which we call "funder fee buffer") is calculated as follows:
+    //  1) Simulate a x2 feerate increase and compute the corresponding commit tx fee (note that it may trim some HTLCs)
+    //  2) Add the cost of adding a new untrimmed HTLC at that increased feerate. This ensures that we'll be able to
+    //     actually use the channel to add new HTLCs if the feerate doubles.
+    //
+    // If for example the current feerate is 1000 sat/kw, the dust limit 546 sat, and we have 3 pending outgoing HTLCs for
+    // respectively 1250 sat, 2000 sat and 2500 sat.
+    // commit tx fee = commitWeight * feerate + 3 * htlcOutputWeight * feerate = 724 * 1000 + 3 * 172 * 1000 = 1240 sat
+    // To calculate the funder fee buffer, we first double the feerate and calculate the corresponding commit tx fee.
+    // By doubling the feerate, the first HTLC becomes trimmed so the result is: 724 * 2000 + 2 * 172 * 2000 = 2136 sat
+    // We then add the additional fee for a potential new untrimmed HTLC: 172 * 2000 = 344 sat
+    // The funder fee buffer is 2136 + 344 = 2480 sat
+    //
+    // If there are many pending HTLCs that are only slightly above the trim threshold, the funder fee buffer may be
+    // smaller than the current commit tx fee because those HTLCs will be trimmed and the commit tx weight will decrease.
+    // For example if we have 10 outgoing HTLCs of 1250 sat:
+    //  - commit tx fee = 724 * 1000 + 10 * 172 * 1000 = 2444 sat
+    //  - commit tx fee at twice the feerate = 724 * 2000 = 1448 sat (all HTLCs have been trimmed)
+    //  - cost of an additional untrimmed HTLC = 172 * 2000 = 344 sat
+    //  - funder fee buffer = 1448 + 344 = 1792 sat
+    // In that case the current commit tx fee is higher than the funder fee buffer and will dominate the balance restrictions.
 
     fun availableBalanceForSend(): MilliSatoshi {
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
@@ -141,16 +171,19 @@ data class Commitments(
         return if (localParams.isFunder) {
             // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
             val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
-            // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
-            // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-            val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
-            val htlcFees = htlcOutputFee(reduced.feeratePerKw)
-            if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced).toMilliSatoshi()) {
+            // the funder needs to keep a "funder fee buffer" (see explanation above)
+            val funderFeeBuffer = commitTxFeeMsat(remoteParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
+            val amountToReserve = commitFees.coerceAtLeast(funderFeeBuffer)
+            if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced).toMilliSatoshi()) {
                 // htlc will be trimmed
-                (balanceNoFees - commitFees - funderFeeReserve).coerceAtLeast(0.msat)
+                (balanceNoFees - amountToReserve).coerceAtLeast(0.msat)
             } else {
                 // htlc will have an output in the commitment tx, so there will be additional fees.
-                (balanceNoFees - commitFees - funderFeeReserve - htlcFees).coerceAtLeast(0.msat)
+                val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
+                // we take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase
+                val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
+                val amountToReserve1 = commitFees1.coerceAtLeast(funderFeeBuffer1)
+                (balanceNoFees - amountToReserve1).coerceAtLeast(0.msat)
             }
         } else {
             // The fundee doesn't pay on-chain fees.
@@ -167,16 +200,19 @@ data class Commitments(
         } else {
             // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
             val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced)
-            // we expect the funder to keep an extra reserve to be able to handle fee increase without getting the channel stuck
-            // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-            val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
-            val htlcFees = htlcOutputFee(reduced.feeratePerKw)
-            if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced).toMilliSatoshi()) {
+            // we expected the funder to keep a "funder fee buffer" (see explanation above)
+            val funderFeeBuffer = commitTxFeeMsat(localParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
+            val amountToReserve = commitFees.coerceAtLeast(funderFeeBuffer)
+            if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localParams.dustLimit, reduced).toMilliSatoshi()) {
                 // htlc will be trimmed
-                (balanceNoFees - commitFees - funderFeeReserve).coerceAtLeast(0.msat)
+                (balanceNoFees - amountToReserve).coerceAtLeast(0.msat)
             } else {
                 // htlc will have an output in the commitment tx, so there will be additional fees.
-                (balanceNoFees - commitFees - funderFeeReserve - htlcFees).coerceAtLeast(0.msat)
+                val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
+                // we take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase
+                val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
+                val amountToReserve1 = commitFees1.coerceAtLeast(funderFeeBuffer1)
+                (balanceNoFees - amountToReserve1).coerceAtLeast(0.msat)
             }
         }
     }
@@ -188,18 +224,13 @@ data class Commitments(
     }
 
     /**
-     *
-     * @param commitments current commitments
      * @param cmd         add HTLC command
-     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
+     * @param paymentId   id of the payment
+     * @param blockHeight current block height
+     * @return either Failure(failureMessage) with a BOLT #4 failure or Success(new commitments, updateAddHtlc)
      */
     @OptIn(ExperimentalUnsignedTypes::class)
     fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Try<Pair<Commitments, UpdateAddHtlc>> {
-        // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
-        val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
-        if (cmd.cltvExpiry < minExpiry) {
-            return Try.Failure(ExpiryTooSmall(channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
-        }
         val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
         // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
         if (cmd.cltvExpiry >= maxExpiry) {
@@ -227,10 +258,12 @@ data class Commitments(
 
         // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
         val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-        // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
-        // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-        val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
-        val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isFunder) fees.toMilliSatoshi() + funderFeeReserve else 0.msat)
+        // the funder needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
+        // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
+        val funderFeeBuffer = commitTxFeeMsat(commitments1.remoteParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
+        // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
+        // which may result in a lower commit tx fee; this is why we take the max of the two.
+        val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isFunder) fees.toMilliSatoshi().coerceAtLeast(funderFeeBuffer) else 0.msat)
         val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isFunder) 0.msat else fees.toMilliSatoshi())
         if (missingForSender < 0.msat) {
             return Try.Failure(
@@ -250,8 +283,7 @@ data class Commitments(
             }
         }
 
-        // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
-        val htlcValueInFlight = outgoingHtlcs.toList().map { it.amountMsat }.sum()
+        val htlcValueInFlight = outgoingHtlcs.map { it.amountMsat }.sum()
         if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toLong()) {
             // TODO: this should be a specific UPDATE error
             return Try.Failure(HtlcValueTooHighInFlight(channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight))
@@ -359,8 +391,7 @@ data class Commitments(
             }
             else -> {
                 // we need to decrypt the payment onion to obtain the shared secret to build the error packet
-                val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength)
-                when (result) {
+                when (val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength)) {
                     is Either.Right -> {
                         val reason = when (cmd.reason) {
                             is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(cmd.reason.bytes.toByteArray(), result.value.sharedSecret)
@@ -421,11 +452,16 @@ data class Commitments(
         return Try.Success(Pair(commitments1, fee))
     }
 
-    fun receiveFee(feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Try<Commitments> {
+    fun receiveFee(localCommitmentFeeratePerKw: Long, fee: UpdateFee, maxFeerateMismatch: Double): Try<Commitments> {
         if (localParams.isFunder) return Try.Failure(FundeeCannotSendUpdateFee(channelId))
         if (fee.feeratePerKw < Eclair.MinimumFeeratePerKw) return Try.Failure(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
-        val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
-        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) return Try.Failure(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
+        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localCommitmentFeeratePerKw, maxFeerateMismatch)) return Try.Failure(
+            FeerateTooDifferent(
+                channelId,
+                localFeeratePerKw = localCommitmentFeeratePerKw,
+                remoteFeeratePerKw = fee.feeratePerKw
+            )
+        )
         // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
         // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
         // and it would be tricky to check if the conditions are met at signing
@@ -618,41 +654,6 @@ data class Commitments(
         return Try.Success(Pair(commitments1, actions.toList()))
     }
 
-    fun changes2String(): String = """
-        commitments:
-            localChanges:
-                proposed: ${localChanges.proposed.map { msg2String(it) }.joinToString(" ")}
-                signed: ${localChanges.signed.map { msg2String(it) }.joinToString(" ")}
-                acked: ${localChanges.acked.map { msg2String(it) }.joinToString(" ")}
-            remoteChanges:
-                proposed: ${remoteChanges.proposed.map { msg2String(it) }.joinToString(" ")}
-                acked: ${remoteChanges.acked.map { msg2String(it) }.joinToString(" ")}
-                signed: ${remoteChanges.signed.map { msg2String(it) }.joinToString(" ")}
-            nextHtlcId:
-                local: $localNextHtlcId
-                remote: $remoteNextHtlcId""${'"'}.stripMargin
-        
-    """.trimIndent()
-
-    fun specs2String(commitments: Commitments): String = """
-        specs:
-        localcommit:
-          toLocal: ${commitments.localCommit.spec.toLocal}
-          toRemote: ${commitments.localCommit.spec.toRemote}
-          htlcs:
-            ${commitments.localCommit.spec.htlcs.map { "${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }.joinToString("\n            ")}
-        remotecommit:
-          toLocal: ${commitments.remoteCommit.spec.toLocal}
-          toRemote: ${commitments.remoteCommit.spec.toRemote}
-          htlcs:
-            ${commitments.remoteCommit.spec.htlcs.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }.joinToString("\n            ")}
-        next remotecommit:
-          toLocal: ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.toLocal ?: "N/A"}
-          toRemote: ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.toRemote ?: "N/A"}
-          htlcs:
-            ${commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.spec?.htlcs?.map { "    ${it.direction()} ${it.add.id} ${it.add.cltvExpiry}" }?.joinToString("\n            ") ?: "N/A"}
-    """.trimIndent()
-
     companion object {
 
         fun alreadyProposed(changes: List<UpdateMessage>, id: Long): Boolean = changes.any {
@@ -708,18 +709,6 @@ data class Commitments(
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(channelKeyPath).publicKey, !localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feeratePerKw, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
-        }
-
-        fun msg2String(msg: LightningMessage): String = when (msg) {
-            is UpdateAddHtlc -> "add-${msg.id}"
-            is UpdateFulfillHtlc -> "ful-${msg.id}"
-            is UpdateFailHtlc -> "fail-${msg.id}"
-            is UpdateFee -> "fee"
-            is CommitSig -> "sig"
-            is RevokeAndAck -> "rev"
-            is Error -> "err"
-            is FundingLocked -> "funding_locked"
-            else -> "???"
         }
     }
 }

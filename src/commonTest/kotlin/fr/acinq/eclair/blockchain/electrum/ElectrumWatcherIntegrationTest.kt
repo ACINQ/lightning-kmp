@@ -31,7 +31,7 @@ import kotlin.time.seconds
 @OptIn(ExperimentalCoroutinesApi::class, KtorExperimentalAPI::class, ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
-    private val bitcoincli = BitcoindService()
+    private val bitcoincli = BitcoindService
 
     init {
         runSuspendBlocking {
@@ -376,7 +376,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
         )
         val tx1 = bitcoincli.signTransaction(fundTx)
 
-        watcher.send(PublishAsapEvent(tx1))
+        watcher.publish(tx1)
 
         bitcoincli.generateBlocks(4) // 154
         bitcoincli.getBlockCount()
@@ -399,7 +399,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
         )
 
         watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx1, 1, BITCOIN_FUNDING_DEPTHOK))
-        watcher.send(PublishAsapEvent(tx2))
+        watcher.publish(tx2)
 
         bitcoincli.generateBlocks(1) // 156
         bitcoincli.getBlockCount()
@@ -423,7 +423,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
         watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx2, 1, BITCOIN_FUNDING_DEPTHOK))
         watcher.watch(WatchSpent(ByteVector32.Zeroes, tx2, 0, BITCOIN_FUNDING_SPENT))
-        watcher.send(PublishAsapEvent(tx3))
+        watcher.publish(tx3)
 
         bitcoincli.generateBlocks(1) // 159
         bitcoincli.getBlockCount()
