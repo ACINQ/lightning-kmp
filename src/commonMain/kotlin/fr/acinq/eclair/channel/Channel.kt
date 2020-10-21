@@ -253,8 +253,6 @@ sealed class ChannelState {
         require(this is HasCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx spent in txid=${tx.txid}" }
 
-        val onChainFeeConf = staticParams.nodeParams.onChainFeeConf
-
         return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(
             keyManager,
             commitments,
@@ -468,20 +466,27 @@ sealed class ChannelState {
         logger.error { "peer send error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
         // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e), isFatal = true))
 
-        return when (this) {
-            is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
-            is Negotiating -> Closing(
-                staticParams = staticParams,
-                currentTip = currentTip,
-                currentOnchainFeerates = currentOnchainFeerates,
-                commitments = commitments,
-                fundingTx = null,
-                waitingSince = currentTimestampMillis(),
-                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
-            ) to emptyList()
+        return when {
+            this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
+            this is Negotiating && this.bestUnpublishedClosingTx != null -> {
+                val nexState = Closing(
+                    staticParams = staticParams,
+                    currentTip = currentTip,
+                    currentOnchainFeerates = currentOnchainFeerates,
+                    commitments = commitments,
+                    fundingTx = null,
+                    waitingSince = currentTimestampMillis(),
+                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                    mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
+                )
+
+                Pair(nexState, buildList {
+                    add(StoreState(nexState))
+                    addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
+                })
+            }
             // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
-            is HasCommitments -> spendLocalCurrent()
+            this is HasCommitments -> spendLocalCurrent()
             // when there is no commitment yet, we just go to CLOSED state in case an error occurs
             else -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
         }
@@ -2331,6 +2336,7 @@ data class Negotiating(
                     }
                 }
             }
+            event is MessageReceived && event.message is Error -> handleRemoteError(event.message)
             event is WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(event.watch.tx.txid) -> {
                 // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
                 logger.info { "closing tx published: closingTxId=${event.watch.tx.txid}" }
