@@ -14,7 +14,6 @@ import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.remoteClose
-import fr.acinq.eclair.channel.TestsHelper.updateFeerate
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.UUID
