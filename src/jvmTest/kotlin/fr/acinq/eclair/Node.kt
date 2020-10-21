@@ -150,7 +150,8 @@ object Node {
                     }
                     "pay" -> {
                         val invoice = PaymentRequest.read(tokens[1])
-                        peer.send(SendPayment(UUID.randomUUID(), invoice))
+                        val amount = if (tokens.size >= 3) MilliSatoshi(tokens[2].toLong()) else invoice.amount!!
+                        peer.send(SendPayment(UUID.randomUUID(), invoice, amount))
                     }
                     "close" -> {
                         runTrying { ByteVector32(Hex.decode(tokens[1])) }.map { GlobalScope.launch { peer.send(WrappedChannelEvent(it, ExecuteCommand(CMD_CLOSE(null)))) } }

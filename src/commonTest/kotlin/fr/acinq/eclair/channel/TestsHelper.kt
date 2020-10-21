@@ -37,9 +37,9 @@ internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { 
 
 // Errors
 inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
-    filterIsInstance<HandleError>().map { it.error }.firstOrNull { it is T } as T? ?: fail("cannot find HandleError ${T::class}.")
+    filterIsInstance<ProcessLocalFailure>().map { it.error }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessLocalFailure ${T::class}.")
 
-internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is HandleError && it.error is T } }
+internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is ProcessLocalFailure && it.error is T } }
 
 inline fun <reified T : Throwable> List<ChannelAction>.findCommandError(): T? =
     filterIsInstance<HandleCommandFailed>().map { it.error }.firstOrNull { it is T } as T?

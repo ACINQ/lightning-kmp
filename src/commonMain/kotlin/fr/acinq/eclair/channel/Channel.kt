@@ -68,13 +68,21 @@ data class SendMessage(val message: LightningMessage) : ChannelAction()
 data class SendWatch(val watch: Watch) : ChannelAction()
 data class ProcessCommand(val command: Command) : ChannelAction()
 data class ProcessAdd(val add: UpdateAddHtlc) : ChannelAction()
-data class ProcessFail(val fail: UpdateFailHtlc) : ChannelAction()
-data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc) : ChannelAction()
-data class ProcessFulfill(val fulfill: UpdateFulfillHtlc) : ChannelAction()
+sealed class ProcessRemoteFailure : ChannelAction() {
+    abstract val channelId: ByteVector32
+    abstract val paymentId: UUID
+}
+data class ProcessFail(val fail: UpdateFailHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
+    override val channelId: ByteVector32 get() = fail.channelId
+}
+data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
+    override val channelId: ByteVector32 get() = fail.channelId
+}
+data class ProcessLocalFailure(val error: Throwable) : ChannelAction()
+data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : ChannelAction()
-data class HandleError(val error: Throwable) : ChannelAction()
 data class HandleCommandFailed(val cmd: Command, val error: Throwable?) : ChannelAction()
 data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : ChannelAction()
 data class ChannelIdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelAction()
@@ -577,7 +585,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
-        return Pair(this, listOf(HandleError(t)))
+        return Pair(this, listOf(ProcessLocalFailure(t)))
     }
 }
 
@@ -676,7 +684,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
-        return Pair(this, listOf(HandleError(t)))
+        return Pair(this, listOf(ProcessLocalFailure(t)))
     }
 }
 
@@ -883,7 +891,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event $event in state ${this::class}" }
-        return Pair(this, listOf(HandleError(t)))
+        return Pair(this, listOf(ProcessLocalFailure(t)))
     }
 
 }
@@ -1604,7 +1612,7 @@ data class Normal(
                         }
                         when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
                             is Try.Failure -> {
-                                Pair(this, listOf(HandleError(result.error)))
+                                Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
@@ -1619,7 +1627,7 @@ data class Normal(
                     is CMD_FULFILL_HTLC -> {
                         when (val result = commitments.sendFulfill(event.command)) {
                             is Try.Failure -> {
-                                Pair(this, listOf(HandleError(result.error)))
+                                Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
@@ -1634,7 +1642,7 @@ data class Normal(
                     is CMD_FAIL_HTLC -> {
                         when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
                             is Try.Failure -> {
-                                Pair(this, listOf(HandleError(result.error)))
+                                Pair(this, listOf(ProcessLocalFailure(result.error)))
                             }
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
@@ -1713,7 +1721,7 @@ data class Normal(
                         // README: we consider that a payment is fulfilled as soon as we have the preimage (we don't wait for a commit signature)
                         when (val result = commitments.receiveFulfill(event.message)) {
                             is Try.Failure -> handleLocalError(event, result.error)
-                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message)))
+                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message, result.result.second)))
                         }
                     }
                     is UpdateFailHtlc -> {
@@ -1894,7 +1902,7 @@ data class ShuttingDown(
                     is UpdateFulfillHtlc -> {
                         when (val result = commitments.receiveFulfill(event.message)) {
                             is Try.Failure -> handleLocalError(event, result.error)
-                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message)))
+                            is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf(ProcessFulfill(event.message, result.result.second)))
                         }
                     }
                     is UpdateFailHtlc -> {
@@ -2663,7 +2671,7 @@ object Channel {
     val MAX_NEGOTIATION_ITERATIONS = 20
 
     // this is defined in BOLT 11
-    val MIN_CLTV_EXPIRY_DELTA = CltvExpiryDelta(9)
+    val MIN_CLTV_EXPIRY_DELTA = CltvExpiryDelta(18)
     val MAX_CLTV_EXPIRY_DELTA = CltvExpiryDelta(7 * 144) // one week
 
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx

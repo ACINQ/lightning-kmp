@@ -17,17 +17,17 @@ data class IncomingPayment(
     val paymentPreimage: ByteVector32
 )
 
-class PaymentHandler(
+class IncomingPaymentHandler(
     val nodeParams: NodeParams
 ) {
 
-    enum class ProcessedStatus {
+    enum class Status {
         ACCEPTED,
         REJECTED,
         PENDING // neither accepted or rejected yet
     }
 
-    data class ProcessAddResult(val status: ProcessedStatus, val actions: List<PeerEvent>)
+    data class ProcessAddResult(val status: Status, val actions: List<PeerEvent>)
 
     private data class FinalPacket( // htlc + decrypted onion
         val htlc: UpdateAddHtlc,
@@ -90,7 +90,7 @@ class PaymentHandler(
 
                 val failureMessage = decrypted.value
                 val action = actionForFailureMessage(failureMessage, htlc)
-                ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(action))
+                ProcessAddResult(status = Status.REJECTED, actions = listOf(action))
             }
             is Either.Right -> {
 
@@ -108,7 +108,7 @@ class PaymentHandler(
     ): ProcessAddResult {
         val failureMsg = IncorrectOrUnknownPaymentDetails(onion.totalAmount, currentBlockHeight.toLong())
         val failureAction = actionForFailureMessage(failureMsg, htlc)
-        val rejectedResult = ProcessAddResult(status = ProcessedStatus.REJECTED, actions = listOf(failureAction))
+        val rejectedResult = ProcessAddResult(status = Status.REJECTED, actions = listOf(failureAction))
 
         if (incomingPayment == null) {
             logger.warning { "received $htlc for which we don't have a preimage" }
@@ -185,7 +185,7 @@ class PaymentHandler(
                 channelId = htlc.channelId,
                 channelEvent = ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, incomingPayment.paymentPreimage, commit = true))
             )
-            return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = listOf(action))
+            return ProcessAddResult(status = Status.ACCEPTED, actions = listOf(action))
         }
     }
 
@@ -219,7 +219,7 @@ class PaymentHandler(
             }
 
             pending.remove(htlc.paymentHash)
-            return ProcessAddResult(status = ProcessedStatus.REJECTED, actions = actions)
+            return ProcessAddResult(status = Status.REJECTED, actions = actions)
         }
 
         // Bolt 04:
@@ -232,7 +232,7 @@ class PaymentHandler(
             // Still waiting for more payments
 
             pending[htlc.paymentHash] = htlcSet
-            return ProcessAddResult(status = ProcessedStatus.PENDING, actions = actions)
+            return ProcessAddResult(status = Status.PENDING, actions = actions)
         }
 
         // Accepting payment parts !
@@ -251,7 +251,7 @@ class PaymentHandler(
         }
 
         pending.remove(htlc.paymentHash)
-        return ProcessAddResult(status = ProcessedStatus.ACCEPTED, actions = actions)
+        return ProcessAddResult(status = Status.ACCEPTED, actions = actions)
     }
 
     fun checkPaymentsTimeout(
