@@ -5,6 +5,9 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.channel.Helpers.publishIfNeeded
+import fr.acinq.eclair.channel.Helpers.watchConfirmedIfNeeded
+import fr.acinq.eclair.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.BitField
 import fr.acinq.eclair.utils.UUID
@@ -126,6 +129,40 @@ data class LocalCommitPublished(
             confirmedTxs.contains(it.txid)
         }
     }
+
+    internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+        val publishQueue = buildList {
+            add(commitTx)
+            claimMainDelayedOutputTx?.let { add(it) }
+            addAll(htlcSuccessTxs)
+            addAll(htlcTimeoutTxs)
+            addAll(claimHtlcDelayedTxs)
+        }
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+
+        // we watch:
+        // - the commitment tx itself, so that we can handle the case where we don't have any outputs
+        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+        val watchConfirmedQueue = buildList {
+            add(commitTx)
+            claimMainDelayedOutputTx?.let { add(it) }
+            addAll(claimHtlcDelayedTxs)
+        }
+        val watchConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
+
+        // we watch outputs of the commitment tx that both parties may spend
+        val watchSpentQueue = buildList {
+            addAll(htlcSuccessTxs)
+            addAll(htlcTimeoutTxs)
+        }
+        val watchSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
+
+        return buildList {
+            addAll(publishList)
+            addAll(watchConfirmedList)
+            addAll(watchSpentList)
+        }
+    }
 }
 
 @Serializable
@@ -181,6 +218,38 @@ data class RemoteCommitPublished(
         val confirmedTxs = irrevocablySpent.values.toSet()
         return (listOf(commitTx) + listOfNotNull(claimMainOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs).any {
             confirmedTxs.contains(it.txid)
+        }
+    }
+
+    internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+        val publishQueue = buildList {
+            claimMainOutputTx?.let { add(it) }
+            addAll(claimHtlcSuccessTxs)
+            addAll(claimHtlcTimeoutTxs)
+        }
+
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+
+        // we watch:
+        // - the commitment tx itself, so that we can handle the case where we don't have any outputs
+        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+        val watchConfirmedQueue = buildList {
+            add(commitTx)
+            claimMainOutputTx?.let { add(it) }
+        }
+        val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
+
+        // we watch outputs of the commitment tx that both parties may spend
+        val watchSpentQueue = buildList {
+            addAll(claimHtlcTimeoutTxs)
+            addAll(claimHtlcSuccessTxs)
+        }
+        val watchEventSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
+
+        return buildList {
+            addAll(publishList)
+            addAll(watchEventConfirmedList)
+            addAll(watchEventSpentList)
         }
     }
 }
@@ -245,6 +314,39 @@ data class RevokedCommitPublished(
             } // has the tx already been confirmed?
 
         return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxes.isEmpty()
+    }
+
+    internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+        val publishQueue = buildList {
+            claimMainOutputTx?.let { add(it) }
+            mainPenaltyTx?.let { add(it) }
+            addAll(htlcPenaltyTxs)
+            addAll(claimHtlcDelayedPenaltyTxs)
+        }
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+
+        // we watch:
+        // - the commitment tx itself, so that we can handle the case where we don't have any outputs
+        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+        val watchConfirmedQueue = buildList {
+            add(commitTx)
+            claimMainOutputTx?.let { add(it) }
+        }
+        val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
+
+
+        // we watch outputs of the commitment tx that both parties may spend
+        val watchSpentQueue = buildList {
+            mainPenaltyTx?.let { add(it) }
+            addAll(htlcPenaltyTxs)
+        }
+        val watchEventSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
+
+        return buildList {
+            addAll(publishList)
+            addAll(watchEventConfirmedList)
+            addAll(watchEventSpentList)
+        }
     }
 }
 

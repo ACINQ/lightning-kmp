@@ -204,7 +204,7 @@ sealed class ChannelState {
 
         return Pair(nextState, buildList {
             add(StoreState(nextState))
-            addAll(doPublish(remoteCommitPublished, channelId))
+            addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
         })
     }
 
@@ -244,7 +244,7 @@ sealed class ChannelState {
 
         return Pair(nextState, buildList {
             add(StoreState(nextState))
-            addAll(doPublish(remoteCommitPublished, channelId))
+            addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
         })
     }
 
@@ -289,7 +289,7 @@ sealed class ChannelState {
 
             return Pair(nextState, buildList {
                 add(StoreState(nextState))
-                addAll(doPublish(revokedCommitPublished, channelId))
+                addAll(revokedCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
                 add(SendMessage(error))
             })
 
@@ -304,154 +304,6 @@ sealed class ChannelState {
         PublishTx(tx),
         SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
     )
-
-    internal fun doPublish(localCommitPublished: LocalCommitPublished, channelId: ByteVector32): List<ChannelAction> {
-        val (commitTx, claimMainDelayedOutputTx, claimHtlcSuccessTxs, claimHtlcTimeoutTxs, claimHtlcDelayedTxs, irrevocablySpent) = localCommitPublished
-
-        val publishQueue = buildList {
-            add(commitTx)
-            claimMainDelayedOutputTx?.let { add(it) }
-            addAll(claimHtlcSuccessTxs)
-            addAll(claimHtlcTimeoutTxs)
-            addAll(claimHtlcDelayedTxs)
-        }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
-
-        // we watch:
-        // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-        val watchConfirmedQueue = buildList {
-            add(commitTx)
-            claimMainDelayedOutputTx?.let { add(it) }
-            addAll(claimHtlcDelayedTxs)
-        }
-        val watchConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId)
-
-        // we watch outputs of the commitment tx that both parties may spend
-        val watchSpentQueue = buildList {
-            addAll(claimHtlcSuccessTxs)
-            addAll(claimHtlcTimeoutTxs)
-        }
-        val watchSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
-
-        return buildList {
-            addAll(publishList)
-            addAll(watchConfirmedList)
-            addAll(watchSpentList)
-        }
-    }
-
-    internal fun doPublish(remoteCommitPublished: RemoteCommitPublished, channelId: ByteVector32): List<ChannelAction> {
-        val (commitTx, claimMainOutputTx, claimHtlcSuccessTxs, claimHtlcTimeoutTxs, irrevocablySpent) = remoteCommitPublished
-        val publishQueue = buildList {
-            claimMainOutputTx?.let { add(it) }
-            addAll(claimHtlcSuccessTxs)
-            addAll(claimHtlcTimeoutTxs)
-        }
-
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
-
-        // we watch:
-        // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-        val watchConfirmedQueue = buildList {
-            add(commitTx)
-            claimMainOutputTx?.let { add(it) }
-        }
-        val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId)
-
-        // we watch outputs of the commitment tx that both parties may spend
-        val watchSpentQueue = buildList {
-            addAll(claimHtlcTimeoutTxs)
-            addAll(claimHtlcSuccessTxs)
-        }
-        val watchEventSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
-
-        return buildList {
-            addAll(publishList)
-            addAll(watchEventConfirmedList)
-            addAll(watchEventSpentList)
-        }
-    }
-
-    internal fun doPublish(revokedCommitPublished: RevokedCommitPublished, channelId: ByteVector32): List<ChannelAction> {
-        val (commitTx, claimMainOutputTx, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent) = revokedCommitPublished
-
-        val publishQueue = buildList {
-            claimMainOutputTx?.let { add(it) }
-            mainPenaltyTx?.let { add(it) }
-            addAll(htlcPenaltyTxs)
-            addAll(claimHtlcDelayedPenaltyTxs)
-        }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
-
-        // we watch:
-        // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-        val watchConfirmedQueue = buildList {
-            add(commitTx)
-            claimMainOutputTx?.let { add(it) }
-        }
-        val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId)
-
-
-        // we watch outputs of the commitment tx that both parties may spend
-        val watchSpentQueue = buildList {
-            mainPenaltyTx?.let { add(it) }
-            addAll(htlcPenaltyTxs)
-        }
-        val watchEventSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
-
-        return buildList {
-            addAll(publishList)
-            addAll(watchEventConfirmedList)
-            addAll(watchEventSpentList)
-        }
-    }
-
-    /**
-     * This helper method will publish txes only if they haven't yet reached minDepth
-     */
-    private fun publishIfNeeded(txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>): List<PublishTx> {
-        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx ->
-            logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" }
-        }
-        return process.map { tx ->
-            logger.info { "publishing txid=${tx.txid}" }
-            PublishTx(tx)
-        }
-    }
-
-    /**
-     * This helper method will watch txes only if they haven't yet reached minDepth
-     */
-    private fun watchConfirmedIfNeeded(txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32): List<SendWatch> {
-        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx ->
-            logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" }
-        }
-        return process.map { tx ->
-            SendWatch(
-                WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx))
-            )
-        }
-    }
-
-    /**
-     * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
-     */
-    private fun watchSpentIfNeeded(parentTx: Transaction, txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32): List<SendWatch> {
-        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx ->
-            logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" }
-        }
-        return process.map {
-            SendWatch(
-                WatchSpent(channelId, parentTx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT)
-            )
-        }
-    }
 
     internal fun feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32) {
         runTrying { // this may fail with an NPE in tests because context has been cleaned up, but it's not a big deal
@@ -541,7 +393,7 @@ sealed class ChannelState {
 
             Pair(nextState, buildList {
                 add(StoreState(nextState))
-                addAll(doPublish(localCommitPublished, channelId))
+                addAll(localCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
             })
         }
     }
@@ -660,19 +512,19 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         Pair(event.state, doPublish(closingType.tx, event.state.channelId))
                     }
                     is LocalClose -> {
-                        val actions = doPublish(closingType.localCommitPublished, event.state.channelId)
+                        val actions = closingType.localCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
                         Pair(event.state, actions)
                     }
                     is RemoteClose -> {
-                        val actions = doPublish(closingType.remoteCommitPublished, event.state.channelId)
+                        val actions = closingType.remoteCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
                         Pair(event.state, actions)
                     }
                     is RevokedClose -> {
-                        val actions = doPublish(closingType.revokedCommitPublished, event.state.channelId)
+                        val actions = closingType.revokedCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
                         Pair(event.state, actions)
                     }
                     is RecoveryClose -> {
-                        val actions = doPublish(closingType.remoteCommitPublished, event.state.channelId)
+                        val actions = closingType.remoteCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
                         Pair(event.state, actions)
                     }
                     null -> {
@@ -682,12 +534,13 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                             SendWatch(WatchSpent(event.state.channelId, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)),
                             //SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
                         )
+                        val minDepth = event.state.staticParams.nodeParams.minDepthBlocks.toLong()
                         event.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.localCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.remoteCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.nextRemoteCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.revokedCommitPublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.futureRemoteCommitPublished ?.let { actions.addAll(doPublish(it, event.state.channelId)) }
+                        event.state.localCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.remoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.nextRemoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
+                        event.state.futureRemoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
                             // TODO ask watcher for the funding tx
@@ -1093,7 +946,7 @@ data class WaitForRemotePublishFutureComitment(
                 futureRemoteCommitPublished = remoteCommitPublished
             )
             val actions = mutableListOf<ChannelAction>(StoreState(nextState))
-            actions.addAll(doPublish(remoteCommitPublished, channelId))
+            actions.addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
             Pair(nextState, actions)
         }
     }
@@ -2598,9 +2451,10 @@ data class Closing(
                             }
 
                             val republishList = buildList {
-                                localCommitPublished1?.let { addAll(doPublish(it, channelId)) }
-                                remoteCommitPublished1?.let { addAll(doPublish(it, channelId)) }
-                                nextRemoteCommitPublished1?.let { addAll(doPublish(it, channelId)) }
+                                val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
+                                localCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
+                                remoteCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
+                                nextRemoteCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
                             }
 
                             val nextState = copy(

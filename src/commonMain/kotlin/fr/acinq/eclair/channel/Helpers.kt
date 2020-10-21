@@ -9,7 +9,12 @@ import fr.acinq.eclair.Eclair.MinimumFeeratePerKw
 import fr.acinq.eclair.Feature
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.blockchain.BITCOIN_OUTPUT_SPENT
+import fr.acinq.eclair.blockchain.BITCOIN_TX_CONFIRMED
+import fr.acinq.eclair.blockchain.WatchConfirmed
+import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.blockchain.fee.OnchainFeerates
+import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
@@ -232,6 +237,50 @@ object Helpers {
                     else -> false
                 }
             else -> false
+        }
+    }
+
+    /**
+     * This helper method will publish txes only if they haven't yet reached minDepth
+     */
+    fun publishIfNeeded(txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>): List<PublishTx> {
+        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx ->
+            logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" }
+        }
+        return process.map { tx ->
+            logger.info { "publishing txid=${tx.txid}" }
+            PublishTx(tx)
+        }
+    }
+
+    /**
+     * This helper method will watch txes only if they haven't yet reached minDepth
+     */
+    fun watchConfirmedIfNeeded(txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32, minDepth: Long): List<SendWatch> {
+        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx ->
+            logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" }
+        }
+        return process.map { tx ->
+            SendWatch(
+                WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))
+            )
+        }
+    }
+
+    /**
+     * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
+     */
+    fun watchSpentIfNeeded(parentTx: Transaction, txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32): List<SendWatch> {
+        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx ->
+            logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" }
+        }
+        return process.map {
+            SendWatch(
+                WatchSpent(channelId, parentTx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT)
+            )
         }
     }
 
@@ -1055,7 +1104,7 @@ object Helpers {
                 }
             }
     }
-    
+
     fun encrypt(key: ByteVector32, state: HasCommitments): ByteArray {
         val bin = HasCommitments.serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
