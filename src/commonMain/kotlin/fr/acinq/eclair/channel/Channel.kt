@@ -7,7 +7,6 @@ import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
-import fr.acinq.eclair.channel.Channel.publishActions
 import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.KeyManager
@@ -658,7 +657,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 // - there is no need to attempt to publish transactions for other type of closes
                 when (closingType) {
                     is MutualClose -> {
-                        Pair(event.state, publishActions(closingType.tx, event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()))
+                        Pair(event.state, doPublish(closingType.tx, event.state.channelId))
                     }
                     is LocalClose -> {
                         val actions = doPublish(closingType.localCommitPublished, event.state.channelId)
@@ -2887,9 +2886,4 @@ object Channel {
 
         return Pair(commitments1, sendQueue)
     }
-
-    fun publishActions(tx: Transaction, channelId: ByteVector32, minDepth: Long): List<ChannelAction> = listOf(
-        PublishTx(tx),
-        SendWatch(WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx)))
-    )
 }
