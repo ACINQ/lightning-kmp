@@ -46,6 +46,9 @@ inline fun <reified T : Throwable> List<ChannelAction>.findCommandError(): T? =
 
 internal inline fun <reified T> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
+fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
+fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
+
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState =
@@ -142,9 +145,6 @@ object TestsHelper {
     }
 
     fun mutualClose(alice: Normal, bob: Normal, tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
-        fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
-        fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
-
         val alice1 = alice.updateFeerate(if (tweakFees) 4319 else 10000)
         val bob1 = bob.updateFeerate(if (tweakFees) 4319 else 10000)
 
@@ -212,7 +212,7 @@ object TestsHelper {
         return s1 to localCommitPublished
     }
 
-    fun remotClose(rCommitTx: Transaction, s: ChannelState) : Pair<Closing, RemoteCommitPublished> {
+    fun remoteClose(rCommitTx: Transaction, s: ChannelState) : Pair<Closing, RemoteCommitPublished> {
         require(s is HasCommitments)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, rCommitTx)))
@@ -301,6 +301,9 @@ object TestsHelper {
         return payer0 to payee0
     }
 
+    /**
+     * Cross sign nodes where nodeA initiate the signature exchange
+     */
     fun crossSign(nodeA: ChannelState, nodeB: ChannelState): Pair<ChannelState, ChannelState> {
         assertTrue(nodeA is HasCommitments)
         assertTrue(nodeB is HasCommitments)
