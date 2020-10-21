@@ -2587,7 +2587,7 @@ data class Closing(
                             val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
                                 val remoteCommit = commitments1.remoteNextCommitInfo.left?.nextRemoteCommit ?: error("next remote commit must be defined")
                                 Helpers.Closing.claimRemoteCommitTxOutputs(
-                                    keyManager, commitments1, remoteCommit, remoteCommitPublished?.commitTx ?: error("remote commit must be defined"),
+                                    keyManager, commitments1, remoteCommit, it.commitTx,
                                     currentOnchainFeerates
                                 )
                             }
