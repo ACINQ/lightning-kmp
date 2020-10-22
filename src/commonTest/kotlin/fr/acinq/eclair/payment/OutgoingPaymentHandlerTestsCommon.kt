@@ -469,8 +469,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val privKeyC = Eclair.randomKey()
         val pubKeyC = privKeyC.publicKey()
 
-        val blockHeight = channel.currentBlockHeight.toLong()
-
         val availableForSend = channel.commitments.availableBalanceForSend()
         val targetAmount = availableForSend / 2
 
@@ -482,7 +480,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val expectedAmountAtB = targetAmount
         val expectedAmountAtC = targetAmount
 
-        val expectedExpiryAtC = invoice.minFinalExpiryDelta!!.toCltvExpiry(blockHeight)
+        val expectedExpiryAtC = invoice.minFinalExpiryDelta!!.toCltvExpiry(currentBlockHeight.toLong())
         val expectedExpiryAtB = expectedExpiryAtC + trampolineParams.cltvExpiryDelta
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(channel.staticParams.nodeParams)
@@ -496,7 +494,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val executeCommand = wrappedChannelEvent.channelEvent as? ExecuteCommand
         val cmdAddHtlc = executeCommand?.command as? CMD_ADD_HTLC
-
         assertNotNull(cmdAddHtlc)
 
         assertTrue { cmdAddHtlc.amount == expectedAmountAtB }
@@ -526,5 +523,77 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(payloadC.expiry, expectedExpiryAtC)
         assertEquals(payloadC.totalAmount, payloadC.amount)
         assertEquals(payloadC.paymentSecret, invoice.paymentSecret)
+    }
+
+
+    @Test
+    fun `createHtlc - legacy trampoline`() {
+
+        // simple trampoline route to c, where c doesn't support trampoline:
+        //        .xx.
+        //       /    \
+        // a -> b ->-> c
+
+        val (channel, _) = TestsHelper.reachNormal()
+        val currentBlockHeight = channel.currentBlockHeight
+        val channels = mapOf(channel.channelId to channel)
+
+        val privKeyB = TestConstants.Bob.nodeParams.nodePrivateKey
+        val privKeyC = Eclair.randomKey()
+        val pubKeyC = privKeyC.publicKey()
+
+        val availableForSend = channel.commitments.availableBalanceForSend()
+        val targetAmount = availableForSend / 2
+
+        val invoice = makeInvoice(recipient = privKeyC, amount = targetAmount, supportsTrampoline = false)
+        val sendPayment = SendPayment(UUID.randomUUID(), invoice, targetAmount)
+
+        val trampolineParams = OutgoingPaymentHandler.TrampolineParams.get(0)!!
+
+        val expectedAmountAtB = targetAmount
+        val expectedAmountAtC = targetAmount
+
+        val expectedExpiryAtC = invoice.minFinalExpiryDelta!!.toCltvExpiry(currentBlockHeight.toLong())
+        val expectedExpiryAtB = expectedExpiryAtC + trampolineParams.cltvExpiryDelta
+
+        val outgoingPaymentHandler = OutgoingPaymentHandler(channel.staticParams.nodeParams)
+        val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+
+        assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
+        val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
+
+        val wrappedChannelEvent = progress.actions.filterIsInstance<WrappedChannelEvent>().firstOrNull()
+        assertNotNull(wrappedChannelEvent)
+
+        val executeCommand = wrappedChannelEvent.channelEvent as? ExecuteCommand
+        val cmdAddHtlc = executeCommand?.command as? CMD_ADD_HTLC
+        assertNotNull(cmdAddHtlc)
+
+        assertTrue { cmdAddHtlc.amount == expectedAmountAtB }
+        assertTrue { cmdAddHtlc.cltvExpiry == expectedExpiryAtB }
+
+        // When nodeB receives the packet, it will be decrypted, and we expect to find:
+        // - isLastPacket == true (last on channel-hop sequence)
+        // - contains in inner trampoline onion
+        // - trampoline packet requests a legacy (non-trampoline) forward to nodeC
+
+        val add = UpdateAddHtlc(channel.channelId, 0, cmdAddHtlc.amount, cmdAddHtlc.paymentHash, cmdAddHtlc.cltvExpiry, cmdAddHtlc.onion)
+        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(add, privKeyB)
+        assertEquals(expectedAmountAtB, outerB.amount)
+        assertEquals(expectedAmountAtB, outerB.totalAmount)
+        assertEquals(expectedExpiryAtB, outerB.expiry)
+        assertNotEquals(invoice.paymentSecret, outerB.paymentSecret)
+        assertEquals(expectedAmountAtC, innerB.amountToForward)
+        assertEquals(expectedAmountAtC, innerB.totalAmount)
+        assertEquals(expectedExpiryAtC, innerB.outgoingCltv)
+        assertEquals(pubKeyC, innerB.outgoingNodeId)
+        assertEquals(invoice.paymentSecret, innerB.paymentSecret)
+        assertEquals(invoice.features!!, innerB.invoiceFeatures)
+
+        // invoice.routingInfo => List<PaymentRequest.TaggedField.RoutingInfo>
+        // innerB.invoiceRoutingInfo => List<List<PaymentRequest.TaggedField.ExtraHop>>
+        invoice.routingInfo.map { it.hints }.let {
+            assertEquals(it, innerB.invoiceRoutingInfo)
+        }
     }
 }
