@@ -52,22 +52,28 @@ fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerat
 fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
 
 object TestsHelper {
-    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+    fun init(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = 0,
+        fundingAmount: Satoshi = TestConstants.fundingSatoshis,
+        person1: TestConstants.Person = TestConstants.Alice,
+        person2: TestConstants.Person = TestConstants.Bob,
+    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState =
             WaitForInit(
-                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
+                StaticParams(person1.nodeParams, person2.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
                 currentOnchainFeerates = OnchainFeerates(10000, 10000, 10000, 10000, 10000)
             )
         var bob: ChannelState =
             WaitForInit(
-                StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
+                StaticParams(person2.nodeParams, person1.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
                 currentOnchainFeerates = OnchainFeerates(10000, 10000, 10000, 10000, 10000)
             )
         val channelFlags = 0.toByte()
-        var aliceChannelParams = TestConstants.Alice.channelParams
-        var bobChannelParams = TestConstants.Bob.channelParams
+        var aliceChannelParams = person1.channelParams
+        var bobChannelParams = person2.channelParams
         if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
             aliceChannelParams = aliceChannelParams.copy(channelReserve = Satoshi(0))
         }
@@ -95,8 +101,14 @@ object TestsHelper {
         return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
     }
 
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
-        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
+    fun reachNormal(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = 0,
+        fundingAmount: Satoshi = TestConstants.fundingSatoshis,
+        person1: TestConstants.Person = TestConstants.Alice,
+        person2: TestConstants.Person = TestConstants.Bob
+    ): Pair<Normal, Normal> {
+        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount, person1, person2)
         var alice = a as ChannelState
         var bob = b as ChannelState
         var rb = bob.process(MessageReceived(open))
