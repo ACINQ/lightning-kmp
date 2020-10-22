@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class MilliSatoshi(val msat: Long) : Comparable<MilliSatoshi> {
 
-    constructor(sat : Satoshi) : this(sat.toLong() * 1000)
+    constructor(sat: Satoshi) : this(sat.toLong() * 1000)
 
     // @formatter:off
     operator fun plus(other: MilliSatoshi) = MilliSatoshi(msat + other.msat)

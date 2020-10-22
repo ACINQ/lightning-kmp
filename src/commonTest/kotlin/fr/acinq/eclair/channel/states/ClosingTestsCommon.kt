@@ -91,7 +91,7 @@ class ClosingTestsCommon {
 
         // actual test starts here
         val (alice5, _) = alice4.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, mutualCloseTx)))
-        val (alice6, _) = alice5.process(WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx), 0,0, mutualCloseTx)))
+        val (alice6, _) = alice5.process(WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx), 0, 0, mutualCloseTx)))
 
         assertTrue { alice6 is Closed }
     }
@@ -130,13 +130,16 @@ class ClosingTestsCommon {
         val claimHtlcSuccessFromCommitTx = Transaction(
             version = 0,
             txIn = listOf(
-                TxIn(outPoint = OutPoint(randomBytes32(), 0),
+                TxIn(
+                    outPoint = OutPoint(randomBytes32(), 0),
                     signatureScript = ByteVector.empty,
                     sequence = 0,
-                    witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, ra1, ByteArray(130) { 33 }.byteVector()))
+                    witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, ra1, ByteArray(130) { 33 }.byteVector())
+                )
             ),
             txOut = emptyList(),
-            lockTime = 0)
+            lockTime = 0
+        )
 
         val (alice1, _) = aliceClosing.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_OUTPUT_SPENT, claimHtlcSuccessFromCommitTx)))
         assertEquals(aliceClosing, alice1)
@@ -144,13 +147,19 @@ class ClosingTestsCommon {
         // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
         val claimHtlcSuccessTx = Transaction(
             version = 0,
-            txIn = listOf(TxIn(outPoint = OutPoint(randomBytes32(), 0),
-                signatureScript = ByteVector.empty,
-                sequence = 0,
-                witness = Scripts.witnessHtlcSuccess(Transactions.PlaceHolderSig,
-                    Transactions.PlaceHolderSig,
-                    ra1,
-                    ByteArray(130) { 33 }.byteVector()))),
+            txIn = listOf(
+                TxIn(
+                    outPoint = OutPoint(randomBytes32(), 0),
+                    signatureScript = ByteVector.empty,
+                    sequence = 0,
+                    witness = Scripts.witnessHtlcSuccess(
+                        Transactions.PlaceHolderSig,
+                        Transactions.PlaceHolderSig,
+                        ra1,
+                        ByteArray(130) { 33 }.byteVector()
+                    )
+                )
+            ),
             txOut = emptyList(),
             lockTime = 0
         )
@@ -178,27 +187,39 @@ class ClosingTestsCommon {
         assertEquals(1, localCommitPublished.htlcTimeoutTxs.size)
         assertEquals(1, localCommitPublished.claimHtlcDelayedTxs.size)
 
-        val (alice4, _) = aliceClosing.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx),
-            42,
-            0,
-            localCommitPublished.commitTx
-        )))
-        val (alice5, _) = alice4.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!),
-            200,
-            0,
-            localCommitPublished.claimMainDelayedOutputTx!!
-        )))
-        val (alice6, _) = alice5.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs.first()),
-            201,
-            0,
-            localCommitPublished.htlcTimeoutTxs.first()
-        )))
+        val (alice4, _) = aliceClosing.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx),
+                    42,
+                    0,
+                    localCommitPublished.commitTx
+                )
+            )
+        )
+        val (alice5, _) = alice4.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!),
+                    200,
+                    0,
+                    localCommitPublished.claimMainDelayedOutputTx!!
+                )
+            )
+        )
+        val (alice6, _) = alice5.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs.first()),
+                    201,
+                    0,
+                    localCommitPublished.htlcTimeoutTxs.first()
+                )
+            )
+        )
 
         assertNotNull((alice6 as Closing).localCommitPublished)
         assertEquals(
@@ -206,15 +227,20 @@ class ClosingTestsCommon {
                 localCommitPublished.commitTx.txid,
                 localCommitPublished.claimMainDelayedOutputTx?.txid,
                 localCommitPublished.htlcTimeoutTxs.first().txid
-            ), alice6.localCommitPublished!!.irrevocablySpent.values.toSet())
+            ), alice6.localCommitPublished!!.irrevocablySpent.values.toSet()
+        )
 
-        val (alice7, _) = alice6.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first()),
-            202,
-            0,
-            localCommitPublished.claimHtlcDelayedTxs.first()
-        )))
+        val (alice7, _) = alice6.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first()),
+                    202,
+                    0,
+                    localCommitPublished.claimHtlcDelayedTxs.first()
+                )
+            )
+        )
 
         assertTrue { alice7 is Closed }
     }
@@ -235,7 +261,7 @@ class ClosingTestsCommon {
         val (alice4, bob4, dust) = addHtlc(dustCmd, alice3, bob3)
         val (_, cmd4) = makeCmdAdd(20_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice4.currentBlockHeight.toLong() + 1, ra1)
         val (alice5, bob5, htlca4) = addHtlc(cmd4, alice4, bob4)
-        val (alice6, bob6)= crossSign(alice5, bob5)
+        val (alice6, bob6) = crossSign(alice5, bob5)
         val (aliceClosing, localCommitPublished) = localClose(alice6)
 
         // actual test starts here
@@ -246,77 +272,117 @@ class ClosingTestsCommon {
 
         // if commit tx and htlc-timeout txs end up in the same block, we may receive the htlc-timeout confirmation before the commit tx confirmation
 
-        val (alice7, _) = aliceClosing.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs.first()),
-            42,
-            0,
-            localCommitPublished.htlcTimeoutTxs.first()
-        )))
-        val (alice8, _) = alice7.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx),
-            42,
-            1,
-            localCommitPublished.commitTx
-        )))
-        val (alice9, _) = alice8.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!),
-            200,
-            0,
-            localCommitPublished.claimMainDelayedOutputTx!!
-        )))
-        val (alice10, _) = alice9.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[1]),
-            202,
-            0,
-            localCommitPublished.htlcTimeoutTxs[1]
-        )))
-        val (alice11, _) = alice10.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[2]),
-            202,
-            1,
-            localCommitPublished.htlcTimeoutTxs[2]
-        )))
-        val (alice12, _) = alice11.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[3]),
-            203,
-            0,
-            localCommitPublished.htlcTimeoutTxs[3]
-        )))
+        val (alice7, _) = aliceClosing.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs.first()),
+                    42,
+                    0,
+                    localCommitPublished.htlcTimeoutTxs.first()
+                )
+            )
+        )
+        val (alice8, _) = alice7.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx),
+                    42,
+                    1,
+                    localCommitPublished.commitTx
+                )
+            )
+        )
+        val (alice9, _) = alice8.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!),
+                    200,
+                    0,
+                    localCommitPublished.claimMainDelayedOutputTx!!
+                )
+            )
+        )
+        val (alice10, _) = alice9.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[1]),
+                    202,
+                    0,
+                    localCommitPublished.htlcTimeoutTxs[1]
+                )
+            )
+        )
+        val (alice11, _) = alice10.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[2]),
+                    202,
+                    1,
+                    localCommitPublished.htlcTimeoutTxs[2]
+                )
+            )
+        )
+        val (alice12, _) = alice11.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[3]),
+                    203,
+                    0,
+                    localCommitPublished.htlcTimeoutTxs[3]
+                )
+            )
+        )
 
-        val (alice13, _) = alice12.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first()),
-            203,
-            0,
-            localCommitPublished.claimHtlcDelayedTxs.first()
-        )))
-        val (alice14, _) = alice13.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[1]),
-            203,
-            1,
-            localCommitPublished.claimHtlcDelayedTxs[1]
-        )))
-        val (alice15, _) = alice14.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[2]),
-            203,
-            2,
-            localCommitPublished.claimHtlcDelayedTxs[2]
-        )))
-        val (alice16, _) = alice15.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[3]),
-            203,
-            3,
-            localCommitPublished.claimHtlcDelayedTxs[3]
-        )))
+        val (alice13, _) = alice12.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first()),
+                    203,
+                    0,
+                    localCommitPublished.claimHtlcDelayedTxs.first()
+                )
+            )
+        )
+        val (alice14, _) = alice13.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[1]),
+                    203,
+                    1,
+                    localCommitPublished.claimHtlcDelayedTxs[1]
+                )
+            )
+        )
+        val (alice15, _) = alice14.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[2]),
+                    203,
+                    2,
+                    localCommitPublished.claimHtlcDelayedTxs[2]
+                )
+            )
+        )
+        val (alice16, _) = alice15.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[3]),
+                    203,
+                    3,
+                    localCommitPublished.claimHtlcDelayedTxs[3]
+                )
+            )
+        )
 
         assertTrue { alice16 is Closed }
     }
@@ -359,15 +425,24 @@ class ClosingTestsCommon {
         assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs.isEmpty())
         assertEquals(alice0, aliceClosing.copy(remoteCommitPublished = null))
 
-        val (alice1, _) = aliceClosing.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(bobCommitTx),
-            0, 0, bobCommitTx)))
-        val (alice2, _) = alice1.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),
-            0, 0, remoteCommitPublished.claimMainOutputTx!!
-        )))
+        val (alice1, _) = aliceClosing.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(bobCommitTx),
+                    0, 0, bobCommitTx
+                )
+            )
+        )
+        val (alice2, _) = alice1.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),
+                    0, 0, remoteCommitPublished.claimMainOutputTx!!
+                )
+            )
+        )
 
         assertTrue { alice2 is Closed }
     }
@@ -383,7 +458,7 @@ class ClosingTestsCommon {
         val (alice2, bob2, htlca2) = addHtlc(cmd2, alice1, bob1)
         val (_, cmd3) = makeCmdAdd(20000000.msat, bob0.staticParams.nodeParams.nodeId, alice2.currentBlockHeight.toLong() - 1, ra1)
         val (alice3, bob3, htlca3) = addHtlc(cmd3, alice2, bob2)
-        val (alice4, bob4)= crossSign(alice3, bob3)
+        val (alice4, bob4) = crossSign(alice3, bob3)
 
         // Bob publishes the latest commit tx.
         val bobCommitTx = (bob4 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
@@ -392,26 +467,51 @@ class ClosingTestsCommon {
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
         assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs.size)
 
-        val (alice5, _) = aliceClosing.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(bobCommitTx),
-            42, 0, bobCommitTx)))
-        val (alice6, _) = alice5.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),
-            45, 0, remoteCommitPublished.claimMainOutputTx!!)))
-        val (alice7, _) = alice6.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs.first()),
-            201, 0, remoteCommitPublished.claimHtlcTimeoutTxs.first())))
-        val (alice8, _) = alice7.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]),
-            202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1])))
-        val (alice9, _) = alice8.process(WatchReceived(WatchEventConfirmed(
-            ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]),
-            203, 1, remoteCommitPublished.claimHtlcTimeoutTxs[2])))
+        val (alice5, _) = aliceClosing.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(bobCommitTx),
+                    42, 0, bobCommitTx
+                )
+            )
+        )
+        val (alice6, _) = alice5.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),
+                    45, 0, remoteCommitPublished.claimMainOutputTx!!
+                )
+            )
+        )
+        val (alice7, _) = alice6.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs.first()),
+                    201, 0, remoteCommitPublished.claimHtlcTimeoutTxs.first()
+                )
+            )
+        )
+        val (alice8, _) = alice7.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]),
+                    202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1]
+                )
+            )
+        )
+        val (alice9, _) = alice8.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]),
+                    203, 1, remoteCommitPublished.claimHtlcTimeoutTxs[2]
+                )
+            )
+        )
 
         assertTrue { alice9 is Closed }
     }
@@ -458,12 +558,30 @@ class ClosingTestsCommon {
         assertEquals(bobCommitTx.txid, watchHtlcSuccess.txId)
         assertEquals(claimHtlcSuccessTx.txIn.first().outPoint.index, watchHtlcSuccess.outputIndex.toLong())
 
-        val (alice6, _) = alice5.process(WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(bobCommitTx),0,0 , bobCommitTx)))
-        val (alice7, _) = alice6.process(WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),0,0 , remoteCommitPublished.claimMainOutputTx!!)))
-        val (alice8, _) = alice7.process(WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes,
-            BITCOIN_TX_CONFIRMED(claimHtlcSuccessTx),0,0 , claimHtlcSuccessTx)))
+        val (alice6, _) = alice5.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx
+                )
+            )
+        )
+        val (alice7, _) = alice6.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 0, 0, remoteCommitPublished.claimMainOutputTx!!
+                )
+            )
+        )
+        val (alice8, _) = alice7.process(
+            WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(claimHtlcSuccessTx), 0, 0, claimHtlcSuccessTx
+                )
+            )
+        )
 
         assertTrue { alice8 is Closed }
     }
@@ -633,9 +751,9 @@ class ClosingTestsCommon {
         assertEquals(3, bobRevokedTx.txOut.size)
 
         val (alice1, aliceActions1) = alice.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobRevokedTx)))
-        assertTrue { alice1 is Closing } ; alice1 as Closing
-        assertEquals(1,  alice1.revokedCommitPublished.size)
-        assertEquals(alice,  alice1.copy(revokedCommitPublished = listOf()))
+        assertTrue { alice1 is Closing }; alice1 as Closing
+        assertEquals(1, alice1.revokedCommitPublished.size)
+        assertEquals(alice, alice1.copy(revokedCommitPublished = listOf()))
 
         // alice publishes and watches the penalty tx
         val penalties = aliceActions1.filterIsInstance<PublishTx>().map { it.tx }
@@ -665,7 +783,7 @@ class ClosingTestsCommon {
 
         // bob publishes multiple revoked txes (last one isn't revoked)
         val (alice1, aliceActions1) = alice.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobCommitTxes.first().commitTx.tx)))
-        assertTrue { alice1 is Closing } ; alice1 as Closing
+        assertTrue { alice1 is Closing }; alice1 as Closing
 
         // alice publishes and watches the penalty tx
         val penalties1 = aliceActions1.filterIsInstance<PublishTx>().map { it.tx }
@@ -685,7 +803,7 @@ class ClosingTestsCommon {
         //        assertEquals(htlcPenalty1.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[1].outputIndex)
 
         val (alice2, aliceActions2) = alice1.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobCommitTxes[1].commitTx.tx)))
-        assertTrue { alice2 is Closing } ; alice2 as Closing
+        assertTrue { alice2 is Closing }; alice2 as Closing
         // alice publishes and watches the penalty tx (no HTLC in that commitment)
         val penalties2 = aliceActions2.filterIsInstance<PublishTx>().map { it.tx }
         val claimMain2 = penalties2[0]
@@ -699,7 +817,7 @@ class ClosingTestsCommon {
         assertEquals(mainPenalty2.txIn.first().outPoint.index, aliceActions2.watches<WatchSpent>()[0].outputIndex.toLong())
 
         val (alice3, aliceActions3) = alice2.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobCommitTxes[2].commitTx.tx)))
-        assertTrue { alice3 is Closing } ; alice3 as Closing
+        assertTrue { alice3 is Closing }; alice3 as Closing
         // alice publishes and watches the penalty tx (no HTLC in that commitment)
         val penalties3 = aliceActions3.filterIsInstance<PublishTx>().map { it.tx }
         val claimMain3 = penalties3[0]
@@ -732,7 +850,7 @@ class ClosingTestsCommon {
 
     @Test
     fun `recv CMD_CLOSE`() {
-        val(alice0, _, _) = init()
+        val (alice0, _, _) = init()
         val cmdClose = CMD_CLOSE(null)
         val (_, actions) = alice0.process(ExecuteCommand(cmdClose))
         val commandError = actions.filterIsInstance<HandleCommandFailed>().first()

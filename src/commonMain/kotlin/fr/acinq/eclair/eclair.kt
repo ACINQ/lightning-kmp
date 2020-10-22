@@ -42,7 +42,7 @@ object Eclair {
 
     fun randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
 
-    fun randomKey() : PrivateKey = PrivateKey(randomBytes32())
+    fun randomKey(): PrivateKey = PrivateKey(randomBytes32())
 
     fun toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 {
         require(fundingOutputIndex < 65536) { "fundingOutputIndex must not be greater than FFFF" }

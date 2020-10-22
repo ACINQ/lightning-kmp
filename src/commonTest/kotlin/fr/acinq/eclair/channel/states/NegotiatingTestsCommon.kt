@@ -2,12 +2,9 @@ package fr.acinq.eclair.channel.states
 
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.blockchain.WatchEventSpent
-import fr.acinq.eclair.blockchain.fee.ConstantFeeEstimator
-import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.wire.ClosingSigned
-import fr.acinq.eclair.wire.Shutdown
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

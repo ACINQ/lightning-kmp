@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.crypto.Pack
  * @param ck chaining key
  */
 data class ExtendedCipherState(val cs: CipherState, val ck: ByteArray) :
-  CipherState {
+    CipherState {
     override fun cipher(): CipherFunctions = cs.cipher()
 
     override fun hasKey(): Boolean = cs.hasKey()

@@ -26,36 +26,42 @@ sealed class BitcoindRequest(vararg params: Any) {
             params = parameters.asJsonRPCParameters()
         ).let { Json.encodeToString(JsonRPCRequest.serializer(), it) }
 }
+
 sealed class BitcoindResponse
 object GetNetworkInfo : BitcoindRequest() {
     override val method: String = "getnetworkinfo"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetNetworkInfoResponse =
         GetNetworkInfoResponse(rpcResponse.result)
 }
+
 data class GetNetworkInfoResponse(val result: JsonElement) : BitcoindResponse()
 object GetBlockCount : BitcoindRequest() {
     override val method: String = "getblockcount"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetBlockCountResponse =
         GetBlockCountResponse(rpcResponse.result.jsonPrimitive.int)
 }
+
 data class GetBlockCountResponse(val blockcount: Int) : BitcoindResponse()
 object GetRawMempool : BitcoindRequest() {
     override val method: String = "getrawmempool"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetRawMempoolResponse =
         GetRawMempoolResponse(rpcResponse.result.jsonArray.map { it.jsonPrimitive.content })
 }
+
 data class GetRawMempoolResponse(val txids: List<String>) : BitcoindResponse()
 object GetNewAddress : BitcoindRequest() {
     override val method: String = "getnewaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetNewAddressResponse =
         GetNewAddressResponse(rpcResponse.result.jsonPrimitive.content)
 }
+
 data class GetNewAddressResponse(val address: String) : BitcoindResponse()
 data class GenerateToAddress(val blockCount: Int, val address: String) : BitcoindRequest(blockCount, address) {
     override val method: String = "generatetoaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): BitcoindResponse =
         GenerateToAddressResponse(rpcResponse.result.jsonArray.map { it.jsonPrimitive.content })
 }
+
 data class GenerateToAddressResponse(val blocks: List<String>) : BitcoindResponse()
 
 data class DumpPrivateKey(val address: String) : BitcoindRequest(address) {
@@ -68,6 +74,7 @@ data class DumpPrivateKey(val address: String) : BitcoindRequest(address) {
         return DumpPrivateKeyResponse(privateKey)
     }
 }
+
 data class DumpPrivateKeyResponse(val privateKey: PrivateKey) : BitcoindResponse()
 
 data class SendToAddress(val address: String, val amount: Double) : BitcoindRequest(address, amount) {
@@ -75,6 +82,7 @@ data class SendToAddress(val address: String, val amount: Double) : BitcoindRequ
     override fun parseResponse(rpcResponse: JsonRPCResponse): SendToAddressResponse =
         SendToAddressResponse(rpcResponse.result.jsonPrimitive.content)
 }
+
 data class SendToAddressResponse(val txid: String) : BitcoindResponse()
 
 data class GetRawTransaction(val txid: String) : BitcoindRequest(txid) {
@@ -84,13 +92,16 @@ data class GetRawTransaction(val txid: String) : BitcoindRequest(txid) {
             Transaction.read(rpcResponse.result.jsonPrimitive.content)
         )
 }
+
 data class GetRawTransactionResponse(val tx: Transaction) : BitcoindResponse()
 data class SendRawTransaction(val rawTx: String) : BitcoindRequest(rawTx) {
     constructor(tx: Transaction) : this(tx.toString())
+
     override val method: String = "sendrawtransaction"
     override fun parseResponse(rpcResponse: JsonRPCResponse): SendRawTransactionResponse =
         SendRawTransactionResponse(rpcResponse.result.jsonPrimitive.content)
 }
+
 data class SendRawTransactionResponse(val txid: String) : BitcoindResponse()
 
 data class FundTransaction(val tx: String, val lockUnspents: Boolean, val fee: Double) : BitcoindRequest() {
@@ -117,6 +128,7 @@ data class FundTransaction(val tx: String, val lockUnspents: Boolean, val fee: D
         }.toString()
     }
 }
+
 data class FundTransactionResponse(val hex: String, val fee: Double, val changepos: Int) : BitcoindResponse()
 data class SignTransaction(val tx: Transaction) : BitcoindRequest(tx.toString()) {
     override val method: String = "signrawtransactionwithwallet"
@@ -126,4 +138,5 @@ data class SignTransaction(val tx: Transaction) : BitcoindRequest(tx.toString())
         return SignTransactionResponse(hex, complete)
     }
 }
+
 data class SignTransactionResponse(val hex: String, val complete: Boolean) : BitcoindResponse()

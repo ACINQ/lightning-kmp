@@ -26,7 +26,7 @@ class OpenTlvTestsCommon : EclairTestSuite() {
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
             val version = decoded.records.mapNotNull {
-                when(it) {
+                when (it) {
                     is ChannelTlv.ChannelVersionTlvLegacy -> it.channelVersion
                     is ChannelTlv.ChannelVersionTlv -> it.channelVersion
                     else -> null

@@ -6,7 +6,6 @@ import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.blockchain.fee.FeeEstimator
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain

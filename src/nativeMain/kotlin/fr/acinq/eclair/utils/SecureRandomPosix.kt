@@ -34,7 +34,7 @@ object SecureRandomPosix : Random() {
     override fun nextInt(): Int {
         val a = ByteArray(Int.SIZE_BYTES)
         nextBytes(a)
-        return  (a[0].toInt() shl 0) or
+        return (a[0].toInt() shl 0) or
                 (a[1].toInt() shl 8) or
                 (a[2].toInt() shl 16) or
                 (a[3].toInt() shl 24)

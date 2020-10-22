@@ -25,7 +25,7 @@ data class JsonRPCRequest(
 )
 
 fun List<Any>.asJsonRPCParameters(): List<JsonRPCParam> = map {
-    when(it) {
+    when (it) {
         is Int -> it.asParam()
         is Double -> it.asParam()
         is String -> it.asParam()
@@ -54,12 +54,13 @@ data class JsonRPCInt(val value: Int) : JsonRPCParam() {
         override fun deserialize(decoder: Decoder): JsonRPCInt = JsonRPCInt(decoder.decodeInt())
     }
 }
+
 fun Int.asParam(): JsonRPCParam = JsonRPCInt(this)
 
 @Serializable(with = JsonRPCDouble.Serializer::class)
 data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
     @OptIn(ExperimentalSerializationApi::class)
-    object Serializer: KSerializer<JsonRPCDouble> {
+    object Serializer : KSerializer<JsonRPCDouble> {
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("DoubleParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCDouble) {
@@ -69,12 +70,13 @@ data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
         override fun deserialize(decoder: Decoder): JsonRPCDouble = JsonRPCDouble(decoder.decodeDouble())
     }
 }
+
 fun Double.asParam(): JsonRPCParam = JsonRPCDouble(this)
 
 @Serializable(JsonRPCString.Serializer::class)
 data class JsonRPCString(val value: String) : JsonRPCParam() {
     @OptIn(ExperimentalSerializationApi::class)
-    object Serializer: KSerializer<JsonRPCString> {
+    object Serializer : KSerializer<JsonRPCString> {
         override val descriptor: SerialDescriptor = buildClassSerialDescriptor("StringParam")
 
         override fun serialize(encoder: Encoder, value: JsonRPCString) {
@@ -84,6 +86,7 @@ data class JsonRPCString(val value: String) : JsonRPCParam() {
         override fun deserialize(decoder: Decoder): JsonRPCString = JsonRPCString(decoder.decodeString())
     }
 }
+
 fun String.asParam(): JsonRPCParam = JsonRPCString(this)
 
 /**
@@ -91,5 +94,6 @@ fun String.asParam(): JsonRPCParam = JsonRPCString(this)
  */
 @Serializable
 data class JsonRPCResponse(val id: Int = 0, val result: JsonElement = JsonNull, val error: JsonRPCError? = null)
+
 @Serializable
 data class JsonRPCError(val code: Int, val message: String)

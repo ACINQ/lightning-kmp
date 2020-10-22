@@ -37,10 +37,10 @@ internal object AskForHeader : ClientEvent()
  */
 internal sealed class ElectrumClientAction
 internal data class ConnectionAttempt(val serverAddress: ServerAddress) : ElectrumClientAction()
-internal data class SendRequest(val request: String): ElectrumClientAction()
+internal data class SendRequest(val request: String) : ElectrumClientAction()
 internal data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction()
 internal data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction()
-internal data class BroadcastStatus(val connection: Connection): ElectrumClientAction()
+internal data class BroadcastStatus(val connection: Connection) : ElectrumClientAction()
 internal object StartPing : ElectrumClientAction()
 internal object Shutdown : ElectrumClientAction()
 
@@ -71,26 +71,26 @@ internal object WaitingForConnection : ClientState() {
 
 internal object WaitingForVersion : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
-            event is ReceivedResponse && event.response is Either.Right -> {
-                when (parseJsonResponse(version, event.response.value)) {
-                    is ServerVersionResponse -> newState {
-                        state = WaitingForTip
-                        actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
-                    }
-                    is ServerError -> newState {
-                        state = ClientClosed
-                        actions = listOf(BroadcastStatus(Connection.CLOSED))
-                    }
-                    else -> returnState() // TODO handle error?
+        event is ReceivedResponse && event.response is Either.Right -> {
+            when (parseJsonResponse(version, event.response.value)) {
+                is ServerVersionResponse -> newState {
+                    state = WaitingForTip
+                    actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
                 }
+                is ServerError -> newState {
+                    state = ClientClosed
+                    actions = listOf(BroadcastStatus(Connection.CLOSED))
+                }
+                else -> returnState() // TODO handle error?
             }
-            else -> unhandled(event)
         }
+        else -> unhandled(event)
     }
+}
 
 internal object WaitingForTip : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
-        when(event) {
+        when (event) {
             is ReceivedResponse -> {
                 when (val rpcResponse = event.response) {
                     is Either.Right ->
@@ -109,27 +109,27 @@ internal object WaitingForTip : ClientState() {
 }
 
 internal data class ClientRunning(val height: Int, val tip: BlockHeader, val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()) : ClientState() {
-   override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
-       is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
-       is AskForHeader -> returnState(SendHeader(height, tip))
-       is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
-       is ReceivedResponse -> when (val response = event.response) {
-           is Either.Left -> when (val electrumResponse = response.value) {
-               is HeaderSubscriptionResponse -> newState {
-                   state = copy(height = electrumResponse.height, tip = electrumResponse.header)
-                   actions = listOf(SendResponse(electrumResponse))
-               }
-               is ScriptHashSubscriptionResponse -> returnState(SendResponse(electrumResponse))
-               else -> returnState()
-           }
-           is Either.Right -> {
-               requests[response.value.id]?.takeUnless { it is Ping }?.let { originRequest ->
-                   returnState(SendResponse(parseJsonResponse(originRequest, response.value)))
-               } ?: returnState()
-           }
-       }
-       else -> unhandled(event)
-   }
+    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
+        is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
+        is AskForHeader -> returnState(SendHeader(height, tip))
+        is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
+        is ReceivedResponse -> when (val response = event.response) {
+            is Either.Left -> when (val electrumResponse = response.value) {
+                is HeaderSubscriptionResponse -> newState {
+                    state = copy(height = electrumResponse.height, tip = electrumResponse.header)
+                    actions = listOf(SendResponse(electrumResponse))
+                }
+                is ScriptHashSubscriptionResponse -> returnState(SendResponse(electrumResponse))
+                else -> returnState()
+            }
+            is Either.Right -> {
+                requests[response.value.id]?.takeUnless { it is Ping }?.let { originRequest ->
+                    returnState(SendResponse(parseJsonResponse(originRequest, response.value)))
+                } ?: returnState()
+            }
+        }
+        else -> unhandled(event)
+    }
 
     private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
         val newRequestId = requests.maxOfOrNull { it.key + 1 } ?: 0
@@ -140,7 +140,7 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader, val req
 
 internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
-        when(event) {
+        when (event) {
             is Start -> newState {
                 state = WaitingForConnection
                 actions = listOf(
@@ -152,7 +152,7 @@ internal object ClientClosed : ClientState() {
         }
 }
 
-private fun ClientState.unhandled(event: ClientEvent) : Pair<ClientState, List<ElectrumClientAction>> =
+private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
         Disconnected -> newState {
             state = ClientClosed
@@ -167,6 +167,7 @@ private class ClientStateBuilder {
     var actions = emptyList<ElectrumClientAction>()
     fun build() = state to actions
 }
+
 private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder().apply(init).build()
 
 private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
@@ -191,13 +192,16 @@ class ElectrumClient(
 
     private var state: ClientState = ClientClosed
         set(value) {
-            if (value != field) logger.info { """Updated State: 
+            if (value != field) logger.info {
+                """Updated State: 
                 |prev: $field
-                |new:  $value""".trimMargin() }
+                |new:  $value""".trimMargin()
+            }
             field = value
         }
 
     var runJob: Job? = null
+
     init {
         logger.info { "Init Electrum Client" }
         runJob = launch { run() }
@@ -228,6 +232,7 @@ class ElectrumClient(
         if (state == ClientClosed) launch { eventChannel.send(Start(serverAddress)) }
         else logger.warning { "ElectrumClient is already running $this" }
     }
+
     fun disconnect() {
         launch { eventChannel.send(Disconnected) }
     }
@@ -267,14 +272,14 @@ class ElectrumClient(
     fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
 
     fun sendMessage(message: ElectrumMessage) {
-         launch {
-             when (message) {
-                 is AskForStatusUpdate -> eventChannel.send(AskForStatus)
-                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
-                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
-                 else -> error("sendMessage does not support message: $message")
-             }
-         }
+        launch {
+            when (message) {
+                is AskForStatusUpdate -> eventChannel.send(AskForStatus)
+                is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
+                is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
+                else -> error("sendMessage does not support message: $message")
+            }
+        }
     }
 
     private var pingJob: Job? = null

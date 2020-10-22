@@ -35,9 +35,11 @@ object ByteVector64KSerializer : AbstractStringKSerializer<ByteVector64>("ByteVe
 
 object PrivateKeyKSerializer : AbstractStringKSerializer<PrivateKey>("PrivateKey", { it.value.toHex() }, { PrivateKey(ByteVector32(it)) })
 
-object PublicKeyKSerializer : AbstractStringKSerializer<PublicKey>("PublicKey", { it.value.toHex() }, { PublicKey(
-    ByteVector(it)
-) })
+object PublicKeyKSerializer : AbstractStringKSerializer<PublicKey>("PublicKey", { it.value.toHex() }, {
+    PublicKey(
+        ByteVector(it)
+    )
+})
 
 
 object SatoshiKSerializer : KSerializer<Satoshi> {

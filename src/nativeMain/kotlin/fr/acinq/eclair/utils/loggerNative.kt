@@ -11,4 +11,6 @@ private val EclairLoggerFactoryReference = AtomicReference(LoggerFactory.default
 
 actual var EclairLoggerFactory: LoggerFactory
     get() = EclairLoggerFactoryReference.value
-    set(factory) { EclairLoggerFactoryReference.value = factory.freeze() }
+    set(factory) {
+        EclairLoggerFactoryReference.value = factory.freeze()
+    }

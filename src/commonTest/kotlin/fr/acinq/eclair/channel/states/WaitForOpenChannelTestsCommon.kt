@@ -19,7 +19,7 @@ class WaitForOpenChannelTestsCommon {
         val (_, b, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
         val bob = b as ChannelState
         assertEquals(TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))), open.tlvStream)
-        val (bob1, _)= bob.process(MessageReceived(open))
+        val (bob1, _) = bob.process(MessageReceived(open))
         assertTrue { bob1 is WaitForFundingCreated }
     }
 

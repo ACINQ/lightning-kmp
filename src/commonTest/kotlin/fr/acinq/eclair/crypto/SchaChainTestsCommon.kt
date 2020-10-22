@@ -62,13 +62,14 @@ class SchaChainTestsCommon : EclairTestSuite() {
         Hex.decode("0c73aa6bd28175c4b6545501e8ce51492a98e53027b8137008359f6d750d2f38"),
         Hex.decode("01a10b1efc3071b46284fd9b79c16999d3d0dcad88fb17bdf3cbfaeb6251ecde")
     )
-    .map { ByteVector32(it) }
+        .map { ByteVector32(it) }
 
     private val seed = ByteVector32.Zeroes
 
-    @Test fun `provide sequence`() {
+    @Test
+    fun `provide sequence`() {
         var receiver = ShaChain.empty
-        repeat (50) {
+        repeat(50) {
             receiver = receiver.addHash(ShaChain.shaChainFromSeed(seed, -1L /*0xffffffffffffffffL*/ - it), -1L /*0xffffffffffffffffL*/ - it)
         }
         assertEquals(expected.reversed(), receiver.asSequence().toList())
@@ -76,15 +77,29 @@ class SchaChainTestsCommon : EclairTestSuite() {
         assertTrue(expected[20] in receiver.asSequence())
     }
 
-    @Test fun `Rusty's reference tests @ generation`() {
-        assertEquals(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("0000000000000000000000000000000000000000000000000000000000000000")), 281474976710655L))
-        assertEquals(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")), 281474976710655L))
-        assertEquals(ByteVector32(Hex.decode("56f4008fb007ca9acf0e15b054d5c9fd12ee06cea347914ddbaed70d1c13a528")), ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")), 0xaaaaaaaaaaaL))
-        assertEquals(ByteVector32(Hex.decode("9015daaeb06dba4ccc05b91b2f73bd54405f2be9f217fbacd3c5ac2e62327d31")), ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")), 0x555555555555L))
+    @Test
+    fun `Rusty's reference tests @ generation`() {
+        assertEquals(
+            ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")),
+            ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("0000000000000000000000000000000000000000000000000000000000000000")), 281474976710655L)
+        )
+        assertEquals(
+            ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")),
+            ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")), 281474976710655L)
+        )
+        assertEquals(
+            ByteVector32(Hex.decode("56f4008fb007ca9acf0e15b054d5c9fd12ee06cea347914ddbaed70d1c13a528")),
+            ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")), 0xaaaaaaaaaaaL)
+        )
+        assertEquals(
+            ByteVector32(Hex.decode("9015daaeb06dba4ccc05b91b2f73bd54405f2be9f217fbacd3c5ac2e62327d31")),
+            ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")), 0x555555555555L)
+        )
         assertEquals(ByteVector32(Hex.decode("915c75942a26bb3a433a8ce2cb0427c29ec6c1775cfc78328b57f6ba7bfeaa9c")), ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")), 1))
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret correct sequence`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret correct sequence`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -96,7 +111,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         chain7.addHash(ByteVector32(Hex.decode("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17")), 281474976710648L)
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #1 incorrect`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #1 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), 281474976710655L)
         assertFailsWith<IllegalArgumentException> {
@@ -104,7 +120,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #2 incorrect (#1 derived from incorrect)`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #2 incorrect (#1 derived from incorrect)`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3")), 281474976710654L)
@@ -114,7 +131,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #3 incorrect`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #3 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -124,7 +142,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #4 incorrect (1,2,3 derived from incorrect)`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #4 incorrect (1,2,3 derived from incorrect)`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3")), 281474976710654L)
@@ -138,7 +157,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #5 incorrect`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #5 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -150,7 +170,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #6 incorrect (5 derived from incorrect)`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #6 incorrect (5 derived from incorrect)`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -164,7 +185,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #7 incorrect`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #7 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -178,7 +200,8 @@ class SchaChainTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `Rusty's reference tests @ insert_secret #8 incorrect`() {
+    @Test
+    fun `Rusty's reference tests @ insert_secret #8 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)

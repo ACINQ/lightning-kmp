@@ -8,7 +8,6 @@ import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
-import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
@@ -72,12 +71,15 @@ sealed class ProcessRemoteFailure : ChannelAction() {
     abstract val channelId: ByteVector32
     abstract val paymentId: UUID
 }
+
 data class ProcessFail(val fail: UpdateFailHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
     override val channelId: ByteVector32 get() = fail.channelId
 }
+
 data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
     override val channelId: ByteVector32 get() = fail.channelId
 }
+
 data class ProcessLocalFailure(val error: Throwable) : ChannelAction()
 data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
@@ -544,11 +546,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         )
                         val minDepth = event.state.staticParams.nodeParams.minDepthBlocks.toLong()
                         event.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.localCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
-                        event.state.remoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
-                        event.state.nextRemoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.localCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.remoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.nextRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
-                        event.state.futureRemoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
                             // TODO ask watcher for the funding tx

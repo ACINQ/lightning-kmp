@@ -26,13 +26,13 @@ object ChaCha20Poly1305 {
         val polykey = ChaCha20.encrypt(ByteArray(32), key, nonce)
         val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
         val tag = Poly1305.mac(
-          polykey,
-          aad,
-          pad16(aad),
-          ciphertext,
-          pad16(ciphertext),
-          write64(aad.size),
-          write64(ciphertext.size)
+            polykey,
+            aad,
+            pad16(aad),
+            ciphertext,
+            pad16(ciphertext),
+            write64(aad.size),
+            write64(ciphertext.size)
         )
         return Pair(ciphertext, tag)
     }
@@ -49,13 +49,13 @@ object ChaCha20Poly1305 {
     fun decrypt(key: ByteArray, nonce: ByteArray, ciphertext: ByteArray, aad: ByteArray, mac: ByteArray): ByteArray {
         val polykey = ChaCha20.encrypt(ByteArray(32), key, nonce)
         val tag = Poly1305.mac(
-          polykey,
-          aad,
-          pad16(aad),
-          ciphertext,
-          pad16(ciphertext),
-          write64(aad.size),
-          write64(ciphertext.size)
+            polykey,
+            aad,
+            pad16(aad),
+            ciphertext,
+            pad16(ciphertext),
+            write64(aad.size),
+            write64(ciphertext.size)
         )
         if (!tag.contentEquals(mac)) throw InvalidMac
         val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
@@ -78,5 +78,5 @@ object ChaCha20Poly1305 {
     }
 
     fun write64(input: Int): ByteArray =
-      write64(input.toLong())
+        write64(input.toLong())
 }

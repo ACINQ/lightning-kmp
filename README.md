@@ -1,6 +1,7 @@
 Basic prototype for evaluating kotlin-multiplatform in the context of eclair (Phoenix) on iOS and Android
 
 Modules are organized as follows:
+
 - common: Lightning related module containing the node logic. Everything is written in pure Kotlin and should work as-is on all platforms.
 - phoenix-android: the Phoenix app on android, using the `common` module for the node logic.
 
@@ -29,7 +30,7 @@ brew install libtool
 ```
 
 > `brew` will detect the already available Apple version and thus will rename the new one into `glibtool` as expected by the other parts of the toolchain.
-	
+
 - Install GMP
 
 ```sh
@@ -44,8 +45,7 @@ Copy the file `local.properties.example` into `local.properties` and change its 
 
 ## Android
 
-Use Android Studio and make sure you are using the Android Studio JRE provided with the Android Studio distribution to build the project.
-This app use the `jvm()` implementation of the kotlin/native `common` module
+Use Android Studio and make sure you are using the Android Studio JRE provided with the Android Studio distribution to build the project. This app use the `jvm()` implementation of the kotlin/native `common` module
 
 ## iOS
 

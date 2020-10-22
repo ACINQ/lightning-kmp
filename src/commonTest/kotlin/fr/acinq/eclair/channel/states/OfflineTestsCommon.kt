@@ -3,7 +3,8 @@ package fr.acinq.eclair.channel.states
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.eclair.*
+import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
@@ -19,8 +20,8 @@ class OfflineTestsCommon : EclairTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val (alice1, _) = alice.process(Disconnected)
         val (bob1, _) = bob.process(Disconnected)
-        assertTrue{ alice1 is Offline }
-        assertTrue{ bob1 is Offline }
+        assertTrue { alice1 is Offline }
+        assertTrue { bob1 is Offline }
 
         val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
@@ -37,11 +38,13 @@ class OfflineTestsCommon : EclairTestSuite() {
 
         val bobCurrentPerCommitmentPoint = bob.keyManager.commitmentPoint(
             bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
-            bobCommitments.localCommit.index)
+            bobCommitments.localCommit.index
+        )
 
         val aliceCurrentPerCommitmentPoint = alice.keyManager.commitmentPoint(
             alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
-            aliceCommitments.localCommit.index)
+            aliceCommitments.localCommit.index
+        )
 
         // a didn't receive any update or sig
         assertEquals(
@@ -80,8 +83,8 @@ class OfflineTestsCommon : EclairTestSuite() {
 
         val (alice1, _) = alice.process(Disconnected)
         val (bob1, _) = bob.process(Disconnected)
-        assertTrue{ alice1 is Offline }
-        assertTrue{ bob1 is Offline }
+        assertTrue { alice1 is Offline }
+        assertTrue { bob1 is Offline }
 
         val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
@@ -98,11 +101,13 @@ class OfflineTestsCommon : EclairTestSuite() {
 
         val bobCurrentPerCommitmentPoint = bob.keyManager.commitmentPoint(
             bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
-            bobCommitments.localCommit.index)
+            bobCommitments.localCommit.index
+        )
 
         val aliceCurrentPerCommitmentPoint = alice.keyManager.commitmentPoint(
             alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
-            aliceCommitments.localCommit.index)
+            aliceCommitments.localCommit.index
+        )
 
         // a didn't receive any update or sig
         assertEquals(

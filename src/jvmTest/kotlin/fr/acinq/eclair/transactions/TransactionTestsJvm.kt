@@ -20,7 +20,8 @@ class TransactionTestsJvm {
     // This test is JVM only until both these issues have been resolved:
     // - https://youtrack.jetbrains.com/issue/KT-39789
     // - https://github.com/ktorio/ktor/issues/1964
-    @Test fun `BOLT 2 fee tests`() {
+    @Test
+    fun `BOLT 2 fee tests`() {
         runBlocking {
             val bolt3 = HttpClient().use { client ->
                 client.get<String>("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
@@ -42,6 +43,7 @@ class TransactionTestsJvm {
             val htlcRegex = Regex(""".*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""")
 
             val dustLimit = 546.sat
+
             data class TestSetup(val name: String, val dustLimit: Satoshi, val spec: CommitmentSpec, val expectedFee: Satoshi)
 
             val tests = testRegex.findAll(bolt3).map { s ->
@@ -53,7 +55,7 @@ class TransactionTestsJvm {
                         "received" -> IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toLong().sat.toMilliSatoshi(), ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
                         else -> error("Unknown direction $direction")
                     }
-                } .toSet()
+                }.toSet()
                 TestSetup(name, dustLimit, CommitmentSpec(htlcs, feerate_per_kw.toLong(), to_local_msat.toLong().msat, to_remote_msat.toLong().msat), fee.toLong().sat)
             }.toList()
 

@@ -4,9 +4,9 @@ import kotlinx.serialization.Serializable
 
 interface FeeEstimator {
 
-    fun getFeeratePerKb(target: Int) : Long
+    fun getFeeratePerKb(target: Int): Long
 
-    fun getFeeratePerKw(target: Int) : Long
+    fun getFeeratePerKw(target: Int): Long
 
 }
 

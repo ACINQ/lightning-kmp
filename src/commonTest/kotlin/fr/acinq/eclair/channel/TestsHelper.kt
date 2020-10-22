@@ -17,9 +17,11 @@ inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage
     val candidates = this.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<T>()
     return candidates.firstOrNull()
 }
+
 inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
     return hasOutgoingMessage() ?: throw IllegalArgumentException("cannot find ${T::class}")
 }
+
 internal inline fun <reified T> List<ChannelAction>.hasMessage() = assertTrue { any { it is SendMessage && it.message is T } }
 internal inline fun <reified T> List<ChannelAction>.messages() = filterIsInstance<SendMessage>().filter { it.message is T }.map { it.message as T }
 internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance<SendWatch>().filter { it.watch is T }.map { it.watch as T }
@@ -166,7 +168,7 @@ object TestsHelper {
         return Triple(alice3 as Negotiating, bob4 as Negotiating, closingSigned)
     }
 
-    fun localClose(s: ChannelState) : Pair<Closing, LocalCommitPublished> {
+    fun localClose(s: ChannelState): Pair<Closing, LocalCommitPublished> {
         require(s is HasCommitments)
         // an error occurs and alice publishes her commit tx
         val sCommitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
@@ -179,8 +181,10 @@ object TestsHelper {
 
         assertEquals(actions1.filterIsInstance<PublishTx>()[0], PublishTx(localCommitPublished.commitTx))
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        assertEquals(actions1.filterIsInstance<PublishTx>()[1],
-            PublishTx(localCommitPublished.claimMainDelayedOutputTx!!))
+        assertEquals(
+            actions1.filterIsInstance<PublishTx>()[1],
+            PublishTx(localCommitPublished.claimMainDelayedOutputTx!!)
+        )
         // all htlcs success/timeout should be published
         (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs)
             .forEach { tx ->
@@ -203,7 +207,7 @@ object TestsHelper {
         // we watch outputs of the commitment tx that both parties may spend
         val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).map { it.txIn.first().outPoint.index }
         val spentWatches = htlcOutputIndexes.zip(actions1.watches<WatchSpent>())
-        spentWatches.forEach {(_, watch) ->
+        spentWatches.forEach { (_, watch) ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, sCommitTx.txid)
         }
@@ -212,11 +216,11 @@ object TestsHelper {
         return s1 to localCommitPublished
     }
 
-    fun remoteClose(rCommitTx: Transaction, s: ChannelState) : Pair<Closing, RemoteCommitPublished> {
+    fun remoteClose(rCommitTx: Transaction, s: ChannelState): Pair<Closing, RemoteCommitPublished> {
         require(s is HasCommitments)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, rCommitTx)))
-        assertTrue { s1 is Closing } ; s1 as Closing
+        assertTrue { s1 is Closing }; s1 as Closing
 
         val remoteCommitPublished = s1.remoteCommitPublished ?: s1.nextRemoteCommitPublished ?: s1.futureRemoteCommitPublished
         assertNotNull(remoteCommitPublished)
@@ -244,7 +248,7 @@ object TestsHelper {
         // we watch outputs of the commitment tx that both parties may spend
         val htlcOutputIndexes = claimHtlcTxes.map { it.txIn.first().outPoint.index }
         val spentWatches = htlcOutputIndexes.zip(actions1.watches<WatchSpent>())
-        spentWatches.forEach {(_, watch) ->
+        spentWatches.forEach { (_, watch) ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, rCommitTx.txid)
         }

@@ -2,10 +2,7 @@ package fr.acinq.eclair.io
 
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
-import fr.acinq.eclair.utils.subArray
 import io.ktor.utils.io.core.*
-import kotlinx.coroutines.withTimeout
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime

@@ -8,24 +8,24 @@ import kotlin.random.Random
 class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comparable<UUID> {
 
     fun version(): Int =
-            (mostSignificantBits shr 12 and 0xFL).toInt()
+        (mostSignificantBits shr 12 and 0xFL).toInt()
 
     fun variant(): Int =
-            (leastSignificantBits.ushr((64L - leastSignificantBits.ushr(62)).toInt()) and (leastSignificantBits shr 63)).toInt()
+        (leastSignificantBits.ushr((64L - leastSignificantBits.ushr(62)).toInt()) and (leastSignificantBits shr 63)).toInt()
 
     fun gregorianTimestamp(): Long =
-            if (version() != 1) throw UnsupportedOperationException("Not a time-based UUID")
-            else ((mostSignificantBits and 0xFFFL) shl 48) or (((mostSignificantBits shr 16) and 0xFFFFL) shl 32) or mostSignificantBits.ushr(32)
+        if (version() != 1) throw UnsupportedOperationException("Not a time-based UUID")
+        else ((mostSignificantBits and 0xFFFL) shl 48) or (((mostSignificantBits shr 16) and 0xFFFFL) shl 32) or mostSignificantBits.ushr(32)
 
     fun unixTimestap(): Long = timestampGregorianToUnix(gregorianTimestamp())
 
     fun clockSequence(): Int =
-            if (version() != 1) throw UnsupportedOperationException("Not a time-based UUID")
-            else ((leastSignificantBits and 0x3FFF000000000000L).ushr(48)).toInt()
+        if (version() != 1) throw UnsupportedOperationException("Not a time-based UUID")
+        else ((leastSignificantBits and 0x3FFF000000000000L).ushr(48)).toInt()
 
     fun node(): Long =
-            if (version() != 1) throw UnsupportedOperationException("Not a time-based UUID")
-            else leastSignificantBits and 0xFFFFFFFFFFFFL
+        if (version() != 1) throw UnsupportedOperationException("Not a time-based UUID")
+        else leastSignificantBits and 0xFFFFFFFFFFFFL
 
     override fun toString(): String {
         val buf = ByteArray(36)
@@ -42,13 +42,13 @@ class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comp
     }
 
     override fun compareTo(other: UUID): Int =
-            when {
-                this.mostSignificantBits < other.mostSignificantBits -> -1
-                this.mostSignificantBits > other.mostSignificantBits -> 1
-                this.leastSignificantBits < other.leastSignificantBits -> -1
-                this.leastSignificantBits > other.leastSignificantBits -> 1
-                else -> 0
-            }
+        when {
+            this.mostSignificantBits < other.mostSignificantBits -> -1
+            this.mostSignificantBits > other.mostSignificantBits -> 1
+            this.leastSignificantBits < other.leastSignificantBits -> -1
+            this.leastSignificantBits > other.leastSignificantBits -> 1
+            else -> 0
+        }
 
     override fun hashCode(): Int {
         val hilo = this.mostSignificantBits xor this.leastSignificantBits
@@ -70,7 +70,7 @@ class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comp
     companion object {
         private val digits = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z')
         private const val MIN_CLOCK_SEQ_AND_NODE = -0x7F7F7F7F7F7F7F80L
-        private const val MAX_CLOCK_SEQ_AND_NODE =  0x7F7F7F7F7F7F7F7FL
+        private const val MAX_CLOCK_SEQ_AND_NODE = 0x7F7F7F7F7F7F7F7FL
         private const val START_EPOCH = -12219292800000L // 15 oct 1582 00:00:00.000
         private val MIN_UNIX_TIMESTAMP = timestampGregorianToUnix(0)
         private val MAX_UNIX_TIMESTAMP = timestampGregorianToUnix(0xFFFFFFFFFFFFFFFL)
@@ -125,7 +125,7 @@ class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comp
             msb = msb or (0x00000000FFFFFFFFL and timestamp shl 32)
             msb = msb or (0x0000FFFF00000000L and timestamp).ushr(16)
             msb = msb or (0x0FFF000000000000L and timestamp).ushr(48)
-            msb = msb or  0x0000000000001000L // sets the version to 1.
+            msb = msb or 0x0000000000001000L // sets the version to 1.
             return msb
         }
 

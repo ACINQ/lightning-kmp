@@ -125,69 +125,69 @@ class Poly1305 {
             h4 += 1 shl 24
         }
         val tp0: Long = mul32x32_64(
-          h0,
-          r0
+            h0,
+            r0
         ) + mul32x32_64(
-          h1,
-          s4
+            h1,
+            s4
         ) + mul32x32_64(
-          h2,
-          s3
+            h2,
+            s3
         ) + mul32x32_64(
-          h3,
-          s2
+            h3,
+            s2
         ) + mul32x32_64(h4, s1)
         var tp1: Long = mul32x32_64(
-          h0,
-          r1
+            h0,
+            r1
         ) + mul32x32_64(
-          h1,
-          r0
+            h1,
+            r0
         ) + mul32x32_64(
-          h2,
-          s4
+            h2,
+            s4
         ) + mul32x32_64(
-          h3,
-          s3
+            h3,
+            s3
         ) + mul32x32_64(h4, s2)
         var tp2: Long = mul32x32_64(
-          h0,
-          r2
+            h0,
+            r2
         ) + mul32x32_64(
-          h1,
-          r1
+            h1,
+            r1
         ) + mul32x32_64(
-          h2,
-          r0
+            h2,
+            r0
         ) + mul32x32_64(
-          h3,
-          s4
+            h3,
+            s4
         ) + mul32x32_64(h4, s3)
         var tp3: Long = mul32x32_64(
-          h0,
-          r3
+            h0,
+            r3
         ) + mul32x32_64(
-          h1,
-          r2
+            h1,
+            r2
         ) + mul32x32_64(
-          h2,
-          r1
+            h2,
+            r1
         ) + mul32x32_64(
-          h3,
-          r0
+            h3,
+            r0
         ) + mul32x32_64(h4, s4)
         var tp4: Long = mul32x32_64(
-          h0,
-          r4
+            h0,
+            r4
         ) + mul32x32_64(
-          h1,
-          r3
+            h1,
+            r3
         ) + mul32x32_64(
-          h2,
-          r2
+            h2,
+            r2
         ) + mul32x32_64(
-          h3,
-          r1
+            h3,
+            r1
         ) + mul32x32_64(h4, r0)
         h0 = tp0.toInt() and 0x3ffffff
         tp1 += tp0 ushr 26
@@ -255,13 +255,13 @@ class Poly1305 {
         f1 = ((h1 ushr 6 or (h2 shl 20)).toLong() and 0xffffffffL) + (0xffffffffL and k1.toLong())
         f2 = ((h2 ushr 12 or (h3 shl 14)).toLong() and 0xffffffffL) + (0xffffffffL and k2.toLong())
         f3 = ((h3 ushr 18 or (h4 shl 8)).toLong() and 0xffffffffL) + (0xffffffffL and k3.toLong())
-      Pack.writeInt32LE(f0.toInt(), out, outOff)
+        Pack.writeInt32LE(f0.toInt(), out, outOff)
         f1 += f0 ushr 32
-      Pack.writeInt32LE(f1.toInt(), out, outOff + 4)
+        Pack.writeInt32LE(f1.toInt(), out, outOff + 4)
         f2 += f1 ushr 32
-      Pack.writeInt32LE(f2.toInt(), out, outOff + 8)
+        Pack.writeInt32LE(f2.toInt(), out, outOff + 8)
         f3 += f2 ushr 32
-      Pack.writeInt32LE(f3.toInt(), out, outOff + 12)
+        Pack.writeInt32LE(f3.toInt(), out, outOff + 12)
         reset()
         return BLOCK_SIZE
     }

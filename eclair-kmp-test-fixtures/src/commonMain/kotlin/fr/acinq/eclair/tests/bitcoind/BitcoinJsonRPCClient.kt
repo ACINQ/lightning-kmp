@@ -8,8 +8,6 @@ import io.ktor.client.features.auth.providers.*
 import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 
 
 object BitcoinJsonRPCClient {

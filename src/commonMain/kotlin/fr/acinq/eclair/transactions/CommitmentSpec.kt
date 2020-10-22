@@ -32,6 +32,7 @@ sealed class DirectedHtlc {
 
 @Serializable
 data class IncomingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
+
 @Serializable
 data class OutgoingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
 

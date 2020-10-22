@@ -23,8 +23,8 @@ object Announcements {
         feeBaseMsat: MilliSatoshi,
         feeProportionalMillionths: Long,
         htlcMaximumMsat: MilliSatoshi?,
-        unknownFields: ByteVector): ByteVector32
-    {
+        unknownFields: ByteVector
+    ): ByteVector32 {
         // TODO: implement channel update witness serialization
         return ByteVector32.Zeroes
     }

@@ -52,7 +52,9 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
             }
         }
 
-    override suspend fun receiveFully(buffer: ByteArray) { receive(buffer, buffer.size) }
+    override suspend fun receiveFully(buffer: ByteArray) {
+        receive(buffer, buffer.size)
+    }
 
 
     override suspend fun receiveAvailable(buffer: ByteArray): Int = receive(buffer, 0)

@@ -33,9 +33,9 @@ object SHA256HashFunctions : HashFunctions {
         val b = xor(key2, ByteArray(key2.size) { 0x36.toByte() })
 
         return hash(
-          a + hash(
-            b + data
-          )
+            a + hash(
+                b + data
+            )
         )
     }
 }
