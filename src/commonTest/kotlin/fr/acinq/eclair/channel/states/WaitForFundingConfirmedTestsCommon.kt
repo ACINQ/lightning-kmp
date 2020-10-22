@@ -23,7 +23,7 @@ class WaitForFundingConfirmedTestsCommon {
         val (bob1, actions) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
         val fundingLocked = actions.findOutgoingMessage<FundingLocked>()
         assertTrue { bob1 is WaitForFundingLocked }
-        val (alice1, actions1) = alice.process(MessageReceived(fundingLocked))
+        val (alice1, _) = alice.process(MessageReceived(fundingLocked))
         assertTrue { alice1 is WaitForFundingConfirmed && alice1.deferred == fundingLocked }
     }
 

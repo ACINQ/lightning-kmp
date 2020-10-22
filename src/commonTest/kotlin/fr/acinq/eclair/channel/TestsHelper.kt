@@ -165,7 +165,7 @@ object TestsHelper {
 
         val (bob4, _) = bob3.process(MessageReceived(shutdown1))
         assertTrue { bob4 is Negotiating }
-        return Triple(alice3 as Negotiating, bob4 as Negotiating, closingSigned)
+        return Triple(alice3, bob4 as Negotiating, closingSigned)
     }
 
     fun localClose(s: ChannelState): Pair<Closing, LocalCommitPublished> {

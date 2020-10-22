@@ -78,7 +78,7 @@ object OutgoingPacket {
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
         }
         val nodes = hops.map { it.nextNodeId }
-        val onion = buildOnion(nodes, payloads, invoice.paymentHash!!, OnionRoutingPacket.TrampolinePacketLength)
+        val onion = buildOnion(nodes, payloads, invoice.paymentHash, OnionRoutingPacket.TrampolinePacketLength)
         return Triple(firstAmount, firstExpiry, onion)
     }
 

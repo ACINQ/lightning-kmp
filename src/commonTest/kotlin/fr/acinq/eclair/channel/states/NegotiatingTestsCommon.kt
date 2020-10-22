@@ -13,7 +13,7 @@ class NegotiatingTestsCommon {
     @Test
     fun `recv ClosingSigned (theirCloseFee != ourCloseFee)`() {
         val (alice, bob, aliceCloseSig) = init()
-        val (bob1, actions) = bob.process(MessageReceived(aliceCloseSig))
+        val (_, actions) = bob.process(MessageReceived(aliceCloseSig))
         // Bob answers with a counter proposition
         val bobCloseSig = actions.findOutgoingMessage<ClosingSigned>()
         assertTrue { aliceCloseSig.feeSatoshis > bobCloseSig.feeSatoshis }

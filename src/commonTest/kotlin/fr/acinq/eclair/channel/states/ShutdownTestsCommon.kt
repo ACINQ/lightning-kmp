@@ -62,7 +62,7 @@ class ShutdownTestsCommon {
         val (bob1, actions1) = bob.process(ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         val fulfill = actions1.findOutgoingMessage<UpdateFulfillHtlc>()
         val (alice1, _) = alice.process(MessageReceived(fulfill))
-        val (bob2, alice2) = signAndRevack(bob1, alice1)
+        val (_, alice2) = signAndRevack(bob1, alice1)
         val (alice3, _) = alice2.process(ExecuteCommand(CMD_SIGN))
         assertTrue { alice3 is ShuttingDown && alice3.commitments.remoteNextCommitInfo.isLeft }
     }

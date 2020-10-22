@@ -73,7 +73,7 @@ class ClosingTestsCommon {
         val closingSigned0 = aliceActions2.findOutgoingMessage<ClosingSigned>()
         val aliceCloseFee = closingSigned0.feeSatoshis
         val bob2 = (bob1 as Negotiating).updateFeerate(5000)
-        val (bob3, bobActions3) = bob2.process(MessageReceived(closingSigned0))
+        val (_, bobActions3) = bob2.process(MessageReceived(closingSigned0))
         val closingSigned1 = bobActions3.findOutgoingMessage<ClosingSigned>()
         val bobCloseFee = closingSigned1.feeSatoshis
         val (alice3, _) = alice2.process(MessageReceived(closingSigned1))
@@ -98,7 +98,7 @@ class ClosingTestsCommon {
 
     @Test
     fun `recv BITCOIN_TX_CONFIRMED (mutual close)`() {
-        val (alice0, bob0, _) = init()
+        val (alice0, _, _) = init()
         val mutualCloseTx = alice0.mutualClosePublished.last()
 
         // actual test starts here
@@ -171,14 +171,14 @@ class ClosingTestsCommon {
     fun `recv BITCOIN_TX_CONFIRMED (local commit)`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
-        val (nodes1, _, htlca1) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes1
         // alice sends an htlc below dust to bob
         val amountBelowDust = (alice1 as Normal).commitments.localParams.dustLimit.toMilliSatoshi() - 100.msat
-        val (nodes2, _, htlca2) = addHtlc(amountBelowDust, alice1, bob1)
+        val (nodes2, _, _) = addHtlc(amountBelowDust, alice1, bob1)
         val (alice2, bob2) = nodes2
 
-        val (alice3, bob3) = crossSign(alice2, bob2)
+        val (alice3, _) = crossSign(alice2, bob2)
         val (aliceClosing, localCommitPublished) = localClose(alice3)
 
         // actual test starts here
@@ -249,19 +249,19 @@ class ClosingTestsCommon {
     fun `recv BITCOIN_TX_CONFIRMED (local commit with multiple htlcs for the same payment)`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
-        val (nodes1, ra1, htlca1) = addHtlc(30_000_000.msat, alice0, bob0)
+        val (nodes1, ra1, _) = addHtlc(30_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes1
         // and more htlcs with the same payment_hash
         val (_, cmd2) = makeCmdAdd(25_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice1.currentBlockHeight.toLong(), ra1)
-        val (alice2, bob2, htlca2) = addHtlc(cmd2, alice1, bob1)
+        val (alice2, bob2, _) = addHtlc(cmd2, alice1, bob1)
         val (_, cmd3) = makeCmdAdd(30_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice2.currentBlockHeight.toLong(), ra1)
-        val (alice3, bob3, htlca3) = addHtlc(cmd3, alice2, bob2)
+        val (alice3, bob3, _) = addHtlc(cmd3, alice2, bob2)
         val amountBelowDust = (alice3 as Normal).commitments.localParams.dustLimit.toMilliSatoshi() - 100.msat
         val (_, dustCmd) = makeCmdAdd(amountBelowDust, bob0.staticParams.nodeParams.nodeId, alice3.currentBlockHeight.toLong(), ra1)
-        val (alice4, bob4, dust) = addHtlc(dustCmd, alice3, bob3)
+        val (alice4, bob4, _) = addHtlc(dustCmd, alice3, bob3)
         val (_, cmd4) = makeCmdAdd(20_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice4.currentBlockHeight.toLong() + 1, ra1)
-        val (alice5, bob5, htlca4) = addHtlc(cmd4, alice4, bob4)
-        val (alice6, bob6) = crossSign(alice5, bob5)
+        val (alice5, bob5, _) = addHtlc(cmd4, alice4, bob4)
+        val (alice6, _) = crossSign(alice5, bob5)
         val (aliceClosing, localCommitPublished) = localClose(alice6)
 
         // actual test starts here
@@ -412,7 +412,7 @@ class ClosingTestsCommon {
 
     @Test
     fun `recv BITCOIN_TX_CONFIRMED (remote commit)`() {
-        val (alice0, bob0, bobCommitTxes) = init(withPayments = true)
+        val (alice0, _, bobCommitTxes) = init(withPayments = true)
         assertEquals(ChannelVersion.STANDARD, alice0.commitments.channelVersion)
         // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
         val bobCommitTx = bobCommitTxes.last().commitTx.tx
@@ -451,13 +451,13 @@ class ClosingTestsCommon {
     fun `recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment)`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
-        val (nodes1, ra1, htlca1) = addHtlc(15000000.msat, alice0, bob0)
+        val (nodes1, ra1, _) = addHtlc(15000000.msat, alice0, bob0)
         val (alice1, bob1) = nodes1
         // and more htlcs with the same payment_hash
         val (_, cmd2) = makeCmdAdd(15000000.msat, bob0.staticParams.nodeParams.nodeId, alice1.currentBlockHeight.toLong(), ra1)
-        val (alice2, bob2, htlca2) = addHtlc(cmd2, alice1, bob1)
+        val (alice2, bob2, _) = addHtlc(cmd2, alice1, bob1)
         val (_, cmd3) = makeCmdAdd(20000000.msat, bob0.staticParams.nodeParams.nodeId, alice2.currentBlockHeight.toLong() - 1, ra1)
-        val (alice3, bob3, htlca3) = addHtlc(cmd3, alice2, bob2)
+        val (alice3, bob3, _) = addHtlc(cmd3, alice2, bob2)
         val (alice4, bob4) = crossSign(alice3, bob3)
 
         // Bob publishes the latest commit tx.
@@ -524,7 +524,7 @@ class ClosingTestsCommon {
         val (bob1, alice1) = nodes1
         val (bob2, alice2) = crossSign(bob1, alice1)
         // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
-        val (nodes2, _, htlc2) = addHtlc(95000000.msat, alice2, bob2)
+        val (nodes2, _, _) = addHtlc(95000000.msat, alice2, bob2)
         val (alice3, bob3) = nodes2
 
         val (alice4, aliceActions4) = alice3.process(ExecuteCommand(CMD_SIGN))
@@ -632,7 +632,7 @@ class ClosingTestsCommon {
         val (bob1, alice1) = nodes1
         val (bob2, alice2) = crossSign(bob1, alice1)
         // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
-        val (nodes2, _, htlc2) = addHtlc(95_000_000.msat, alice2, bob2)
+        val (nodes2, _, _) = addHtlc(95_000_000.msat, alice2, bob2)
         val (alice3, bob3) = nodes2
 
         val (alice4, aliceActions4) = alice3.process(ExecuteCommand(CMD_SIGN))
@@ -662,23 +662,6 @@ class ClosingTestsCommon {
         Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assertEquals(PublishTx(claimHtlcSuccessTx), publishTxes[1])
         assertEquals(PublishTx(claimHtlcTimeoutTx), publishTxes[2])
-
-        /*
-
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(closingState.claimMainOutputTx.get))
-    val watchHtlcs = alice2blockchain.expectMsgType[WatchSpent] :: alice2blockchain.expectMsgType[WatchSpent] :: Nil
-    watchHtlcs.foreach(ws => assert(ws.event === BITCOIN_OUTPUT_SPENT))
-    watchHtlcs.foreach(ws => assert(ws.txId === bobCommitTx.txid))
-    assert(watchHtlcs.map(_.outputIndex).toSet === (claimHtlcSuccessTx :: closingState.claimHtlcTimeoutTxs).map(_.txIn.head.outPoint.index).toSet)
-
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainOutputTx.get), 0, 0, closingState.claimMainOutputTx.get)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcSuccessTx), 0, 0, claimHtlcSuccessTx)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcTimeoutTx), 0, 0, claimHtlcTimeoutTx)
-
-    awaitCond(alice.stateName == CLOSED)
-         */
     }
 
     @Test

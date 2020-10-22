@@ -15,6 +15,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.cbor.Cbor
@@ -315,13 +316,6 @@ sealed class ChannelState {
         SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
     )
 
-    internal fun feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32) {
-        runTrying { // this may fail with an NPE in tests because context has been cleaned up, but it's not a big deal
-            logger.info { "paid feeSatoshi=${fee.toLong()} for txid=${tx.txid} desc=$desc" }
-            // TODO context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
-        }
-    }
-
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
         logger.error { "peer send error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
@@ -442,18 +436,22 @@ interface HasCommitments {
             include(UpdateMessage.serializersModule)
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         private val cbor = Cbor {
             serializersModule = serializationModules
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         fun serialize(state: HasCommitments): ByteArray {
             return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         fun deserialize(bin: ByteArray): HasCommitments {
             return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         fun deserialize(bin: ByteVector): HasCommitments = deserialize(bin.toByteArray())
     }
 }
@@ -677,7 +675,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
             }
             is NewBlock -> {
                 // TODO: is this the right thing to do ?
-                val (newState, actions) = state.process(event)
+                val (newState, _) = state.process(event)
                 Pair(Offline(newState), listOf())
             }
             else -> unhandled(event)
@@ -764,7 +762,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                             state.channelId,
                             state.commitments.commitInput.outPoint.txid,
                             state.commitments.commitInput.txOut.publicKeyScript,
-                            staticParams.nodeParams.minDepthBlocks.toLong(),
+                            minDepth.toLong(),
                             BITCOIN_FUNDING_DEPTHOK
                         )
                         val actions = listOf(SendWatch(watchConfirmed))
@@ -884,7 +882,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                 }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
-                val (newState, actions) = state.process(event)
+                val (newState, _) = state.process(event)
                 Pair(Syncing(newState, waitForTheirReestablishMessage), listOf())
             }
             else -> unhandled(event)
@@ -1375,7 +1373,7 @@ data class WaitForFundingSigned(
                 val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
                 val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
                 val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
-                when (val result = Transactions.checkSpendable(signedLocalCommitTx)) {
+                when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> {
                         handleLocalError(event, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx))
                     }

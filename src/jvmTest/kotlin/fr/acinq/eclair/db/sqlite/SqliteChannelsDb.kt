@@ -17,18 +17,18 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
      * @param inTransaction if set to true, all updates in the block will be run in a transaction.
      */
     fun <T : Statement, U> using(statement: T, inTransaction: Boolean = false, block: (T) -> U): U {
-        val autoCommit = statement.getConnection().getAutoCommit()
+        val autoCommit = statement.connection.autoCommit
         try {
-            if (inTransaction) statement.getConnection().setAutoCommit(false)
+            if (inTransaction) statement.connection.autoCommit = false
             val res = block(statement)
-            if (inTransaction) statement.getConnection().commit()
+            if (inTransaction) statement.connection.commit()
             return res
         } catch (e: Exception) {
-            if (inTransaction) statement.getConnection().rollback()
+            if (inTransaction) statement.connection.rollback()
             throw e
         } finally {
-            if (inTransaction) statement.getConnection().setAutoCommit(autoCommit)
-            statement?.close()
+            if (inTransaction) statement.connection.autoCommit = autoCommit
+            statement.close()
         }
     }
 

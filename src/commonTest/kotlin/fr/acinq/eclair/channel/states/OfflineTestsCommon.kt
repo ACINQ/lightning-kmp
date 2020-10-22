@@ -73,7 +73,7 @@ class OfflineTestsCommon : EclairTestSuite() {
             val (alice1, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC(1000000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())))
             alice = alice1 as Normal
             val add = actions.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<UpdateAddHtlc>().first()
-            val (bob1, actions2) = bob.process(MessageReceived(add))
+            val (bob1, _) = bob.process(MessageReceived(add))
             bob = bob1 as Normal
             val (alice2, actions3) = alice.process(ExecuteCommand(CMD_SIGN))
             alice = alice2 as Normal
@@ -133,25 +133,25 @@ class OfflineTestsCommon : EclairTestSuite() {
         // b sends FundingLocked again
         assertTrue(actions4.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<FundingLocked>().size == 1)
         run {
-            val (bob1, _) = bob.process(MessageReceived(add))
-            bob = bob1 as Normal
-            val (bob2, actions1) = bob.process(MessageReceived(sig))
-            bob = bob2 as Normal
+            val (bob5, _) = bob.process(MessageReceived(add))
+            bob = bob5 as Normal
+            val (bob6, actions6) = bob.process(MessageReceived(sig))
+            bob = bob6 as Normal
             // b sends back a revocation and a sig
-            val revB = actions1.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
-            assertTrue { actions1.filterIsInstance<ProcessCommand>() == listOf(ProcessCommand(CMD_SIGN)) }
-            val (bob3, actions2) = bob.process(ExecuteCommand(CMD_SIGN))
-            bob = bob3 as Normal
-            val sigB = actions2.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<CommitSig>().first()
+            val revB = actions6.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
+            assertTrue { actions6.filterIsInstance<ProcessCommand>() == listOf(ProcessCommand(CMD_SIGN)) }
+            val (bob7, actions7) = bob.process(ExecuteCommand(CMD_SIGN))
+            bob = bob7 as Normal
+            val sigB = actions7.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<CommitSig>().first()
 
-            val (alice1, actions3) = alice.process(MessageReceived(revB))
-            alice = alice1 as Normal
-            val (alice2, actions4) = alice.process(MessageReceived(sigB))
-            alice = alice2 as Normal
-            val revA = actions4.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
+            val (alice4, _) = alice.process(MessageReceived(revB))
+            alice = alice4 as Normal
+            val (alice5, actions8) = alice.process(MessageReceived(sigB))
+            alice = alice5 as Normal
+            val revA = actions8.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
 
-            val (bob4, actions5) = bob.process(MessageReceived(revA))
-            val bob = bob4 as Normal
+            val (bob4, _) = bob.process(MessageReceived(revA))
+            bob4 as Normal
         }
 
         assertEquals(1, alice.commitments.localNextHtlcId)
