@@ -110,6 +110,15 @@ kotlin {
         languageSettings.useExperimentalAnnotation("kotlin.RequiresOptIn")
         languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
     }
+
+    // Configure all compilations of all targets:
+    targets.all {
+        compilations.all {
+            kotlinOptions {
+                allWarningsAsErrors = true
+            }
+        }
+    }
 }
 
 
