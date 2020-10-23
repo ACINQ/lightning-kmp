@@ -12,7 +12,9 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.*
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -83,7 +85,7 @@ data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val 
 
 data class ProcessLocalFailure(val error: Throwable) : ChannelAction()
 data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
-data class StoreState(val data: ChannelState) : ChannelAction()
+data class StoreState(val data: ChannelStateWithCommitments) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : ChannelAction()
 data class HandleCommandFailed(val cmd: Command, val error: Throwable?) : ChannelAction()
@@ -137,7 +139,7 @@ sealed class ChannelState {
      * update outgoing messages to include an encrypted backup when necessary
      */
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
-        this is HasCommitments && this.isZeroReserve() -> actions.map {
+        this is ChannelStateWithCommitments && this.isZeroReserve() -> actions.map {
             when {
                 it is SendMessage && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
                 it is SendMessage && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(staticParams.nodeParams.nodePrivateKey.value, this).toByteVector()))
@@ -155,7 +157,7 @@ sealed class ChannelState {
     }
 
     internal fun handleFundingPublishFailed(): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "$this must be type of HasCommitments" }
+        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.error { "failed to publish funding tx" }
         val exc = ChannelFundingError(channelId)
         val error = Error(channelId, exc.message)
@@ -166,7 +168,7 @@ sealed class ChannelState {
     }
 
     internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "$this must be type of HasCommitments" }
+        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx hasn't been confirmed in time, cancelling channel delay=${fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE}" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
@@ -175,7 +177,7 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
-        require(this is HasCommitments) { "$this must be type of HasCommitments" }
+        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
@@ -220,7 +222,7 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "$this must be type of HasCommitments" }
+        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitments.remoteNextCommitInfo.isLeft) { "next remote commit must be defined" }
         val remoteCommit = commitments.remoteNextCommitInfo.left?.nextRemoteCommit
@@ -260,7 +262,7 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        require(this is HasCommitments) { "$this must be type of HasCommitments" }
+        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx spent in txid=${tx.txid}" }
 
         return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(
@@ -341,13 +343,13 @@ sealed class ChannelState {
                 })
             }
             // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
-            this is HasCommitments -> spendLocalCurrent()
+            this is ChannelStateWithCommitments -> spendLocalCurrent()
             // when there is no commitment yet, we just go to CLOSED state in case an error occurs
             else -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
         }
     }
 
-    internal fun HasCommitments.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelStateWithCommitments.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
         val outdatedCommitment = when (this) {
             is WaitForRemotePublishFutureComitment -> true
             is Closing -> this.futureRemoteCommitPublished != null
@@ -406,8 +408,9 @@ sealed class ChannelState {
     val logger = EclairLoggerFactory.newLogger<ChannelState>()
 }
 
-interface HasCommitments {
-    val commitments: Commitments
+@Serializable
+sealed class ChannelStateWithCommitments : ChannelState() {
+    abstract val commitments: Commitments
     val channelId: ByteVector32
         get() = commitments.channelId
 
@@ -415,11 +418,11 @@ interface HasCommitments {
 
     fun isFunder(): Boolean = commitments.localParams.isFunder
 
-    fun updateCommitments(input: Commitments): HasCommitments
+    abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
     companion object {
         val serializersModule = SerializersModule {
-            polymorphic(HasCommitments::class) {
+            polymorphic(ChannelStateWithCommitments::class) {
                 subclass(Normal::class)
                 subclass(WaitForFundingConfirmed::class)
                 subclass(WaitForFundingLocked::class)
@@ -442,17 +445,17 @@ interface HasCommitments {
         }
 
         @OptIn(ExperimentalSerializationApi::class)
-        fun serialize(state: HasCommitments): ByteArray {
+        fun serialize(state: ChannelStateWithCommitments): ByteArray {
             return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
         }
 
         @OptIn(ExperimentalSerializationApi::class)
-        fun deserialize(bin: ByteArray): HasCommitments {
-            return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
+        fun deserialize(bin: ByteArray): ChannelStateWithCommitments {
+            return cbor.decodeFromByteArray<ChannelState>(bin) as ChannelStateWithCommitments
         }
 
         @OptIn(ExperimentalSerializationApi::class)
-        fun deserialize(bin: ByteVector): HasCommitments = deserialize(bin.toByteArray())
+        fun deserialize(bin: ByteVector): ChannelStateWithCommitments = deserialize(bin.toByteArray())
     }
 }
 
@@ -557,7 +560,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     }
                 }
             }
-            event is Restore && event.state is HasCommitments -> {
+            event is Restore && event.state is ChannelStateWithCommitments -> {
                 logger.info { "restoring channel channelId=${event.state.channelId}" }
                 val watchSpent = WatchSpent(
                     event.state.channelId,
@@ -590,13 +593,19 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
 }
 
 @Serializable
-data class Offline(val state: ChannelState) : ChannelState() {
+data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams
         get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader>
         get() = state.currentTip
     override val currentOnchainFeerates: OnchainFeerates
         get() = state.currentOnchainFeerates
+    override val commitments: Commitments
+        get() = state.commitments
+
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
+        return Offline(state.updateCommitments(input))
+    }
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "offline processing $event" }
@@ -608,15 +617,15 @@ data class Offline(val state: ChannelState) : ChannelState() {
                         // there isn't much to do except asking them again to publish their current commitment by sending an error
                         val exc = PleasePublishYourCommitment(state.channelId)
                         val error = Error(state.channelId, exc.message)
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
                         Pair(nextState, listOf(SendMessage(error)))
                     }
-                    state is HasCommitments && state.isZeroReserve() -> {
+                    state.isZeroReserve() -> {
                         logger.info { "syncing $state, waiting fo their channelReestablish message" }
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
                         Pair(Syncing(nextState, true), listOf())
                     }
-                    state is HasCommitments -> {
+                    else -> {
                         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
                         val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
                         val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
@@ -630,10 +639,9 @@ data class Offline(val state: ChannelState) : ChannelState() {
                             state.commitments.remoteChannelData
                         )
                         logger.info { "syncing $state" }
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit)) as ChannelState
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
                         Pair(Syncing(nextState, false), listOf(SendMessage(channelReestablish)))
                     }
-                    else -> unhandled(event)
                 }
             }
             is WatchReceived -> {
@@ -654,16 +662,16 @@ data class Offline(val state: ChannelState) : ChannelState() {
                         val actions = listOf(StoreState(nextState), PublishTx(watch.tx), SendWatch(WatchConfirmed(state.channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx))))
                         Pair(nextState, actions)
                     }
-                    watch is WatchEventSpent && state is HasCommitments && watch.tx.txid == state.commitments.remoteCommit.txid -> {
+                    watch is WatchEventSpent && watch.tx.txid == state.commitments.remoteCommit.txid -> {
                         state.handleRemoteSpentCurrent(watch.tx)
                     }
-                    watch is WatchEventSpent && state is HasCommitments && watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> {
+                    watch is WatchEventSpent && watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> {
                         state.handleRemoteSpentNext(watch.tx)
                     }
                     watch is WatchEventSpent && state is WaitForRemotePublishFutureComitment -> {
                         state.handleRemoteSpentFuture(watch.tx)
                     }
-                    watch is WatchEventSpent && state is HasCommitments -> {
+                    watch is WatchEventSpent -> {
                         state.handleRemoteSpentOther(watch.tx)
                     }
                     watch is WatchEventConfirmed && (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) -> {
@@ -676,7 +684,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
             is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, _) = state.process(event)
-                Pair(Offline(newState), listOf())
+                Pair(Offline(newState as ChannelStateWithCommitments), listOf())
             }
             else -> unhandled(event)
         }
@@ -694,13 +702,19 @@ data class Offline(val state: ChannelState) : ChannelState() {
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
 @Serializable
-data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
+data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams
         get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader>
         get() = state.currentTip
     override val currentOnchainFeerates: OnchainFeerates
         get() = state.currentOnchainFeerates
+    override val commitments: Commitments
+        get() = state.commitments
+
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
+        return Syncing(state.updateCommitments(input), waitForTheirReestablishMessage)
+    }
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "syncing processing $event" }
@@ -708,10 +722,6 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
             event is MessageReceived && event.message is ChannelReestablish ->
                 when {
                     waitForTheirReestablishMessage -> {
-                        if (state !is HasCommitments) {
-                            logger.error { "waiting for their channel_reestablish message in a state  that is not valid" }
-                            return Pair(state, listOf())
-                        }
                         val nextState = if (!event.message.channelData.isEmpty()) {
                             logger.info { "channel_reestablish includes a peer backup" }
                             when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {
@@ -747,7 +757,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                             SendMessage(channelReestablish)
                         )
                         // now apply their reestablish message to the restored state
-                        val (nextState1, actions1) = Syncing(nextState as ChannelState, waitForTheirReestablishMessage = false).processInternal(event)
+                        val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).processInternal(event)
                         Pair(nextState1, actions + actions1)
                     }
                     state is WaitForFundingConfirmed -> {
@@ -883,7 +893,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, _) = state.process(event)
-                Pair(Syncing(newState, waitForTheirReestablishMessage), listOf())
+                Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), listOf())
             }
             else -> unhandled(event)
         }
@@ -903,8 +913,8 @@ data class WaitForRemotePublishFutureComitment(
     override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish
-) : ChannelState(), HasCommitments {
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+) : ChannelStateWithCommitments() {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -1446,8 +1456,8 @@ data class WaitForFundingConfirmed(
     val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
-) : ChannelState(), HasCommitments {
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+) : ChannelStateWithCommitments() {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
@@ -1523,8 +1533,8 @@ data class WaitForFundingLocked(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
-) : ChannelState(), HasCommitments {
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+) : ChannelStateWithCommitments() {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is MessageReceived ->
@@ -1597,8 +1607,8 @@ data class Normal(
     val channelUpdate: ChannelUpdate,
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?
-) : ChannelState(), HasCommitments {
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+) : ChannelStateWithCommitments() {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is ExecuteCommand -> {
@@ -1892,8 +1902,8 @@ data class ShuttingDown(
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown
-) : ChannelState(), HasCommitments {
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+) : ChannelStateWithCommitments() {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
@@ -2091,8 +2101,8 @@ data class Negotiating(
     val remoteShutdown: Shutdown,
     val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
     @Serializable(with = TransactionKSerializer::class) val bestUnpublishedClosingTx: Transaction?
-) : ChannelState(), HasCommitments {
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+) : ChannelStateWithCommitments() {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
@@ -2287,7 +2297,7 @@ data class Closing(
     val nextRemoteCommitPublished: RemoteCommitPublished? = null,
     val futureRemoteCommitPublished: RemoteCommitPublished? = null,
     val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
-) : ChannelState(), HasCommitments {
+) : ChannelStateWithCommitments() {
 
     private val spendingTxes: List<Transaction> by lazy {
         mutualClosePublished + revokedCommitPublished.map { it.commitTx } +
@@ -2299,7 +2309,7 @@ data class Closing(
                 )
     }
 
-    override fun updateCommitments(input: Commitments): HasCommitments = this.copy(commitments = input)
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
@@ -2598,7 +2608,7 @@ data class Closing(
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
  */
 @Serializable
-data class Closed(val state: Closing) : ChannelState(), HasCommitments {
+data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams
         get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader>
@@ -2608,7 +2618,7 @@ data class Closed(val state: Closing) : ChannelState(), HasCommitments {
     override val commitments: Commitments
         get() = state.commitments
 
-    override fun updateCommitments(input: Commitments): HasCommitments {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         return this.copy(state.updateCommitments(input) as Closing)
     }
 
@@ -2642,12 +2652,12 @@ data class ErrorInformationLeak(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnchainFeerates: OnchainFeerates,
     override val commitments: Commitments
-) : ChannelState(), HasCommitments {
+) : ChannelStateWithCommitments() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         TODO("implement this")
     }
 
-    override fun updateCommitments(input: Commitments): HasCommitments {
+    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         TODO("Not yet implemented")
     }
 
@@ -2680,7 +2690,7 @@ object Channel {
     // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
     val FUNDING_TIMEOUT_FUNDEE = 5 * 24 * 3600 // 5 days, in seconds
 
-    fun handleSync(channelReestablish: ChannelReestablish, d: HasCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
+    fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
         // first we clean up unacknowledged updates
         log.verbose { "discarding proposed OUT: ${d.commitments.localChanges.proposed}" }

@@ -45,7 +45,7 @@ class NegotiatingTestsCommon {
 
         tailrec fun converge(a: ChannelState, b: ChannelState, aliceCloseSig: ClosingSigned?): Pair<Closing, Closing>? {
             return when {
-                a !is HasCommitments || b !is HasCommitments -> null
+                a !is ChannelStateWithCommitments || b !is ChannelStateWithCommitments -> null
                 a is Closing && b is Closing -> Pair(a, b)
                 aliceCloseSig != null -> {
                     val (b1, actions) = b.process(MessageReceived(aliceCloseSig))

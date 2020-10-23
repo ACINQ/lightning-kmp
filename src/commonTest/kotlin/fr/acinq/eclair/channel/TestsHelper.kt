@@ -169,7 +169,7 @@ object TestsHelper {
     }
 
     fun localClose(s: ChannelState): Pair<Closing, LocalCommitPublished> {
-        require(s is HasCommitments)
+        require(s is ChannelStateWithCommitments)
         // an error occurs and alice publishes her commit tx
         val sCommitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(MessageReceived(Error(ByteVector32.Zeroes, "oops")))
@@ -217,7 +217,7 @@ object TestsHelper {
     }
 
     fun remoteClose(rCommitTx: Transaction, s: ChannelState): Pair<Closing, RemoteCommitPublished> {
-        require(s is HasCommitments)
+        require(s is ChannelStateWithCommitments)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, rCommitTx)))
         assertTrue { s1 is Closing }; s1 as Closing
@@ -288,7 +288,7 @@ object TestsHelper {
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
         val (receiver0, _) = payee.process(MessageReceived(htlc))
-        assertTrue(receiver0 is HasCommitments)
+        assertTrue(receiver0 is ChannelStateWithCommitments)
         assertTrue(receiver0.commitments.remoteChanges.proposed.contains(htlc))
 
         return Triple(sender0, receiver0, htlc)
@@ -299,7 +299,7 @@ object TestsHelper {
         val fulfillHtlc = payeeActions0.findOutgoingMessage<UpdateFulfillHtlc>()
 
         val (payer0, _) = payer.process(MessageReceived(fulfillHtlc))
-        assertTrue(payer0 is HasCommitments)
+        assertTrue(payer0 is ChannelStateWithCommitments)
         assertTrue(payer0.commitments.remoteChanges.proposed.contains(fulfillHtlc))
 
         return payer0 to payee0
@@ -309,8 +309,8 @@ object TestsHelper {
      * Cross sign nodes where nodeA initiate the signature exchange
      */
     fun crossSign(nodeA: ChannelState, nodeB: ChannelState): Pair<ChannelState, ChannelState> {
-        assertTrue(nodeA is HasCommitments)
-        assertTrue(nodeB is HasCommitments)
+        assertTrue(nodeA is ChannelStateWithCommitments)
+        assertTrue(nodeB is ChannelStateWithCommitments)
 
         val sCommitIndex = nodeA.commitments.localCommit.index
         val rCommitIndex = nodeB.commitments.localCommit.index
@@ -340,7 +340,7 @@ object TestsHelper {
             val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
             val (sender4, _) = sender3.process(MessageReceived(revokeAndAck2))
 
-            sender4 as HasCommitments; receiver3 as HasCommitments
+            sender4 as ChannelStateWithCommitments; receiver3 as ChannelStateWithCommitments
             assertEquals(sCommitIndex + 1, sender4.commitments.localCommit.index)
             assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommit.index)
             assertEquals(rCommitIndex + 2, receiver3.commitments.localCommit.index)
@@ -348,7 +348,7 @@ object TestsHelper {
 
             return sender4 to receiver3
         } else {
-            sender2 as HasCommitments; receiver2 as HasCommitments
+            sender2 as ChannelStateWithCommitments; receiver2 as ChannelStateWithCommitments
             assertEquals(sCommitIndex + 1, sender2.commitments.localCommit.index)
             assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommit.index)
             assertEquals(rCommitIndex + 1, receiver2.commitments.localCommit.index)

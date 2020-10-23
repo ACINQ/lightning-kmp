@@ -184,7 +184,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(758_640_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
-        assertEquals(0.msat, (alice2 as HasCommitments).commitments.availableBalanceForSend())
+        assertEquals(0.msat, (alice2 as ChannelStateWithCommitments).commitments.availableBalanceForSend())
 
         tailrec fun loop(bob: ChannelState, count: Int): ChannelState = if (count == 0) bob else {
             val (newbob, actions1) = bob.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_000_000.msat)))
@@ -331,7 +331,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice2, actions) = alice1.process(ExecuteCommand(CMD_SIGN))
         val commitSig = actions.findOutgoingMessage<CommitSig>()
         assertEquals(1, commitSig.htlcSignatures.size)
-        assertTrue { (alice2 as HasCommitments).commitments.remoteNextCommitInfo.isLeft }
+        assertTrue { (alice2 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isLeft }
     }
 
     @Test
@@ -462,7 +462,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         assertEquals(htlcCount, commitSig.htlcSignatures.size)
         val (bob2, _) = bob1.process(MessageReceived(commitSig))
-        bob2 as HasCommitments
+        bob2 as ChannelStateWithCommitments
         val htlcTxs = bob2.commitments.localCommit.publishableTxs.htlcTxsAndSigs
         assertEquals(htlcCount, htlcTxs.size)
         val amounts = htlcTxs.map { it.txinfo.tx.txOut.first().amount.sat }
@@ -480,28 +480,28 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
         val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasMessage<CommitSig>()
 
-        (alice2 as HasCommitments)
+        (alice2 as ChannelStateWithCommitments)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left!!
         assertEquals(false, waitForRevocation.reSignAsap) // TODO
 
         val (alice3, _) = alice2.process(ExecuteCommand(CMD_SIGN))
-        assertEquals<Either<WaitingForRevocation, PublicKey>>(Either.Left(waitForRevocation), (alice3 as HasCommitments).commitments.remoteNextCommitInfo)
+        assertEquals<Either<WaitingForRevocation, PublicKey>>(Either.Left(waitForRevocation), (alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo)
     }
 
     @Ignore
     fun `recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
         val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasMessage<CommitSig>()
 
-        (alice2 as HasCommitments)
+        (alice2 as ChannelStateWithCommitments)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left
         assertNotNull(waitForRevocation)
@@ -509,7 +509,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob1).first
         val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
-        (alice4 as HasCommitments)
+        (alice4 as ChannelStateWithCommitments)
         assertEquals(Either.Left(waitForRevocation.copy(reSignAsap = true)), alice4.commitments.remoteNextCommitInfo)
     }
 
@@ -551,7 +551,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (_, bob2) = signAndRevack(alice1, initialState)
         val (bob3, _) = bob2.process(ExecuteCommand(CMD_SIGN))
 
-        bob3 as HasCommitments; initialState as HasCommitments
+        bob3 as ChannelStateWithCommitments; initialState as ChannelStateWithCommitments
         assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc.id })
         assertEquals(1, bob3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
         assertEquals(initialState.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
@@ -570,7 +570,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val commitSig = actionsBob3.findOutgoingMessage<CommitSig>()
         val (alice3, _) = alice2.process(MessageReceived(commitSig))
 
-        alice3 as HasCommitments; bob3 as HasCommitments; initialState as HasCommitments
+        alice3 as ChannelStateWithCommitments; bob3 as ChannelStateWithCommitments; initialState as ChannelStateWithCommitments
         assertTrue(alice3.commitments.localCommit.spec.htlcs.outgoings().any { it.id == htlc.id })
         assertEquals(1, alice3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
         assertEquals(1, alice3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
@@ -600,7 +600,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val commitSig = actionsBob9.findOutgoingMessage<CommitSig>()
         val (alice9, _) = alice8.process(MessageReceived(commitSig))
 
-        alice9 as HasCommitments
+        alice9 as ChannelStateWithCommitments
         assertEquals(1, alice9.commitments.localCommit.index)
         assertEquals(3, alice9.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
     }
@@ -646,12 +646,12 @@ class NormalTestsCommon : EclairTestSuite() {
         val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
         val (bob2, _) = bob1.process(MessageReceived(htlc2))
 
-        assertEquals(listOf(htlc1, htlc2), (bob2 as HasCommitments).commitments.remoteChanges.proposed)
+        assertEquals(listOf(htlc1, htlc2), (bob2 as ChannelStateWithCommitments).commitments.remoteChanges.proposed)
         val initialState = bob2
 
         val (_, bob3) = crossSign(alice2, bob2)
 
-        bob3 as HasCommitments
+        bob3 as ChannelStateWithCommitments
         assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc1.id })
         assertEquals(2, bob3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
         assertEquals(initialState.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
@@ -720,7 +720,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CommitSig (bad htlc sig count)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        val tx = (bob1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+        val tx = (bob1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
         val (_, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
@@ -752,7 +752,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CommitSig (invalid htlc sig)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        val tx = (bob1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+        val tx = (bob1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
         val (_, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
@@ -815,10 +815,10 @@ class NormalTestsCommon : EclairTestSuite() {
         val (_, actionsBob2) = bob1.process(MessageReceived(commitSig))
         val revokeAndAck = actionsBob2.findOutgoingMessage<RevokeAndAck>()
 
-        assertTrue((alice2 as HasCommitments).commitments.remoteNextCommitInfo.isLeft)
+        assertTrue((alice2 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isLeft)
         val (alice3, _) = alice2.process(MessageReceived(revokeAndAck))
-        assertTrue((alice3 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
-        assertEquals(1, (alice3 as HasCommitments).commitments.localChanges.acked.size)
+        assertTrue((alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertEquals(1, alice3.commitments.localChanges.acked.size)
     }
 
     @Test
@@ -835,12 +835,12 @@ class NormalTestsCommon : EclairTestSuite() {
         val cmd = actionsBob2.findProcessCommand<CMD_SIGN>()
         val (bob3, actionsBob3) = bob2.process(ExecuteCommand(cmd))
         val (alice3, _) = alice2.process(MessageReceived(revokeAndAck0))
-        assertTrue((alice3 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue((alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
         val commitSig1 = actionsBob3.findOutgoingMessage<CommitSig>()
         val (_, actionsAlice4) = alice3.process(MessageReceived(commitSig1))
         val revokeAndAck1 = actionsAlice4.findOutgoingMessage<RevokeAndAck>()
         val (bob4, _) = bob3.process(MessageReceived(revokeAndAck1))
-        assertTrue((bob4 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue((bob4 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
     }
 
     @Test
@@ -868,13 +868,13 @@ class NormalTestsCommon : EclairTestSuite() {
         val cmd = actionsBob8.findProcessCommand<CMD_SIGN>()
         val (bob9, actionsBob9) = bob8.process(ExecuteCommand(cmd))
         val (alice9, _) = alice8.process(MessageReceived(revokeAndAck0))
-        assertTrue((alice9 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue((alice9 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
 
         val commitSig1 = actionsBob9.findOutgoingMessage<CommitSig>()
         val (_, actionsAlice10) = alice9.process(MessageReceived(commitSig1))
         val revokeAndAck1 = actionsAlice10.findOutgoingMessage<RevokeAndAck>()
         val (bob10, _) = bob9.process(MessageReceived(revokeAndAck1))
-        bob10 as HasCommitments
+        bob10 as ChannelStateWithCommitments
 
         assertTrue(bob10.commitments.remoteNextCommitInfo.isRight)
         assertEquals(1, bob10.commitments.remoteCommit.index)
@@ -885,7 +885,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv RevokeAndAck (with reSignAsap=true)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
         val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
@@ -893,7 +893,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob2).first
         val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
-        assertTrue((alice4 as HasCommitments).commitments.remoteNextCommitInfo.left?.reSignAsap == true)
+        assertTrue((alice4 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.left?.reSignAsap == true)
 
         val revokeAndAck0 = actionsBob2.findOutgoingMessage<RevokeAndAck>()
         val (alice5, actionsAlice5) = alice4.process(MessageReceived(revokeAndAck0))
@@ -906,7 +906,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv RevokeAndAck (invalid preimage)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        val tx = (alice1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+        val tx = (alice1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
         val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
         val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
@@ -934,8 +934,8 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv RevokeAndAck (unexpectedly)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
-        val tx = (alice1 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
-        assertTrue((alice1 as HasCommitments).commitments.remoteNextCommitInfo.isRight)
+        val tx = (alice1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+        assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.process(
             MessageReceived(
@@ -1042,7 +1042,7 @@ class NormalTestsCommon : EclairTestSuite() {
         //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
-        alice8 as HasCommitments; bob8 as HasCommitments
+        alice8 as ChannelStateWithCommitments; bob8 as ChannelStateWithCommitments
         val bobCommitTx = bob8.commitments.localCommit.publishableTxs.commitTx.tx
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs and 4 pending htlcs
 
@@ -1129,7 +1129,7 @@ class NormalTestsCommon : EclairTestSuite() {
         //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
-        alice9 as HasCommitments; bob9 as HasCommitments
+        alice9 as ChannelStateWithCommitments; bob9 as ChannelStateWithCommitments
         // bob publishes his current commit tx
         val bobCommitTx = bob9.commitments.localCommit.publishableTxs.commitTx.tx
         assertEquals(5, bobCommitTx.txOut.size) // 2 main outputs and 3 pending htlcs
@@ -1278,7 +1278,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice3, bob3) = crossSign(alice2, bob2)
 
         // bob will publish this tx after it is revoked
-        val revokedTx = (bob3 as HasCommitments).commitments.localCommit.publishableTxs.commitTx.tx
+        val revokedTx = (bob3 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
         val (alice4, bob4) = addHtlc(amount = 10000000.msat, payer = alice3, payee = bob3).first
         val (alice5, _) = crossSign(alice4, bob4)
@@ -1293,7 +1293,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (aliceClosing, actions) = alice5.process(
             WatchReceived(
                 WatchEventSpent(
-                    (alice5 as HasCommitments).channelId,
+                    (alice5 as ChannelStateWithCommitments).channelId,
                     BITCOIN_FUNDING_SPENT,
                     revokedTx
                 )
