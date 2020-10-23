@@ -296,20 +296,16 @@ class Peer(
                         }
                     }
                 }
+                action is StoreState -> {
+                    logger.info { "storing state for channelId=$channelId data=${action.data}" }
+                    channelsDb.addOrUpdateChannel(action.data)
+                }
                 else -> {
                     logger.warning { "unhandled action : $action" }
                     Unit
                 }
             }
         }
-    }
-
-    private suspend fun store(actions: List<ChannelAction>) {
-        val actions1 = actions.filterIsInstance<StoreState>()
-        if (actions1.isEmpty()) return
-        val state = actions1.last().data
-        logger.info { "storing $state" }
-        channelsDb.addOrUpdateChannel(state)
     }
 
     private suspend fun handshake(
@@ -451,17 +447,14 @@ class Peer(
                                     val event1 = Restore(backup as ChannelState)
                                     val (state1, actions1) = state.process(event1)
                                     processActions(msg.channelId, actions1)
-                                    store(actions1)
 
                                     val event2 = Connected(ourInit, theirInit!!)
                                     val (state2, actions2) = state1.process(event2)
                                     processActions(msg.channelId, actions2)
-                                    store(actions2)
 
                                     val event3 = MessageReceived(msg)
                                     val (state3, actions3) = state2.process(event3)
                                     processActions(msg.channelId, actions3)
-                                    store(actions3)
                                     channels = channels + (msg.channelId to state3)
                                 }
                                 is Try.Failure -> {
@@ -482,7 +475,6 @@ class Peer(
                         channels = channels + (msg.temporaryChannelId to state1)
                         logger.info { "channel ${msg.temporaryChannelId} new state $state1" }
                         processActions(msg.temporaryChannelId, actions)
-                        store(actions)
                         actions.filterIsInstance<ChannelIdSwitch>().forEach {
                             logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
                             channels = channels - it.oldChannelId + (it.newChannelId to state1)
@@ -500,7 +492,6 @@ class Peer(
                         channels = channels + (msg.channelId to state1)
                         logger.info { "channel ${msg.channelId} new state $state1" }
                         processActions(msg.channelId, actions)
-                        store(actions)
                     }
                     else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}" }
                 }
@@ -513,7 +504,6 @@ class Peer(
                 val event1 = fr.acinq.eclair.channel.WatchReceived(event.watch)
                 val (state1, actions) = state.process(event1)
                 processActions(event.watch.channelId, actions)
-                store(actions)
                 channels = channels + (event.watch.channelId to state1)
                 logger.info { "channel ${event.watch.channelId} new state $state1" }
             } // event is WatchReceived
@@ -553,7 +543,6 @@ class Peer(
                 channels.forEach { (key, value) ->
                     val (state1, actions) = value.process(event.channelEvent)
                     processActions(key, actions)
-                    store(actions)
                     channels = channels + (key to state1)
                 }
             }
@@ -564,7 +553,6 @@ class Peer(
                 val state = channels[event.channelId]!!
                 val (state1, actions) = state.process(event.channelEvent)
                 processActions(event.channelId, actions)
-                store(actions)
                 channels = channels + (event.channelId to state1)
             }
             event is WrappedChannelError -> {
