@@ -12,7 +12,9 @@ import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.*
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -407,7 +409,7 @@ sealed class ChannelState {
 }
 
 @Serializable
-sealed class ChannelStateWithCommitments: ChannelState() {
+sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32
         get() = commitments.channelId
