@@ -2,7 +2,7 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,9 +48,9 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
 
     }
 
-    override suspend fun addOrUpdateChannel(state: HasCommitments) {
+    override suspend fun addOrUpdateChannel(state: ChannelStateWithCommitments) {
         withContext(Dispatchers.IO) {
-            val data = HasCommitments.serialize(state)
+            val data = ChannelStateWithCommitments.serialize(state)
             using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
                 update.setBytes(1, data)
                 update.setBytes(2, state.channelId.toByteArray())
@@ -84,13 +84,13 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
         }
     }
 
-    override suspend fun listLocalChannels(): List<HasCommitments> {
+    override suspend fun listLocalChannels(): List<ChannelStateWithCommitments> {
         return withContext(Dispatchers.IO) {
             using(sqlite.createStatement()) { statement ->
                 val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-                val result = ArrayList<HasCommitments>()
+                val result = ArrayList<ChannelStateWithCommitments>()
                 while (rs.next()) {
-                    result.add(HasCommitments.deserialize(rs.getBytes("data")))
+                    result.add(ChannelStateWithCommitments.deserialize(rs.getBytes("data")))
                 }
                 result
             }
