@@ -33,9 +33,9 @@ inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {
 
 // Commands
 inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
-    filterIsInstance<ProcessCommand>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
+    filterIsInstance<SendToSelf>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
 
-internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { any { it is ProcessCommand && it.command is T } }
+internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { any { it is SendToSelf && it.command is T } }
 
 // Errors
 inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
