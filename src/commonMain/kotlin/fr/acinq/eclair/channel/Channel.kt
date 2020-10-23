@@ -83,7 +83,7 @@ data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val 
 
 data class ProcessLocalFailure(val error: Throwable) : ChannelAction()
 data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
-data class StoreState(val data: ChannelState) : ChannelAction()
+data class StoreState(val data: ChannelStateWithCommitments) : ChannelAction()
 data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
 data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : ChannelAction()
 data class HandleCommandFailed(val cmd: Command, val error: Throwable?) : ChannelAction()
@@ -720,10 +720,6 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
             event is MessageReceived && event.message is ChannelReestablish ->
                 when {
                     waitForTheirReestablishMessage -> {
-                        if (state !is ChannelStateWithCommitments) {
-                            logger.error { "waiting for their channel_reestablish message in a state  that is not valid" }
-                            return Pair(state, listOf())
-                        }
                         val nextState = if (!event.message.channelData.isEmpty()) {
                             logger.info { "channel_reestablish includes a peer backup" }
                             when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {

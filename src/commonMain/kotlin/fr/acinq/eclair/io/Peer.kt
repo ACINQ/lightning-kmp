@@ -267,10 +267,7 @@ class Peer(
         if (actions1.isEmpty()) return
         val state = actions1.last().data
         logger.info { "storing $state" }
-        when (state) {
-            is ChannelStateWithCommitments -> channelsDb.addOrUpdateChannel(state as ChannelStateWithCommitments)
-            else -> logger.warning { "cannot store state $state" }
-        }
+        channelsDb.addOrUpdateChannel(state as ChannelStateWithCommitments)
     }
 
     private suspend fun handshake(
