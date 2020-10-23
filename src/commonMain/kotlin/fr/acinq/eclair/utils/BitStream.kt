@@ -30,7 +30,7 @@ data class BitStream(private var bytes: List<Byte>, private var offstart: Int, p
      * @return an updated bitstream
      */
     fun writeByte(input: Byte) {
-        when(offend) {
+        when (offend) {
             0 -> bytes += input
             else -> {
                 val input1 = input.toInt() and 0xff
@@ -49,7 +49,7 @@ data class BitStream(private var bytes: List<Byte>, private var offstart: Int, p
      * @return an udpdate bitstream
      */
     fun writeBytes(input: List<Byte>) {
-         input.forEach { writeByte(it) }
+        input.forEach { writeByte(it) }
     }
 
     /**
@@ -91,7 +91,7 @@ data class BitStream(private var bytes: List<Byte>, private var offstart: Int, p
      *
      * @return a (stream, bit) pair where stream is an updated bitstream and bit is the last bit
      */
-    fun popBit() : Boolean = when(offend) {
+    fun popBit(): Boolean = when (offend) {
         7 -> {
             val result = lastBit()
             bytes = bytes.dropLast(1)
@@ -113,7 +113,7 @@ data class BitStream(private var bytes: List<Byte>, private var offstart: Int, p
      *
      * @return a (stream, byte) pair where stream is an updated bitstream and byte is the last byte
      */
-    fun popByte(): Byte = when(offend) {
+    fun popByte(): Byte = when (offend) {
         0 -> {
             val result = bytes.last()
             bytes = bytes.dropLast(1)
@@ -143,7 +143,7 @@ data class BitStream(private var bytes: List<Byte>, private var offstart: Int, p
      *
      * @return
      */
-    fun readBit() : Boolean = when(offstart) {
+    fun readBit(): Boolean = when (offstart) {
         7 -> {
             val result = firstBit()
             bytes = bytes.drop(1)

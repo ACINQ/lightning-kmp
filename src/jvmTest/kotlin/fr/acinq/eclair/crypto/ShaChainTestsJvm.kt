@@ -61,7 +61,8 @@ class ShaChainTestsJvm {
 
     private val seed = ByteVector32.Zeroes
 
-    @Test fun `generate and receive hashes`() {
+    @Test
+    fun `generate and receive hashes`() {
         val result = (0 until 50).map { ShaChain.shaChainFromSeed(seed, -1L /*0xffffffffffffffffL*/ - it) }
         assertEquals(expected, result)
 

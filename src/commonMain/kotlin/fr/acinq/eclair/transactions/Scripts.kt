@@ -15,11 +15,11 @@ object Scripts {
     fun der(sig: ByteVector64): ByteVector = Crypto.compact2der(sig).concat(1)
 
     fun multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): List<ScriptElt> =
-    if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
-        Script.createMultiSigMofN(2, listOf(pubkey1, pubkey2))
-    } else {
-        Script.createMultiSigMofN(2, listOf(pubkey2, pubkey1))
-    }
+        if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
+            Script.createMultiSigMofN(2, listOf(pubkey1, pubkey2))
+        } else {
+            Script.createMultiSigMofN(2, listOf(pubkey2, pubkey1))
+        }
 
     /**
      * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
@@ -39,7 +39,7 @@ object Scripts {
      * @param n input number
      * @return a script element that represents n
      */
-    fun encodeNumber(n: Long): ScriptElt = when(n) {
+    fun encodeNumber(n: Long): ScriptElt = when (n) {
         0L -> OP_0
         -1L -> OP_1NEGATE
         in 1..16 -> code2elt.getValue((elt2code.getValue(OP_1) + n - 1).toInt())
@@ -66,8 +66,7 @@ object Scripts {
         if (tx.lockTime <= Script.LockTimeThreshold) {
             // locktime is a number of blocks
             tx.lockTime
-        }
-        else {
+        } else {
             // locktime is a unix epoch timestamp
             require(tx.lockTime <= 0x20FFFFFF) { "locktime should be lesser than 0x20FFFFFF" }
             // since locktime is very well in the past (0x20FFFFFF is in 1987), it is equivalent to no locktime at all
@@ -85,7 +84,7 @@ object Scripts {
                 sequence and TxIn.SEQUENCE_LOCKTIME_MASK
             }
 
-        return if (tx.version < 2) 0L else tx.txIn.map { it.sequence } .map { sequenceToBlockHeight(it) }.maxOrNull()!!
+        return if (tx.version < 2) 0L else tx.txIn.map { it.sequence }.map { sequenceToBlockHeight(it) }.maxOrNull()!!
     }
 
     fun toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): List<ScriptElt> =
@@ -141,7 +140,7 @@ object Scripts {
         ScriptWitness(listOf(ByteVector.empty, der(remoteSig), der(localSig), paymentPreimage, htlcOfferedScript))
 
     /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
-    fun extractPreimageFromHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@ {
+    fun extractPreimageFromHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@{
         if (it.stack.size < 5 || !it.stack[0].isEmpty()) return@f null
         val paymentPreimage = it.stack[3]
         if (paymentPreimage.size() != 32) return@f null
@@ -156,7 +155,7 @@ object Scripts {
         ScriptWitness(listOf(der(localSig), paymentPreimage, htlcOffered))
 
     /** Extract the payment preimage from from a fulfilled offered htlc. */
-    fun extractPreimageFromClaimHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@ {
+    fun extractPreimageFromClaimHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@{
         if (it.stack.size < 3) return@f null
         val paymentPreimage = it.stack[1]
         if (paymentPreimage.size() != 32) return@f null
@@ -192,7 +191,7 @@ object Scripts {
         ScriptWitness(listOf(ByteVector.empty, der(remoteSig), der(localSig), ByteVector.empty, htlcOfferedScript))
 
     /** Extract the payment hash from a 2nd-stage HTLC Timeout transaction's witness script */
-    fun extractPaymentHashFromHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@ {
+    fun extractPaymentHashFromHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@{
         if (it.stack.size < 5 || !it.stack[0].isEmpty() || !it.stack[3].isEmpty()) return@f null
         val htlcOfferedScript = it.stack[4]
         htlcOfferedScript.slice(109, 109 + 20)
@@ -206,7 +205,7 @@ object Scripts {
         ScriptWitness(listOf(der(localSig), ByteVector.empty, htlcReceivedScript))
 
     /** Extract the payment hash from a timed-out received htlc. */
-    fun extractPaymentHashFromClaimHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@ {
+    fun extractPaymentHashFromClaimHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@{
         if (it.stack.size < 3 || !it.stack[1].isEmpty()) return@f null
         val htlcReceivedScript = it.stack[2]
         htlcReceivedScript.slice(69, 69 + 20)

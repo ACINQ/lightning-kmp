@@ -27,6 +27,7 @@ object PeerChannels {
             isFunder = isFunder,
             defaultFinalScriptPubKey = defaultFinalScriptPubkey,
             localPaymentBasepoint = localPaymentBasepoint,
-            features = nodeParams.features)
+            features = nodeParams.features
+        )
     }
 }

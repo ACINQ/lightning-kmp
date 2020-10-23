@@ -25,11 +25,8 @@ import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTi
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
 import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.utils.*
-import fr.acinq.eclair.wire.AcceptChannel
-import fr.acinq.eclair.wire.ClosingSigned
-import fr.acinq.eclair.wire.OpenChannel
-import fr.acinq.eclair.wire.UpdateAddHtlc
-import fr.acinq.eclair.wire.UpdateFulfillHtlc
+import fr.acinq.eclair.wire.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import kotlin.math.abs
@@ -516,13 +513,11 @@ object Helpers {
             val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, channelVersion, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
             require(remoteCommitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-            val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
             val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
             val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-            //val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, remoteCommit.spec, commitments.commitmentFormat)
             val outputs =
                 makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteCommit.spec)
 
@@ -1006,6 +1001,7 @@ object Helpers {
             }
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     fun encrypt(key: ByteVector32, state: HasCommitments): ByteArray {
         val bin = HasCommitments.serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
@@ -1015,6 +1011,7 @@ object Helpers {
         return ciphertext + nonce + tag
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     fun decrypt(key: ByteVector32, data: ByteArray): HasCommitments {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)

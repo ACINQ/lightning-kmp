@@ -12,12 +12,13 @@ class NoiseTestsCommon : EclairTestSuite() {
     fun `hash tests`() {
         // see https://tools.ietf.org/html/rfc4231
         assertArrayEquals(
-                SHA256HashFunctions.hmacHash(Hex.decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"), Hex.decode("4869205468657265")),
-                Hex.decode("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
+            SHA256HashFunctions.hmacHash(Hex.decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"), Hex.decode("4869205468657265")),
+            Hex.decode("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
         )
         val (a, b) = SHA256HashFunctions.hkdf(
-                Hex.decode("4e6f6973655f4e4e5f32353531395f436861436861506f6c795f534841323536"),
-                Hex.decode("37e0e7daacbd6bfbf669a846196fd44d1c8745d33f2be42e31d4674199ad005e"))
+            Hex.decode("4e6f6973655f4e4e5f32353531395f436861436861506f6c795f534841323536"),
+            Hex.decode("37e0e7daacbd6bfbf669a846196fd44d1c8745d33f2be42e31d4674199ad005e")
+        )
         assertArrayEquals(a, Hex.decode("f6f78327c10316fdad06633fb965e03182e9a8b1f755d613f7980fbb85ebf46d"))
         assertArrayEquals(b, Hex.decode("4ee4220f31dbd3c9e2367e66a87f1e98a2433e4b9fbecfd986d156dcf027b937"))
     }
@@ -34,18 +35,20 @@ class NoiseTestsCommon : EclairTestSuite() {
         val responder_e = Hex.decode("2222222222222222222222222222222222222222222222222222222222222222")
 
         val initiator = HandshakeState.initializeWriter(
-                handshakePattern = handshakePatternXK,
-                prologue = prologue,
-                s = initiator_s, e = Pair(ByteArray(0), ByteArray(0)), rs = responder_s.first, re = ByteArray(0),
-                dh = dh, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions,
-                byteStream = FixedStream(initiator_e))
+            handshakePattern = handshakePatternXK,
+            prologue = prologue,
+            s = initiator_s, e = Pair(ByteArray(0), ByteArray(0)), rs = responder_s.first, re = ByteArray(0),
+            dh = dh, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions,
+            byteStream = FixedStream(initiator_e)
+        )
 
         val responder = HandshakeState.initializeReader(
-                handshakePattern = handshakePatternXK,
-                prologue = prologue,
-                s = responder_s, e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0),
-                dh = dh, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions,
-                byteStream = FixedStream(responder_e))
+            handshakePattern = handshakePatternXK,
+            prologue = prologue,
+            s = responder_s, e = Pair(ByteArray(0), ByteArray(0)), rs = ByteArray(0), re = ByteArray(0),
+            dh = dh, cipher = Chacha20Poly1305CipherFunctions, hash = SHA256HashFunctions,
+            byteStream = FixedStream(responder_e)
+        )
 
         val (outputs, foo) = handshake(initiator, responder, listOf(ByteArray(0), ByteArray(0), ByteArray(0)))
         val (enc, dec) = foo

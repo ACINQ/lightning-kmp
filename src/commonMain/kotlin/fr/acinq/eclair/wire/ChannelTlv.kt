@@ -42,7 +42,7 @@ sealed class ChannelTlv : Tlv {
         override val tag: Long
             get() = serializer().tag
 
-        companion object: LightningSerializer<ChannelVersionTlvLegacy>() {
+        companion object : LightningSerializer<ChannelVersionTlvLegacy>() {
             override val tag: Long
                 get() = 0x47000000L
 
@@ -68,7 +68,7 @@ sealed class ChannelTlv : Tlv {
         override val tag: Long
             get() = serializer().tag
 
-        companion object: LightningSerializer<ChannelVersionTlv>() {
+        companion object : LightningSerializer<ChannelVersionTlv>() {
             override val tag: Long
                 get() = 0x47000001L
 

@@ -56,7 +56,9 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlinx.serialization.InternalSerializationApi
 import kotlin.random.Random
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @InternalSerializationApi
 class TransactionsTestsCommon : EclairTestSuite() {
@@ -75,7 +77,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
     private val localDustLimit = 546.sat
     private val feeratePerKw = 22_000L
 
-    @Test fun `encode and decode sequence and locktime (one example)`() {
+    @Test
+    fun `encode and decode sequence and locktime (one example)`() {
         val txnumber = 0x11F71FB268DL
 
         val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -86,8 +89,9 @@ class TransactionsTestsCommon : EclairTestSuite() {
         assertEquals(txnumber, txnumber1)
     }
 
-    @Test fun `reconstruct txnumber from sequence and locktime`() {
-        repeat (1_000) {
+    @Test
+    fun `reconstruct txnumber from sequence and locktime`() {
+        repeat(1_000) {
             val txnumber = Random.nextLong() and 0xffffffffffffL
             val (sequence, locktime) = encodeTxNumber(txnumber)
             val txnumber1 = decodeTxNumber(sequence, locktime)
@@ -95,7 +99,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `compute fees`() {
+    @Test
+    fun `compute fees`() {
         // see BOLT #3 specs
         val htlcs = setOf(
             OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, ByteVector32.Zeroes, CltvExpiry(552), TestConstants.emptyOnionPacket)),
@@ -108,7 +113,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
         assertEquals(5340.sat, fee)
     }
 
-    @Test fun `check pre-computed transaction weights`() {
+    @Test
+    fun `check pre-computed transaction weights`() {
         val finalPubKeyScript = write(pay2wpkh(PrivateKey(randomBytes32()).publicKey()))
         val localDustLimit = 546.sat
         val toLocalDelay = CltvExpiryDelta(144)
@@ -134,7 +140,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
             val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val claimHtlcDelayedTx = makeClaimDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey(), finalPubKeyScript, feeratePerKw)
-           assertTrue(claimHtlcDelayedTx is Success, "is $claimHtlcDelayedTx")
+            assertTrue(claimHtlcDelayedTx is Success, "is $claimHtlcDelayedTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(claimHtlcDelayedTx.result, PlaceHolderSig).tx)
             assertEquals(claimHtlcDelayedWeight, weight)
@@ -176,7 +182,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val paymentPreimage = randomBytes32()
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val spec = CommitmentSpec(setOf(OutgoingHtlc(htlc)), feeratePerKw, toLocal = 0.msat, toRemote = 0.msat)
-            val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
+            val outputs =
+                makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
             val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash))))
             val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
             val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
@@ -193,7 +200,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val paymentPreimage = randomBytes32()
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), toLocalDelay.toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val spec = CommitmentSpec(setOf(IncomingHtlc(htlc)), feeratePerKw, toLocal = 0.msat, toRemote = 0.msat)
-            val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
+            val outputs =
+                makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
             val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
             val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
             val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
@@ -205,7 +213,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `generate valid commitment and htlc transactions`() {
+    @Test
+    fun `generate valid commitment and htlc transactions`() {
         val finalPubKeyScript = write(pay2wpkh(PrivateKey(ByteVector32("01".repeat(32))).publicKey()))
         val commitInput = Funding.makeFundingInputInfo(ByteVector32("02".repeat(32)), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
 
@@ -228,7 +237,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             ),
             feeratePerKw = feeratePerKw,
             toLocal = 400.mbtc.toMilliSatoshi(),
-            toRemote =300.mbtc.toMilliSatoshi()
+            toRemote = 300.mbtc.toMilliSatoshi()
         )
 
         val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
@@ -365,7 +374,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test fun `sort the htlc outputs using BIP69 and cltv expiry`() {
+    @Test
+    fun `sort the htlc outputs using BIP69 and cltv expiry`() {
         val localFundingPriv = PrivateKey.fromHex("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
         val remoteFundingPriv = PrivateKey.fromHex("a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
         val localRevocationPriv = PrivateKey.fromHex("a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3")
@@ -403,7 +413,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
 
         val commitTxNumber = 0x404142434446L
         val (commitTx, outputs) = run {
-            val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
+            val outputs =
+                makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
             val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
             val localSig = sign(txinfo, localPaymentPriv)
             val remoteSig = sign(txinfo, remotePaymentPriv)

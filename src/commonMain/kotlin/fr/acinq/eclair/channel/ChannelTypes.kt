@@ -11,11 +11,9 @@ import fr.acinq.eclair.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.BitField
 import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.sum
 import fr.acinq.eclair.wire.ClosingSigned
 import fr.acinq.eclair.wire.FailureMessage
 import fr.acinq.eclair.wire.OnionRoutingPacket
-import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlinx.serialization.Serializable
 
 
@@ -31,16 +29,29 @@ import kotlinx.serialization.Serializable
  */
 
 sealed class Command
-sealed class HasHtlcId : Command() { abstract val id: Long }
+sealed class HasHtlcId : Command() {
+    abstract val id: Long
+}
+
 data class CMD_FULFILL_HTLC(override val id: Long, val r: ByteVector32, val commit: Boolean = false) : HasHtlcId()
 data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: Boolean = false) : HasHtlcId() {
     sealed class Reason {
-        data class Bytes(val bytes: ByteVector): Reason()
-        data class Failure(val message: FailureMessage): Reason()
+        data class Bytes(val bytes: ByteVector) : Reason()
+        data class Failure(val message: FailureMessage) : Reason()
     }
 }
+
 data class CMD_FAIL_MALFORMED_HTLC(override val id: Long, val onionHash: ByteVector32, val failureCode: Int, val commit: Boolean = false) : HasHtlcId()
-data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false, val previousFailures: List<AddHtlcFailed> = emptyList()) : Command()
+data class CMD_ADD_HTLC(
+    val amount: MilliSatoshi,
+    val paymentHash: ByteVector32,
+    val cltvExpiry: CltvExpiry,
+    val onion: OnionRoutingPacket,
+    val paymentId: UUID,
+    val commit: Boolean = false,
+    val previousFailures: List<AddHtlcFailed> = emptyList()
+) : Command()
+
 data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
 object CMD_SIGN : Command()
 data class CMD_CLOSE(val scriptPubKey: ByteVector?) : Command()
@@ -400,7 +411,8 @@ data class ChannelVersion(val bits: BitField) {
 
     val hasPubkeyKeyPath: Boolean by lazy { isSet(USE_PUBKEY_KEYPATH_BIT) }
     val hasStaticRemotekey: Boolean by lazy { isSet(USE_STATIC_REMOTEKEY_BIT) }
-    val hasAnchorOutputs: Boolean by lazy{ isSet(USE_ANCHOR_OUTPUTS_BIT) }
+    val hasAnchorOutputs: Boolean by lazy { isSet(USE_ANCHOR_OUTPUTS_BIT) }
+
     //  True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses.
     val paysDirectlyToWallet: Boolean by lazy { hasStaticRemotekey && !hasAnchorOutputs }
 

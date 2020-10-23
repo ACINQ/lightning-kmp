@@ -215,7 +215,7 @@ class IncomingPaymentHandler(
 
             logger.warning {
                 "Discovered htlc set total_msat_mismatch." +
-                    " Failing entire set with paymentHash = ${htlc.paymentHash}"
+                        " Failing entire set with paymentHash = ${htlc.paymentHash}"
             }
 
             pending.remove(htlc.paymentHash)

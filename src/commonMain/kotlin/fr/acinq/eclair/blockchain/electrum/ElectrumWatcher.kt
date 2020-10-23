@@ -23,7 +23,7 @@ import kotlin.math.absoluteValue
 import kotlin.math.max
 
 sealed class WatcherEvent
-private object StartWatcher: WatcherEvent()
+private object StartWatcher : WatcherEvent()
 class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
 data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
 class ReceiveWatch(val watch: Watch) : WatcherEvent()
@@ -63,6 +63,7 @@ private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 private sealed class WatcherState {
     abstract fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>>
 }
+
 private data class WatcherDisconnected(
     val watches: Set<Watch> = setOf(),
     val publishQueue: Set<PublishAsap> = setOf(),
@@ -70,11 +71,11 @@ private data class WatcherDisconnected(
     val getTxQueue: List<GetTxWithMeta> = listOf()
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
-        when(event) {
+        when (event) {
             is StartWatcher -> returnState(action = AskForClientStatusUpdate)
             is ClientStateUpdate -> {
-                    if (event.connection == Connection.ESTABLISHED) returnState(AskForHeaderUpdate)
-                    else returnState()
+                if (event.connection == Connection.ESTABLISHED) returnState(AskForHeaderUpdate)
+                else returnState()
             }
             is ReceivedMessage -> when (val message = event.message) {
                 is HeaderSubscriptionResponse -> {
@@ -300,8 +301,9 @@ private data class WatcherRunning(
                         logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
                         setupWatch(
-                                watch = WatchConfirmed(ByteVector32.Zeroes, parentTxid,
-                                    parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx),
+                            watch = WatchConfirmed(
+                                ByteVector32.Zeroes, parentTxid,
+                                parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx),
                                 channelNotification = false
                             )
                         )
@@ -372,14 +374,15 @@ private data class WatcherRunning(
     }
 }
 
-private fun WatcherState.unhandled(message: WatcherEvent) : Pair<WatcherState, List<WatcherAction>> =
-        error("The state $this cannot process the event $message")
+private fun WatcherState.unhandled(message: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
+    error("The state $this cannot process the event $message")
 
 private class WatcherStateBuilder {
     var state: WatcherState = WatcherDisconnected()
     var actions = emptyList<WatcherAction>()
     fun build() = state to actions
 }
+
 private fun newState(init: WatcherStateBuilder.() -> Unit) = WatcherStateBuilder().apply(init).build()
 private fun newState(newState: WatcherState) = WatcherStateBuilder().apply { state = newState }.build()
 
@@ -387,7 +390,7 @@ private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList())
 private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): CoroutineScope by scope {
+class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : CoroutineScope by scope {
     private val notificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
@@ -413,6 +416,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
     private var state: WatcherState = WatcherDisconnected()
 
     private var runJob: Job? = null
+
     init {
         logger.info { "Init Electrum Watcher" }
         runJob = launch { run() }
@@ -465,6 +469,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope): Co
             eventChannel.send(PublishAsapEvent(tx))
         }
     }
+
     fun watch(watch: Watch) {
         launch {
             eventChannel.send(ReceiveWatch(watch))

@@ -10,8 +10,6 @@ import fr.acinq.eclair.crypto.ChaCha20
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.secp256k1.Hex
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 
 /**
  * Decrypting an onion packet yields a payload for the current node and the encrypted packet for the next node.
@@ -73,7 +71,13 @@ object Sphinx {
         return computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.drop(1), listOf(ephemeralPublicKey0), listOf(blindingFactor0), listOf(secret0))
     }
 
-    private tailrec fun computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: List<PublicKey>, ephemeralPublicKeys: List<PublicKey>, blindingFactors: List<ByteVector32>, sharedSecrets: List<ByteVector32>): Pair<List<PublicKey>, List<ByteVector32>> {
+    private tailrec fun computeEphemeralPublicKeysAndSharedSecrets(
+        sessionKey: PrivateKey,
+        publicKeys: List<PublicKey>,
+        ephemeralPublicKeys: List<PublicKey>,
+        blindingFactors: List<ByteVector32>,
+        sharedSecrets: List<ByteVector32>
+    ): Pair<List<PublicKey>, List<ByteVector32>> {
         return if (publicKeys.isEmpty())
             Pair(ephemeralPublicKeys, sharedSecrets)
         else {
@@ -207,7 +211,15 @@ object Sphinx {
      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
      * @return the next packet.
      */
-    fun wrap(payload: ByteArray, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Either<ByteVector, OnionRoutingPacket>, packetLength: Int, onionPayloadFiller: ByteVector = ByteVector.empty): OnionRoutingPacket {
+    fun wrap(
+        payload: ByteArray,
+        associatedData: ByteVector32,
+        ephemeralPublicKey: PublicKey,
+        sharedSecret: ByteVector32,
+        packet: Either<ByteVector, OnionRoutingPacket>,
+        packetLength: Int,
+        onionPayloadFiller: ByteVector = ByteVector.empty
+    ): OnionRoutingPacket {
         require(payload.size <= packetLength - MacLength) { "packet payload cannot exceed ${packetLength - MacLength} bytes" }
 
         val (currentMac, currentPayload) = when (packet) {

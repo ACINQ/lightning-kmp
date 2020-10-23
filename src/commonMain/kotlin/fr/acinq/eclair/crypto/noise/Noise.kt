@@ -66,7 +66,7 @@ interface CipherState {
     fun cipher(): CipherFunctions
 
     fun initializeKey(key: ByteArray): CipherState =
-      apply(key, cipher())
+        apply(key, cipher())
 
     fun hasKey(): Boolean
 
@@ -82,7 +82,7 @@ interface CipherState {
         }
 
         fun apply(cipher: CipherFunctions): CipherState =
-          UninitializedCipherState(cipher)
+            UninitializedCipherState(cipher)
     }
 }
 
@@ -92,7 +92,7 @@ interface CipherState {
  * @param cipher cipher functions
  */
 data class UninitializedCipherState(val cipher: CipherFunctions) :
-  CipherState {
+    CipherState {
     override fun cipher(): CipherFunctions = cipher
 
     override fun hasKey() = false
@@ -110,7 +110,7 @@ data class UninitializedCipherState(val cipher: CipherFunctions) :
  * @param cipher cipher functions
  */
 data class InitializedCipherState(val k: ByteArray, val n: Long, val cipher: CipherFunctions) :
-  CipherState {
+    CipherState {
     init {
         require(k.size == 32) { "key size must be 32 bytes" }
     }
@@ -214,9 +214,9 @@ data class SymmetricState(val cipherState: CipherState, val ck: ByteArray, val h
             else hashFunctions.hash(protocolName)
 
             return SymmetricState(
-              CipherState.apply(
-                cipherFunctions
-              ), ck = h, h = h, hashFunctions = hashFunctions
+                CipherState.apply(
+                    cipherFunctions
+                ), ck = h, h = h, hashFunctions = hashFunctions
             )
         }
     }
@@ -229,24 +229,26 @@ enum class MessagePattern {
 data class HandshakePattern(val name: String, val initiatorPreMessages: List<MessagePattern>, val responderPreMessages: List<MessagePattern>, val messages: List<List<MessagePattern>>) {
     init {
         require(
-          isValidInitiator(
-            initiatorPreMessages
-          )
+            isValidInitiator(
+                initiatorPreMessages
+            )
         ) { "invalid initiator messages" }
         require(
-          isValidInitiator(
-            responderPreMessages
-          )
+            isValidInitiator(
+                responderPreMessages
+            )
         ) { "invalid responder messages" }
     }
 
     companion object {
-        val validInitiatorPatterns: Set<List<MessagePattern>> = setOf(listOf<MessagePattern>(), listOf(
-          MessagePattern.E
-        ), listOf(MessagePattern.S), listOf(
-          MessagePattern.E,
-          MessagePattern.S
-        ))
+        val validInitiatorPatterns: Set<List<MessagePattern>> = setOf(
+            listOf<MessagePattern>(), listOf(
+                MessagePattern.E
+            ), listOf(MessagePattern.S), listOf(
+                MessagePattern.E,
+                MessagePattern.S
+            )
+        )
 
         fun isValidInitiator(initiator: List<MessagePattern>): Boolean = validInitiatorPatterns.contains(initiator)
     }
@@ -257,36 +259,36 @@ data class HandshakePattern(val name: String, val initiatorPreMessages: List<Mes
  */
 
 val handshakePatternNN = HandshakePattern(
-  "NN",
-  initiatorPreMessages = listOf<MessagePattern>(),
-  responderPreMessages = listOf<MessagePattern>(),
-  messages = listOf(
-    listOf(MessagePattern.E),
-    listOf(
-      MessagePattern.E,
-      MessagePattern.EE
+    "NN",
+    initiatorPreMessages = listOf<MessagePattern>(),
+    responderPreMessages = listOf<MessagePattern>(),
+    messages = listOf(
+        listOf(MessagePattern.E),
+        listOf(
+            MessagePattern.E,
+            MessagePattern.EE
+        )
     )
-  )
 )
 
 val handshakePatternXK = HandshakePattern(
-  "XK",
-  initiatorPreMessages = listOf<MessagePattern>(),
-  responderPreMessages = listOf(MessagePattern.S),
-  messages = listOf(
-    listOf(
-      MessagePattern.E,
-      MessagePattern.ES
-    ),
-    listOf(
-      MessagePattern.E,
-      MessagePattern.EE
-    ),
-    listOf(
-      MessagePattern.S,
-      MessagePattern.SE
+    "XK",
+    initiatorPreMessages = listOf<MessagePattern>(),
+    responderPreMessages = listOf(MessagePattern.S),
+    messages = listOf(
+        listOf(
+            MessagePattern.E,
+            MessagePattern.ES
+        ),
+        listOf(
+            MessagePattern.E,
+            MessagePattern.EE
+        ),
+        listOf(
+            MessagePattern.S,
+            MessagePattern.SE
+        )
     )
-  )
 )
 
 interface ByteStream {
@@ -304,22 +306,33 @@ sealed class HandshakeState {
         private fun makeSymmetricState(handshakePattern: HandshakePattern, prologue: ByteArray, dh: DHFunctions, cipher: CipherFunctions, hash: HashFunctions): SymmetricState {
             val name = "Noise_${handshakePattern.name}_${dh.name()}_${cipher.name()}_${hash.name()}"
             val symmetricState = SymmetricState.apply(
-              name.encodeToByteArray(),
-              cipher,
-              hash
+                name.encodeToByteArray(),
+                cipher,
+                hash
             )
             return symmetricState.mixHash(prologue)
         }
 
-        fun initializeWriter(handshakePattern: HandshakePattern, prologue: ByteArray, s: Pair<ByteArray, ByteArray>, e: Pair<ByteArray, ByteArray>, rs: ByteArray, re: ByteArray, dh: DHFunctions, cipher: CipherFunctions, hash: HashFunctions, byteStream: ByteStream = RandomBytes): HandshakeStateWriter {
+        fun initializeWriter(
+            handshakePattern: HandshakePattern,
+            prologue: ByteArray,
+            s: Pair<ByteArray, ByteArray>,
+            e: Pair<ByteArray, ByteArray>,
+            rs: ByteArray,
+            re: ByteArray,
+            dh: DHFunctions,
+            cipher: CipherFunctions,
+            hash: HashFunctions,
+            byteStream: ByteStream = RandomBytes
+        ): HandshakeStateWriter {
             val symmetricState =
-              makeSymmetricState(
-                handshakePattern,
-                prologue,
-                dh,
-                cipher,
-                hash
-              )
+                makeSymmetricState(
+                    handshakePattern,
+                    prologue,
+                    dh,
+                    cipher,
+                    hash
+                )
             val symmetricState1 = handshakePattern.initiatorPreMessages.fold(symmetricState, { state, pattern ->
                 when (pattern) {
                     MessagePattern.E -> state.mixHash(e.first)
@@ -335,26 +348,37 @@ sealed class HandshakeState {
                 }
             })
             return HandshakeStateWriter(
-              handshakePattern.messages,
-              symmetricState2,
-              s,
-              e,
-              rs,
-              re,
-              dh,
-              byteStream
+                handshakePattern.messages,
+                symmetricState2,
+                s,
+                e,
+                rs,
+                re,
+                dh,
+                byteStream
             )
         }
 
-        fun initializeReader(handshakePattern: HandshakePattern, prologue: ByteArray, s: Pair<ByteArray, ByteArray>, e: Pair<ByteArray, ByteArray>, rs: ByteArray, re: ByteArray, dh: DHFunctions, cipher: CipherFunctions, hash: HashFunctions, byteStream: ByteStream = RandomBytes): HandshakeStateReader {
+        fun initializeReader(
+            handshakePattern: HandshakePattern,
+            prologue: ByteArray,
+            s: Pair<ByteArray, ByteArray>,
+            e: Pair<ByteArray, ByteArray>,
+            rs: ByteArray,
+            re: ByteArray,
+            dh: DHFunctions,
+            cipher: CipherFunctions,
+            hash: HashFunctions,
+            byteStream: ByteStream = RandomBytes
+        ): HandshakeStateReader {
             val symmetricState =
-              makeSymmetricState(
-                handshakePattern,
-                prologue,
-                dh,
-                cipher,
-                hash
-              )
+                makeSymmetricState(
+                    handshakePattern,
+                    prologue,
+                    dh,
+                    cipher,
+                    hash
+                )
             val symmetricState1 = handshakePattern.initiatorPreMessages.fold(symmetricState, { state, pattern ->
                 when (pattern) {
                     MessagePattern.E -> state.mixHash(re)
@@ -370,33 +394,42 @@ sealed class HandshakeState {
                 }
             })
             return HandshakeStateReader(
-              handshakePattern.messages,
-              symmetricState2,
-              s,
-              e,
-              rs,
-              re,
-              dh,
-              byteStream
+                handshakePattern.messages,
+                symmetricState2,
+                s,
+                e,
+                rs,
+                re,
+                dh,
+                byteStream
             )
         }
 
     }
 }
 
-data class HandshakeStateWriter(val messages: List<List<MessagePattern>>, val state: SymmetricState, val s: Pair<ByteArray, ByteArray>, val e: Pair<ByteArray, ByteArray>, val rs: ByteArray, val re: ByteArray, val dh: DHFunctions, val byteStream: ByteStream) : HandshakeState() {
+data class HandshakeStateWriter(
+    val messages: List<List<MessagePattern>>,
+    val state: SymmetricState,
+    val s: Pair<ByteArray, ByteArray>,
+    val e: Pair<ByteArray, ByteArray>,
+    val rs: ByteArray,
+    val re: ByteArray,
+    val dh: DHFunctions,
+    val byteStream: ByteStream
+) : HandshakeState() {
 
     fun toReader(): HandshakeStateReader =
-      HandshakeStateReader(
-        messages,
-        state,
-        s,
-        e,
-        rs,
-        re,
-        dh,
-        byteStream
-      )
+        HandshakeStateReader(
+            messages,
+            state,
+            s,
+            e,
+            rs,
+            re,
+            dh,
+            byteStream
+        )
 
     /**
      *
@@ -446,7 +479,32 @@ data class HandshakeStateWriter(val messages: List<List<MessagePattern>>, val st
 
     companion object {
         fun apply(messages: List<List<MessagePattern>>, state: SymmetricState, s: Pair<ByteArray, ByteArray>, e: Pair<ByteArray, ByteArray>, rs: ByteArray, re: ByteArray, dh: DHFunctions): HandshakeStateWriter =
-          HandshakeStateWriter(
+            HandshakeStateWriter(
+                messages,
+                state,
+                s,
+                e,
+                rs,
+                re,
+                dh,
+                RandomBytes
+            )
+    }
+}
+
+
+data class HandshakeStateReader(
+    val messages: List<List<MessagePattern>>,
+    val state: SymmetricState,
+    val s: Pair<ByteArray, ByteArray>,
+    val e: Pair<ByteArray, ByteArray>,
+    val rs: ByteArray,
+    val re: ByteArray,
+    val dh: DHFunctions,
+    val byteStream: ByteStream
+) : HandshakeState() {
+    fun toWriter(): HandshakeStateWriter =
+        HandshakeStateWriter(
             messages,
             state,
             s,
@@ -454,24 +512,8 @@ data class HandshakeStateWriter(val messages: List<List<MessagePattern>>, val st
             rs,
             re,
             dh,
-            RandomBytes
-          )
-    }
-}
-
-
-data class HandshakeStateReader(val messages: List<List<MessagePattern>>, val state: SymmetricState, val s: Pair<ByteArray, ByteArray>, val e: Pair<ByteArray, ByteArray>, val rs: ByteArray, val re: ByteArray, val dh: DHFunctions, val byteStream: ByteStream) : HandshakeState() {
-    fun toWriter(): HandshakeStateWriter =
-      HandshakeStateWriter(
-        messages,
-        state,
-        s,
-        e,
-        rs,
-        re,
-        dh,
-        byteStream
-      )
+            byteStream
+        )
 
     /** *
      *
@@ -523,15 +565,15 @@ data class HandshakeStateReader(val messages: List<List<MessagePattern>>, val st
     companion object {
         private fun ByteArray.splitAt(n: Int): Pair<ByteArray, ByteArray> = Pair(this.take(n).toByteArray(), this.drop(n).toByteArray())
         fun apply(messages: List<List<MessagePattern>>, state: SymmetricState, s: Pair<ByteArray, ByteArray>, e: Pair<ByteArray, ByteArray>, rs: ByteArray, re: ByteArray, dh: DHFunctions): HandshakeStateReader =
-          HandshakeStateReader(
-            messages,
-            state,
-            s,
-            e,
-            rs,
-            re,
-            dh,
-            RandomBytes
-          )
+            HandshakeStateReader(
+                messages,
+                state,
+                s,
+                e,
+                rs,
+                re,
+                dh,
+                RandomBytes
+            )
     }
 }

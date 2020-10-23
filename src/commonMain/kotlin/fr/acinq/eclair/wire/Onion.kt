@@ -356,7 +356,13 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload(),
 
         /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
         fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload {
-            val tlvs = mutableListOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.OutgoingNodeId(targetNodeId), OnionTlv.InvoiceFeatures(invoice.features ?: ByteVector.empty), OnionTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints }))
+            val tlvs = mutableListOf(
+                OnionTlv.AmountToForward(amount),
+                OnionTlv.OutgoingCltv(expiry),
+                OnionTlv.OutgoingNodeId(targetNodeId),
+                OnionTlv.InvoiceFeatures(invoice.features ?: ByteVector.empty),
+                OnionTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints })
+            )
             if (invoice.paymentSecret != null) {
                 tlvs.add(OnionTlv.PaymentData(invoice.paymentSecret, totalAmount))
             }

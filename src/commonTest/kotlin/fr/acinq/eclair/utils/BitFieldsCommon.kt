@@ -6,7 +6,8 @@ import kotlin.test.assertEquals
 
 class BitFieldsCommon : EclairTestSuite() {
 
-    @Test fun `Creation and simple get and set from left`() {
+    @Test
+    fun `Creation and simple get and set from left`() {
         val bs = BitField(1)
 
         assertEquals("0x00", bs.toString())
@@ -33,7 +34,8 @@ class BitFieldsCommon : EclairTestSuite() {
         assertEquals(true, bs.getLeft(2))
     }
 
-    @Test fun `Creation and simple get and set from right`() {
+    @Test
+    fun `Creation and simple get and set from right`() {
         val bs = BitField(1)
 
         assertEquals("0x00", bs.toString())
@@ -60,7 +62,8 @@ class BitFieldsCommon : EclairTestSuite() {
         assertEquals(true, bs.getRight(2))
     }
 
-    @Test fun `Reversion of a bitField`() {
+    @Test
+    fun `Reversion of a bitField`() {
         val bs = BitField.from(byteArrayOf(0x60, 0x01))
         val rbs = bs.reversed()
 
@@ -68,7 +71,8 @@ class BitFieldsCommon : EclairTestSuite() {
         assertEquals("0x8006", rbs.toString())
     }
 
-    @Test fun `Creation from binary String`() {
+    @Test
+    fun `Creation from binary String`() {
         assertEquals(BitField.from(byteArrayOf(0xaa.toByte())), BitField.fromBin("10101010"), BitField.fromBin("10101010").toBinaryString())
         assertEquals(BitField.from(byteArrayOf(0x02)), BitField.fromBin("10"), BitField.fromBin("10").toBinaryString())
     }

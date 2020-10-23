@@ -50,7 +50,7 @@ interface KeyManager {
      *         - with a specific "chain" prefix
      *         - with a specific "funding pubkey" suffix
      */
-    fun newFundingKeyPath(isFunder: Boolean) : KeyPath
+    fun newFundingKeyPath(isFunder: Boolean): KeyPath
 
     /**
      *
@@ -109,7 +109,7 @@ interface KeyManager {
          * @return a BIP32 path
          */
         @OptIn(ExperimentalUnsignedTypes::class)
-        fun channelKeyPath(fundingPubKey: PublicKey) : KeyPath {
+        fun channelKeyPath(fundingPubKey: PublicKey): KeyPath {
             val buffer = sha256(fundingPubKey.value)
 
             val path = sequence {
@@ -122,7 +122,7 @@ interface KeyManager {
             return KeyPath(path.take(8).toList())
         }
 
-        fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey) : KeyPath = channelKeyPath(fundingPubKey.publicKey)
+        fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
 
         val serializersModule = SerializersModule {
             polymorphic(KeyManager::class) {

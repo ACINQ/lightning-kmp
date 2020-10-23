@@ -578,7 +578,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // - trampoline packet requests a legacy (non-trampoline) forward to nodeC
 
         val add = UpdateAddHtlc(channel.channelId, 0, cmdAddHtlc.amount, cmdAddHtlc.paymentHash, cmdAddHtlc.cltvExpiry, cmdAddHtlc.onion)
-        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(add, privKeyB)
+        val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptNodeRelay(add, privKeyB)
         assertEquals(expectedAmountAtB, outerB.amount)
         assertEquals(expectedAmountAtB, outerB.totalAmount)
         assertEquals(expectedExpiryAtB, outerB.expiry)

@@ -9,8 +9,6 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.utils.newEclairLogger
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 
 @OptIn(ExperimentalUnsignedTypes::class)
 sealed class FailureMessage {

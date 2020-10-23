@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.eclair.Eclair.secureRandom
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.transactions.Transactions
@@ -51,7 +50,7 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
     private fun shaSeed(channelKeyPath: List<Long>) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
 
     override fun closingPubkeyScript(fundingPubKey: PublicKey): ByteArray {
-        val path = when(chainHash) {
+        val path = when (chainHash) {
             Block.LivenetGenesisBlock.hash -> "m/84'/0'/0'/0/0"
             Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> "m/84'/1'/0'/0/0"
             else -> throw IllegalArgumentException("invalid chain hash $chainHash")
@@ -104,8 +103,8 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
     }
 
     companion object {
-        fun channelKeyBasePath(chainHash: ByteVector32) = when(chainHash) {
-            Block.RegtestGenesisBlock.hash,  Block.TestnetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(46), DeterministicWallet.hardened(1))
+        fun channelKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
+            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(46), DeterministicWallet.hardened(1))
             Block.LivenetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(47), DeterministicWallet.hardened(1))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")
         }
@@ -114,7 +113,7 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
         // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
         // Note that the node path and the above channel path are on different branches so even if the
         // node key is compromised there is no way to retrieve the wallet keys
-        fun nodeKeyBasePath(chainHash: ByteVector32) = when(chainHash) {
+        fun nodeKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
             Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(46), DeterministicWallet.hardened(0))
             Block.LivenetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(47), DeterministicWallet.hardened(0))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")

@@ -18,8 +18,8 @@ class WaitForOpenChannelTestsCommon {
     fun `recv OpenChannel`() {
         val (_, b, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
         val bob = b as ChannelState
-        assertEquals(TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))), open.tlvStream)
-        val (bob1, _)= bob.process(MessageReceived(open))
+        assertEquals<TlvStream<out ChannelTlv>>(TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))), open.tlvStream)
+        val (bob1, _) = bob.process(MessageReceived(open))
         assertTrue { bob1 is WaitForFundingCreated }
     }
 
@@ -47,7 +47,7 @@ class WaitForOpenChannelTestsCommon {
 
     @Test
     fun `recv OpenChannel (reserve below dust)`() {
-        val (alice, bob, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
+        val (_, bob, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
         val reserveTooSmall = open.dustLimitSatoshis - 1.sat
         val open1 = open.copy(channelReserveSatoshis = reserveTooSmall)
         val (bob1, actions) = bob.process(MessageReceived(open1))
@@ -58,9 +58,9 @@ class WaitForOpenChannelTestsCommon {
 
     @Test
     fun `recv OpenChannel (reserve below dust, zero-reserve channel)`() {
-        val (alice, bob, open) = TestsHelper.init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, 0, 1000000.sat)
+        val (_, bob, open) = TestsHelper.init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, 0, 1000000.sat)
         assertEquals(Satoshi(0), open.channelReserveSatoshis)
-        val (bob1, actions) = bob.process(MessageReceived(open))
+        val (bob1, _) = bob.process(MessageReceived(open))
         assertTrue { bob1 is WaitForFundingCreated }
     }
 

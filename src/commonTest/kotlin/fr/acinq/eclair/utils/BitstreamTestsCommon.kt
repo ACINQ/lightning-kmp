@@ -11,7 +11,7 @@ class BitstreamTestsCommon : EclairTestSuite() {
     fun `add bits`() {
         val bits = BitStream()
         bits.writeBit(true)
-        assertEquals(bits.bitCount(),  1)
+        assertEquals(bits.bitCount(), 1)
         assertTrue(bits.isSet(0))
         bits.writeBit(false)
         assertEquals(bits.bitCount(), 2)
@@ -31,11 +31,11 @@ class BitstreamTestsCommon : EclairTestSuite() {
     fun `add bytes`() {
         val bits = BitStream()
         bits.writeByte(0xb5.toByte())
-        assertEquals(bits.bitCount(),  8)
+        assertEquals(bits.bitCount(), 8)
         bits.writeBit(false)
-        assertEquals(bits.bitCount(),  9)
+        assertEquals(bits.bitCount(), 9)
         bits.writeBit(true)
-        assertEquals(bits.bitCount(),  10)
+        assertEquals(bits.bitCount(), 10)
         val bits1 = bits.clone()
         assertEquals(bits.popByte(), 0xd5.toByte())
         assertEquals(bits1.readByte(), 0xb5.toByte())

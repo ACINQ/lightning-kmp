@@ -67,14 +67,14 @@ class ChaCha20(key: ByteArray, nonce: ByteArray, counter: Int) {
             }
             i = 20
             while (i > 0) {
-              quarterRound(x, 0, 4, 8, 12)
-              quarterRound(x, 1, 5, 9, 13)
-              quarterRound(x, 2, 6, 10, 14)
-              quarterRound(x, 3, 7, 11, 15)
-              quarterRound(x, 0, 5, 10, 15)
-              quarterRound(x, 1, 6, 11, 12)
-              quarterRound(x, 2, 7, 8, 13)
-              quarterRound(x, 3, 4, 9, 14)
+                quarterRound(x, 0, 4, 8, 12)
+                quarterRound(x, 1, 5, 9, 13)
+                quarterRound(x, 2, 6, 10, 14)
+                quarterRound(x, 3, 7, 11, 15)
+                quarterRound(x, 0, 5, 10, 15)
+                quarterRound(x, 1, 6, 11, 12)
+                quarterRound(x, 2, 7, 8, 13)
+                quarterRound(x, 3, 4, 9, 14)
                 i -= 2
             }
             i = 16
@@ -151,6 +151,6 @@ class ChaCha20(key: ByteArray, nonce: ByteArray, counter: Int) {
         }
 
         fun decrypt(ciphertext: ByteArray, key: ByteArray, nonce: ByteArray, counter: Int = 0): ByteArray =
-          encrypt(ciphertext, key, nonce, counter)
+            encrypt(ciphertext, key, nonce, counter)
     }
 }

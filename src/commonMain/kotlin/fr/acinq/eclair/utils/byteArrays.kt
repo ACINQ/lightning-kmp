@@ -12,7 +12,7 @@ fun ByteArray.leftPaddedCopyOf(n: Int): ByteArray {
 
     val ret = ByteArray(n)
     val pad = n - size
-    repeat (size) { ret[pad + it] = this[it] }
+    repeat(size) { ret[pad + it] = this[it] }
 
     return ret
 }

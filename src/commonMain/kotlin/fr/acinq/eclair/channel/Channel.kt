@@ -8,7 +8,6 @@ import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
-import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
@@ -16,6 +15,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.cbor.Cbor
@@ -72,12 +72,15 @@ sealed class ProcessRemoteFailure : ChannelAction() {
     abstract val channelId: ByteVector32
     abstract val paymentId: UUID
 }
+
 data class ProcessFail(val fail: UpdateFailHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
     override val channelId: ByteVector32 get() = fail.channelId
 }
+
 data class ProcessFailMalformed(val fail: UpdateFailMalformedHtlc, override val paymentId: UUID) : ProcessRemoteFailure() {
     override val channelId: ByteVector32 get() = fail.channelId
 }
+
 data class ProcessLocalFailure(val error: Throwable) : ChannelAction()
 data class ProcessFulfill(val fulfill: UpdateFulfillHtlc, val paymentId: UUID) : ChannelAction()
 data class StoreState(val data: ChannelState) : ChannelAction()
@@ -313,13 +316,6 @@ sealed class ChannelState {
         SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
     )
 
-    internal fun feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32) {
-        runTrying { // this may fail with an NPE in tests because context has been cleaned up, but it's not a big deal
-            logger.info { "paid feeSatoshi=${fee.toLong()} for txid=${tx.txid} desc=$desc" }
-            // TODO context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
-        }
-    }
-
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
         logger.error { "peer send error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
@@ -440,18 +436,22 @@ interface HasCommitments {
             include(UpdateMessage.serializersModule)
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         private val cbor = Cbor {
             serializersModule = serializationModules
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         fun serialize(state: HasCommitments): ByteArray {
             return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         fun deserialize(bin: ByteArray): HasCommitments {
             return cbor.decodeFromByteArray<ChannelState>(bin) as HasCommitments
         }
 
+        @OptIn(ExperimentalSerializationApi::class)
         fun deserialize(bin: ByteVector): HasCommitments = deserialize(bin.toByteArray())
     }
 }
@@ -544,11 +544,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         )
                         val minDepth = event.state.staticParams.nodeParams.minDepthBlocks.toLong()
                         event.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
-                        event.state.localCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
-                        event.state.remoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
-                        event.state.nextRemoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.localCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.remoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.nextRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
-                        event.state.futureRemoteCommitPublished ?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
+                        event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
                             // TODO ask watcher for the funding tx
@@ -675,7 +675,7 @@ data class Offline(val state: ChannelState) : ChannelState() {
             }
             is NewBlock -> {
                 // TODO: is this the right thing to do ?
-                val (newState, actions) = state.process(event)
+                val (newState, _) = state.process(event)
                 Pair(Offline(newState), listOf())
             }
             else -> unhandled(event)
@@ -762,7 +762,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                             state.channelId,
                             state.commitments.commitInput.outPoint.txid,
                             state.commitments.commitInput.txOut.publicKeyScript,
-                            staticParams.nodeParams.minDepthBlocks.toLong(),
+                            minDepth.toLong(),
                             BITCOIN_FUNDING_DEPTHOK
                         )
                         val actions = listOf(SendWatch(watchConfirmed))
@@ -882,7 +882,7 @@ data class Syncing(val state: ChannelState, val waitForTheirReestablishMessage: 
                 }
             event is NewBlock -> {
                 // TODO: is this the right thing to do ?
-                val (newState, actions) = state.process(event)
+                val (newState, _) = state.process(event)
                 Pair(Syncing(newState, waitForTheirReestablishMessage), listOf())
             }
             else -> unhandled(event)
@@ -1373,7 +1373,7 @@ data class WaitForFundingSigned(
                 val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
                 val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
                 val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
-                when (val result = Transactions.checkSpendable(signedLocalCommitTx)) {
+                when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> {
                         handleLocalError(event, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx))
                     }

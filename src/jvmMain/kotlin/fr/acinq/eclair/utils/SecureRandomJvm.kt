@@ -6,7 +6,9 @@ import kotlin.random.Random
 class SecureRandomJvm : Random() {
 
     private val storage = object : ThreadLocal<SecureRandom>() {
-        override fun initialValue(): SecureRandom { return SecureRandom() }
+        override fun initialValue(): SecureRandom {
+            return SecureRandom()
+        }
     }
 
     private val random: SecureRandom get() = storage.get()

@@ -29,7 +29,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
     }
 
     fun getHash(index: List<Boolean>): ByteVector32? =
-        knownHashes.keys.find { key -> index.startsWith(key) } ?. let { key ->
+        knownHashes.keys.find { key -> index.startsWith(key) }?.let { key ->
             val root = Node(knownHashes[key]!!, key.size, null)
             derive(root, index.drop(key.size)).value
         }
@@ -76,8 +76,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
 //                val flipped = flip(node.value, 63 - node.height)
 //                val sha = ByteVector32(sha256(flipped))
                 Node(ByteVector32(sha256(flip(node.value, 63 - node.height))), node.height + 1, node)
-            }
-            else Node(node.value, node.height + 1, node)
+            } else Node(node.value, node.height + 1, node)
 
         fun derive(node: Node, directions: List<Boolean>): Node = directions.fold(node) { n, d -> derive(n, d) }
 
@@ -112,7 +111,7 @@ data class ShaChain(val knownHashes: Map<List<Boolean>, ByteVector32>, val lastI
             element<Long>("lastIndex", isOptional = true)
         }
 
-        private fun List<Boolean>.toBinaryString(): String = this.map { if (it) '1' else '0' } .joinToString(separator = "")
+        private fun List<Boolean>.toBinaryString(): String = this.map { if (it) '1' else '0' }.joinToString(separator = "")
         private fun String.toBooleanList(): List<Boolean> = this.map { it == '1' }
 
         private val mapSerializer = MapSerializer(String.serializer(), ByteVector32KSerializer)

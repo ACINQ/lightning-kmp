@@ -29,10 +29,10 @@ class ChannelStateSerializationTestsCommon : EclairTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val bytes = cbor.encodeToByteArray(ChannelStateHolder(alice))
         val check = cbor.decodeFromByteArray<ChannelStateHolder>(bytes).state
-        assertEquals(alice,  check)
+        assertEquals(alice, check)
 
         val bytes1 = cbor.encodeToByteArray(ChannelStateHolder(bob))
         val check1 = cbor.decodeFromByteArray<ChannelStateHolder>(bytes1).state
-        assertEquals(bob,  check1)
+        assertEquals(bob, check1)
     }
 }

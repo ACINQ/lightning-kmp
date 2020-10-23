@@ -157,9 +157,15 @@ class TlvTestsCommon : EclairTestSuite() {
             Pair(Hex.decode("01 07 01000000000000"), TlvStream(listOf(TestTlv.TestType1(281474976710656)))),
             Pair(Hex.decode("01 08 0100000000000000"), TlvStream(listOf(TestTlv.TestType1(72057594037927936)))),
             Pair(Hex.decode("02 08 0000000000000226"), TlvStream(listOf(TestTlv.TestType2(ShortChannelId(550))))),
-            Pair(Hex.decode("03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451"), TlvStream(listOf(TestTlv.TestType3(PublicKey(ByteVector("023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb")), 561, 1105)))),
+            Pair(
+                Hex.decode("03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451"),
+                TlvStream(listOf(TestTlv.TestType3(PublicKey(ByteVector("023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb")), 561, 1105)))
+            ),
             Pair(Hex.decode("fd00fe 02 0226"), TlvStream(listOf(TestTlv.TestType254(550)))),
-            Pair(Hex.decode("01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451"), TlvStream(listOf(TestTlv.TestType1(561), TestTlv.TestType2(ShortChannelId(1105)), TestTlv.TestType3(PublicKey(ByteVector("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")), 561, 1105)))),
+            Pair(
+                Hex.decode("01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451"),
+                TlvStream(listOf(TestTlv.TestType1(561), TestTlv.TestType2(ShortChannelId(1105)), TestTlv.TestType3(PublicKey(ByteVector("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")), 561, 1105)))
+            ),
             Pair(Hex.decode("01020231 0b020451 fd00fe02002a"), TlvStream(listOf(TestTlv.TestType1(561), TestTlv.TestType254(42)), listOf(GenericTlv(11, ByteVector("0451")))))
         )
 

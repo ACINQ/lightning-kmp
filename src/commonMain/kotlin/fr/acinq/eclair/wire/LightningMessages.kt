@@ -8,7 +8,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.io.*
-import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
@@ -16,8 +15,6 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 import kotlin.math.max
 
 interface LightningMessage {

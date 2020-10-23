@@ -284,8 +284,8 @@ abstract class LightningSerializer<T> {
 
         fun writeChannelData(msg: ByteVector, out: Output) = writeChannelData(msg.toByteArray(), out)
 
-        fun channelData(input: Input) : ByteArray {
-            if (input.availableBytes <=5) return ByteArray(0)
+        fun channelData(input: Input): ByteArray {
+            if (input.availableBytes <= 5) return ByteArray(0)
             val magic = bytes(input, 5)
             if (!channelDataMagic.contentEquals(magic)) return ByteArray(0)
             val length = bigSize(input)

@@ -39,37 +39,60 @@ typealias TransactionsCommitmentOutputs = List<Transactions.CommitmentOutputLink
 object Transactions {
 
     @Serializable
-    data class InputInfo constructor(@Serializable(with = OutPointKSerializer::class) val outPoint: OutPoint, @Serializable(with = TxOutKSerializer::class) val txOut: TxOut, @Serializable(with = ByteVectorKSerializer::class) val redeemScript: ByteVector) {
-        constructor(outPoint: OutPoint, txOut: TxOut, redeemScript: List<ScriptElt>): this(outPoint, txOut, ByteVector(Script.write(redeemScript)))
+    data class InputInfo constructor(
+        @Serializable(with = OutPointKSerializer::class) val outPoint: OutPoint,
+        @Serializable(with = TxOutKSerializer::class) val txOut: TxOut,
+        @Serializable(with = ByteVectorKSerializer::class) val redeemScript: ByteVector
+    ) {
+        constructor(outPoint: OutPoint, txOut: TxOut, redeemScript: List<ScriptElt>) : this(outPoint, txOut, ByteVector(Script.write(redeemScript)))
     }
 
     @Serializable
     sealed class TransactionWithInputInfo {
         abstract val input: Transactions.InputInfo
         abstract val tx: Transaction
-        val fee: Satoshi get() = input.txOut.amount - tx.txOut.map { it.amount } .sum()
-        val minRelayFee: Satoshi get()  {
-            val vsize = (tx.weight() + 3) / 4
-            return (Eclair.MinimumRelayFeeRate * vsize / 1000).sat
-        }
+        val fee: Satoshi get() = input.txOut.amount - tx.txOut.map { it.amount }.sum()
+        val minRelayFee: Satoshi
+            get() {
+                val vsize = (tx.weight() + 3) / 4
+                return (Eclair.MinimumRelayFeeRate * vsize / 1000).sat
+            }
 
-        @Serializable data class CommitTx(override val input: Transactions.InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class CommitTx(override val input: Transactions.InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
 
-        @Serializable data class HtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32) : TransactionWithInputInfo()
-        @Serializable data class HtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class ClaimHtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class ClaimHtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class ClaimDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class ClaimDelayedOutputPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class MainPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class HtlcPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-        @Serializable data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class HtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32) :
+            TransactionWithInputInfo()
+
+        @Serializable
+        data class HtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class ClaimHtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class ClaimHtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class ClaimDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class ClaimDelayedOutputPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class MainPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class HtlcPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        @Serializable
+        data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
     }
 
     sealed class TxGenerationSkipped {
-        object OutputNotFound : TxGenerationSkipped() { override fun toString() = "output not found (probably trimmed)" }
-        object AmountBelowDustLimit : TxGenerationSkipped() { override fun toString() = "amount is below dust limit" }
+        object OutputNotFound : TxGenerationSkipped() {
+            override fun toString() = "output not found (probably trimmed)"
+        }
+
+        object AmountBelowDustLimit : TxGenerationSkipped() {
+            override fun toString() = "amount is below dust limit"
+        }
     }
 
     /**
@@ -96,8 +119,8 @@ object Transactions {
      */
 
     /**
-    * these values are defined in the RFC
-    */
+     * these values are defined in the RFC
+     */
     val commitWeight = 724
     val htlcOutputWeight = 172
     val htlcTimeoutWeight = 663
@@ -304,7 +327,7 @@ object Transactions {
 
     sealed class TxResult<T> {
         data class Skipped<T>(val why: TxGenerationSkipped) : TxResult<T>()
-        data class Success<T>(val result: T): TxResult<T>()
+        data class Success<T>(val result: T) : TxResult<T>()
     }
 
     fun makeHtlcTimeoutTx(
@@ -382,7 +405,7 @@ object Transactions {
         outputs: TransactionsCommitmentOutputs
     ): Pair<List<TransactionWithInputInfo.HtlcTimeoutTx>, List<TransactionWithInputInfo.HtlcSuccessTx>> {
         val htlcTimeoutTxs = outputs
-            .mapIndexedNotNull map@ { outputIndex, link ->
+            .mapIndexedNotNull map@{ outputIndex, link ->
                 val outHtlc = link.commitmentOutput as? OutHtlc ?: return@map null
                 val co = CommitmentOutputLink(link.output, link.redeemScript, outHtlc)
                 makeHtlcTimeoutTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feeratePerKw)
@@ -390,7 +413,7 @@ object Transactions {
             .mapNotNull { (it as? TxResult.Success)?.result }
 
         val htlcSuccessTxs = outputs
-            .mapIndexedNotNull map@ { outputIndex, link ->
+            .mapIndexedNotNull map@{ outputIndex, link ->
                 val inHtlc = link.commitmentOutput as? InHtlc ?: return@map null
                 val co = CommitmentOutputLink(link.output, link.redeemScript, inHtlc)
                 makeHtlcSuccessTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feeratePerKw)
@@ -622,8 +645,8 @@ object Transactions {
     }
 
     /**
-    * We already have the redeemScript, no need to build it
-    */
+     * We already have the redeemScript, no need to build it
+     */
     fun makeHtlcPenaltyTx(
         commitTx: Transaction,
         htlcOutputIndex: Int,
@@ -669,8 +692,8 @@ object Transactions {
             Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - closingFee)
         } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
-        val toLocalOutput_opt = toLocalAmount.takeIf { it >= dustLimit } ?.let { TxOut(it, localScriptPubKey) }
-        val toRemoteOutput_opt = toRemoteAmount.takeIf { it >= dustLimit } ?.let { TxOut(it, remoteScriptPubKey) }
+        val toLocalOutput_opt = toLocalAmount.takeIf { it >= dustLimit }?.let { TxOut(it, localScriptPubKey) }
+        val toRemoteOutput_opt = toRemoteAmount.takeIf { it >= dustLimit }?.let { TxOut(it, remoteScriptPubKey) }
 
         val tx = Transaction(
             version = 2,
@@ -693,14 +716,14 @@ object Transactions {
     }
 
     /**
-    * Default public key used for fee estimation
-    */
+     * Default public key used for fee estimation
+     */
     val PlaceHolderPubKey = PrivateKey(ByteVector32.One).publicKey()
 
     /**
-    * This default sig takes 72B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
-    * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
-    */
+     * This default sig takes 72B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
+     * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
+     */
     val PlaceHolderSig = ByteVector64(ByteArray(64) { 0xaa.toByte() })
         .also { check(Scripts.der(it).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it).size()} bytes" } }
 

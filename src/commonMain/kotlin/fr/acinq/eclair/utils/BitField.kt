@@ -71,7 +71,7 @@ class BitField private constructor(val bytes: ByteArray) {
 
     override fun toString(): String = "0x" + Hex.encode(bytes)
 
-    fun toBinaryString() = indices.map { if (getLeft(it)) '1' else '0' } .joinToString("")
+    fun toBinaryString() = indices.map { if (getLeft(it)) '1' else '0' }.joinToString("")
 
     fun asLeftSequence(): Sequence<Boolean> = sequence {
         repeat(bitCount) { yield(getLeft(it)) }
@@ -96,7 +96,8 @@ class BitField private constructor(val bytes: ByteArray) {
             forAtMost(bin.length).apply {
                 bin.reversed().forEachIndexed { i, c ->
                     when (c) {
-                        '0' -> {}
+                        '0' -> {
+                        }
                         '1' -> setRight(i)
                         else -> error("Invalid character. Only '0' and '1' are allowed.")
                     }
@@ -109,7 +110,7 @@ class BitField private constructor(val bytes: ByteArray) {
             else BitField(ByteArray((bitCount - 1) / 8 + 1))
     }
 
-    object Serializer: KSerializer<BitField> {
+    object Serializer : KSerializer<BitField> {
         override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("BitField", PrimitiveKind.STRING)
 
         override fun serialize(encoder: Encoder, value: BitField) {

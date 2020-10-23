@@ -11,7 +11,8 @@ import kotlin.test.assertTrue
 
 class MilliSatoshiTestsCommon : EclairTestSuite() {
 
-    @Test fun `millisatoshi numeric operations`() {
+    @Test
+    fun `millisatoshi numeric operations`() {
         // add
         assertEquals(MilliSatoshi(561), MilliSatoshi(561) + 0.msat)
         assertEquals(MilliSatoshi(561), MilliSatoshi(561) + 0.sat.toMilliSatoshi())
