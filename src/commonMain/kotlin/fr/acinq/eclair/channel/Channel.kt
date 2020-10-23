@@ -33,26 +33,6 @@ import org.kodein.log.newLogger
  * Its main method is (State, Event) -> (State, List<Action>)
  */
 
-//interface MyState
-
-sealed class MyState {
-    abstract val staticParams: StaticParams
-}
-
-sealed class MyHasCommitments: MyState() {
-    abstract val commitments: Commitments
-}
-
-data class MyWaitForAccept(
-        override val staticParams: StaticParams
-): MyState()
-
-data class MyNormal(
-        override val staticParams: StaticParams,
-        override val commitments: Commitments
-): MyHasCommitments()
-
-
 /**
  * Channel Event (inputs to be fed to the state machine)
  */
