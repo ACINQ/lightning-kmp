@@ -818,7 +818,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue((alice2 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isLeft)
         val (alice3, _) = alice2.process(MessageReceived(revokeAndAck))
         assertTrue((alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
-        assertEquals(1, (alice3 as ChannelStateWithCommitments).commitments.localChanges.acked.size)
+        assertEquals(1, alice3.commitments.localChanges.acked.size)
     }
 
     @Test
@@ -935,7 +935,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
         val tx = (alice1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
-        assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
+        assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.process(
             MessageReceived(
