@@ -64,7 +64,7 @@ $ docker exec eclair-nodeB ./eclair-cli -p foobar open --nodeId=039dc0e0b1d25905
 
 ## Start eclair-kmp
 
-From Idea, start the `Node` class in `jvmTest`. It should automatically connect to node A. Get your eclair-kmp from the console logs and open a channel from node A:
+From Idea, start the `Node` class in `jvmTest`. It should automatically connect to node A. Get your eclair-kmp node Id from the console logs and open a channel from node A:
 
 ```
 docker exec eclair-nodeA ./eclair-cli -p foobar open --nodeId=03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0 --fundingSatoshis=200000 --pushMsat=50000000
