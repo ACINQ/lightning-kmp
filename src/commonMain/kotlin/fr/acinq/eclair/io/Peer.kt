@@ -41,6 +41,7 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout : PeerEvent()
 data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
+data class PayToOpenResult(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -253,23 +254,7 @@ class Peer(
                 action is ProcessLocalFailure -> input.send(WrappedChannelError(actualChannelId, action.error, action.trigger))
                 action is SendWatch -> watcher.watch(action.watch)
                 action is PublishTx -> watcher.publish(action.tx)
-                action is ProcessAdd -> {
-                    val htlc = action.add
-                    val incomingPayment = pendingIncomingPayments[htlc.paymentHash]
-
-                    val currentBlockHeight = currentTip.first
-                    val result = incomingPaymentHandler.processAdd(htlc, incomingPayment, currentBlockHeight)
-
-                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED || result.status == IncomingPaymentHandler.Status.REJECTED) {
-                        pendingIncomingPayments.remove(htlc.paymentHash)
-                    }
-                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED) {
-                        listenerEventChannel.send(PaymentReceived(incomingPayment!!))
-                    }
-                    for (subaction in result.actions) {
-                        input.send(subaction)
-                    }
-                }
+                action is ProcessAdd -> processIncomingPayment(Either.Right(action.add))
                 action is ProcessRemoteFailure -> {
                     val result = outgoingPaymentHandler.processRemoteFailure(action, channels, currentTip.first)
                     when (result) {
@@ -317,6 +302,26 @@ class Peer(
                     Unit
                 }
             }
+        }
+    }
+
+    private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
+        val paymentHash = when (item) {
+            is Either.Left -> item.value.paymentHash
+            is Either.Right -> item.value.paymentHash
+        }
+        val incomingPayment = pendingIncomingPayments[paymentHash]
+        val currentBlockHeight = currentTip.first
+        val result = incomingPaymentHandler.processItem(item, incomingPayment, currentBlockHeight)
+
+        if (result.status == IncomingPaymentHandler.Status.ACCEPTED || result.status == IncomingPaymentHandler.Status.REJECTED) {
+            pendingIncomingPayments.remove(paymentHash)
+        }
+        if (result.status == IncomingPaymentHandler.Status.ACCEPTED) {
+            listenerEventChannel.send(PaymentReceived(incomingPayment!!))
+        }
+        for (subaction in result.actions) {
+            input.send(subaction)
         }
     }
 
@@ -503,6 +508,10 @@ class Peer(
                         logger.info { "channel ${msg.channelId} new state $state1" }
                         processActions(msg.channelId, actions)
                     }
+                    msg is PayToOpenRequest -> {
+                        logger.info { "received pay-to-open request" }
+                        processIncomingPayment(Either.Left(msg))
+                    }
                     else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}" }
                 }
             } // event is ByteReceived
@@ -592,6 +601,10 @@ class Peer(
                         // error that didn't affect an outgoing payment
                     }
                 }
+            }
+            event is PayToOpenResult -> {
+                logger.info { "sending pay-to-open response" }
+                sendToPeer(event.payToOpenResponse)
             }
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())

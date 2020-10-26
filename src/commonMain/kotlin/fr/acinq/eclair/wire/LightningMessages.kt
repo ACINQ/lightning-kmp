@@ -934,3 +934,65 @@ data class ClosingSigned(
         }
     }
 }
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class PayToOpenRequest(
+    override val chainHash: ByteVector32,
+    val fundingSatoshis: Satoshi,
+    val amountMsat: MilliSatoshi,
+    val feeSatoshis: Satoshi,
+    val paymentHash: ByteVector32,
+    val feeThresholdSatoshis: Satoshi,
+    val feeProportionalMillionths: Long,
+    val expireAt: Long,
+    val htlc: UpdateAddHtlc
+) : LightningMessage, HasChainHash, LightningSerializable<PayToOpenRequest> {
+    override fun serializer(): LightningSerializer<PayToOpenRequest> = PayToOpenRequest
+
+    companion object : LightningSerializer<PayToOpenRequest>() {
+        override val tag: Long
+            get() = 35001L
+
+        override fun read(input: Input): PayToOpenRequest {
+            return PayToOpenRequest(
+                chainHash = ByteVector32(bytes(input, 32)),
+                fundingSatoshis = Satoshi(u64(input)),
+                amountMsat = MilliSatoshi(u64(input)),
+                feeSatoshis = Satoshi(u64(input)),
+                paymentHash = ByteVector32(bytes(input, 32)),
+                feeThresholdSatoshis = Satoshi(u64(input)),
+                feeProportionalMillionths = u64(input),
+                expireAt = u64(input),
+                htlc = UpdateAddHtlc.read(input)
+            )
+        }
+
+        override fun write(message: PayToOpenRequest, out: Output) {
+            TODO("Not yet implemented")
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class PayToOpenResponse(
+    override val chainHash: ByteVector32,
+    val paymentHash: ByteVector32,
+    val paymentPreimage: ByteVector32
+) : LightningMessage, HasChainHash, LightningSerializable<PayToOpenResponse> {
+    override fun serializer(): LightningSerializer<PayToOpenResponse> = PayToOpenResponse
+
+    companion object : LightningSerializer<PayToOpenResponse>() {
+        override val tag: Long
+            get() = 35003L
+
+        override fun read(input: Input): PayToOpenResponse {
+            TODO("Not yet implemented")
+        }
+
+        override fun write(message: PayToOpenResponse, out: Output) {
+            writeBytes(message.chainHash, out)
+            writeBytes(message.paymentHash, out)
+            writeBytes(message.paymentPreimage, out)
+        }
+    }
+}
