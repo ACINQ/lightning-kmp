@@ -17,6 +17,17 @@ data class IncomingPayment(
     val paymentPreimage: ByteVector32
 )
 
+sealed class PaymentPart {
+    abstract val amount: MilliSatoshi
+}
+
+data class HtlcPart( // htlc + decrypted onion
+    val htlc: UpdateAddHtlc,
+    val onion: FinalPayload
+) : PaymentPart() {
+    override val amount: MilliSatoshi = htlc.amountMsat
+}
+
 class IncomingPaymentHandler(
     val nodeParams: NodeParams
 ) {
@@ -29,23 +40,18 @@ class IncomingPaymentHandler(
 
     data class ProcessAddResult(val status: Status, val actions: List<PeerEvent>)
 
-    private data class FinalPacket( // htlc + decrypted onion
-        val htlc: UpdateAddHtlc,
-        val onion: FinalPayload
-    )
-
     private class FinalPacketSet { // htlc set + metadata
-        val parts: Set<FinalPacket>
+        val parts: Set<PaymentPart>
         val totalAmount: MilliSatoshi // all parts must have matching `total_msat`
         val mppStartedAt: Long // in seconds
 
         constructor(htlc: UpdateAddHtlc, onion: FinalPayload) {
-            parts = setOf(FinalPacket(htlc, onion))
+            parts = setOf(HtlcPart(htlc, onion))
             totalAmount = onion.totalAmount
             mppStartedAt = currentTimestampSeconds()
         }
 
-        private constructor(parts: Set<FinalPacket>, totalAmount: MilliSatoshi, mppStartedAt: Long) {
+        private constructor(parts: Set<PaymentPart>, totalAmount: MilliSatoshi, mppStartedAt: Long) {
             this.parts = parts
             this.totalAmount = totalAmount
             this.mppStartedAt = mppStartedAt
@@ -53,7 +59,7 @@ class IncomingPaymentHandler(
 
         fun add(htlc: UpdateAddHtlc, onion: FinalPayload): FinalPacketSet {
             return FinalPacketSet(
-                parts = this.parts + FinalPacket(htlc, onion),
+                parts = this.parts + HtlcPart(htlc, onion),
                 totalAmount = this.totalAmount,
                 mppStartedAt = this.mppStartedAt
             )
@@ -209,8 +215,12 @@ class IncomingPaymentHandler(
         if (onion.totalAmount != htlcSet.totalAmount) {
 
             parts.forEach { part ->
-                val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight.toLong())
-                actions += actionForFailureMessage(msg, part.htlc)
+                when (part) {
+                    is HtlcPart -> {
+                        val msg = IncorrectOrUnknownPaymentDetails(part.onion.totalAmount, currentBlockHeight.toLong())
+                        actions += actionForFailureMessage(msg, part.htlc)
+                    }
+                }
             }
 
             logger.warning {
@@ -226,7 +236,7 @@ class IncomingPaymentHandler(
         // - if the total `amount_msat` of this HTLC set equals `total_msat`:
         //   - SHOULD fulfill all HTLCs in the HTLC set
 
-        val cumulativeMsat = parts.map { it.onion.amount }.sum()
+        val cumulativeMsat = parts.map { it.amount }.sum()
 
         if (cumulativeMsat < htlcSet.totalAmount) {
             // Still waiting for more payments
@@ -238,16 +248,19 @@ class IncomingPaymentHandler(
         // Accepting payment parts !
 
         for (part in parts) {
+            when (part) {
+                is HtlcPart -> {
+                    val cmd = CMD_FULFILL_HTLC(
+                        id = part.htlc.id,
+                        r = incomingPayment.paymentPreimage,
+                        commit = true
+                    )
+                    val channelEvent = ExecuteCommand(command = cmd)
+                    val wrapper = WrappedChannelEvent(channelId = part.htlc.channelId, channelEvent = channelEvent)
 
-            val cmd = CMD_FULFILL_HTLC(
-                id = part.htlc.id,
-                r = incomingPayment.paymentPreimage,
-                commit = true
-            )
-            val channelEvent = ExecuteCommand(command = cmd)
-            val wrapper = WrappedChannelEvent(channelId = part.htlc.channelId, channelEvent = channelEvent)
-
-            actions.add(wrapper)
+                    actions.add(wrapper)
+                }
+            }
         }
 
         pending.remove(htlc.paymentHash)
@@ -267,12 +280,13 @@ class IncomingPaymentHandler(
         //   - SHOULD use mpp_timeout for the failure message.
 
         pending.forEach { (paymentHash, set) ->
-
             val isExpired = currentTimestampSeconds > (set.mppStartedAt + nodeParams.multiPartPaymentExpiry)
             if (isExpired) {
                 keysToRemove += paymentHash
                 set.parts.forEach { part ->
-                    actions += actionForFailureMessage(msg = PaymentTimeout, htlc = part.htlc)
+                    when (part) {
+                        is HtlcPart -> actions += actionForFailureMessage(msg = PaymentTimeout, htlc = part.htlc)
+                    }
                 }
             }
         }
