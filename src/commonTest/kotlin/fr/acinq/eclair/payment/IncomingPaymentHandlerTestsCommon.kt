@@ -165,14 +165,14 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             var revokeAndAck: SendMessage? = null
         }
         val a2a = object {
-            var cmdSign: ProcessCommand? = null
+            var cmdSign: SendToSelf? = null
         }
         val b2a = object {
             var revokeAndAck: SendMessage? = null
             var commitmentSigned: SendMessage? = null
         }
         val b2b = object {
-            var cmdSign: ProcessCommand? = null
+            var cmdSign: SendToSelf? = null
         }
 
         // Step 1 of 5:
@@ -190,7 +190,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         a2b.updateAddHtlc = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is UpdateAddHtlc }
         assertNotNull(a2b.updateAddHtlc)
 
-        a2a.cmdSign = actions.filterIsInstance<ProcessCommand>().firstOrNull { it.command == CMD_SIGN }
+        a2a.cmdSign = actions.filterIsInstance<SendToSelf>().firstOrNull { it.command == CMD_SIGN }
         assertNotNull(a2a.cmdSign)
 
         processResult = bob.process(MessageReceived(a2b.updateAddHtlc!!.message))
@@ -235,7 +235,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         b2a.revokeAndAck = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is RevokeAndAck }
         assertNotNull(b2a.revokeAndAck)
 
-        b2b.cmdSign = actions.filterIsInstance<ProcessCommand>().firstOrNull { it.command == CMD_SIGN }
+        b2b.cmdSign = actions.filterIsInstance<SendToSelf>().firstOrNull { it.command == CMD_SIGN }
         assertNotNull(b2b.cmdSign)
 
         assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0

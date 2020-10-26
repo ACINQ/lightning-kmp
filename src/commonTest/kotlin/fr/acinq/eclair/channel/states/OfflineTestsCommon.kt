@@ -139,7 +139,7 @@ class OfflineTestsCommon : EclairTestSuite() {
             bob = bob6 as Normal
             // b sends back a revocation and a sig
             val revB = actions6.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
-            assertTrue { actions6.filterIsInstance<ProcessCommand>() == listOf(ProcessCommand(CMD_SIGN)) }
+            assertTrue { actions6.filterIsInstance<SendToSelf>() == listOf(SendToSelf(CMD_SIGN)) }
             val (bob7, actions7) = bob.process(ExecuteCommand(CMD_SIGN))
             bob = bob7 as Normal
             val sigB = actions7.filterIsInstance<SendMessage>().map { it.message }.filterIsInstance<CommitSig>().first()
