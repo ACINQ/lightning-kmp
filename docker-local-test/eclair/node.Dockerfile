@@ -14,7 +14,8 @@ FROM openjdk:11.0.4-jre-slim
 RUN apt-get update && apt-get install -y bash jq curl unzip
 
 WORKDIR /root
-COPY dot-eclair .eclair
+COPY nodeA nodeA
+COPY nodeB nodeB
 
 COPY --from=BUILD /code/eclair/eclair-node/target/eclair-node-*.zip .
 
@@ -24,4 +25,4 @@ RUN mv eclair-node-* eclair-node
 
 WORKDIR /root/eclair-node/bin
 
-CMD ./eclair-node.sh -Declair.printToConsole
+CMD ./eclair-node.sh -Declair.printToConsole -Declair.datadir=$DATADIR
