@@ -1,9 +1,11 @@
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertTrue
 
 class ShortChannelIdTestsCommon : EclairTestSuite() {
     @ExperimentalUnsignedTypes
@@ -46,4 +48,10 @@ class ShortChannelIdTestsCommon : EclairTestSuite() {
         assertFails { ShortChannelId("42000x") }
     }
 
+    @Test
+    fun `compute peer id`() {
+        val pub = PublicKey.fromHex("02eae982c8563a1c256ee9b4655af7d4c0dc545d1e5c350a68c5f8902cd4cf3021")
+        assertEquals(ShortChannelId("16775312x2938063x12321"), ShortChannelId.peerId(pub))
+        assertTrue { ShortChannelId.isPeerId(ShortChannelId.peerId(pub)) }
+    }
 }

@@ -1,5 +1,6 @@
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.PublicKey
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -34,6 +35,20 @@ data class ShortChannelId(private val id: Long) : Comparable<ShortChannelId> {
 
         fun toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight.toLong() and 0xFFFFFFL) shl 40) or ((txIndex.toLong() and 0xFFFFFFL) shl 16) or (outputIndex.toLong() and 0xFFFFL)
 
+        /**
+         * This is a trick to encode a partial hash of node id in a short channel id.
+         * We use a prefix of 0xff to make it easily distinguishable from normal short channel id.
+         *
+         * @note Phoenix only.
+         */
+        fun peerId(remoteNodeId: PublicKey): ShortChannelId {
+            val bytes = remoteNodeId.value.takeRight(7)
+            var asLong = 0xFFL
+            for (i in 0..6) asLong = (asLong shl 8) + (bytes[i].toLong() and 0xffL)
+            return ShortChannelId(asLong)
+        }
+
+        fun isPeerId(shortChannelId: ShortChannelId): Boolean = (shortChannelId.id.ushr(56) == 0xffL)
     }
 }
 
