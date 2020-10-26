@@ -32,9 +32,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent() {
-    val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-}
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent()
 
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
@@ -78,9 +76,6 @@ class Peer(
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     private var channels by channelsChannel
     private var connected by connectedChannel
-
-    // pending incoming payments, indexed by payment hash
-    private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
@@ -306,19 +301,10 @@ class Peer(
     }
 
     private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
-        val paymentHash = when (item) {
-            is Either.Left -> item.value.paymentHash
-            is Either.Right -> item.value.paymentHash
-        }
-        val incomingPayment = pendingIncomingPayments[paymentHash]
         val currentBlockHeight = currentTip.first
-        val result = incomingPaymentHandler.processItem(item, incomingPayment, currentBlockHeight)
-
-        if (result.status == IncomingPaymentHandler.Status.ACCEPTED || result.status == IncomingPaymentHandler.Status.REJECTED) {
-            pendingIncomingPayments.remove(paymentHash)
-        }
-        if (result.status == IncomingPaymentHandler.Status.ACCEPTED) {
-            listenerEventChannel.send(PaymentReceived(incomingPayment!!))
+        val result = incomingPaymentHandler.processItem(item, currentBlockHeight)
+        if (result.status == IncomingPaymentHandler.Status.ACCEPTED && result.incomingPayment != null) {
+            listenerEventChannel.send(PaymentReceived(result.incomingPayment))
         }
         for (subaction in result.actions) {
             input.send(subaction)
@@ -530,21 +516,11 @@ class Peer(
             // receive payments
             //
             event is ReceivePayment -> {
-                logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
-                val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory))
-                if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
-                    invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
-                }
-                val extraHops = run {
-                    val peerId = ShortChannelId.peerId(nodeParams.nodeId)
-                    val hop = PaymentRequest.TaggedField.ExtraHop(nodeParams.trampolineNode.id, peerId, MilliSatoshi(1000), 100, CltvExpiryDelta(144))
-                    listOf(listOf(hop))
-                }
-                logger.info { "using routing hints $extraHops" }
-                val pr =
-                    PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures), extraHops = extraHops)
+                logger.info { "creating invoice $event" }
+                // TODO : field expiry not used
+                // TODO : extra hops should be added here
+                val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description)
                 logger.info { "payment request ${pr.write()}" }
-                pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 event.result.complete(pr)
             }

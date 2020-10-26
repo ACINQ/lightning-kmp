@@ -1,17 +1,14 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.NodeParams
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.PayToOpenResult
 import fr.acinq.eclair.io.PeerEvent
+import fr.acinq.eclair.io.ReceivePayment
 import fr.acinq.eclair.io.WrappedChannelEvent
-import fr.acinq.eclair.utils.Either
-import fr.acinq.eclair.utils.currentTimestampSeconds
-import fr.acinq.eclair.utils.newEclairLogger
-import fr.acinq.eclair.utils.sum
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 
 data class IncomingPayment(
@@ -54,7 +51,10 @@ class IncomingPaymentHandler(
         PENDING // neither accepted or rejected yet
     }
 
-    data class ProcessAddResult(val status: Status, val actions: List<PeerEvent>)
+    // pending incoming payments, indexed by payment hash
+    private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
+
+    data class ProcessAddResult(val status: Status, val actions: List<PeerEvent>, val incomingPayment: IncomingPayment?)
 
     private class FinalPacketSet { // htlc set + metadata
         val parts: Set<PaymentPart>
@@ -86,6 +86,52 @@ class IncomingPaymentHandler(
     private val pending = mutableMapOf<ByteVector32, FinalPacketSet>()
     private val privateKey get() = nodeParams.nodePrivateKey
 
+    fun createInvoice(
+        paymentPreimage: ByteVector32,
+        amount: MilliSatoshi?,
+        description: String,
+        expirySeconds: Long? = null,
+        timestamp: Long = currentTimestampSeconds()
+    ): PaymentRequest {
+        val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
+        val invoiceFeatures = mutableSetOf(
+            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)
+        )
+        if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
+            invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
+        }
+
+        // we add one extra hop which uses a virtual channel with a "peer id"
+        val extraHops = listOf(
+            listOf(
+                PaymentRequest.TaggedField.ExtraHop(
+                    nodeId = nodeParams.trampolineNode.id,
+                    shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
+                    feeBase = MilliSatoshi(1000),
+                    feeProportionalMillionths = 100,
+                    cltvExpiryDelta = CltvExpiryDelta(144)
+                )
+            )
+        )
+        logger.info { "using routing hints $extraHops" }
+        val pr = PaymentRequest.create(
+            chainHash = nodeParams.chainHash,
+            amount = amount,
+            paymentHash = paymentHash,
+            privateKey = nodeParams.nodePrivateKey,
+            description = description,
+            minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+            features = Features(invoiceFeatures),
+            expirySeconds = expirySeconds,
+            timestamp = timestamp,
+            extraHops = extraHops
+        )
+        logger.info { "payment request ${pr.write()}" }
+        pendingIncomingPayments[paymentHash] = IncomingPayment(pr, paymentPreimage)
+        return pr
+    }
+
     /**
      * Processes an incoming htlc.
      * Before calling this, the htlc must be committed and acked by both sides.
@@ -96,7 +142,6 @@ class IncomingPaymentHandler(
      */
     fun processItem(
         item: Either<PayToOpenRequest, UpdateAddHtlc>,
-        incomingPayment: IncomingPayment?,
         currentBlockHeight: Int
     ): ProcessAddResult {
         // Security note:
@@ -106,7 +151,7 @@ class IncomingPaymentHandler(
         // So to prevent any kind of information leakage, we always peel the onion first.
 
         // Try to decrypt the onion
-        val htlc = when(item) {
+        val htlc = when (item) {
             is Either.Left -> item.value.htlc
             is Either.Right -> item.value
         }
@@ -114,11 +159,12 @@ class IncomingPaymentHandler(
             is Either.Left -> { // Unable to decrypt onion
                 val failureMessage = decrypted.value
                 val action = actionForFailureMessage(failureMessage, htlc)
-                ProcessAddResult(status = Status.REJECTED, actions = listOf(action))
+                ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null)
             }
             is Either.Right -> {
                 val finalPayload = decrypted.value
-                val paymentPart = when(item) {
+                val incomingPayment: IncomingPayment? = pendingIncomingPayments[htlc.paymentHash]
+                val paymentPart = when (item) {
                     is Either.Left -> PayToOpenPart(item.value, finalPayload)
                     is Either.Right -> HtlcPart(item.value, finalPayload)
                 }
@@ -140,7 +186,7 @@ class IncomingPaymentHandler(
             }
             is PayToOpenPart -> actionForPayToOpenFailure(paymentPart)
         }
-        val rejectedResult = ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction))
+        val rejectedResult = ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction), incomingPayment = incomingPayment)
 
         return when {
 
@@ -230,7 +276,7 @@ class IncomingPaymentHandler(
                     }
                 }
                 pending.remove(paymentPart.paymentHash)
-                return ProcessAddResult(status = Status.REJECTED, actions = actions)
+                return ProcessAddResult(status = Status.REJECTED, actions = actions, incomingPayment = incomingPayment)
             }
 
             cumulativeMsat < htlcSet.totalAmount -> {
@@ -241,7 +287,7 @@ class IncomingPaymentHandler(
                 // Still waiting for more payments
 
                 pending[paymentPart.paymentHash] = htlcSet
-                return ProcessAddResult(status = Status.PENDING, actions = emptyList())
+                return ProcessAddResult(status = Status.PENDING, actions = emptyList(), incomingPayment = incomingPayment)
             }
 
             else -> {
@@ -261,7 +307,8 @@ class IncomingPaymentHandler(
                     }
                 }
                 pending.remove(paymentPart.paymentHash)
-                return ProcessAddResult(status = Status.ACCEPTED, actions = actions)
+                pendingIncomingPayments.remove(paymentPart.paymentHash)
+                return ProcessAddResult(status = Status.ACCEPTED, actions = actions, incomingPayment = incomingPayment)
             }
         }
     }
