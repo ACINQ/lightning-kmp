@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String) : PeerEvent() {
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
@@ -365,7 +365,7 @@ class Peer(
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
-                logger.info { "received $msg" }
+                logger.verbose { "received $msg" }
                 when {
                     msg is Init -> {
                         logger.info { "received $msg" }
@@ -380,12 +380,10 @@ class Peer(
                         logger.info { "after channels: $channels" }
                     }
                     msg is Ping -> {
-                        logger.info { "received $msg" }
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
                         output.send(LightningMessage.encode(pong)!!)
                     }
                     msg is Pong -> {
-                        logger.info { "received $msg" }
                     }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }
@@ -527,6 +525,7 @@ class Peer(
                 logger.info { "payment request ${pr.write()}" }
                 pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
+                event.result.complete(pr)
             }
             //
             // send payments
