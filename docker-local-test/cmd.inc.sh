@@ -111,27 +111,43 @@ function ecl_create {
         $basedir/eclair
 
     docker create \
-        --name eclair-node \
+        --name eclair-nodeA \
         --net eclair-net \
-        -p 48001:48001 \
-        -p 8080:8080 \
+        -e DATADIR=/root/nodeA \
+        -p 48001:9735 \
+        -p 8081:8080 \
+        eclair-node
+
+    docker create \
+        --name eclair-nodeB \
+        --net eclair-net \
+        -e DATADIR=/root/nodeB \
+        -p 48002:9735 \
+        -p 8082:8080 \
         eclair-node
 }
 
 function ecl_start {
-    docker start eclair-node
+    docker start eclair-nodeA
+    docker start eclair-nodeB
 }
 
-function ecl_logs {
-    docker logs eclair-node -f
+function ecl_logs_a {
+    docker logs eclair-nodeA -f
+}
+
+function ecl_logs_b {
+    docker logs eclair-nodeB -f
 }
 
 function ecl_stop {
-    docker stop -t 2 eclair-node
+    docker stop -t 2 eclair-nodeA
+    docker stop -t 2 eclair-nodeB
 }
 
 function ecl_remove {
-    docker rm eclair-node
+    docker rm eclair-nodeA
+    docker rm eclair-nodeB
 }
 
 function ecl_gui_create {
@@ -179,11 +195,12 @@ function show_help {
     echo "  elx-stop        Stops ElectrumX"
     echo "  elx-remove      Removes ElectrumX"
     echo ""
-    echo "  ecl-create      Builds and creates Eclair node (without GUI, needs network to be created)"
-    echo "  ecl-start       Starts Eclair"
-    echo "  ecl-logs        Shows Eclair logs"
-    echo "  ecl-stop        Stops Eclair"
-    echo "  ecl-remove      Removes ElectrumX"
+    echo "  ecl-create      Builds and creates Eclair nodes (without GUI, needs network to be created)"
+    echo "  ecl-start       Starts Eclair nodes"
+    echo "  ecl-logs-a      Shows Eclair logs for node A"
+    echo "  ecl-logs-b      Shows Eclair logs for node B"
+    echo "  ecl-stop        Stops Eclair nodes"
+    echo "  ecl-remove      Removes Eclair nodes"
     echo ""
     echo "  ecl-gui-create  Builds and creates Eclair with GUI (needs network to be created)"
     echo "  ecl-gui-run     Runs Eclair with GUI (attaches to the console)"
@@ -252,8 +269,14 @@ function cmd {
             ecl-start)
                 ecl_start
                 ;;
-            ecl-logs)
-                ecl_logs
+            ecl-logs-a)
+                ecl_logs_a
+                ;;
+            ecl-logs-b)
+                ecl_logs_b
+                ;;
+            ecl-stop)
+                ecl_stop
                 ;;
             ecl-stop)
                 ecl_stop
