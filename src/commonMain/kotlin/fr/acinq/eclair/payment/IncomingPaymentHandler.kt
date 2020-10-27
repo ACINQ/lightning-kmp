@@ -6,7 +6,6 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.io.PayToOpenResult
 import fr.acinq.eclair.io.PeerEvent
-import fr.acinq.eclair.io.ReceivePayment
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -133,6 +132,37 @@ class IncomingPaymentHandler(
     }
 
     /**
+     * Converts an incoming htlc to a payment part abstraction. Payment parts are then
+     * summed together to reach the full payment amount.
+     */
+    private fun toPaymentPart(htlc: UpdateAddHtlc): Either<ProcessAddResult, HtlcPart> {
+        // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
+        return when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
+            is Either.Left -> { // Unable to decrypt onion
+                val failureMessage = decrypted.value
+                val action = actionForFailureMessage(failureMessage, htlc)
+                Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
+            }
+            is Either.Right -> Either.Right(HtlcPart(htlc, decrypted.value))
+        }
+    }
+
+    /**
+     * Converts a incoming pay-to-open request to a payment part abstraction.
+     * This is very similar to the processing of a htlc, except that we only
+     * have a packet, to decrypt into a final payload.
+     */
+    private fun toPaymentPart(payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult, PayToOpenPart> {
+        return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, OnionRoutingPacket.PaymentPacketLength, privateKey)) {
+            is Either.Left -> {
+                val action = actionForPayToOpenFailure(payToOpenRequest)
+                Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
+            }
+            is Either.Right -> Either.Right(PayToOpenPart(payToOpenRequest, decrypted.value))
+        }
+    }
+
+    /**
      * Processes an incoming htlc.
      * Before calling this, the htlc must be committed and acked by both sides.
      *
@@ -140,8 +170,8 @@ class IncomingPaymentHandler(
      * accepted, rejected, or still pending (as the case may be for multipart payments).
      * Also includes the list of actions to be queued.
      */
-    fun processItem(
-        item: Either<PayToOpenRequest, UpdateAddHtlc>,
+    fun process(
+        htlc: UpdateAddHtlc,
         currentBlockHeight: Int
     ): ProcessAddResult {
         // Security note:
@@ -149,42 +179,43 @@ class IncomingPaymentHandler(
         // However an error message here would differ from an error message below,
         // as we don't know the `onion.totalAmount` yet.
         // So to prevent any kind of information leakage, we always peel the onion first.
-
-        // Try to decrypt the onion
-        val htlc = when (item) {
-            is Either.Left -> item.value.htlc
-            is Either.Right -> item.value
-        }
-        return when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
-            is Either.Left -> { // Unable to decrypt onion
-                val failureMessage = decrypted.value
-                val action = actionForFailureMessage(failureMessage, htlc)
-                ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null)
-            }
-            is Either.Right -> {
-                val finalPayload = decrypted.value
-                val incomingPayment: IncomingPayment? = pendingIncomingPayments[htlc.paymentHash]
-                val paymentPart = when (item) {
-                    is Either.Left -> PayToOpenPart(item.value, finalPayload)
-                    is Either.Right -> HtlcPart(item.value, finalPayload)
-                }
-                processPaymentPart(paymentPart, incomingPayment, currentBlockHeight)
-            }
+        return when (val res = toPaymentPart(htlc)) {
+            is Either.Left -> res.value
+            is Either.Right -> processPaymentPart(res.value, currentBlockHeight)
         }
     }
 
-    private fun processPaymentPart(
-        paymentPart: PaymentPart,
-        incomingPayment: IncomingPayment?,
+    /**
+     * Processed an incoming pay-to-open request.
+     * This is very similar to the processing of an htlc.
+     */
+    fun process(
+        payToOpenRequest: PayToOpenRequest,
         currentBlockHeight: Int
     ): ProcessAddResult {
+        return when (val res = toPaymentPart(payToOpenRequest)) {
+            is Either.Left -> res.value
+            is Either.Right -> processPaymentPart(res.value, currentBlockHeight)
+        }
+    }
+
+    /**
+     * Main payment processing, that handle payment parts.
+     */
+    private fun processPaymentPart(
+        paymentPart: PaymentPart,
+        currentBlockHeight: Int
+    ): ProcessAddResult {
+
+        val incomingPayment: IncomingPayment? = pendingIncomingPayments[paymentPart.paymentHash]
+
         // depending on the type of the payment part, the default rejection result changes
         val rejectedAction = when (paymentPart) {
             is HtlcPart -> {
                 val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
                 actionForFailureMessage(failureMsg, paymentPart.htlc)
             }
-            is PayToOpenPart -> actionForPayToOpenFailure(paymentPart)
+            is PayToOpenPart -> actionForPayToOpenFailure(paymentPart.payToOpenRequest)
         }
         val rejectedResult = ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction), incomingPayment = incomingPayment)
 
@@ -249,6 +280,9 @@ class IncomingPaymentHandler(
         }
     }
 
+    /**
+     * NB: all payments are treated as mpp
+     */
     private fun processMpp(
         paymentPart: PaymentPart,
         incomingPayment: IncomingPayment,
@@ -272,7 +306,7 @@ class IncomingPaymentHandler(
                             val msg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                             actionForFailureMessage(msg, part.htlc)
                         }
-                        is PayToOpenPart -> actionForPayToOpenFailure(part) // this will fail all parts, we could only return one
+                        is PayToOpenPart -> actionForPayToOpenFailure(part.payToOpenRequest) // this will fail all parts, we could only return one
                     }
                 }
                 pending.remove(paymentPart.paymentHash)
@@ -332,7 +366,7 @@ class IncomingPaymentHandler(
                 set.parts.forEach { part ->
                     when (part) {
                         is HtlcPart -> actions += actionForFailureMessage(msg = PaymentTimeout, htlc = part.htlc)
-                        is PayToOpenPart -> actions += actionForPayToOpenFailure(part)
+                        is PayToOpenPart -> actions += actionForPayToOpenFailure(part.payToOpenRequest)
                     }
                 }
             }
@@ -374,8 +408,8 @@ class IncomingPaymentHandler(
         return WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
     }
 
-    private fun actionForPayToOpenFailure(payToOpenPart: PayToOpenPart): PayToOpenResult {
-        return PayToOpenResult(PayToOpenResponse(payToOpenPart.payToOpenRequest.chainHash, payToOpenPart.paymentHash, ByteVector32.Zeroes))
+    private fun actionForPayToOpenFailure(payToOpenRequest: PayToOpenRequest): PayToOpenResult {
+        return PayToOpenResult(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, ByteVector32.Zeroes))
     }
 
     private fun minFinalCltvExpiry(incomingPayment: IncomingPayment, currentBlockHeight: Int): CltvExpiry {

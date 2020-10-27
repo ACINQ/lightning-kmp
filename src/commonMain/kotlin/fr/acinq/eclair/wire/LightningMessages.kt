@@ -945,7 +945,7 @@ data class PayToOpenRequest(
     val feeThresholdSatoshis: Satoshi,
     val feeProportionalMillionths: Long,
     val expireAt: Long,
-    val htlc: UpdateAddHtlc
+    val finalPacket: OnionRoutingPacket
 ) : LightningMessage, HasChainHash, LightningSerializable<PayToOpenRequest> {
     override fun serializer(): LightningSerializer<PayToOpenRequest> = PayToOpenRequest
 
@@ -963,7 +963,7 @@ data class PayToOpenRequest(
                 feeThresholdSatoshis = Satoshi(u64(input)),
                 feeProportionalMillionths = u64(input),
                 expireAt = u64(input),
-                htlc = UpdateAddHtlc.read(input)
+                finalPacket = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).read(input)
             )
         }
 

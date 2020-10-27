@@ -302,7 +302,10 @@ class Peer(
 
     private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
         val currentBlockHeight = currentTip.first
-        val result = incomingPaymentHandler.processItem(item, currentBlockHeight)
+        val result = when (item) {
+            is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
+            is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
+        }
         if (result.status == IncomingPaymentHandler.Status.ACCEPTED && result.incomingPayment != null) {
             listenerEventChannel.send(PaymentReceived(result.incomingPayment))
         }
