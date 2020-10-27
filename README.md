@@ -1,20 +1,24 @@
-An implementation of Lightning in kotlin-multiplatform, that runs on iOS and Android.
+Eclair KMP is an implementation of Lightning written in Kotlin. Thanks to [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) it can run on different platforms, including mobile devices (iOS and Android).
 
 ## Build & Tests
+
+#### Run tests
 
 ```
 git clone https://github.com/ACINQ/eclair-kmp.git
 cd eclair-kmp
-./ gradlew allTests
+./gradlew allTests
+```
+
+#### Use as a library
+
+```
+./gradlew :build
+./gradlew :publishToMavenLocal
 ```
 
 ## Contributing
 
-### Code style
+We use GitHub for bug tracking. Search the existing issues for your bug and create a new one if needed.
 
-Use Intellij, with the following settings:
-- File > Settings > Editor > Code Style
-  - In the "Formatter Control" tab, check "Enable formatter markers in comments" 
-- File > Settings > Editor > Code Style > Kotlin
-  - select "Set from..." and choose "Kotline style guide"
-  - set "Hard wrap at" to 240
+Contribute to the project by submitting pull requests. Review is done by members of the ACINQ team. Read the guidelines [here](https://github.com/ACINQ/eclair-kmp/blob/master/CONTRIBUTING.md).
