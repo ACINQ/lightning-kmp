@@ -160,22 +160,12 @@ function ecl_gui_create {
         $basedir/eclair
 
     docker create \
-        --name eclair-guiA \
+        --name eclair-gui \
         --net eclair-net \
         -e DISPLAY=$displayAddr \
         -v /tmp/.X11-unix:/tmp/.X11-unix \
         -p 48001:48001 \
         -it eclair-gui
-
-    docker create \
-        --name eclair-guiB \
-        --net eclair-net \
-        -e DISPLAY=$displayAddr \
-        -v /tmp/.X11-unix:/tmp/.X11-unix \
-        -e DATADIR=/root/nodeB \
-        -p 48002:9735 \
-        -p 8082:8080 \
-        eclair-gui
 }
 
 function ecl_gui_run {
