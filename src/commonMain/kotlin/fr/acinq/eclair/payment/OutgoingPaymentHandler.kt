@@ -81,22 +81,22 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
      */
     data class TrampolineParams(
         val feeBaseSat: Satoshi,
-        val feePercent: Float,
+        val feePercent: Double,
         val cltvExpiryDelta: CltvExpiryDelta
     ) {
-        constructor(feeBaseSat: Long, feePercent: Float, cltvExpiryDelta: Int) :
+        constructor(feeBaseSat: Long, feePercent: Double, cltvExpiryDelta: Int) :
                 this(Satoshi(feeBaseSat), feePercent, CltvExpiryDelta(cltvExpiryDelta))
 
         companion object {
 
             // Todo: Fetch this from the server first, and have it passed into us somehow...
             val attempts = listOf(
-                TrampolineParams(0, 0.0f, 576),
-                TrampolineParams(1, 0.0001f, 576),
-                TrampolineParams(3, 0.0001f, 576),
-                TrampolineParams(5, 0.0005f, 576),
-                TrampolineParams(5, 0.001f, 576),
-                TrampolineParams(5, 0.0012f, 576)
+                TrampolineParams(0, 0.0, 576),
+                TrampolineParams(1, 0.0001, 576),
+                TrampolineParams(3, 0.0001, 576),
+                TrampolineParams(5, 0.0005, 576),
+                TrampolineParams(5, 0.001, 576),
+                TrampolineParams(5, 0.0012, 576)
             )
 
             fun get(failedAttempts: Int): TrampolineParams? {

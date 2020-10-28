@@ -30,6 +30,8 @@ class MilliSatoshiTestsCommon : EclairTestSuite() {
         assertEquals(561.msat, MilliSatoshi(561) * 1)
         assertEquals(1122.msat, MilliSatoshi(561) * 2)
         assertEquals(1402.msat, MilliSatoshi(561) * 2.5)
+        assertEquals(113_796.msat, 1_137_960_000L.msat * 0.0001)
+        assertEquals(120.msat, 100_000.msat * 0.0012)
 
         // divide
         assertEquals(MilliSatoshi(561), MilliSatoshi(561) / 1)
