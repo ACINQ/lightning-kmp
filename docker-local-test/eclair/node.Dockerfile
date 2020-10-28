@@ -25,4 +25,4 @@ RUN mv eclair-node-* eclair-node
 
 WORKDIR /root/eclair-node/bin
 
-CMD ./eclair-node.sh -Declair.printToConsole -Declair.datadir=$DATADIR
+CMD ./eclair-node.sh -Declair.printToConsole -Declair.datadir=$NODE_NAME > "/tmp/$NODE_NAME-${date +%d-%m-%Y_%H-%M-%S}.log"

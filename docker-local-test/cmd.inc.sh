@@ -113,7 +113,8 @@ function ecl_create {
     docker create \
         --name eclair-nodeA \
         --net eclair-net \
-        -e DATADIR=/root/nodeA \
+        -v "$PWD"/tmp:/logs \
+        -e NODE_NAME=nodeA \
         -p 48001:9735 \
         -p 8081:8080 \
         eclair-node
@@ -121,7 +122,8 @@ function ecl_create {
     docker create \
         --name eclair-nodeB \
         --net eclair-net \
-        -e DATADIR=/root/nodeB \
+        -v "$PWD"/tmp:/logs \
+        -e NODE_NAME=nodeB \
         -p 48002:9735 \
         -p 8082:8080 \
         eclair-node
@@ -130,6 +132,16 @@ function ecl_create {
 function ecl_start {
     docker start eclair-nodeA
     docker start eclair-nodeB
+}
+
+function ecl_connect {
+    # B connects with A
+    docker exec eclair-nodeB ./eclair-cli -p foobar connect --uri=039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585@eclair-nodeA:9735
+}
+
+function ecl_open {
+    # B opens a channel with A (must be connected first)
+    docker exec eclair-nodeB ./eclair-cli -p foobar open --nodeId=039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585 --fundingSatoshis=200000 --pushMsat=50000000
 }
 
 function ecl_logs_a {
@@ -197,6 +209,8 @@ function show_help {
     echo ""
     echo "  ecl-create      Builds and creates Eclair nodes (without GUI, needs network to be created)"
     echo "  ecl-start       Starts Eclair nodes"
+    echo "  ecl-connect     Connects Eclair nodes"
+    echo "  ecl-open        Opens channels between Eclair nodes (they must be connected first)"
     echo "  ecl-logs-a      Shows Eclair logs for node A"
     echo "  ecl-logs-b      Shows Eclair logs for node B"
     echo "  ecl-stop        Stops Eclair nodes"
@@ -269,14 +283,17 @@ function cmd {
             ecl-start)
                 ecl_start
                 ;;
+            ecl-connect)
+                ecl_connect
+                ;;
+            ecl-open)
+                ecl_open
+                ;;
             ecl-logs-a)
                 ecl_logs_a
                 ;;
             ecl-logs-b)
                 ecl_logs_b
-                ;;
-            ecl-stop)
-                ecl_stop
                 ;;
             ecl-stop)
                 ecl_stop
