@@ -141,7 +141,7 @@ function ecl_connect {
 
 function ecl_open {
     # B opens a channel with A (must be connected first)
-    docker exec eclair-nodeB ./eclair-cli -p foobar open --nodeId=039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585 --fundingSatoshis=200000 --pushMsat=50000000
+    docker exec eclair-nodeB ./eclair-cli -p foobar open --nodeId=039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585 --fundingSatoshis=200000
 }
 
 function ecl_logs_a {
