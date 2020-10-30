@@ -134,10 +134,9 @@ class Peer(
                 channels = channels + (it.channelId to state1)
             }
             logger.info { "restored channels: $channels" }
+            run()
         }
-
-        launch { run() }
-
+        
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
@@ -244,12 +243,13 @@ class Peer(
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
+        var actualChannelId: ByteVector32 = channelId
         actions.forEach { action ->
             when {
                 action is SendMessage && connected == Connection.ESTABLISHED -> sendToPeer(action.message)
                 // sometimes channel actions include "self" command (such as CMD_SIGN)
-                action is SendToSelf -> input.send(WrappedChannelEvent(channelId, ExecuteCommand(action.command)))
-                action is ProcessLocalFailure -> input.send(WrappedChannelError(channelId, action.error, action.trigger))
+                action is SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ExecuteCommand(action.command)))
+                action is ProcessLocalFailure -> input.send(WrappedChannelError(actualChannelId, action.error, action.trigger))
                 action is SendWatch -> watcher.watch(action.watch)
                 action is PublishTx -> watcher.publish(action.tx)
                 action is ProcessAdd -> {
@@ -301,8 +301,15 @@ class Peer(
                     }
                 }
                 action is StoreState -> {
-                    logger.info { "storing state for channelId=$channelId data=${action.data}" }
+                    logger.info { "storing state for channelId=$actualChannelId data=${action.data}" }
                     channelsDb.addOrUpdateChannel(action.data)
+                }
+                action is ChannelIdSwitch -> {
+                    logger.info { "switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
+                    actualChannelId = action.newChannelId
+                    channels[action.oldChannelId]?.let {
+                        channels = channels + (action.newChannelId to it)
+                    }
                 }
                 else -> {
                     logger.warning { "unhandled action : $action" }
