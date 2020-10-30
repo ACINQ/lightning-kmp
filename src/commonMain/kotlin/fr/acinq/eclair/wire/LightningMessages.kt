@@ -49,6 +49,7 @@ interface LightningMessage {
                 ChannelUpdate.tag -> ChannelUpdate.read(stream)
                 Shutdown.tag -> Shutdown.read(stream)
                 ClosingSigned.tag -> ClosingSigned.read(stream)
+                PayToOpenRequest.tag -> PayToOpenRequest.read(stream)
                 else -> {
                     logger.warning { "cannot decode ${Hex.encode(input)}" }
                     null
@@ -951,7 +952,7 @@ data class PayToOpenRequest(
 
     companion object : LightningSerializer<PayToOpenRequest>() {
         override val tag: Long
-            get() = 35001L
+            get() = 35021L
 
         override fun read(input: Input): PayToOpenRequest {
             return PayToOpenRequest(
@@ -961,9 +962,9 @@ data class PayToOpenRequest(
                 feeSatoshis = Satoshi(u64(input)),
                 paymentHash = ByteVector32(bytes(input, 32)),
                 feeThresholdSatoshis = Satoshi(u64(input)),
-                feeProportionalMillionths = u64(input),
-                expireAt = u64(input),
-                finalPacket = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).read(input)
+                feeProportionalMillionths = u32(input).toLong(),
+                expireAt = u32(input).toLong(),
+                finalPacket = OnionRoutingPacketSerializer(u16(input)).read(input)
             )
         }
 

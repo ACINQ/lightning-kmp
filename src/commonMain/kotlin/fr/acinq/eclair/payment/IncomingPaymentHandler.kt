@@ -153,7 +153,7 @@ class IncomingPaymentHandler(
      * have a packet, to decrypt into a final payload.
      */
     private fun toPaymentPart(payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult, PayToOpenPart> {
-        return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, OnionRoutingPacket.PaymentPacketLength, privateKey)) {
+        return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
             is Either.Left -> {
                 val action = actionForPayToOpenFailure(payToOpenRequest)
                 Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
