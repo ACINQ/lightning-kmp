@@ -46,21 +46,6 @@ import kotlin.concurrent.thread
 object Node {
     private val logger = newEclairLogger()
 
-    private val serializationModules = SerializersModule {
-        include(eclairSerializersModule)
-    }
-
-    private val json = Json {
-        serializersModule = serializationModules
-    }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    private val cbor = Cbor {
-        serializersModule = serializationModules
-    }
-
-    private val mapSerializer = MapSerializer(ByteVector32KSerializer, ChannelState.serializer())
-
     @Serializable
     data class Ping(val payload: String)
 
@@ -203,35 +188,12 @@ object Node {
             }
         }
 
-        suspend fun channelsLoop(peer: Peer) {
-            try {
-                peer.openChannelsSubscription().consumeEach {
-                    val cborHex = cbor.encodeToHexString(mapSerializer, it)
-                    println("CBOR: $cborHex")
-                    println("JSON: ${json.encodeToString(mapSerializer, it)}")
-                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
-                    println("Serialization resistance: ${it == dec}")
-                }
-            } catch (ex: Throwable) {
-                ex.printStackTrace()
-                throw ex
-            }
-        }
-
-        suspend fun eventLoop(peer: Peer) {
-            peer.openListenerEventSubscription().consumeEach {
-                println("Event: $it")
-            }
-        }
-
         runBlocking {
             val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
             val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
 
             launch { connectLoop(peer) }
-            launch { channelsLoop(peer) }
-            launch { eventLoop(peer) }
 
             embeddedServer(Netty, 8080) {
                 install(StatusPages) {
@@ -240,7 +202,9 @@ object Node {
                     }
                 }
                 install(ContentNegotiation) {
-                    register(ContentType.Application.Json, SerializationConverter(DefaultJson))
+                    register(ContentType.Application.Json, SerializationConverter(Json {
+                        serializersModule = eclairSerializersModule
+                    }))
                 }
                 routing {
                     post("/ping") {
@@ -261,9 +225,13 @@ object Node {
                         peer.send(SendPayment(UUID.randomUUID(), pr, pr.amount ?: request.amount?.run { MilliSatoshi(this) } ?: MilliSatoshi(50000)))
                         call.respond(PayInvoiceResponse("pending"))
                     }
-                    post("/channel/close") {
-                        val request = call.receive<CloseChannelRequest>()
-                        val channelId = ByteVector32(request.channelId)
+                    get("/channels") {
+                        val channels = CompletableDeferred<List<ChannelState>>()
+                        peer.send(ListChannels(channels))
+                        call.respond(channels.await())
+                    }
+                    post("/channels/{channelId}/close") {
+                        val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
                         peer.send(WrappedChannelEvent(channelId, ExecuteCommand(CMD_CLOSE(null))))
                         call.respond(CloseChannelResponse("pending"))
                     }

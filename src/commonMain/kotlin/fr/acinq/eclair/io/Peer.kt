@@ -35,11 +35,11 @@ data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
-
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout : PeerEvent()
+data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -136,7 +136,7 @@ class Peer(
             logger.info { "restored channels: $channels" }
             run()
         }
-        
+
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
@@ -595,6 +595,9 @@ class Peer(
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
+            }
+            event is ListChannels -> {
+                event.channels.complete(channels.values.toList())
             }
         }
     }
