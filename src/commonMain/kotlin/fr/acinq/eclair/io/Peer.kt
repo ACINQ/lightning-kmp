@@ -90,9 +90,13 @@ class Peer(
         setOf(
             ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
             ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+            ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
             ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
+            ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
         )
     )
+
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
@@ -369,6 +373,7 @@ class Peer(
                 when {
                     msg is Init -> {
                         logger.info { "received $msg" }
+                        logger.info { "peer is using features ${Features(msg.features)}" }
                         theirInit = msg
                         connected = Connection.ESTABLISHED
                         logger.info { "before channels: $channels" }
@@ -388,10 +393,19 @@ class Peer(
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }
                     }
+                    msg is OpenChannel && theirInit == null -> {
+                        logger.error { "they sent open_channel before init" }
+                    }
+                    msg is OpenChannel && channels.containsKey(msg.temporaryChannelId) -> {
+                        logger.warning { "ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
+                    }
                     msg is OpenChannel -> {
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                        val defaultFinalScriptPubKey = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey).toByteVector()
+                        val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
+                        val localPaymentBasepoint: PublicKey? = if (Features.canUseFeature(features, Features(theirInit!!.features), Feature.StaticRemoteKey)) {
+                            closingPubkey
+                        } else null
                         val localParams = LocalParams(
                             nodeParams.nodeId,
                             fundingKeyPath,
@@ -402,19 +416,9 @@ class Peer(
                             nodeParams.toRemoteDelayBlocks,
                             nodeParams.maxAcceptedHtlcs,
                             false,
-                            defaultFinalScriptPubKey,
-                            PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey(),
-                            Features(
-                                setOf(
-                                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory),
-                                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
-                                )
-                            )
+                            closingPubkeyScript.toByteVector(),
+                            localPaymentBasepoint,
+                            features
                         )
                         val state = WaitForInit(
                             StaticParams(nodeParams, remoteNodeId),
