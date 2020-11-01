@@ -209,6 +209,8 @@ class IncomingPaymentHandler(
 
         val incomingPayment: IncomingPayment? = pendingIncomingPayments[paymentPart.paymentHash]
 
+        logger.info { "processing payload=${paymentPart.finalPayload} invoice=${incomingPayment?.paymentRequest}"}
+
         // depending on the type of the payment part, the default rejection result changes
         val rejectedAction = when (paymentPart) {
             is HtlcPart -> {
@@ -241,7 +243,7 @@ class IncomingPaymentHandler(
                 //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
                 //
                 // NB: We always include a paymentSecret, and mark the feature as mandatory.
-                logger.warning { "received payment with invalid paymentSecret" }
+                logger.warning { "received payment with invalid paymentSecret invoice=${incomingPayment.paymentRequest.paymentSecret} payload=${paymentPart.finalPayload.paymentSecret}" }
                 rejectedResult
             }
 
