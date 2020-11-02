@@ -1,5 +1,14 @@
 Eclair KMP is an implementation of Lightning written in Kotlin. Thanks to [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) it can run on different platforms, including mobile devices (iOS and Android).
 
+## Dependencies
+
+For iOS, you need to have Xcode & [Homebrew](https://brew.sh/) installed, and then:
+
+```
+brew install libtool
+brew install gmp
+```
+
 ## Build & Tests
 
 #### Run tests
