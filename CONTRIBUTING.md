@@ -36,7 +36,7 @@ You can also use Github issues for [feature requests](https://github.com/ACINQ/e
 ## Recommended Skillset
 
 Eclair KMP uses [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) with [Kotlin Coroutines](https://kotlinlang.org/docs/reference/coroutines-overview.html).
-Good understanding of this technologies is required to contribute.
+Good understanding of these technologies is required to contribute.
 There are a lot of good resources online to learn about them.
 
 ## Contributor Workflow
