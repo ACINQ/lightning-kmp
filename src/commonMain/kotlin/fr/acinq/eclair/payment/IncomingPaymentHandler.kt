@@ -9,6 +9,7 @@ import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
+import kotlin.math.log
 
 data class IncomingPayment(
     val paymentRequest: PaymentRequest,
@@ -99,6 +100,7 @@ class IncomingPaymentHandler(
         )
         if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
             invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
+            invoiceFeatures.add(ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional))
         }
 
         // we add one extra hop which uses a virtual channel with a "peer id"
