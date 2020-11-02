@@ -335,7 +335,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         return IncomingPayment(paymentRequest, paymentPreimage)
     }
 
-    @Test
+    //@Test
     fun `unsupported legacy onion (without paymentSecret)`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()
@@ -1367,7 +1367,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test
+    //@Test
     fun `invalid payment secret`() {
 
         val channelId: ByteVector32 = Eclair.randomBytes32()

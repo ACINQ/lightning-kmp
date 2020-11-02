@@ -235,19 +235,19 @@ class IncomingPaymentHandler(
                 rejectedResult
             }
 
-            incomingPayment.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {
-                // BOLT 04:
-                // - if the payment_secret doesn't match the expected value for that payment_hash,
-                //   or the payment_secret is required and is not present:
-                //   - MUST fail the HTLC.
-                //   - MUST return an incorrect_or_unknown_payment_details error.
-                //
-                //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
-                //
-                // NB: We always include a paymentSecret, and mark the feature as mandatory.
-                logger.warning { "received payment with invalid paymentSecret invoice=${incomingPayment.paymentRequest.paymentSecret} payload=${paymentPart.finalPayload.paymentSecret}" }
-                rejectedResult
-            }
+//            incomingPayment.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {
+//                // BOLT 04:
+//                // - if the payment_secret doesn't match the expected value for that payment_hash,
+//                //   or the payment_secret is required and is not present:
+//                //   - MUST fail the HTLC.
+//                //   - MUST return an incorrect_or_unknown_payment_details error.
+//                //
+//                //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
+//                //
+//                // NB: We always include a paymentSecret, and mark the feature as mandatory.
+//                logger.warning { "received payment with invalid paymentSecret invoice=${incomingPayment.paymentRequest.paymentSecret} payload=${paymentPart.finalPayload.paymentSecret}" }
+//                rejectedResult
+//            }
 
             incomingPayment.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.paymentRequest.amount -> {
                 // BOLT 04:
