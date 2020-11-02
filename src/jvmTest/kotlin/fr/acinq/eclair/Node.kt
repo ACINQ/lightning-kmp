@@ -80,7 +80,7 @@ object Node {
         minFundingSatoshis = 1000.sat,
         maxFundingSatoshis = 16777215.sat,
         maxPaymentAttempts = 5,
-        trampolineNode = Triple(PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"), "localhost", 48001),
+        trampolineNode = NodeUri(PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"), "localhost", 48001),
         enableTrampolinePayment = true
     )
 
