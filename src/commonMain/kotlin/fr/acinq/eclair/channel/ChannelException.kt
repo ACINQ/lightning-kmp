@@ -12,10 +12,6 @@ import fr.acinq.eclair.wire.AnnouncementSignatures
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
-sealed class ChannelOpenError
-data class LocalError(val t: Throwable) : ChannelOpenError()
-data class RemoteError(val e: Error) : ChannelOpenError()
-
 
 open class ChannelException(open val channelId: ByteVector32, message: String) : RuntimeException(message) {
     override fun equals(other: Any?): Boolean {
