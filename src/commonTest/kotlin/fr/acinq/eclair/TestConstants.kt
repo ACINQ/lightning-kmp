@@ -66,7 +66,7 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = null,
+            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "alice.com", 9735),
             enableTrampolinePayment = true
         )
 
@@ -128,7 +128,7 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = null,
+            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "bob.com", 9735),
             enableTrampolinePayment = true
         )
 

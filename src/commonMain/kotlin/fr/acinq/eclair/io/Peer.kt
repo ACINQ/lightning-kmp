@@ -35,6 +35,7 @@ data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
+
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
@@ -525,11 +526,11 @@ class Peer(
                 if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
                     invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
                 }
-                val extraHops = nodeParams.trampolineNode?.let {
+                val extraHops = run {
                     val peerId = ShortChannelId.peerId(nodeParams.nodeId)
-                    val hop = PaymentRequest.TaggedField.ExtraHop(it.first, peerId, MilliSatoshi(1000), 100, CltvExpiryDelta(144))
+                    val hop = PaymentRequest.TaggedField.ExtraHop(nodeParams.trampolineNode.id, peerId, MilliSatoshi(1000), 100, CltvExpiryDelta(144))
                     listOf(listOf(hop))
-                } ?: listOf()
+                }
                 logger.info { "using routing hints $extraHops" }
                 val pr =
                     PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures), extraHops = extraHops)

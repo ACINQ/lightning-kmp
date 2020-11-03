@@ -173,7 +173,7 @@ object Node {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = Triple(nodeId, nodeAddress, nodePort),
+            trampolineNode = NodeUri(nodeId, nodeAddress, nodePort),
             enableTrampolinePayment = true
         )
 
