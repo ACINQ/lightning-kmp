@@ -96,7 +96,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(alice.channelId to Offline(alice)), currentBlockHeight)
         assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(
             payment = sendPayment,
-            failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS)
+            failure = OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
+                problems = listOf()
+            )
         ))
     }
 
@@ -128,7 +131,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result2 = outgoingPaymentHandler.processLocalFailure(event, channels, currentBlockHeight)
         assertEquals(result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
             payment = sendPayment,
-            failure = OutgoingPaymentFailure.make(DebugTriggeredException(channelId))
+            failure = OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
+                problems = listOf(
+                    Either.Left(DebugTriggeredException(channelId))
+                )
+            )
         ))
     }
 
@@ -161,7 +169,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
             assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
                 payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(UnknownNextPeer)
+                failure = OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
+                    problems = listOf(
+                        Either.Right(UnknownNextPeer)
+                    )
+                )
             ))
         }
     }
@@ -193,7 +206,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
             assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
                 payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.UNKNOWN_ERROR)
+                failure = OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
+                    problems = listOf()
+                )
             ))
         }
     }
@@ -213,7 +229,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
         assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(
             payment = sendPayment,
-            failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE)
+            failure = OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE,
+                problems = listOf()
+            )
         ))
     }
 
@@ -246,7 +265,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
             assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
                 payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES)
+                failure = OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES,
+                    problems = listOf()
+                )
             ))
         }
     }
@@ -271,11 +293,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
         assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(
             payment = sendPayment,
-            failure = OutgoingPaymentFailure.make(HtlcValueTooSmall(
-                channelId = alice.channelId,
-                minimum = htlcMininumMsat,
-                actual = paymentAmount
-            ))
+            failure = OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
+                problems = listOf(
+                    Either.Left(HtlcValueTooSmall(
+                        channelId = alice.channelId,
+                        minimum = htlcMininumMsat,
+                        actual = paymentAmount
+                    ))
+                )
+            )
         ))
     }
 
@@ -299,7 +326,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
         assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(
             payment = sendPayment,
-            failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.CHANNEL_CAPS)
+            failure = OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
+                problems = listOf(
+                    Either.Left(HtlcValueTooBig(
+                        channelId = alice.channelId,
+                        maximum = htlcMaximumMsat,
+                        actual = paymentAmount
+                    ))
+                )
+            )
         ))
     }
 
@@ -382,7 +418,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
                 payment = sendPayment,
                 failure = OutgoingPaymentFailure.make(
-                    TooManyAcceptedHtlcs(alice.channelId, maxAcceptedHtlcs.toLong())
+                    reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
+                    problems = listOf(Either.Left(
+                        TooManyAcceptedHtlcs(alice.channelId, maxAcceptedHtlcs.toLong())
+                    ))
                 )
             ))
         }
@@ -466,11 +505,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
                 payment = sendPayment,
                 failure = OutgoingPaymentFailure.make(
-                    HtlcValueTooHighInFlight(
-                        channelId = alice.channelId,
-                        maximum = maxHtlcValueInFlightMsat.toULong(),
-                        actual = 100_000.msat
-                    )
+                    reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
+                    problems = listOf(Either.Left(
+                        HtlcValueTooHighInFlight(
+                            channelId = alice.channelId,
+                            maximum = maxHtlcValueInFlightMsat.toULong(),
+                            actual = 100_000.msat
+                        )
+                    ))
                 )
             ))
         }
@@ -532,7 +574,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
             assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
                 payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.NO_ROUTE_TO_RECIPIENT)
+                failure = OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.NO_ROUTE_TO_RECIPIENT,
+                    problems = listOf(Either.Right(TrampolineFeeInsufficient))
+                )
             ))
         }
     }
