@@ -243,7 +243,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             failedChannelIds.add(channelId)
         }
 
-        fun getFailure(): OutgoingPaymentFailure? {
+        fun getPreviousFailure(): OutgoingPaymentFailure? {
             localFailure?.let {
                 return OutgoingPaymentFailure.make(localError = it)
             }
@@ -369,7 +369,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         if (!shouldRetry) {
             return ProcessFailureResult.Failure(
                 payment = paymentAttempt.sendPayment,
-                failure = paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+                failure = paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(
                     reason = OutgoingPaymentFailure.Reason.UNKNOWN_ERROR
                 )
             )
@@ -441,19 +441,19 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         }.reversed()
 
         if (sortedChannels.isEmpty()) {
-            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+            return Either.Left(paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(
                 reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS
             ))
         }
 
         val totalAvailableForSend = sortedChannels.map { it.second.availableForSend }.sum()
         if (paymentAttempt.paymentAmount > totalAvailableForSend) {
-            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+            return Either.Left(paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(
                 reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE
             ))
         }
         if (paymentAttempt.paymentAmount + paymentAttempt.fees > totalAvailableForSend) {
-            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+            return Either.Left(paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(
                 reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES
             ))
         }
@@ -469,7 +469,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         }
 
         if (selectedChannel == null) {
-            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+            return Either.Left(paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(
                 reason = OutgoingPaymentFailure.Reason.CHANNEL_CAPS
             ))
         }
