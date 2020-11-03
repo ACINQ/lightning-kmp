@@ -136,7 +136,9 @@ object Node {
             features = Features(
                 setOf(
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
             dustLimit = 100.sat,
@@ -216,7 +218,7 @@ object Node {
                         val paymentPreimage = Eclair.randomBytes32()
                         val amount = MilliSatoshi(request.amount ?: 50000L)
                         val result = CompletableDeferred<PaymentRequest>()
-                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100), "this is a kotlin test", result))
+                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100), request.description.orEmpty(), result))
                         call.respond(CreateInvoiceResponse(result.await().write()))
                     }
                     post("/invoice/pay") {
