@@ -1,9 +1,6 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -69,6 +66,7 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
+            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "alice.com", 9735),
             enableTrampolinePayment = true
         )
 
@@ -130,6 +128,7 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
+            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "bob.com", 9735),
             enableTrampolinePayment = true
         )
 

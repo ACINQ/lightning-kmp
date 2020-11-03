@@ -1,12 +1,17 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.io.ByteVector32KSerializer
+import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.io.SatoshiKSerializer
 import kotlinx.serialization.Serializable
+
+@Serializable
+data class NodeUri(@Serializable(with = PublicKeyKSerializer::class) val id: PublicKey, val host: String, val port: Int)
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
@@ -44,6 +49,7 @@ data class NodeParams(
     @Serializable(with = SatoshiKSerializer::class) val minFundingSatoshis: Satoshi,
     @Serializable(with = SatoshiKSerializer::class) val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
+    val trampolineNode: NodeUri,
     val enableTrampolinePayment: Boolean,
 ) {
     val nodePrivateKey get() = keyManager.nodeKey.privateKey

@@ -516,7 +516,14 @@ class Peer(
                 if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
                     invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
                 }
-                val pr = PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures))
+                val extraHops = run {
+                    val peerId = ShortChannelId.peerId(nodeParams.nodeId)
+                    val hop = PaymentRequest.TaggedField.ExtraHop(nodeParams.trampolineNode.id, peerId, MilliSatoshi(1000), 100, CltvExpiryDelta(144))
+                    listOf(listOf(hop))
+                }
+                logger.info { "using routing hints $extraHops" }
+                val pr =
+                    PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures), extraHops = extraHops)
                 logger.info { "payment request ${pr.write()}" }
                 pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
