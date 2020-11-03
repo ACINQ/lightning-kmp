@@ -462,12 +462,23 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         // We're only sending over a single channel for right now.
 
         val amountToSend = paymentAttempt.paymentAmount + paymentAttempt.fees
-        val selectedChannel = sortedChannels.firstOrNull {
-            val htlcMinOk = amountToSend >= it.second.htlcMinimumMsat
-            val htlcMaxOk = it.second.htlcMaximumMsat?.let { htlcMax -> amountToSend <= htlcMax } ?: true
-            htlcMinOk && htlcMaxOk
+
+        var filteredChannels = sortedChannels.filter {
+            amountToSend >= it.second.htlcMinimumMsat
+        }
+        if (filteredChannels.size == 0) {
+            val closest = sortedChannels.sortedByDescending { it.second.htlcMinimumMsat }.first()
+            val channelException = HtlcValueTooSmall(
+                channelId = closest.first.channelId,
+                minimum = closest.second.htlcMinimumMsat,
+                actual = amountToSend
+            )
+            return Either.Left(paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(channelException))
         }
 
+        val selectedChannel = filteredChannels.firstOrNull {
+            it.second.htlcMaximumMsat?.let { htlcMax -> amountToSend <= htlcMax } ?: true
+        }
         if (selectedChannel == null) {
             return Either.Left(paymentAttempt.getPreviousFailure() ?: OutgoingPaymentFailure.make(
                 reason = OutgoingPaymentFailure.Reason.CHANNEL_CAPS

@@ -271,7 +271,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
         assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(
             payment = sendPayment,
-            failure = OutgoingPaymentFailure.make(OutgoingPaymentFailure.Reason.CHANNEL_CAPS)
+            failure = OutgoingPaymentFailure.make(HtlcValueTooSmall(
+                channelId = alice.channelId,
+                minimum = htlcMininumMsat,
+                actual = paymentAmount
+            ))
         ))
     }
 
