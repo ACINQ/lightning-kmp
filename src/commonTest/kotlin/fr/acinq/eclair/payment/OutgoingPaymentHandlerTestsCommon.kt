@@ -113,28 +113,23 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val sendPayment = SendPayment(paymentId, invoice, invoiceAmount)
 
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
-        var trigger: WrappedChannelEvent?
 
-        run {
-            val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
+        val result1 = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
 
-            assertTrue { result is OutgoingPaymentHandler.SendPaymentResult.Progress }
-            val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
+        assertTrue { result1 is OutgoingPaymentHandler.SendPaymentResult.Progress }
+        val progress = result1 as OutgoingPaymentHandler.SendPaymentResult.Progress
 
-            trigger = progress.actions.firstOrNull() as? WrappedChannelEvent
-            assertNotNull(trigger)
-        }
-        run {
-            val channelId = alice.channelId
+        val trigger = progress.actions.firstOrNull() as? WrappedChannelEvent
+        assertNotNull(trigger)
 
-            val event = WrappedChannelError(channelId, DebugTriggeredException(channelId), trigger!!.channelEvent)
+        val channelId = alice.channelId
+        val event = WrappedChannelError(channelId, DebugTriggeredException(channelId), trigger.channelEvent)
 
-            val result = outgoingPaymentHandler.processLocalFailure(event, channels, currentBlockHeight)
-            assertEquals(result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(DebugTriggeredException(channelId))
-            ))
-        }
+        val result2 = outgoingPaymentHandler.processLocalFailure(event, channels, currentBlockHeight)
+        assertEquals(result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
+            payment = sendPayment,
+            failure = OutgoingPaymentFailure.make(DebugTriggeredException(channelId))
+        ))
     }
 
     @Test
