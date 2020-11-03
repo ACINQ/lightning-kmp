@@ -15,21 +15,74 @@ import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 
-sealed class OutgoingPaymentFailure {
-
+data class OutgoingPaymentFailure(
+    val reason: Reason,
+    val details: Either<ChannelException, FailureMessage>
+) {
     enum class Reason {
         INVALID_PARAMETER, // e.g. (paymentAmount < 0), (recycled paymentId)
         NO_AVAILABLE_CHANNELS, // There are zero channels in Normal mode
         INSUFFICIENT_BALANCE_BASE, // Not enough capacity in channel(s) to support payment
         INSUFFICIENT_BALANCE_FEES, // Not enough capacity, after fees are taken into account
-        CHANNEL_CAPS, // One or more channels has max/min htlc amounts preventing payment
+        CHANNEL_CAPS, // One or more channels has caps/restrictions preventing payment
         NO_ROUTE_TO_RECIPIENT, // Trampoline was unable to find an acceptable route
-        UNKNOWN_ERROR // Some other error occurred
+        PAYMENT_TIMEOUT, // Payment not received within time limit
+        UNKNOWN_ERROR, // Some other error occurred
     }
 
-    data class LocalFailure(val channelException: ChannelException) : OutgoingPaymentFailure()
-    data class RemoteFailure(val failureMessage: FailureMessage) : OutgoingPaymentFailure()
-    data class CommonFailure(val reason: Reason) : OutgoingPaymentFailure()
+    companion object {
+
+        fun make(localError: ChannelException): OutgoingPaymentFailure {
+            // Convert to limited set of "friendly" error codes for normal (non-technical) users
+            val reason = when (localError) {
+                is ExpiryTooBig -> Reason.CHANNEL_CAPS
+                is HtlcValueTooSmall -> Reason.CHANNEL_CAPS
+                is InsufficientFunds -> Reason.INSUFFICIENT_BALANCE_FEES
+                is RemoteCannotAffordFeesForNewHtlc -> Reason.CHANNEL_CAPS
+                is HtlcValueTooHighInFlight -> Reason.CHANNEL_CAPS
+                is TooManyAcceptedHtlcs -> Reason.CHANNEL_CAPS
+                else -> Reason.UNKNOWN_ERROR
+            }
+            return OutgoingPaymentFailure(reason, Either.Left(localError))
+        }
+
+        fun make(remoteError: FailureMessage): OutgoingPaymentFailure {
+            val reason = when (remoteError) {
+                is UnknownNextPeer -> Reason.NO_ROUTE_TO_RECIPIENT
+                is PaymentTimeout -> Reason.PAYMENT_TIMEOUT
+                else -> Reason.UNKNOWN_ERROR
+            }
+            return OutgoingPaymentFailure(reason, Either.Right(remoteError))
+        }
+
+        fun make(reason: Reason): OutgoingPaymentFailure {
+            val message = when (reason) {
+                Reason.INVALID_PARAMETER -> "Invalid parameter"
+                Reason.NO_AVAILABLE_CHANNELS -> "No channels available to send payment. " +
+                        "Check internet connection or ensure you have an available balance."
+                Reason.INSUFFICIENT_BALANCE_BASE -> "Not enough funds in wallet to afford payment"
+                Reason.INSUFFICIENT_BALANCE_FEES -> "Not enough funds in wallet, after fees are taken into account."
+                Reason.CHANNEL_CAPS -> "One or more channels has caps/restrictions preventing payment"
+                Reason.NO_ROUTE_TO_RECIPIENT -> "Unable to route payment to recipient"
+                Reason.PAYMENT_TIMEOUT -> "Payment not received within time limit"
+                Reason.UNKNOWN_ERROR -> "Unknown error occurred"
+            }
+            return OutgoingPaymentFailure(reason, Either.Left(ChannelException(ByteVector32.Zeroes, message)))
+        }
+    }
+
+    object InvalidParameter {
+
+        fun paymentAmount() = OutgoingPaymentFailure(
+            reason = OutgoingPaymentFailure.Reason.INVALID_PARAMETER,
+            details = Either.Left(ChannelException(ByteVector32.Zeroes, "payment amount me be positive"))
+        )
+
+        fun paymentId() = OutgoingPaymentFailure(
+            reason = OutgoingPaymentFailure.Reason.INVALID_PARAMETER,
+            details = Either.Left(ChannelException(ByteVector32.Zeroes, "paymentId must be unique"))
+        )
+    }
 }
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams) {
@@ -46,7 +99,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         data class Failure(
             val payment: SendPayment,
-            val reason: OutgoingPaymentFailure
+            val failure: OutgoingPaymentFailure
         ) : SendPaymentResult()
     }
 
@@ -60,7 +113,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         data class Failure(
             val payment: SendPayment,
-            val reason: OutgoingPaymentFailure
+            val failure: OutgoingPaymentFailure
         ) : ProcessFailureResult()
 
         object UnknownPaymentFailure : ProcessFailureResult()
@@ -75,7 +128,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         data class Failure(
             val payment: SendPayment,
-            val reason: OutgoingPaymentFailure
+            val failure: OutgoingPaymentFailure
         ) : ProcessFulfillResult()
 
         object UnknownPaymentFailure : ProcessFulfillResult()
@@ -144,8 +197,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         val parts = mutableListOf<TrampolinePaymentPart>() // always starts empty; populated via setupPaymentAttempt
         val failedChannelIds: MutableSet<ByteVector32>
 
-        var localFailure: OutgoingPaymentFailure.LocalFailure? = null
-        var remoteFailure: OutgoingPaymentFailure.RemoteFailure? = null // excluding trampoline_fee_insufficient
+        var localFailure: ChannelException? = null
+        var remoteFailure: FailureMessage? = null // excluding trampoline_fee_insufficient
 
         val trampolinePaymentSecret = Eclair.randomBytes32() // must be different from invoice.paymentSecret
         val fees: MilliSatoshi
@@ -190,8 +243,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             failedChannelIds.add(channelId)
         }
 
-        fun getError(reason: OutgoingPaymentFailure.Reason): OutgoingPaymentFailure {
-            return localFailure ?: remoteFailure ?: OutgoingPaymentFailure.CommonFailure(reason)
+        fun getFailure(): OutgoingPaymentFailure? {
+            localFailure?.let {
+                return OutgoingPaymentFailure.make(localError = it)
+            }
+            remoteFailure?.let {
+                return OutgoingPaymentFailure.make(remoteError = it)
+            }
+            return null
         }
     }
 
@@ -210,14 +269,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             logger.warning { "paymentAmount(${sendPayment.paymentAmount}) must be positive" }
             return SendPaymentResult.Failure(
                 payment = sendPayment,
-                reason = OutgoingPaymentFailure.CommonFailure(OutgoingPaymentFailure.Reason.INVALID_PARAMETER)
+                failure = OutgoingPaymentFailure.InvalidParameter.paymentAmount()
             )
         }
         if (pending.containsKey(sendPayment.paymentId)) {
             logger.error { "contract violation: caller is recycling uuid's" }
             return SendPaymentResult.Failure(
                 payment = sendPayment,
-                reason = OutgoingPaymentFailure.CommonFailure(OutgoingPaymentFailure.Reason.INVALID_PARAMETER)
+                failure = OutgoingPaymentFailure.InvalidParameter.paymentId()
             )
         }
 
@@ -252,7 +311,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         }
 
         if (event.error is ChannelException) {
-            paymentAttempt.localFailure = OutgoingPaymentFailure.LocalFailure(event.error)
+            paymentAttempt.localFailure = event.error
         }
 
         paymentAttempt.fail(event.channelId)
@@ -292,7 +351,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
                             if (failureMsg == TrampolineFeeInsufficient || failureMsg == TrampolineExpiryTooSoon) {
                                 true
                             } else {
-                                paymentAttempt.remoteFailure = OutgoingPaymentFailure.RemoteFailure(failureMsg)
+                                paymentAttempt.remoteFailure = failureMsg
                                 false
                             }
                         }
@@ -310,7 +369,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         if (!shouldRetry) {
             return ProcessFailureResult.Failure(
                 payment = paymentAttempt.sendPayment,
-                reason = paymentAttempt.getError(OutgoingPaymentFailure.Reason.UNKNOWN_ERROR) // localError ?: remoteError
+                failure = paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.UNKNOWN_ERROR
+                )
             )
         }
 
@@ -319,7 +380,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         if (nextPaymentAttempt == null) {
             return ProcessFailureResult.Failure(
                 payment = paymentAttempt.sendPayment,
-                reason = OutgoingPaymentFailure.CommonFailure(OutgoingPaymentFailure.Reason.NO_ROUTE_TO_RECIPIENT)
+                failure = OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.NO_ROUTE_TO_RECIPIENT
+                )
             )
         }
 
@@ -378,15 +441,21 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         }.reversed()
 
         if (sortedChannels.isEmpty()) {
-            return Either.Left(paymentAttempt.getError(OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS))
+            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS
+            ))
         }
 
         val totalAvailableForSend = sortedChannels.map { it.second.availableForSend }.sum()
         if (paymentAttempt.paymentAmount > totalAvailableForSend) {
-            return Either.Left(paymentAttempt.getError(OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE))
+            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE
+            ))
         }
         if (paymentAttempt.paymentAmount + paymentAttempt.fees > totalAvailableForSend) {
-            return Either.Left(paymentAttempt.getError(OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES))
+            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES
+            ))
         }
 
         // Phase 1: No mpp.
@@ -400,7 +469,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         }
 
         if (selectedChannel == null) {
-            return Either.Left(paymentAttempt.getError(OutgoingPaymentFailure.Reason.CHANNEL_CAPS))
+            return Either.Left(paymentAttempt.getFailure() ?: OutgoingPaymentFailure.make(
+                reason = OutgoingPaymentFailure.Reason.CHANNEL_CAPS
+            ))
         }
 
         val actions = listOf<PeerEvent>(

@@ -272,7 +272,7 @@ class Peer(
                             }
                         }
                         is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
-                            listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                            listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         }
                         is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
                             logger.error { "UnknownPaymentFailure" }
@@ -286,7 +286,7 @@ class Peer(
                             listenerEventChannel.send(PaymentSent(result.payment, result.trampolineFees))
                         }
                         is OutgoingPaymentHandler.ProcessFulfillResult.Failure -> {
-                            listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                            listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         }
                         is OutgoingPaymentHandler.ProcessFulfillResult.UnknownPaymentFailure -> {
                             logger.error { "UnknownPaymentFailure" }
@@ -531,7 +531,7 @@ class Peer(
                         }
                     }
                     is OutgoingPaymentHandler.SendPaymentResult.Failure -> {
-                        listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                        listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                     }
                 }
             }
@@ -562,7 +562,7 @@ class Peer(
                         }
                     }
                     is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
-                        listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                        listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                     }
                     is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
                         logger.error { "UnknownPaymentFailure" }

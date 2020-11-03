@@ -17,7 +17,16 @@ data class LocalError(val t: Throwable) : ChannelOpenError()
 data class RemoteError(val e: Error) : ChannelOpenError()
 
 
-open class ChannelException(open val channelId: ByteVector32, message: String) : RuntimeException(message)
+open class ChannelException(open val channelId: ByteVector32, message: String) : RuntimeException(message) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other == null || this::class != other::class) return false
+        other as ChannelException
+        if (this.channelId != other.channelId) return false
+        if (this.message != other.message) return false
+        return true
+    }
+}
 
 // @formatter:off
 data class DebugTriggeredException             (override val channelId: ByteVector32) : ChannelException(channelId, "debug-mode triggered failure")
