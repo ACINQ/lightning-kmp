@@ -65,7 +65,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `bad paymentAmount`() {
+    fun `bad payment amount`() {
 
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
