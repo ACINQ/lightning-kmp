@@ -33,7 +33,7 @@ data class OutgoingPaymentFailure(
 
     companion object {
         fun make(
-            reason: OutgoingPaymentFailure.Reason,
+            reason: Reason,
             problems: List<Either<ChannelException, FailureMessage>>
         ): OutgoingPaymentFailure {
             val message = when (reason) {
@@ -55,6 +55,7 @@ data class OutgoingPaymentFailure(
             message = "Invalid parameter: payment amount must be positive",
             problems = listOf()
         )
+
         fun paymentId() = OutgoingPaymentFailure(
             reason = Reason.INVALID_PARAMETER,
             message = "Invalid parameter: paymentId must be unique",
@@ -65,6 +66,7 @@ data class OutgoingPaymentFailure(
     /**
      * A simple summary of the problem, designed for general users.
      */
+    @Suppress("unused")
     fun basicSummary(): String {
         // We strive to provide a message that would lead a general user toward solving their own problem.
         // And we must not assume any knowledge of the lightning protocol.
@@ -82,9 +84,9 @@ data class OutgoingPaymentFailure(
         // It may be a bit confusing, but it leads them toward the solution
         // => add funds, retry payment, success!
 
-        fun isRouteError(problem: Either<ChannelException, FailureMessage>) = when(problem) {
+        fun isRouteError(problem: Either<ChannelException, FailureMessage>) = when (problem) {
             is Either.Left -> false
-            is Either.Right -> when(problem.value) {
+            is Either.Right -> when (problem.value) {
                 is UnknownNextPeer -> true
                 is TemporaryChannelFailure -> true
                 is PermanentChannelFailure -> true
@@ -99,8 +101,8 @@ data class OutgoingPaymentFailure(
                 return "Unable to route payment to recipient"
             }
             if (problems.any { (it is Either.Right) && (it.value is IncorrectOrUnknownPaymentDetails) }) {
-                return "Payment rejected by the recipient. "+
-                        "This usually occurs when the invoice has already been paid or when it contains an expiration date, "+
+                return "Payment rejected by the recipient. " +
+                        "This usually occurs when the invoice has already been paid or when it contains an expiration date, " +
                         "and you attempted to send a payment after the expiration."
             }
         }
@@ -112,9 +114,10 @@ data class OutgoingPaymentFailure(
      * A detailed summary of the ChannelExceptions and/or FailureMessages that occurred.
      * This is targeted at users with technical knowledge of the lightning protocol.
      */
+    @Suppress("unused")
     fun detailedSummary(): String {
-       var msg = ""
-        
+        var msg = ""
+
         problems.forEachIndexed { index, problem ->
             msg += "$index: ${problem.fold({ ex -> ex.message }, { f -> f.message })}\n"
         }
@@ -276,8 +279,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             val newFailedAttempts = this.failedAttempts + 1
             val newTrampolineParams = TrampolineParams.get(newFailedAttempts)
             return if (newTrampolineParams == null) null else {
-                PaymentAttempt(sendPayment, newFailedAttempts, newTrampolineParams,
-                    failedChannelIds, failedChannelProblems)
+                PaymentAttempt(
+                    sendPayment, newFailedAttempts, newTrampolineParams,
+                    failedChannelIds, failedChannelProblems
+                )
             }
         }
 
@@ -465,34 +470,42 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             // exclude any channels that have previously failed
             paymentAttempt.failedChannelIds.contains(it.channelId)
         }.map {
-            Pair(it, ChannelState(
-                availableForSend = it.commitments.availableBalanceForSend(),
-                htlcMinimumMsat = it.channelUpdate.htlcMinimumMsat,
-                htlcMaximumMsat = it.channelUpdate.htlcMaximumMsat
-            ))
+            Pair(
+                it, ChannelState(
+                    availableForSend = it.commitments.availableBalanceForSend(),
+                    htlcMinimumMsat = it.channelUpdate.htlcMinimumMsat,
+                    htlcMaximumMsat = it.channelUpdate.htlcMaximumMsat
+                )
+            )
         }.sortedBy {
             it.second.availableForSend
         }.reversed()
 
         if (sortedChannels.isEmpty()) {
-            return Either.Left(OutgoingPaymentFailure.make(
-                reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
-                problems = paymentAttempt.allProblems()
-            ))
+            return Either.Left(
+                OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
+                    problems = paymentAttempt.allProblems()
+                )
+            )
         }
 
         val totalAvailableForSend = sortedChannels.map { it.second.availableForSend }.sum()
         if (paymentAttempt.paymentAmount > totalAvailableForSend) {
-            return Either.Left(OutgoingPaymentFailure.make(
-                reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE,
-                problems = paymentAttempt.allProblems()
-            ))
+            return Either.Left(
+                OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE,
+                    problems = paymentAttempt.allProblems()
+                )
+            )
         }
         if (paymentAttempt.paymentAmount + paymentAttempt.fees > totalAvailableForSend) {
-            return Either.Left(OutgoingPaymentFailure.make(
-                reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES,
-                problems = paymentAttempt.allProblems()
-            ))
+            return Either.Left(
+                OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES,
+                    problems = paymentAttempt.allProblems()
+                )
+            )
         }
 
         // Phase 1: No mpp.
@@ -504,17 +517,19 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             amountToSend >= it.second.htlcMinimumMsat
         }
         if (filteredChannels1.isEmpty()) {
-            val closest = sortedChannels.sortedByDescending { it.second.htlcMinimumMsat }.first()
+            val closest = sortedChannels.maxByOrNull { it.second.htlcMinimumMsat }!!
             val channelException = HtlcValueTooSmall(
                 channelId = closest.first.channelId,
                 minimum = closest.second.htlcMinimumMsat,
                 actual = amountToSend
             )
             paymentAttempt.problems.add(Either.Left(channelException))
-            return Either.Left(OutgoingPaymentFailure.make(
-                reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                problems = paymentAttempt.allProblems()
-            ))
+            return Either.Left(
+                OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
+                    problems = paymentAttempt.allProblems()
+                )
+            )
         }
 
         val filteredChannels2 = filteredChannels1.filter {
@@ -522,17 +537,19 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         }
         if (filteredChannels2.isEmpty()) {
             // NB: to arrive here implies that every item in filteredChannels1 has non-null htlcMaximumMsat
-            val closest = filteredChannels1.sortedBy { it.second.htlcMaximumMsat!! }.first()
+            val closest = filteredChannels1.minByOrNull { it.second.htlcMaximumMsat!! }!!
             val channelException = HtlcValueTooBig(
                 channelId = closest.first.channelId,
                 maximum = closest.second.htlcMaximumMsat!!,
                 actual = amountToSend
             )
             paymentAttempt.problems.add(Either.Left(channelException))
-            return Either.Left(OutgoingPaymentFailure.make(
-                reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                problems = paymentAttempt.allProblems()
-            ))
+            return Either.Left(
+                OutgoingPaymentFailure.make(
+                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
+                    problems = paymentAttempt.allProblems()
+                )
+            )
         }
 
         val selectedChannel = filteredChannels2.first()
