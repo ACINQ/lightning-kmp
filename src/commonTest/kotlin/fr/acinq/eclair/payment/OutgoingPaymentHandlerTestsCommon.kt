@@ -298,7 +298,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val paymentAmount = 50_000.msat // less than htlcMinimumMsat
 
         var (alice, bob) = TestsHelper.reachNormal()
-        alice = alice.copy(channelUpdate = alice.channelUpdate.copy(htlcMinimumMsat = htlcMininumMsat))
+        val remoteParams = alice.commitments.remoteParams.copy(htlcMinimum = htlcMininumMsat)
+        val commitments = alice.commitments.copy(remoteParams = remoteParams)
+        alice = alice.copy(commitments = commitments)
 
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -319,43 +321,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
                             HtlcValueTooSmall(
                                 channelId = alice.channelId,
                                 minimum = htlcMininumMsat,
-                                actual = paymentAmount
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    }
-
-    @Test
-    fun `channel cap restrictions - htlcMaximumMsat`() {
-
-        val htlcMaximumMsat = 100_000_000.msat
-        val paymentAmount = 200_000_000.msat // more than htlcMaximumMsat
-
-        var (alice, bob) = TestsHelper.reachNormal()
-        alice = alice.copy(channelUpdate = alice.channelUpdate.copy(htlcMaximumMsat = htlcMaximumMsat))
-
-        val currentBlockHeight = alice.currentBlockHeight
-        val channels = mapOf(alice.channelId to alice)
-
-        val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
-        val sendPayment = SendPayment(UUID.randomUUID(), invoice, paymentAmount)
-
-        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
-
-        val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
-        assertEquals(
-            result, OutgoingPaymentHandler.SendPaymentResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(
-                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                    problems = listOf(
-                        Either.Left(
-                            HtlcValueTooBig(
-                                channelId = alice.channelId,
-                                maximum = htlcMaximumMsat,
                                 actual = paymentAmount
                             )
                         )

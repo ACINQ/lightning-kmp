@@ -462,8 +462,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
         // And these other limits affect a channel's ability to send a payment.
         data class ChannelState(
             val availableForSend: MilliSatoshi,
-            val htlcMinimumMsat: MilliSatoshi,
-            val htlcMaximumMsat: MilliSatoshi?
+            val htlcMinimumMsat: MilliSatoshi
         )
 
         val sortedChannels = channels.values.filterIsInstance<Normal>().filterNot {
@@ -473,8 +472,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             Pair(
                 it, ChannelState(
                     availableForSend = it.commitments.availableBalanceForSend(),
-                    htlcMinimumMsat = it.channelUpdate.htlcMinimumMsat,
-                    htlcMaximumMsat = it.channelUpdate.htlcMaximumMsat
+                    htlcMinimumMsat = it.commitments.remoteParams.htlcMinimum
                 )
             )
         }.sortedBy {
@@ -513,10 +511,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
 
         val amountToSend = paymentAttempt.paymentAmount + paymentAttempt.fees
 
-        val filteredChannels1 = sortedChannels.filter {
+        val filteredChannels = sortedChannels.filter {
             amountToSend >= it.second.htlcMinimumMsat
         }
-        if (filteredChannels1.isEmpty()) {
+        if (filteredChannels.isEmpty()) {
             val closest = sortedChannels.maxByOrNull { it.second.htlcMinimumMsat }!!
             val channelException = HtlcValueTooSmall(
                 channelId = closest.first.channelId,
@@ -532,27 +530,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams) {
             )
         }
 
-        val filteredChannels2 = filteredChannels1.filter {
-            it.second.htlcMaximumMsat?.let { htlcMax -> amountToSend <= htlcMax } ?: true
-        }
-        if (filteredChannels2.isEmpty()) {
-            // NB: to arrive here implies that every item in filteredChannels1 has non-null htlcMaximumMsat
-            val closest = filteredChannels1.minByOrNull { it.second.htlcMaximumMsat!! }!!
-            val channelException = HtlcValueTooBig(
-                channelId = closest.first.channelId,
-                maximum = closest.second.htlcMaximumMsat!!,
-                actual = amountToSend
-            )
-            paymentAttempt.problems.add(Either.Left(channelException))
-            return Either.Left(
-                OutgoingPaymentFailure.make(
-                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                    problems = paymentAttempt.allProblems()
-                )
-            )
-        }
-
-        val selectedChannel = filteredChannels2.first()
+        val selectedChannel = filteredChannels.first()
         val actions = listOf<PeerEvent>(
             // createHtlc: part => (onion w/ trampoline) => CMD_ADD_HTLC => WrappedChannelEvent
             createHtlc(selectedChannel.first, paymentAttempt, currentBlockHeight)
