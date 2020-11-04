@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
+import fr.acinq.eclair.io.PayToOpenResult
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -87,12 +88,13 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun makeLegacyPayload(
         amount: MilliSatoshi,
+        paymentSecret: ByteVector32? = null,
         cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
         currentBlockHeight: Int = TestConstants.defaultBlockHeight
     ): FinalPayload {
 
         val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-        return FinalPayload.createSinglePartPayload(amount, expiry)
+        return FinalPayload.createSinglePartPayload(amount, expiry, paymentSecret)
     }
 
     private fun makeMppPayload(
@@ -325,30 +327,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     private fun makeIncomingPayment(
         payee: IncomingPaymentHandler,
         amount: MilliSatoshi?,
-        timestamp: Long = currentTimestampSeconds(),
         expirySeconds: Long? = null,
+        timestamp: Long = currentTimestampSeconds()
     ): IncomingPayment {
-
         val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
-        val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-
-        val invoiceFeatures = setOf(
-            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
-            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
-        )
-        val paymentRequest = PaymentRequest.create(
-            chainHash = payee.nodeParams.chainHash,
-            amount = amount,
-            paymentHash = paymentHash,
-            privateKey = payee.nodeParams.nodePrivateKey, // Payee creates invoice, sends to payer
-            description = "unit test",
-            minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            features = Features(invoiceFeatures),
-            timestamp = timestamp,
-            expirySeconds = expirySeconds
-        )
-
+        val paymentRequest = payee.createInvoice(paymentPreimage, amount, "unit test", expirySeconds, timestamp)
         return IncomingPayment(paymentRequest, paymentPreimage)
     }
 
@@ -359,6 +342,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
 
         val totalAmount = MilliSatoshi(100.sat)
+
         val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
 
         run {
@@ -371,9 +355,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -419,9 +402,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -436,6 +418,55 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                                 incomingPayment.paymentPreimage,
                                 commit = true
                             )
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open payment with single HTLC`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeLegacyPayload(
+                        amount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
+            assertEquals(
+                setOf(
+                    PayToOpenResult(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            incomingPayment.paymentPreimage
                         )
                     )
                 ), par.actions.toSet()
@@ -471,9 +502,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -496,9 +526,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -547,9 +576,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -572,9 +600,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -588,6 +615,182 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                     WrappedChannelEvent(
                         channelId2,
                         ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive mpp payment via pay-to-open`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = amount1,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = amount1,
+                        totalAmount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = amount2,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = amount2,
+                        totalAmount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
+            assertEquals(
+                setOf(
+                    PayToOpenResult(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            incomingPayment.paymentPreimage
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive mpp payment with a mix of HTLC and pay-to-open`() {
+
+        val channelId1: ByteVector32 = Eclair.randomBytes32()
+        val firstId = nextId
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val amount1 = MilliSatoshi(100.sat)
+        val amount2 = MilliSatoshi(100.sat)
+        val totalAmount = amount1 + amount2
+
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val updateAddHtlc = makeUpdateAddHtlc(
+                channelId = channelId1,
+                destination = paymentHandler,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                finalPayload = makeMppPayload(
+                    amount = amount1,
+                    totalAmount = totalAmount,
+                    paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                )
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                htlc = updateAddHtlc,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { par.actions.count() == 0 }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = amount2,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = amount2,
+                        totalAmount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
+            assertEquals(
+                setOf(
+                    WrappedChannelEvent(
+                        channelId1,
+                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                    ),
+                    PayToOpenResult(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            incomingPayment.paymentPreimage
+                        )
                     ),
                 ), par.actions.toSet()
             )
@@ -615,9 +818,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -667,9 +869,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -692,9 +893,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -745,9 +945,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -770,9 +969,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -826,9 +1024,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -872,9 +1069,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = null,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -925,9 +1121,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 onionRoutingPacket = badOnion
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = null,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -982,9 +1177,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1046,9 +1240,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 finalPayload = payload
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1104,9 +1297,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1132,9 +1324,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1200,9 +1391,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1254,9 +1444,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1328,9 +1517,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1376,9 +1564,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1401,9 +1588,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1451,9 +1637,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1475,9 +1660,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = incomingPayment,
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 
@@ -1515,9 +1699,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             // or otherwise mark the invoice as Paid.
             // Whatever the case, it must not re-use that invoice for processing again.
 
-            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.processAdd(
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
                 htlc = updateAddHtlc,
-                incomingPayment = null, // <= See note above
                 currentBlockHeight = TestConstants.defaultBlockHeight
             )
 

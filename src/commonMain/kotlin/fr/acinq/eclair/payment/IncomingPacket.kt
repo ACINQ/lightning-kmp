@@ -39,7 +39,7 @@ object IncomingPacket {
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, packetLength: Int, privateKey: PrivateKey): Either<FailureMessage, FinalPayload> {
+    fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, packetLength: Int, privateKey: PrivateKey): Either<FailureMessage, FinalPayload> {
         return when (val decrypted = Sphinx.peel(privateKey, paymentHash, packet, packetLength)) {
             is Either.Left -> Either.Left(decrypted.value)
             is Either.Right -> run {

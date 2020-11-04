@@ -218,7 +218,7 @@ object Node {
                         val paymentPreimage = Eclair.randomBytes32()
                         val amount = MilliSatoshi(request.amount ?: 50000L)
                         val result = CompletableDeferred<PaymentRequest>()
-                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100), request.description.orEmpty(), result))
+                        peer.send(ReceivePayment(paymentPreimage, amount, request.description.orEmpty(), result))
                         call.respond(CreateInvoiceResponse(result.await().write()))
                     }
                     post("/invoice/pay") {

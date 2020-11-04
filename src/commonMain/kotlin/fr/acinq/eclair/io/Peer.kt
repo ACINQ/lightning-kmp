@@ -29,15 +29,14 @@ import kotlinx.coroutines.flow.filterIsInstance
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent() {
-    val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-}
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent()
 
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout : PeerEvent()
 data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
+data class PayToOpenResult(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -74,9 +73,6 @@ class Peer(
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     private var channels by channelsChannel
     private var connected by connectedChannel
-
-    // pending incoming payments, indexed by payment hash
-    private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
@@ -250,23 +246,7 @@ class Peer(
                 action is ProcessLocalFailure -> input.send(WrappedChannelError(actualChannelId, action.error, action.trigger))
                 action is SendWatch -> watcher.watch(action.watch)
                 action is PublishTx -> watcher.publish(action.tx)
-                action is ProcessAdd -> {
-                    val htlc = action.add
-                    val incomingPayment = pendingIncomingPayments[htlc.paymentHash]
-
-                    val currentBlockHeight = currentTip.first
-                    val result = incomingPaymentHandler.processAdd(htlc, incomingPayment, currentBlockHeight)
-
-                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED || result.status == IncomingPaymentHandler.Status.REJECTED) {
-                        pendingIncomingPayments.remove(htlc.paymentHash)
-                    }
-                    if (result.status == IncomingPaymentHandler.Status.ACCEPTED) {
-                        listenerEventChannel.send(PaymentReceived(incomingPayment!!))
-                    }
-                    for (subaction in result.actions) {
-                        input.send(subaction)
-                    }
-                }
+                action is ProcessAdd -> processIncomingPayment(Either.Right(action.add))
                 action is ProcessRemoteFailure -> {
                     val result = outgoingPaymentHandler.processRemoteFailure(action, channels, currentTip.first)
                     when (result) {
@@ -314,6 +294,20 @@ class Peer(
                     Unit
                 }
             }
+        }
+    }
+
+    private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
+        val currentBlockHeight = currentTip.first
+        val result = when (item) {
+            is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
+            is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
+        }
+        if (result.status == IncomingPaymentHandler.Status.ACCEPTED && result.incomingPayment != null) {
+            listenerEventChannel.send(PaymentReceived(result.incomingPayment))
+        }
+        for (subaction in result.actions) {
+            input.send(subaction)
         }
     }
 
@@ -500,6 +494,10 @@ class Peer(
                         logger.info { "channel ${msg.channelId} new state $state1" }
                         processActions(msg.channelId, actions)
                     }
+                    msg is PayToOpenRequest -> {
+                        logger.info { "received pay-to-open request" }
+                        processIncomingPayment(Either.Left(msg))
+                    }
                     else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}" }
                 }
             } // event is ByteReceived
@@ -518,21 +516,9 @@ class Peer(
             // receive payments
             //
             event is ReceivePayment -> {
-                logger.info { "expecting to receive $event for payment hash ${event.paymentHash}" }
-                val invoiceFeatures = mutableSetOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory))
-                if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
-                    invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
-                }
-                val extraHops = run {
-                    val peerId = ShortChannelId.peerId(nodeParams.nodeId)
-                    val hop = PaymentRequest.TaggedField.ExtraHop(nodeParams.trampolineNode.id, peerId, MilliSatoshi(1000), 100, CltvExpiryDelta(144))
-                    listOf(listOf(hop))
-                }
-                logger.info { "using routing hints $extraHops" }
-                val pr =
-                    PaymentRequest.create(nodeParams.chainHash, event.amount, event.paymentHash, nodeParams.nodePrivateKey, event.description, PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, Features(invoiceFeatures), extraHops = extraHops)
+                logger.info { "creating invoice $event" }
+                val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description)
                 logger.info { "payment request ${pr.write()}" }
-                pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 event.result.complete(pr)
             }
@@ -589,6 +575,10 @@ class Peer(
                         // error that didn't affect an outgoing payment
                     }
                 }
+            }
+            event is PayToOpenResult -> {
+                logger.info { "sending pay-to-open response" }
+                sendToPeer(event.payToOpenResponse)
             }
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
