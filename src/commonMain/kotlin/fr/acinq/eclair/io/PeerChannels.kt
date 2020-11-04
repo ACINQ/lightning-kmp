@@ -26,7 +26,7 @@ object PeerChannels {
             maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
             isFunder = isFunder,
             defaultFinalScriptPubKey = defaultFinalScriptPubkey,
-            staticPaymentBasepoint = localPaymentBasepoint,
+            walletStaticPaymentBasepoint = localPaymentBasepoint,
             features = nodeParams.features
         )
     }

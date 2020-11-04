@@ -83,7 +83,7 @@ data class Commitments(
 ) {
     init {
         // either we use static remote key and have a static point or we don't and we don't have a static point
-        require(channelVersion.hasStaticRemotekey == (localParams.staticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
+        require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
     }
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
@@ -688,7 +688,7 @@ data class Commitments(
             val remotePaymentPubkey = if (channelVersion.hasStaticRemotekey) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
             val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-            val localPaymentBasepoint = localParams.staticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
+            val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
             val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feeratePerKw, outputs)
@@ -704,7 +704,7 @@ data class Commitments(
             spec: CommitmentSpec
         ): Triple<CommitTx, List<HtlcTimeoutTx>, List<HtlcSuccessTx>> {
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-            val localPaymentBasepoint = localParams.staticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
+            val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
             val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)

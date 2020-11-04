@@ -374,7 +374,7 @@ data class LocalParams constructor(
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
     @Serializable(with = ByteVectorKSerializer::class) val defaultFinalScriptPubKey: ByteVector,
-    @Serializable(with = PublicKeyKSerializer::class) val staticPaymentBasepoint: PublicKey?,
+    @Serializable(with = PublicKeyKSerializer::class) val walletStaticPaymentBasepoint: PublicKey?,
     val features: Features
 )
 

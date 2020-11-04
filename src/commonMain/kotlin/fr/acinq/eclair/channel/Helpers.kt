@@ -631,7 +631,7 @@ object Helpers {
 
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
             val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
-            val localPaymentPoint = localParams.staticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
+            val localPaymentPoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
             // this tx has been published by remote, so we need to invert local/remote params
             val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
             require(txnumber <= 0xffffffffffffL) { "txnumber must be lesser than 48 bits long" }
