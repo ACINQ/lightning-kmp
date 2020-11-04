@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent()
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent()
 
 data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
@@ -520,8 +520,6 @@ class Peer(
             //
             event is ReceivePayment -> {
                 logger.info { "creating invoice $event" }
-                // TODO : field expiry not used
-                // TODO : extra hops should be added here
                 val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description)
                 logger.info { "payment request ${pr.write()}" }
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
