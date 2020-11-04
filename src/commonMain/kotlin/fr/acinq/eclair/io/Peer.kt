@@ -11,10 +11,7 @@ import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.payment.IncomingPayment
-import fr.acinq.eclair.payment.IncomingPaymentHandler
-import fr.acinq.eclair.payment.OutgoingPaymentHandler
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.payment.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.secp256k1.Hex
@@ -47,7 +44,7 @@ data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val reque
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
 data class PaymentProgress(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentSent(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
-data class PaymentNotSent(val payment: SendPayment, val reason: OutgoingPaymentHandler.FailureReason) : PeerListenerEvent()
+data class PaymentNotSent(val payment: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -280,7 +277,7 @@ class Peer(
                             }
                         }
                         is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
-                            listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                            listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         }
                         is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
                             logger.error { "UnknownPaymentFailure" }
@@ -294,7 +291,7 @@ class Peer(
                             listenerEventChannel.send(PaymentSent(result.payment, result.trampolineFees))
                         }
                         is OutgoingPaymentHandler.ProcessFulfillResult.Failure -> {
-                            listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                            listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         }
                         is OutgoingPaymentHandler.ProcessFulfillResult.UnknownPaymentFailure -> {
                             logger.error { "UnknownPaymentFailure" }
@@ -552,7 +549,7 @@ class Peer(
                         }
                     }
                     is OutgoingPaymentHandler.SendPaymentResult.Failure -> {
-                        listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                        listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                     }
                 }
             }
@@ -583,7 +580,7 @@ class Peer(
                         }
                     }
                     is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
-                        listenerEventChannel.send(PaymentNotSent(result.payment, result.reason))
+                        listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                     }
                     is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
                         logger.error { "UnknownPaymentFailure" }
