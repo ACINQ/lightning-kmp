@@ -82,13 +82,25 @@ data class OutgoingPaymentFailure(
         // It may be a bit confusing, but it leads them toward the solution
         // => add funds, retry payment, success!
 
-        if (reason == OutgoingPaymentFailure.Reason.OTHER_ERROR) {
-            if (problems.any { (it is Either.Right) && (it.value is UnknownNextPeer) }) {
+        fun isRouteError(problem: Either<ChannelException, FailureMessage>) = when(problem) {
+            is Either.Left -> false
+            is Either.Right -> when(problem.value) {
+                is UnknownNextPeer -> true
+                is TemporaryChannelFailure -> true
+                is PermanentChannelFailure -> true
+                is TemporaryNodeFailure -> true
+                is PermanentNodeFailure -> true
+                else -> false
+            }
+        }
+
+        if (reason == Reason.OTHER_ERROR) {
+            if (problems.any { isRouteError(it) }) {
                 return "Unable to route payment to recipient"
             }
-            if (problems.any { (it is Either.Right) && (it.value is PaymentTimeout) }) {
-                return "Payment rejected due to timeout. "+
-                        "This usually occurs when the invoice contains an expiration date, "+
+            if (problems.any { (it is Either.Right) && (it.value is IncorrectOrUnknownPaymentDetails) }) {
+                return "Payment rejected by the recipient. "+
+                        "This usually occurs when the invoice has already been paid or when it contains an expiration date, "+
                         "and you attempted to send a payment after the expiration."
             }
         }
