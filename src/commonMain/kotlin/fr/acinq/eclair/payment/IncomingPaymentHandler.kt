@@ -211,7 +211,7 @@ class IncomingPaymentHandler(
 
         val incomingPayment: IncomingPayment? = pendingIncomingPayments[paymentPart.paymentHash]
 
-        logger.info { "processing payload=${paymentPart.finalPayload} invoice=${incomingPayment?.paymentRequest}"}
+        logger.info { "processing payload=${paymentPart.finalPayload} invoice=${incomingPayment?.paymentRequest}" }
 
         // depending on the type of the payment part, the default rejection result changes
         val rejectedAction = when (paymentPart) {
