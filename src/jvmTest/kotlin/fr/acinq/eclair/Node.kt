@@ -88,7 +88,7 @@ object Node {
     /**
      * Order of precedence for the configuration parameters:
      * 1) Java environment variables (-D...)
-     * 2) Configuration file eclair.conf
+     * 2) Configuration file phoenix.conf
      * 3) Optionally provided config
      * 4) Default values in reference.conf
      */

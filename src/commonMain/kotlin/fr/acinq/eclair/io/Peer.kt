@@ -411,7 +411,7 @@ class Peer(
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
                         val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                        val localPaymentBasepoint: PublicKey? = if (Features.canUseFeature(features, Features(theirInit!!.features), Feature.StaticRemoteKey)) {
+                        val walletStaticPaymentBasepoint: PublicKey? = if (Features.canUseFeature(features, Features(theirInit!!.features), Feature.StaticRemoteKey)) {
                             closingPubkey
                         } else null
                         val localParams = LocalParams(
@@ -425,7 +425,7 @@ class Peer(
                             nodeParams.maxAcceptedHtlcs,
                             false,
                             closingPubkeyScript.toByteVector(),
-                            localPaymentBasepoint,
+                            walletStaticPaymentBasepoint,
                             features
                         )
                         val state = WaitForInit(
