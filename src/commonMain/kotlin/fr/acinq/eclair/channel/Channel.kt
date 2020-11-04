@@ -7,7 +7,6 @@ import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
-import fr.acinq.eclair.channel.ChannelVersion.Companion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
@@ -50,7 +49,11 @@ data class InitFunder(
     val remoteInit: Init,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion
-) : ChannelEvent()
+) : ChannelEvent() {
+    init {
+        require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
+    }
+}
 
 data class InitFundee(val temporaryChannelId: ByteVector32, val localParams: LocalParams, val remoteInit: Init) : ChannelEvent()
 data class Restore(val state: ChannelState) : ChannelEvent()
@@ -469,11 +472,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             event is InitFunder -> {
                 val fundingPubKey = keyManager.fundingPublicKey(event.localParams.fundingKeyPath).publicKey
                 val channelKeyPath = keyManager.channelKeyPath(event.localParams, event.channelVersion)
-                val paymentBasepoint = if (event.channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT)) {
-                    event.localParams.localPaymentBasepoint!!
-                } else {
-                    keyManager.paymentPoint(channelKeyPath).publicKey
-                }
+                val paymentBasepoint = event.localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
                 val open = OpenChannel(
                     staticParams.nodeParams.chainHash,
                     temporaryChannelId = event.temporaryChannelId,
@@ -999,14 +998,12 @@ data class WaitForOpenChannel(
                         ) {
                             channelVersion = channelVersion or ChannelVersion.STATIC_REMOTEKEY
                         }
+                        require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
+
                         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
                         // TODO: maybe also check uniqueness of temporary channel id
                         val minimumDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
-                        val paymentBasepoint = if (channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT)) {
-                            localParams.localPaymentBasepoint!!
-                        } else {
-                            keyManager.paymentPoint(channelKeyPath).publicKey
-                        }
+                        val paymentBasepoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
                         val accept = AcceptChannel(
                             temporaryChannelId = event.message.temporaryChannelId,
                             dustLimitSatoshis = localParams.dustLimit,

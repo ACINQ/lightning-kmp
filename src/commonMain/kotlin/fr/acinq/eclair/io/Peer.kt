@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String) : PeerEvent() {
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val expiry: CltvExpiry, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent() {
     val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 }
 
@@ -40,6 +40,7 @@ data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, 
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout : PeerEvent()
+data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -90,9 +91,13 @@ class Peer(
         setOf(
             ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
             ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+            ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
             ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
+            ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
         )
     )
+
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
@@ -130,9 +135,8 @@ class Peer(
                 channels = channels + (it.channelId to state1)
             }
             logger.info { "restored channels: $channels" }
+            run()
         }
-
-        launch { run() }
 
         watcher.client.sendMessage(AskForStatusUpdate)
     }
@@ -240,12 +244,13 @@ class Peer(
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
+        var actualChannelId: ByteVector32 = channelId
         actions.forEach { action ->
             when {
                 action is SendMessage && connected == Connection.ESTABLISHED -> sendToPeer(action.message)
                 // sometimes channel actions include "self" command (such as CMD_SIGN)
-                action is SendToSelf -> input.send(WrappedChannelEvent(channelId, ExecuteCommand(action.command)))
-                action is ProcessLocalFailure -> input.send(WrappedChannelError(channelId, action.error, action.trigger))
+                action is SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ExecuteCommand(action.command)))
+                action is ProcessLocalFailure -> input.send(WrappedChannelError(actualChannelId, action.error, action.trigger))
                 action is SendWatch -> watcher.watch(action.watch)
                 action is PublishTx -> watcher.publish(action.tx)
                 action is ProcessAdd -> {
@@ -297,8 +302,15 @@ class Peer(
                     }
                 }
                 action is StoreState -> {
-                    logger.info { "storing state for channelId=$channelId data=${action.data}" }
+                    logger.info { "storing state for channelId=$actualChannelId data=${action.data}" }
                     channelsDb.addOrUpdateChannel(action.data)
+                }
+                action is ChannelIdSwitch -> {
+                    logger.info { "switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
+                    actualChannelId = action.newChannelId
+                    channels[action.oldChannelId]?.let {
+                        channels = channels + (action.newChannelId to it)
+                    }
                 }
                 else -> {
                     logger.warning { "unhandled action : $action" }
@@ -365,10 +377,11 @@ class Peer(
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
-                logger.info { "received $msg" }
+                logger.verbose { "received $msg" }
                 when {
                     msg is Init -> {
                         logger.info { "received $msg" }
+                        logger.info { "peer is using features ${Features(msg.features)}" }
                         theirInit = msg
                         connected = Connection.ESTABLISHED
                         logger.info { "before channels: $channels" }
@@ -380,20 +393,27 @@ class Peer(
                         logger.info { "after channels: $channels" }
                     }
                     msg is Ping -> {
-                        logger.info { "received $msg" }
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
                         output.send(LightningMessage.encode(pong)!!)
                     }
                     msg is Pong -> {
-                        logger.info { "received $msg" }
                     }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }
                     }
+                    msg is OpenChannel && theirInit == null -> {
+                        logger.error { "they sent open_channel before init" }
+                    }
+                    msg is OpenChannel && channels.containsKey(msg.temporaryChannelId) -> {
+                        logger.warning { "ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
+                    }
                     msg is OpenChannel -> {
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                        val defaultFinalScriptPubKey = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey).toByteVector()
+                        val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
+                        val walletStaticPaymentBasepoint: PublicKey? = if (Features.canUseFeature(features, Features(theirInit!!.features), Feature.StaticRemoteKey)) {
+                            closingPubkey
+                        } else null
                         val localParams = LocalParams(
                             nodeParams.nodeId,
                             fundingKeyPath,
@@ -404,19 +424,9 @@ class Peer(
                             nodeParams.toRemoteDelayBlocks,
                             nodeParams.maxAcceptedHtlcs,
                             false,
-                            defaultFinalScriptPubKey,
-                            PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey(),
-                            Features(
-                                setOf(
-                                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory),
-                                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-                                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
-                                )
-                            )
+                            closingPubkeyScript.toByteVector(),
+                            walletStaticPaymentBasepoint,
+                            features
                         )
                         val state = WaitForInit(
                             StaticParams(nodeParams, remoteNodeId),
@@ -527,6 +537,7 @@ class Peer(
                 logger.info { "payment request ${pr.write()}" }
                 pendingIncomingPayments[event.paymentHash] = IncomingPayment(pr, event.paymentPreimage)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
+                event.result.complete(pr)
             }
             //
             // send payments
@@ -585,6 +596,9 @@ class Peer(
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
+            }
+            event is ListChannels -> {
+                event.channels.complete(channels.values.toList())
             }
         }
     }

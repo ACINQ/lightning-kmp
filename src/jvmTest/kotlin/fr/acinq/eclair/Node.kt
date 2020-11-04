@@ -1,6 +1,8 @@
 package fr.acinq.eclair
 
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.*
+import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
@@ -23,172 +25,222 @@ import kotlinx.serialization.decodeFromHexString
 import kotlinx.serialization.encodeToHexString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
+import io.ktor.application.*
+import io.ktor.client.features.json.serializer.KotlinxSerializer.Companion.DefaultJson
+import io.ktor.features.*
+import io.ktor.http.*
+import io.ktor.request.*
+import io.ktor.response.*
+import io.ktor.routing.*
+import io.ktor.serialization.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import kotlinx.serialization.Serializable
+import java.io.File
+import java.nio.file.Files
 import java.sql.DriverManager
 import kotlin.concurrent.thread
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
-    val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
-    val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    val defaultClosingPrivateKey = run {
-        val master = DeterministicWallet.generate(seed)
-        DeterministicWallet.derivePrivateKey(master, "m/84'/1'/0'/0/0").privateKey
-    }
-    val defaultClosingPubkeyScript = Script.write(Script.pay2wpkh(defaultClosingPrivateKey.publicKey()))
+    private val logger = newEclairLogger()
 
-    val nodeParams = NodeParams(
-        keyManager = keyManager,
-        alias = "alice",
-        features = Features(
-            setOf(
-                ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
-            )
-        ),
-        dustLimit = 100.sat,
-        onChainFeeConf = OnChainFeeConf(
-            maxFeerateMismatch = 1000.0,
-            closeOnOfflineMismatch = true,
-            updateFeeMinDiffRatio = 0.1
-        ),
-        maxHtlcValueInFlightMsat = 150000000L,
-        maxAcceptedHtlcs = 100,
-        expiryDeltaBlocks = CltvExpiryDelta(144),
-        fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-        htlcMinimum = 0.msat,
-        minDepthBlocks = 3,
-        toRemoteDelayBlocks = CltvExpiryDelta(144),
-        maxToLocalDelayBlocks = CltvExpiryDelta(1000),
-        feeBase = 546000.msat,
-        feeProportionalMillionth = 10,
-        reserveToFundingRatio = 0.01, // note: not used (overridden below)
-        maxReserveToFundingRatio = 0.05,
-        revocationTimeout = 20,
-        authTimeout = 10,
-        initTimeout = 10,
-        pingInterval = 30,
-        pingTimeout = 10,
-        pingDisconnect = true,
-        autoReconnect = false,
-        initialRandomReconnectDelay = 5,
-        maxReconnectInterval = 3600,
-        chainHash = Block.RegtestGenesisBlock.hash,
-        channelFlags = 1,
-        paymentRequestExpiry = 3600,
-        multiPartPaymentExpiry = 60,
-        minFundingSatoshis = 1000.sat,
-        maxFundingSatoshis = 16777215.sat,
-        maxPaymentAttempts = 5,
-        trampolineNode = NodeUri(PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"), "localhost", 48001),
-        enableTrampolinePayment = true
-    )
+    @Serializable
+    data class Ping(val payload: String)
 
-    private val serializationModules = SerializersModule {
-        include(eclairSerializersModule)
+    @Serializable
+    data class CreateInvoiceRequest(val amount: Long?, val description: String?)
+
+    @Serializable
+    data class CreateInvoiceResponse(val invoice: String)
+
+    @Serializable
+    data class PayInvoiceRequest(val invoice: String, val amount: Long?)
+
+    @Serializable
+    data class PayInvoiceResponse(val status: String)
+
+    @Serializable
+    data class CloseChannelRequest(val channelId: String)
+
+    @Serializable
+    data class CloseChannelResponse(val status: String)
+
+    fun parseUri(uri: String): Triple<PublicKey, String, Int> {
+        val a = uri.split('@')
+        require(a.size == 2) { "invalid node URI: $uri" }
+        val b = a[1].split(':')
+        require(b.size == 2) { "invalid node URI: $uri" }
+        return Triple(PublicKey.fromHex(a[0]), b[0], b[1].toInt())
     }
 
-    private val json = Json {
-        serializersModule = serializationModules
+    fun parseElectrumServerAddress(address: String): ServerAddress {
+        val a = address.split(':')
+        require(a.size == 3) { "invalid server address: $address" }
+        val tls = when (a[2]) {
+            "tls" -> TcpSocket.TLS.UNSAFE_CERTIFICATES
+            else -> null
+        }
+        return ServerAddress(a[0], a[1].toInt(), tls)
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
-    private val cbor = Cbor {
-        serializersModule = serializationModules
-    }
+    /**
+     * Order of precedence for the configuration parameters:
+     * 1) Java environment variables (-D...)
+     * 2) Configuration file phoenix.conf
+     * 3) Optionally provided config
+     * 4) Default values in reference.conf
+     */
+    fun loadConfiguration(datadir: File) = ConfigFactory.parseProperties(System.getProperties())
+        .withFallback(ConfigFactory.parseFile(File(datadir, "phoenix.conf")))
+        .withFallback(ConfigFactory.load())
 
-    private val mapSerializer = MapSerializer(ByteVector32KSerializer, ChannelState.serializer())
+    fun getSeed(datadir: File): ByteVector32 {
+        val seedPath = File(datadir, "seed.dat")
+        return if (seedPath.exists()) {
+            ByteVector32(Files.readAllBytes(seedPath.toPath()))
+        } else {
+            datadir.mkdirs()
+            val seed = randomBytes32()
+            logger.warning { "no seed was found, creating new one" }
+            Files.write(seedPath.toPath(), seed.toByteArray())
+            seed
+        }
+    }
 
     @JvmStatic
     fun main(args: Array<String>) {
-        // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
-        val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
+        val datadir = File(System.getProperty("phoenix.datadir", System.getProperty("user.home") + "/.phoenix"))
+        logger.info { "datadir = $datadir" }
+        datadir.mkdirs()
+        val config = loadConfiguration(datadir)
+        val seed = getSeed(datadir)
+        val chain = config.getString("phoenix.chain")
+        val chainHash: ByteVector32 = when (chain) {
+            "regtest" -> Block.RegtestGenesisBlock.hash
+            "testnet" -> Block.TestnetGenesisBlock.hash
+            else -> error("invalid chain $chain")
+        }
+        val chaindir = File(datadir, chain)
+        chaindir.mkdirs()
+        val nodeUri = config.getString("phoenix.trampoline-node-uri")
+        val (nodeId, nodeAddress, nodePort) = parseUri(nodeUri)
+        val electrumServerAddress = parseElectrumServerAddress(config.getString("phoenix.electrum-server"))
+        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        logger.info { "node ${keyManager.nodeId} is starting" }
+        val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
+        val nodeParams = NodeParams(
+            keyManager = keyManager,
+            alias = "phoenix",
+            features = Features(
+                setOf(
+                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
+                )
+            ),
+            dustLimit = 100.sat,
+            onChainFeeConf = OnChainFeeConf(
+                maxFeerateMismatch = 1000.0,
+                closeOnOfflineMismatch = true,
+                updateFeeMinDiffRatio = 0.1
+            ),
+            maxHtlcValueInFlightMsat = 150000000L,
+            maxAcceptedHtlcs = 100,
+            expiryDeltaBlocks = CltvExpiryDelta(144),
+            fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
+            htlcMinimum = 0.msat,
+            minDepthBlocks = 3,
+            toRemoteDelayBlocks = CltvExpiryDelta(144),
+            maxToLocalDelayBlocks = CltvExpiryDelta(1000),
+            feeBase = 546000.msat,
+            feeProportionalMillionth = 10,
+            reserveToFundingRatio = 0.01, // note: not used (overridden below)
+            maxReserveToFundingRatio = 0.05,
+            revocationTimeout = 20,
+            authTimeout = 10,
+            initTimeout = 10,
+            pingInterval = 30,
+            pingTimeout = 10,
+            pingDisconnect = true,
+            autoReconnect = false,
+            initialRandomReconnectDelay = 5,
+            maxReconnectInterval = 3600,
+            chainHash = chainHash,
+            channelFlags = 0,
+            paymentRequestExpiry = 3600,
+            multiPartPaymentExpiry = 60,
+            minFundingSatoshis = 1000.sat,
+            maxFundingSatoshis = 16777215.sat,
+            maxPaymentAttempts = 5,
+            trampolineNode = NodeUri(nodeId, nodeAddress, nodePort),
+            enableTrampolinePayment = true
+        )
 
-        val commandChannel = Channel<List<String>>(2)
+        // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
+//        val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
         Class.forName("org.sqlite.JDBC")
 
         suspend fun connectLoop(peer: Peer) {
             peer.openConnectedSubscription().consumeEach {
-                println("Connected: $it")
+                logger.info { "Connected: $it" }
             }
         }
-
-        suspend fun channelsLoop(peer: Peer) {
-            try {
-                peer.openChannelsSubscription().consumeEach {
-                    val cborHex = cbor.encodeToHexString(mapSerializer, it)
-                    println("CBOR: $cborHex")
-                    println("JSON: ${json.encodeToString(mapSerializer, it)}")
-                    val dec = cbor.decodeFromHexString(mapSerializer, cborHex)
-                    println("Serialization resistance: ${it == dec}")
-                }
-            } catch (ex: Throwable) {
-                ex.printStackTrace()
-                throw ex
-            }
-        }
-
-        suspend fun eventLoop(peer: Peer) {
-            peer.openListenerEventSubscription().consumeEach {
-                println("Event: $it")
-            }
-        }
-
-        suspend fun readLoop(peer: Peer) {
-            println("node ${nodeParams.nodeId} is ready:")
-            for (tokens in commandChannel) {
-                println("got tokens $tokens")
-                when (tokens.first()) {
-                    "connect" -> {
-                        println("connecting")
-                        GlobalScope.launch { peer.connect("localhost", 48001) }
-                    }
-                    "receive" -> {
-                        val paymentPreimage = ByteVector32(tokens[1])
-                        val amount = if (tokens.size >= 3) MilliSatoshi(tokens[2].toLong()) else null
-                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100), "this is a kotlin test"))
-                    }
-                    "pay" -> {
-                        val invoice = PaymentRequest.read(tokens[1])
-                        val amount = if (tokens.size >= 3) MilliSatoshi(tokens[2].toLong()) else invoice.amount!!
-                        peer.send(SendPayment(UUID.randomUUID(), invoice, amount))
-                    }
-                    "close" -> {
-                        runTrying { ByteVector32(Hex.decode(tokens[1])) }.map { GlobalScope.launch { peer.send(WrappedChannelEvent(it, ExecuteCommand(CMD_CLOSE(null)))) } }
-                    }
-                    else -> {
-                        println("I don't understand $tokens")
-                    }
-                }
-            }
-        }
-
-        fun writeLoop() {
-            while (true) {
-                val line = readLine()
-                line?.let {
-                    val tokens = it.split(" ")
-                    println("tokens: $tokens")
-                    runBlocking { commandChannel.send(tokens) }
-                }
-            }
-        }
-
-        thread(isDaemon = true, block = ::writeLoop)
 
         runBlocking {
-            val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+            val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
-            val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:/tmp/eclair-kmp-node-channels.db"))
             val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
 
-            launch { readLoop(peer) }
             launch { connectLoop(peer) }
-            launch { channelsLoop(peer) }
-            launch { eventLoop(peer) }
 
-            launch { peer.connect("localhost", 48001) }
+            embeddedServer(Netty, 8080) {
+                install(StatusPages) {
+                    exception<Throwable> {
+                        call.respondText(it.localizedMessage, ContentType.Text.Plain, HttpStatusCode.InternalServerError)
+                    }
+                }
+                install(ContentNegotiation) {
+                    register(ContentType.Application.Json, SerializationConverter(Json {
+                        serializersModule = eclairSerializersModule
+                    }))
+                }
+                routing {
+                    post("/ping") {
+                        val ping = call.receive<Ping>()
+                        call.respond(ping)
+                    }
+                    post("/invoice/create") {
+                        val request = call.receive<CreateInvoiceRequest>()
+                        val paymentPreimage = Eclair.randomBytes32()
+                        val amount = MilliSatoshi(request.amount ?: 50000L)
+                        val result = CompletableDeferred<PaymentRequest>()
+                        peer.send(ReceivePayment(paymentPreimage, amount, CltvExpiry(100), request.description.orEmpty(), result))
+                        call.respond(CreateInvoiceResponse(result.await().write()))
+                    }
+                    post("/invoice/pay") {
+                        val request = call.receive<PayInvoiceRequest>()
+                        val pr = PaymentRequest.read(request.invoice)
+                        peer.send(SendPayment(UUID.randomUUID(), pr, pr.amount ?: request.amount?.run { MilliSatoshi(this) } ?: MilliSatoshi(50000)))
+                        call.respond(PayInvoiceResponse("pending"))
+                    }
+                    get("/channels") {
+                        val channels = CompletableDeferred<List<ChannelState>>()
+                        peer.send(ListChannels(channels))
+                        call.respond(channels.await())
+                    }
+                    post("/channels/{channelId}/close") {
+                        val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
+                        peer.send(WrappedChannelEvent(channelId, ExecuteCommand(CMD_CLOSE(null))))
+                        call.respond(CloseChannelResponse("pending"))
+                    }
+                }
+            }.start(wait = false)
+
+            launch { peer.connect(nodeAddress, nodePort) }
         }
     }
 }
