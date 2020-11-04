@@ -148,9 +148,10 @@ afterEvaluate {
 afterEvaluate {
     tasks.withType<AbstractTestTask>() {
         testLogging {
-            events("passed", "skipped", "failed", "standard_out", "standard_error")
+            events("skipped", "failed")
             showExceptions = true
             showStackTraces = true
+            showStandardStreams = false
         }
     }
 }
