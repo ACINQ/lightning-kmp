@@ -147,19 +147,18 @@ class NormalTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (insufficient funds)`() {
+    fun `recv CMD_ADD_HTLC (value too big)`() {
         val (alice0, _) = reachNormal()
         val add = CMD_ADD_HTLC.copy(amount = Int.MAX_VALUE.msat)
         val (alice1, actions) = alice0.process(ExecuteCommand(add))
-        val actualError = actions.findError<InsufficientFunds>()
-        val expectError = InsufficientFunds(
+        val actualError = actions.findError<HtlcValueTooBig>()
+
+        val expectedError = HtlcValueTooBig(
             alice0.channelId,
-            amount = Int.MAX_VALUE.msat,
-            missing = 1388_843.sat,
-            reserve = 20_000.sat,
-            fees = 8960.sat
+            maximum = TestConstants.fundingSatoshis.toMilliSatoshi(),
+            actual = Int.MAX_VALUE.msat
         )
-        assertEquals(expectError, actualError)
+        assertEquals(expectedError, actualError)
         assertEquals(alice0, alice1)
     }
 

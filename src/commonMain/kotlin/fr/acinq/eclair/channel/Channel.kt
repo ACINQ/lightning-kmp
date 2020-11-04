@@ -1619,7 +1619,7 @@ data class Normal(
                             val error = NoMoreHtlcsClosingInProgress(channelId)
                             return handleCommandError(event.command, error)
                         }
-                        when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
+                        when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong(), channelUpdate)) {
                             is Try.Failure -> {
                                 Pair(this, listOf(ProcessLocalFailure(result.error, event)))
                             }

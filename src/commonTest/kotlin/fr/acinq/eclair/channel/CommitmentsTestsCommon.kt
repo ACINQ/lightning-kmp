@@ -46,7 +46,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         val currentBlockHeight = 144L
         val (payment_preimage, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
+        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight, alice.channelUpdate).get()
         assertEquals(ac1.availableBalanceForSend(), a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
@@ -132,7 +132,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         val currentBlockHeight = 144L
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
+        val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight, alice.channelUpdate).get()
         assertEquals(ac1.availableBalanceForSend(), a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
@@ -221,17 +221,17 @@ class CommitmentsTestsCommon : EclairTestSuite() {
         val currentBlockHeight = 144L
 
         val (payment_preimage1, cmdAdd1) = TestsHelper.makeCmdAdd(p1, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac1, add1) = ac0.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight).get()
+        val (ac1, add1) = ac0.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight, alice.channelUpdate).get()
         assertEquals(ac1.availableBalanceForSend(), a - p1 - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
         val (_, cmdAdd2) = TestsHelper.makeCmdAdd(p2, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (ac2, add2) = ac1.sendAdd(cmdAdd2, UUID.randomUUID(), currentBlockHeight).get()
+        val (ac2, add2) = ac1.sendAdd(cmdAdd2, UUID.randomUUID(), currentBlockHeight, alice.channelUpdate).get()
         assertEquals(ac2.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
         val (payment_preimage3, cmdAdd3) = TestsHelper.makeCmdAdd(p3, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
-        val (bc1, add3) = bc0.sendAdd(cmdAdd3, UUID.randomUUID(), currentBlockHeight).get()
+        val (bc1, add3) = bc0.sendAdd(cmdAdd3, UUID.randomUUID(), currentBlockHeight, alice.channelUpdate).get()
         assertEquals(bc1.availableBalanceForSend(), b - p3) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(bc1.availableBalanceForReceive(), a)
 
@@ -352,9 +352,10 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `funder keeps additional reserve to avoid channel being stuck`() {
         val isFunder = true
         val currentBlockHeight = 144L
+        val channelUpdate = TestsHelper.dummyChannelUpdate()
         val c = makeCommitments(100000000.msat, 50000000.msat, 2500, 546.sat, isFunder)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
-        val (c1, _) = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).get()
+        val (c1, _) = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight, channelUpdate).get()
         assertEquals(c1.availableBalanceForSend(), 0.msat)
 
         // We should be able to handle a fee increase.
@@ -362,7 +363,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
         val (_, cmdAdd1) = TestsHelper.makeCmdAdd(100.msat, randomKey().publicKey(), currentBlockHeight)
-        val e = (c2.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight) as Try.Failure<Pair<Commitments, UpdateAddHtlc>>).error
+        val e = (c2.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight, channelUpdate) as Try.Failure<Pair<Commitments, UpdateAddHtlc>>).error
         assertTrue(e is InsufficientFunds)
     }
 
@@ -372,7 +373,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
         listOf(true, false).forEach {
             val c = makeCommitments(702000000.msat, 52000000.msat, 2679, 546.sat, it)
             val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
-            val result = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight)
+            val result = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight, TestsHelper.dummyChannelUpdate())
             assertTrue(result.isSuccess)
         }
     }
