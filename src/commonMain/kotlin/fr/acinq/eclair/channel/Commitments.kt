@@ -229,7 +229,7 @@ data class Commitments(
      * @return either Failure(failureMessage) with a BOLT #4 failure or Success(new commitments, updateAddHtlc)
      */
     @OptIn(ExperimentalUnsignedTypes::class)
-    fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long, channelUpdate: ChannelUpdate): Try<Pair<Commitments, UpdateAddHtlc>> {
+    fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Try<Pair<Commitments, UpdateAddHtlc>> {
         val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
         // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
         if (cmd.cltvExpiry >= maxExpiry) {
@@ -240,11 +240,6 @@ data class Commitments(
         val htlcMinimum = remoteParams.htlcMinimum.coerceAtLeast(1.msat)
         if (cmd.amount < htlcMinimum) {
             return Try.Failure(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = cmd.amount))
-        }
-
-        val htlcMaximum = channelUpdate.htlcMaximumMsat
-        if (htlcMaximum != null && cmd.amount > htlcMaximum) {
-            return Try.Failure(HtlcValueTooBig(channelId, maximum = htlcMaximum, actual = cmd.amount))
         }
 
         // let's compute the current commitment *as seen by them* with this change taken into account
