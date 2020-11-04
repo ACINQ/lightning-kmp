@@ -52,7 +52,7 @@ data class OutgoingPaymentFailure(
     object InvalidParameter {
         fun paymentAmount() = OutgoingPaymentFailure(
             reason = Reason.INVALID_PARAMETER,
-            message = "Invalid parameter: payment amount me be positive",
+            message = "Invalid parameter: payment amount must be positive",
             problems = listOf()
         )
         fun paymentId() = OutgoingPaymentFailure(
