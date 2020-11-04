@@ -113,16 +113,10 @@ data class OutgoingPaymentFailure(
      * This is targeted at users with technical knowledge of the lightning protocol.
      */
     fun detailedSummary(): String {
-        var msg = ""
-        problems.forEachIndexed { index, either ->
-            when (either) {
-                is Either.Left -> { // ChannelException
-                    msg += "$index: ${either.value.toString()}\n"
-                }
-                is Either.Right -> { // FailureMessage
-                    msg += "$index: ${either.value.toString()}\n"
-                }
-            }
+       var msg = ""
+        
+        problems.forEachIndexed { index, problem ->
+            msg += "$index: ${problem.fold({ ex -> ex.message }, { f -> f.message })}\n"
         }
 
         return msg
