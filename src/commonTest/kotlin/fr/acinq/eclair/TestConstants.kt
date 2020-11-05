@@ -29,7 +29,9 @@ object TestConstants {
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
             dustLimit = 1100.sat,
@@ -91,7 +93,9 @@ object TestConstants {
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
             dustLimit = 1000.sat,

@@ -484,4 +484,29 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
             assertEquals(it, PaymentRequest.read(it).write())
         }
     }
+
+    @Test
+    fun filterFeatures() {
+        assertEquals(
+            expected = PaymentRequest.invoiceFeatures(
+                Features(
+                    activated = setOf(
+                        ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
+                        ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
+                        ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
+                        ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
+                    ),
+                    unknown = setOf(
+                        UnknownFeature(47)
+                    )
+                )
+            ),
+            actual = Features(
+                activated = setOf(
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
+                )
+            )
+        )
+    }
 }
