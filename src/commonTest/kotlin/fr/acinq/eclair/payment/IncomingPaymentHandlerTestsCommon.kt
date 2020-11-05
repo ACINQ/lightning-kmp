@@ -88,13 +88,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private fun makeLegacyPayload(
         amount: MilliSatoshi,
-        paymentSecret: ByteVector32? = null,
         cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
         currentBlockHeight: Int = TestConstants.defaultBlockHeight
     ): FinalPayload {
 
         val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-        return FinalPayload.createSinglePartPayload(amount, expiry, paymentSecret)
+        return FinalPayload.createSinglePartPayload(amount, expiry)
     }
 
     private fun makeMppPayload(
@@ -446,9 +445,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 finalPacket = OutgoingPacket.buildPacket(
                     paymentHash = incomingPayment.paymentRequest.paymentHash,
                     hops = channelHops(paymentHandler.nodeParams.nodeId),
-                    finalPayload = makeLegacyPayload(
+                    finalPayload = makeMppPayload(
                         amount = totalAmount,
-                        paymentSecret = incomingPayment.paymentRequest.paymentSecret
+                        totalAmount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
                     ),
                     payloadLength = OnionRoutingPacket.PaymentPacketLength
                 ).third.packet
