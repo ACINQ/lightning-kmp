@@ -109,6 +109,22 @@ data class PaymentRequest(val prefix: String, val amount: MilliSatoshi?, val tim
 
         val prefixes = mapOf(Block.RegtestGenesisBlock.hash to "lnbcrt", Block.TestnetGenesisBlock.hash to "lntb", Block.LivenetGenesisBlock.hash to "lnbc")
 
+        // only some features are valid in invoices
+        // see 'Context' column in https://github.com/lightningnetwork/lightning-rfc/blob/master/09-features.md
+        private val bolt11Features = setOf(
+            Feature.VariableLengthOnion,
+            Feature.PaymentSecret,
+            Feature.BasicMultiPartPayment,
+            Feature.TrampolinePayment
+        )
+
+        /**
+         * This filters out all features unrelated to BOLT 11
+         */
+        fun invoiceFeatures(features: Features): Features {
+            return Features(activated = features.activated.filter { f -> bolt11Features.contains(f.feature) }.toSet())
+        }
+
         fun create(
             chainHash: ByteVector32,
             amount: MilliSatoshi?,

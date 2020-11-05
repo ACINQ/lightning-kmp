@@ -94,15 +94,7 @@ class IncomingPaymentHandler(
         timestamp: Long = currentTimestampSeconds()
     ): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-        val invoiceFeatures = mutableSetOf(
-            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)
-        )
-        if (nodeParams.features.hasFeature(Feature.BasicMultiPartPayment)) {
-            invoiceFeatures.add(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional))
-            invoiceFeatures.add(ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional))
-        }
-
+        val invoiceFeatures = PaymentRequest.invoiceFeatures(nodeParams.features)
         // we add one extra hop which uses a virtual channel with a "peer id"
         val extraHops = listOf(
             listOf(
@@ -123,7 +115,7 @@ class IncomingPaymentHandler(
             privateKey = nodeParams.nodePrivateKey,
             description = description,
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            features = Features(invoiceFeatures),
+            features = invoiceFeatures,
             expirySeconds = expirySeconds,
             timestamp = timestamp,
             extraHops = extraHops
@@ -188,7 +180,7 @@ class IncomingPaymentHandler(
     }
 
     /**
-     * Processed an incoming pay-to-open request.
+     * Process an incoming pay-to-open request.
      * This is very similar to the processing of an htlc.
      */
     fun process(
