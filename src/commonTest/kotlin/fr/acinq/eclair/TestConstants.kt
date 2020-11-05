@@ -29,7 +29,9 @@ object TestConstants {
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
             dustLimit = 1100.sat,
@@ -66,7 +68,7 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = null,
+            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "alice.com", 9735),
             enableTrampolinePayment = true
         )
 
@@ -91,7 +93,9 @@ object TestConstants {
                     ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
                     ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)
+                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
             dustLimit = 1000.sat,
@@ -128,7 +132,7 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = null,
+            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "bob.com", 9735),
             enableTrampolinePayment = true
         )
 

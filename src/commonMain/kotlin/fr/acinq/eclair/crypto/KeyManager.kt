@@ -18,7 +18,7 @@ interface KeyManager {
 
     val nodeId: PublicKey
 
-    fun closingPubkeyScript(fundingPubKey: PublicKey): ByteArray
+    fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray>
 
     fun fundingPublicKey(keyPath: KeyPath): ExtendedPublicKey
 
