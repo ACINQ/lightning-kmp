@@ -180,7 +180,7 @@ class IncomingPaymentHandler(
     }
 
     /**
-     * Processed an incoming pay-to-open request.
+     * Process an incoming pay-to-open request.
      * This is very similar to the processing of an htlc.
      */
     fun process(
