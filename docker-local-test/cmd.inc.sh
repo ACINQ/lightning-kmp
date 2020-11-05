@@ -113,7 +113,7 @@ function ecl_create {
     docker create \
         --name eclair-nodeA \
         --net eclair-net \
-        -v "$PWD"/tmp:/logs \
+        -v "$PWD/../build/logs":/logs \
         -e NODE_NAME=nodeA \
         -p 48001:9735 \
         -p 8081:8080 \
@@ -122,7 +122,7 @@ function ecl_create {
     docker create \
         --name eclair-nodeB \
         --net eclair-net \
-        -v "$PWD"/tmp:/logs \
+        -v "$PWD/../build/logs":/logs \
         -e NODE_NAME=nodeB \
         -p 48002:9735 \
         -p 8082:8080 \
