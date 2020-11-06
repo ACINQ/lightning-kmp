@@ -46,6 +46,8 @@ internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { an
 inline fun <reified T : Throwable> List<ChannelAction>.findCommandError(): T? =
     filterIsInstance<HandleCommandFailed>().map { it.error }.firstOrNull { it is T } as T?
 
+internal inline fun <reified T> List<ChannelAction>.hasCommandError() = assertTrue { any { it is HandleCommandFailed && it.error is T } }
+
 internal inline fun <reified T> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
 fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnchainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))

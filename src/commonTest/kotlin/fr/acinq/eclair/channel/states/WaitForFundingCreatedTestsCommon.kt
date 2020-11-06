@@ -33,8 +33,7 @@ class WaitForFundingCreatedTestsCommon {
     fun `recv FundingCreated (funder can't pay fees)`() {
         val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, 1000100.sat, 1000000.sat.toMilliSatoshi())
         val (bob1, actions1) = bob.process(MessageReceived(fundingCreated))
-        val error = actions1.findOutgoingMessage<Error>()
-        println(error)
+        assertTrue { actions1.hasOutgoingMessage<Error>() != null }
         assertTrue { bob1 is Aborted }
     }
 

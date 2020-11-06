@@ -61,8 +61,7 @@ class WaitForFundingConfirmedTestsCommon {
             val (alice, bob, fundingCreated) = WaitForFundingCreatedTestsCommon.init(channelVersion, fundingAmount, pushAmount)
             val (bob1, actions1) = bob.process(MessageReceived(fundingCreated))
             val fundingSigned = actions1.findOutgoingMessage<FundingSigned>()
-            val (alice1, actions2) = alice.process(MessageReceived(fundingSigned))
-            println(actions2)
+            val (alice1, _) = alice.process(MessageReceived(fundingSigned))
             return Pair(alice1 as WaitForFundingConfirmed, bob1 as WaitForFundingConfirmed)
         }
     }

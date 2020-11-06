@@ -324,10 +324,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val localFailure = processResult.second.filterIsInstance<ProcessLocalFailure>().firstOrNull()
+            val localFailure = processResult.second.filterIsInstance<HandleCommandFailed>().firstOrNull()
             assertNotNull(localFailure)
 
-            val channelError = WrappedChannelError(alice.channelId, localFailure.error, executeCommand)
+            val channelError = WrappedChannelError(alice.channelId, localFailure.error!!, executeCommand)
             assertNotNull(channelError)
 
             // Now the channelError gets sent back to the OutgoingPaymentHandler.
@@ -401,10 +401,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val localFailure = processResult.second.filterIsInstance<ProcessLocalFailure>().firstOrNull()
+            val localFailure = processResult.second.filterIsInstance<HandleCommandFailed>().firstOrNull()
             assertNotNull(localFailure)
 
-            val channelError = WrappedChannelError(alice.channelId, localFailure.error, executeCommand)
+            val channelError = WrappedChannelError(alice.channelId, localFailure.error!!, executeCommand)
             assertNotNull(channelError)
 
             // Now the channelError gets sent back to the OutgoingPaymentHandler.

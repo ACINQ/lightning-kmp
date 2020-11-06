@@ -23,7 +23,7 @@ interface LightningMessage {
 
         /**
          * @param input a single, complete message (typically received over the transport layer)
-         * there is a very strong assumption that framing has been take care of and that there are no missing or extra bytes
+         * there is a very strong assumption that framing has been taken care of and that there are no missing or extra bytes
          * whatever we don't read will simply be ignored, as per the BOLTs
          */
         fun decode(input: ByteArray): LightningMessage? {
@@ -46,6 +46,7 @@ interface LightningMessage {
                 UpdateFailHtlc.tag -> UpdateFailHtlc.read(stream)
                 UpdateFailMalformedHtlc.tag -> UpdateFailMalformedHtlc.read(stream)
                 UpdateFulfillHtlc.tag -> UpdateFulfillHtlc.read(stream)
+                UpdateFee.tag -> UpdateFee.read(stream)
                 ChannelUpdate.tag -> ChannelUpdate.read(stream)
                 Shutdown.tag -> Shutdown.read(stream)
                 ClosingSigned.tag -> ClosingSigned.read(stream)
