@@ -242,6 +242,12 @@ object Node {
                         peer.send(ListChannels(channels))
                         call.respond(channels.await())
                     }
+                    get("/channels/{channelId}") {
+                        val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
+                        val channel = CompletableDeferred<ChannelState?>()
+                        peer.send(Getchannel(channelId, channel))
+                        call.respond(channel.await() ?: "")
+                    }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
                         peer.send(WrappedChannelEvent(channelId, ExecuteCommand(CMD_CLOSE(null))))
