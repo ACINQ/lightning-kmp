@@ -62,6 +62,9 @@ object Node {
     data class PayInvoiceResponse(val status: String)
 
     @Serializable
+    data class DecodeInvoiceRequest(val invoice: String)
+
+    @Serializable
     data class CloseChannelRequest(val channelId: String)
 
     @Serializable
@@ -228,6 +231,11 @@ object Node {
                         val pr = PaymentRequest.read(request.invoice)
                         peer.send(SendPayment(UUID.randomUUID(), pr, pr.amount ?: request.amount?.run { MilliSatoshi(this) } ?: MilliSatoshi(50000)))
                         call.respond(PayInvoiceResponse("pending"))
+                    }
+                    post("/invoice/decode") {
+                        val request = call.receive<DecodeInvoiceRequest>()
+                        val pr = PaymentRequest.read(request.invoice)
+                        call.respond(pr)
                     }
                     get("/channels") {
                         val channels = CompletableDeferred<List<ChannelState>>()
