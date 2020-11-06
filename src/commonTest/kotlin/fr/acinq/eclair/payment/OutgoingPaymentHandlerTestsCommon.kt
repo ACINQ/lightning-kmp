@@ -26,7 +26,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         timestamp: Long = currentTimestampSeconds(),
         expirySeconds: Long? = null,
     ): PaymentRequest {
-
         val paymentPreimage: ByteVector32 = Eclair.randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 
@@ -66,7 +65,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     @Test
     fun `bad payment amount`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
 
@@ -76,17 +74,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, MilliSatoshi(-1)) // <= negative msats
         val result = outgoingPaymentHandler.sendPayment(sendPayment, mapOf(), currentBlockHeight)
-        assertEquals(
-            result, OutgoingPaymentHandler.SendPaymentResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.InvalidParameter.paymentAmount()
-            )
-        )
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, FailureReason.InvalidPaymentAmount.toPaymentFailure()))
     }
 
     @Test
     fun `no available channels`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
 
@@ -100,20 +92,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             mapOf(alice.channelId to Offline(alice)),
             currentBlockHeight
         )
-        assertEquals(
-            result, OutgoingPaymentHandler.SendPaymentResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(
-                    reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
-                    problems = listOf()
-                )
-            )
-        )
+        assertEquals(result, OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, FailureReason.NoAvailableChannels.toPaymentFailure()))
     }
 
     @Test
     fun `local channel failure`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -137,22 +120,15 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val event = WrappedChannelError(channelId, DebugTriggeredException(channelId), trigger.channelEvent)
 
         val result2 = outgoingPaymentHandler.processLocalFailure(event, channels, currentBlockHeight)
-        assertEquals(
-            result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(
-                    reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
-                    problems = listOf(
-                        Either.Left(DebugTriggeredException(channelId))
-                    )
-                )
-            )
+        val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(
+            sendPayment,
+            OutgoingPaymentFailure(FailureReason.NoAvailableChannels, listOf(Either.Left(DebugTriggeredException(channelId))))
         )
+        assertEquals(result2, expected)
     }
 
     @Test
     fun `remote channel failure - known`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -177,23 +153,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-            assertEquals(
-                result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                    payment = sendPayment,
-                    failure = OutgoingPaymentFailure.make(
-                        reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                        problems = listOf(
-                            Either.Right(UnknownNextPeer)
-                        )
-                    )
-                )
+            val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(
+                sendPayment,
+                OutgoingPaymentFailure(FailureReason.UnknownError, listOf(Either.Right(UnknownNextPeer)))
             )
+            assertEquals(result, expected)
         }
     }
 
     @Test
     fun `remote channel failure - unknown`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -216,21 +185,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-            assertEquals(
-                result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                    payment = sendPayment,
-                    failure = OutgoingPaymentFailure.make(
-                        reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                        problems = listOf()
-                    )
-                )
-            )
+            val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, FailureReason.UnknownError.toPaymentFailure())
+            assertEquals(result, expected)
         }
     }
 
     @Test
     fun `insufficient capacity - base`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -241,20 +202,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val sendPayment = SendPayment(UUID.randomUUID(), invoice, invoiceAmount)
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
-        assertEquals(
-            result, OutgoingPaymentHandler.SendPaymentResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(
-                    reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_BASE,
-                    problems = listOf()
-                )
-            )
-        )
+        val expected = OutgoingPaymentHandler.SendPaymentResult.Failure(sendPayment, FailureReason.InsufficientBalanceBase.toPaymentFailure())
+        assertEquals(result, expected)
     }
 
     @Test
     fun `insufficient capacity - fees`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
 
         val currentBlockHeight = alice.currentBlockHeight
@@ -279,21 +232,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-            assertEquals(
-                result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                    payment = sendPayment,
-                    failure = OutgoingPaymentFailure.make(
-                        reason = OutgoingPaymentFailure.Reason.INSUFFICIENT_BALANCE_FEES,
-                        problems = listOf()
-                    )
-                )
-            )
+            val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(sendPayment, FailureReason.InsufficientBalanceFees.toPaymentFailure())
+            assertEquals(result, expected)
         }
     }
 
     @Test
     fun `channel cap restrictions - htlcMinimumMsat`() {
-
         val htlcMininumMsat = 100_000.msat
         val paymentAmount = 50_000.msat // less than htlcMinimumMsat
 
@@ -311,28 +256,18 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         val result = outgoingPaymentHandler.sendPayment(sendPayment, channels, currentBlockHeight)
-        assertEquals(
-            result, OutgoingPaymentHandler.SendPaymentResult.Failure(
-                payment = sendPayment,
-                failure = OutgoingPaymentFailure.make(
-                    reason = OutgoingPaymentFailure.Reason.OTHER_ERROR,
-                    problems = listOf(
-                        Either.Left(
-                            HtlcValueTooSmall(
-                                channelId = alice.channelId,
-                                minimum = htlcMininumMsat,
-                                actual = paymentAmount
-                            )
-                        )
-                    )
-                )
+        val expected = OutgoingPaymentHandler.SendPaymentResult.Failure(
+            sendPayment,
+            OutgoingPaymentFailure(
+                FailureReason.UnknownError,
+                listOf(Either.Left(HtlcValueTooSmall(alice.channelId, htlcMininumMsat, paymentAmount)))
             )
         )
+        assertEquals(result, expected)
     }
 
     @Test
     fun `channel cap restrictions - maxAcceptedHtlcs`() {
-
         var (alice, bob) = TestsHelper.reachNormal()
 
         val maxAcceptedHtlcs = 1
@@ -345,10 +280,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         run {
-
             // Send payment 1 of 2.
             // This should go thru fine because we're still under the maxAccpetedHtlcs
-
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
@@ -359,20 +292,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
 
             // Push the CMD_ADD_HTLC thru the channel so it can update its state.
-
             val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
             channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
                 val processResult = alice.process(executeCommand)
-
                 assertTrue { processResult.first is Normal }
                 alice = processResult.first as Normal
             }
         }
         run {
-
             // Send payment 2 of 2.
             // This should exceed the configured maxAcceptedHtlcs.
-
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
@@ -385,7 +314,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             // We push the CMD_ADD_HTLC thru the channel.
             // We're expecting the channel to return an error.
-
             val executeCommand = progress.actions.filterIsInstance<WrappedChannelEvent>().mapNotNull {
                 it.channelEvent as? ExecuteCommand
             }.firstOrNull()
@@ -406,25 +334,18 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             channels = mapOf(alice.channelId to alice)
             val result2 = outgoingPaymentHandler.processLocalFailure(channelError, channels, currentBlockHeight)
-            assertEquals(
-                result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                    payment = sendPayment,
-                    failure = OutgoingPaymentFailure.make(
-                        reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
-                        problems = listOf(
-                            Either.Left(
-                                TooManyAcceptedHtlcs(alice.channelId, maxAcceptedHtlcs.toLong())
-                            )
-                        )
-                    )
+            val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(
+                sendPayment, OutgoingPaymentFailure(
+                    FailureReason.NoAvailableChannels,
+                    listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, maxAcceptedHtlcs.toLong())))
                 )
             )
+            assertEquals(result2, expected)
         }
     }
 
     @Test
     fun `channel cap restrictions - maxHtlcValueInFlight`() {
-
         var (alice, bob) = TestsHelper.reachNormal()
 
         val maxHtlcValueInFlightMsat = 10_000L
@@ -437,10 +358,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams)
 
         run {
-
             // Send payment 1 of 2.
             // This should go thru fine because we're still under the maxHtlcValueInFlightMsat
-
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
@@ -450,20 +369,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val progress = result as OutgoingPaymentHandler.SendPaymentResult.Progress
 
             // Push the CMD_ADD_HTLC thru the channel so it can update its state.
-
             val channelEvents = progress.actions.filterIsInstance<WrappedChannelEvent>()
             channelEvents.mapNotNull { it.channelEvent as? ExecuteCommand }.forEach { executeCommand ->
                 val processResult = alice.process(executeCommand)
-
                 assertTrue { processResult.first is Normal }
                 alice = processResult.first as Normal
             }
         }
         run {
-
             // Send payment 2 of 2.
             // This should exceed the configured maxHtlcValueInFlightMsat.
-
             val invoice = makeInvoice(recipient = bob, amount = null, supportsTrampoline = true)
             val sendPayment = SendPayment(UUID.randomUUID(), invoice, 100_000.msat)
 
@@ -476,7 +391,6 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             // We push the CMD_ADD_HTLC thru the channel.
             // We're expecting the channel to return an error.
-
             val executeCommand = progress.actions.filterIsInstance<WrappedChannelEvent>().mapNotNull {
                 it.channelEvent as? ExecuteCommand
             }.firstOrNull()
@@ -494,32 +408,20 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertNotNull(channelError)
 
             // Now the channelError gets sent back to the OutgoingPaymentHandler.
-
             channels = mapOf(alice.channelId to alice)
             val result2 = outgoingPaymentHandler.processLocalFailure(channelError, channels, currentBlockHeight)
-            assertEquals(
-                result2, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                    payment = sendPayment,
-                    failure = OutgoingPaymentFailure.make(
-                        reason = OutgoingPaymentFailure.Reason.NO_AVAILABLE_CHANNELS,
-                        problems = listOf(
-                            Either.Left(
-                                HtlcValueTooHighInFlight(
-                                    channelId = alice.channelId,
-                                    maximum = maxHtlcValueInFlightMsat.toULong(),
-                                    actual = 100_000.msat
-                                )
-                            )
-                        )
-                    )
+            val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(
+                sendPayment, OutgoingPaymentFailure(
+                    FailureReason.NoAvailableChannels,
+                    listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 100_000.msat)))
                 )
             )
+            assertEquals(result2, expected)
         }
     }
 
     @Test
     fun `increase trampoline fees according to schedule`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -571,21 +473,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val processFail = ProcessFail(fail = updateFailHtlc, paymentId = sendPayment.paymentId)
 
             val result = outgoingPaymentHandler.processRemoteFailure(processFail, channels, currentBlockHeight)
-            assertEquals(
-                result, OutgoingPaymentHandler.ProcessFailureResult.Failure(
-                    payment = sendPayment,
-                    failure = OutgoingPaymentFailure.make(
-                        reason = OutgoingPaymentFailure.Reason.NO_ROUTE_TO_RECIPIENT,
-                        problems = listOf(Either.Right(TrampolineFeeInsufficient))
-                    )
-                )
+            val expected = OutgoingPaymentHandler.ProcessFailureResult.Failure(
+                sendPayment,
+                OutgoingPaymentFailure(FailureReason.NoRouteToRecipient, listOf(Either.Right(TrampolineFeeInsufficient)))
             )
+            assertEquals(result, expected)
         }
     }
 
     @Test
     fun `successful trampoline response`() {
-
         val (alice, bob) = TestsHelper.reachNormal()
         val currentBlockHeight = alice.currentBlockHeight
         val channels = mapOf(alice.channelId to alice)
@@ -612,12 +509,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     @Test
     fun `createHtlc - full trampoline`() {
-
         // full trampoline route to c:
         //        .--.
         //       /    \
         // a -> b      c
-
         val (channel, _) = TestsHelper.reachNormal()
         val currentBlockHeight = channel.currentBlockHeight
         val channels = mapOf(channel.channelId to channel)
@@ -690,15 +585,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(payloadC.paymentSecret, invoice.paymentSecret)
     }
 
-
     @Test
     fun `createHtlc - legacy trampoline`() {
-
         // simple trampoline route to c, where c doesn't support trampoline:
         //        .xx.
         //       /    \
         // a -> b ->-> c
-
         val (channel, _) = TestsHelper.reachNormal()
         val currentBlockHeight = channel.currentBlockHeight
         val channels = mapOf(channel.channelId to channel)
