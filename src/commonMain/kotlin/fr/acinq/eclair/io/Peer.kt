@@ -36,6 +36,7 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout : PeerEvent()
 data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
+data class Getchannel(val channelId: ByteVector32, val channel: CompletableDeferred<ChannelState?>) : PeerEvent()
 data class PayToOpenResult(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 
 sealed class PeerListenerEvent
@@ -586,6 +587,9 @@ class Peer(
             }
             event is ListChannels -> {
                 event.channels.complete(channels.values.toList())
+            }
+            event is Getchannel -> {
+                event.channel.complete(channels[event.channelId])
             }
         }
     }
