@@ -56,10 +56,13 @@ object Node {
     data class CreateInvoiceResponse(val invoice: String)
 
     @Serializable
-    data class PayInvoiceRequest(val invoice: String, val amount: Long?)
+    data class PayInvoiceRequest(val invoice: String, val amount: Long? = null)
 
     @Serializable
     data class PayInvoiceResponse(val status: String)
+
+    @Serializable
+    data class DecodeInvoiceRequest(val invoice: String)
 
     @Serializable
     data class CloseChannelRequest(val channelId: String)
@@ -127,7 +130,7 @@ object Node {
         val nodeUri = config.getString("phoenix.trampoline-node-uri")
         val (nodeId, nodeAddress, nodePort) = parseUri(nodeUri)
         val electrumServerAddress = parseElectrumServerAddress(config.getString("phoenix.electrum-server"))
-        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, chainHash)
         logger.info { "node ${keyManager.nodeId} is starting" }
         val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
         val nodeParams = NodeParams(
@@ -135,28 +138,30 @@ object Node {
             alias = "phoenix",
             features = Features(
                 setOf(
-                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory),
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
                     ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
+                    ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
                 )
             ),
-            dustLimit = 100.sat,
+            dustLimit = 546.sat,
             onChainFeeConf = OnChainFeeConf(
                 maxFeerateMismatch = 1000.0,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1
             ),
-            maxHtlcValueInFlightMsat = 150000000L,
-            maxAcceptedHtlcs = 100,
+            maxHtlcValueInFlightMsat = 5000000000L,
+            maxAcceptedHtlcs = 30,
             expiryDeltaBlocks = CltvExpiryDelta(144),
-            fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-            htlcMinimum = 0.msat,
+            fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(24),
+            htlcMinimum = 1.msat,
             minDepthBlocks = 3,
-            toRemoteDelayBlocks = CltvExpiryDelta(144),
-            maxToLocalDelayBlocks = CltvExpiryDelta(1000),
-            feeBase = 546000.msat,
-            feeProportionalMillionth = 10,
+            toRemoteDelayBlocks = CltvExpiryDelta(2016),
+            maxToLocalDelayBlocks = CltvExpiryDelta(2016),
+            feeBase = 1000.msat,
+            feeProportionalMillionth = 100,
             reserveToFundingRatio = 0.01, // note: not used (overridden below)
             maxReserveToFundingRatio = 0.05,
             revocationTimeout = 20,
@@ -172,7 +177,7 @@ object Node {
             channelFlags = 0,
             paymentRequestExpiry = 3600,
             multiPartPaymentExpiry = 60,
-            minFundingSatoshis = 1000.sat,
+            minFundingSatoshis = 100000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
             trampolineNode = NodeUri(nodeId, nodeAddress, nodePort),
@@ -227,10 +232,21 @@ object Node {
                         peer.send(SendPayment(UUID.randomUUID(), pr, pr.amount ?: request.amount?.run { MilliSatoshi(this) } ?: MilliSatoshi(50000)))
                         call.respond(PayInvoiceResponse("pending"))
                     }
+                    post("/invoice/decode") {
+                        val request = call.receive<DecodeInvoiceRequest>()
+                        val pr = PaymentRequest.read(request.invoice)
+                        call.respond(pr)
+                    }
                     get("/channels") {
                         val channels = CompletableDeferred<List<ChannelState>>()
                         peer.send(ListChannels(channels))
                         call.respond(channels.await())
+                    }
+                    get("/channels/{channelId}") {
+                        val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
+                        val channel = CompletableDeferred<ChannelState?>()
+                        peer.send(Getchannel(channelId, channel))
+                        call.respond(channel.await() ?: "")
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))

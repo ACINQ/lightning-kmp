@@ -9,6 +9,7 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
@@ -102,7 +103,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val add = CMD_ADD_HTLC.copy(cltvExpiry = expiryTooBig)
 
         val (alice1, actions1) = alice0.process(ExecuteCommand(add))
-        val actualError = actions1.findError<ExpiryTooBig>()
+        val actualError = actions1.findCommandError<ExpiryTooBig>()
 
         val expectedError = ExpiryTooBig(
             alice0.channelId,
@@ -121,7 +122,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val add = CMD_ADD_HTLC.copy(amount = 50.msat)
         val (alice1, actions) = alice0.process(ExecuteCommand(add))
-        val actualError = actions.findError<HtlcValueTooSmall>()
+        val actualError = actions.findCommandError<HtlcValueTooSmall>()
 
         val expectedError = HtlcValueTooSmall(alice0.channelId, 1000.msat, 50.msat)
         assertEquals(expectedError, actualError)
@@ -135,7 +136,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(0.msat, alice0.commitments.localParams.htlcMinimum)
         val add = CMD_ADD_HTLC.copy(amount = 0.msat)
         val (bob1, actions) = bob0.process(ExecuteCommand(add))
-        val actualError = actions.findError<HtlcValueTooSmall>()
+        val actualError = actions.findCommandError<HtlcValueTooSmall>()
         val expectedError = HtlcValueTooSmall(bob0.channelId, 1.msat, 0.msat)
         assertEquals(expectedError, actualError)
         assertEquals(bob0, bob1)
@@ -151,7 +152,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, _) = reachNormal()
         val add = CMD_ADD_HTLC.copy(amount = Int.MAX_VALUE.msat)
         val (alice1, actions) = alice0.process(ExecuteCommand(add))
-        val actualError = actions.findError<InsufficientFunds>()
+        val actualError = actions.findCommandError<InsufficientFunds>()
         val expectError = InsufficientFunds(
             alice0.channelId,
             amount = Int.MAX_VALUE.msat,
@@ -173,7 +174,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (_, bob0) = reachNormal()
         val add = CMD_ADD_HTLC.copy(amount = bob0.commitments.availableBalanceForSend() + 1.sat.toMilliSatoshi())
         val (bob1, actions) = bob0.process(ExecuteCommand(add))
-        val actualError = actions.findError<InsufficientFunds>()
+        val actualError = actions.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(bob0.channelId, amount = add.amount, missing = 1.sat, reserve = 10000.sat, fees = 0.sat)
         assertEquals(expectedError, actualError)
         assertEquals(bob0, bob1)
@@ -199,7 +200,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
         val (_, actionsBob4) = bob3.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_500_000.msat)))
-        actionsBob4.hasError<RemoteCannotAffordFeesForNewHtlc>()
+        actionsBob4.findCommandError<RemoteCannotAffordFeesForNewHtlc>()
     }
 
     @Test
@@ -212,7 +213,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 51_760_000.msat)))
         actionsAlice3.hasMessage<UpdateAddHtlc>()
         val (_, actionsAlice4) = alice3.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1000_000.msat)))
-        val actualError = actionsAlice4.findError<InsufficientFunds>()
+        val actualError = actionsAlice4.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1000.sat, reserve = 20_000.sat, fees = 12_400.sat)
         assertEquals(expectedError, actualError)
     }
@@ -225,7 +226,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 300_000_000.msat)))
         actionsAlice2.hasMessage<UpdateAddHtlc>()
         val (_, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 500_000_000.msat)))
-        val actualError = actionsAlice3.findError<InsufficientFunds>()
+        val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
         val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 348240.sat, reserve = 20_000.sat, fees = 12_400.sat)
         assertEquals(expectError, actualError)
     }
@@ -234,7 +235,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_ADD_HTLC (over max inflight htlc value)`() {
         val (_, bob0) = reachNormal()
         val (_, actions) = bob0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 151_000_000.msat)))
-        val actualError = actions.findError<HtlcValueTooHighInFlight>()
+        val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
         val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
         assertEquals(expectedError, actualError)
     }
@@ -245,7 +246,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob1, actionsBob1) = bob0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 75_500_000.msat)))
         actionsBob1.hasMessage<UpdateAddHtlc>()
         val (_, actionsBob2) = bob1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 75_500_000.msat)))
-        val actualError = actionsBob2.findError<HtlcValueTooHighInFlight>()
+        val actualError = actionsBob2.findCommandError<HtlcValueTooHighInFlight>()
         val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
         assertEquals(expectedError, actualError)
     }
@@ -259,7 +260,6 @@ class NormalTestsCommon : EclairTestSuite() {
             var alice = alice0
             for (i in 0 until 100) { // TODO 30 ?
                 val (tempAlice, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1_000_000.msat)))
-                println(actions)
                 actions.hasMessage<UpdateAddHtlc>()
                 alice = tempAlice as Normal
             }
@@ -267,7 +267,7 @@ class NormalTestsCommon : EclairTestSuite() {
         }
 
         val (_, actions) = alice1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1_000_000.msat)))
-        val actualError = actions.findError<TooManyAcceptedHtlcs>()
+        val actualError = actions.findCommandError<TooManyAcceptedHtlcs>()
         val expectedError = TooManyAcceptedHtlcs(alice0.channelId, maximum = 100)
         assertEquals(expectedError, actualError)
     }
@@ -283,7 +283,7 @@ class NormalTestsCommon : EclairTestSuite() {
         // this is over channel-capacity
         val failAdd = CMD_ADD_HTLC.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(ExecuteCommand(failAdd))
-        val actualError = actionsAlice3.findError<InsufficientFunds>()
+        val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 578_133.sat, 20_000.sat, 10_680.sat)
         assertEquals(expectedError, actualError)
     }
@@ -518,9 +518,13 @@ class NormalTestsCommon : EclairTestSuite() {
         TODO("later")
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
-        TODO("later")
+        val (alice, _) = reachNormal()
+        val (alice1, actions1) = alice.process(ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000)))
+        assertTrue { actions1.hasOutgoingMessage<UpdateFee>() != null }
+        val (_, actions2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        assertTrue { actions2.hasOutgoingMessage<CommitSig>() != null }
     }
 
     @Test
@@ -605,9 +609,20 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(3, alice9.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
     }
 
-    @Ignore
+    @Test
     fun `recv CommitSig (only fee update)`() {
-        TODO("later")
+        val (alice0, bob0) = reachNormal()
+        println(bob0)
+        val (alice1, actions1) = alice0.process(ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, false)))
+        val updateFee = actions1.findOutgoingMessage<UpdateFee>()
+        assertEquals(TestConstants.feeratePerKw + 1000, updateFee.feeratePerKw)
+        val (bob1, _) = bob0.process(MessageReceived(updateFee))
+        val (alice2, actions2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
+        val (_, actions3) = bob1.process(MessageReceived(commitSig))
+        val revokeAndAck = actions3.findOutgoingMessage<RevokeAndAck>()
+        val (alice3, _) = alice2.process(MessageReceived(revokeAndAck))
+        assertTrue { alice3 is Normal }
     }
 
     @Test
@@ -992,7 +1007,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val cmd = CMD_FULFILL_HTLC(42, randomBytes32())
 
         val (_, actions) = bob0.process(ExecuteCommand(cmd))
-        val actualError = actions.findError<UnknownHtlcId>()
+        val actualError = actions.findCommandError<UnknownHtlcId>()
         val expectedError = UnknownHtlcId(bob0.channelId, 42)
 
         assertEquals(expectedError, actualError)
@@ -1007,9 +1022,60 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val cmd = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes)
         val (bob2, actionsBob2) = bob1.process(ExecuteCommand(cmd))
-        actionsBob2.hasError<InvalidHtlcPreimage>()
+        actionsBob2.hasCommandError<InvalidHtlcPreimage>()
 
         assertEquals(initialState, bob2)
+    }
+
+    @Test
+    fun `recv UpdateFee`() {
+        val (_, bob) = reachNormal()
+        val fee = UpdateFee(ByteVector32.Zeroes, 12000)
+        val (bob1, _) = bob.process(MessageReceived(fee))
+        bob1 as Normal
+        assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee)), bob1.commitments)
+    }
+
+    @Ignore
+    fun `recv UpdateFee (anchor outputs)`() {
+        TODO("implement anchor outputs")
+    }
+
+    @Test
+    fun `recv UpdateFee (2 in a row)`() {
+        val (_, bob) = reachNormal()
+        val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
+        val (bob1, _) = bob.process(MessageReceived(fee1))
+        val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
+        val (bob2, _) = bob1.process(MessageReceived(fee2))
+        bob2 as Normal
+        assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee2)), bob2.commitments)
+    }
+
+    @Test
+    fun `recv UpdateFee (sender cannot afford it)`() {
+        val (_, bob) = reachNormal()
+        val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
+        val (bob1, _) = bob.process(SetOnchainFeerates(OnchainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
+        val (bob2, actions) = bob1.process(MessageReceived(fee))
+        assertTrue { bob2 is Closing }
+        assertTrue { actions.contains(PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
+        actions.findOutgoingWatch<WatchConfirmed>()
+        val error = actions.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 71620000.sat, reserve = 20000.sat, fees = 72400000.sat).message)
+    }
+
+    @Test
+    fun `recv UpdateFee (remote feerate is too small)`() {
+        val (_, bob) = reachNormal()
+        val expectedFeeratePerKw = bob.currentOnchainFeerates.commitmentFeeratePerKw
+        assertEquals(expectedFeeratePerKw, bob.commitments.localCommit.spec.feeratePerKw)
+        val (bob1, actions) = bob.process(MessageReceived(UpdateFee(bob.channelId, 252)))
+        assertTrue { bob1 is Closing }
+        assertTrue { actions.contains(PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
+        actions.findOutgoingWatch<WatchConfirmed>()
+        val error = actions.findOutgoingMessage<Error>()
+        assertTrue { error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252") }
     }
 
     @Test

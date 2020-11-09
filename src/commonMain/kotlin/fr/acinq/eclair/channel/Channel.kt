@@ -62,6 +62,7 @@ data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
 data class ExecuteCommand(val command: Command) : ChannelEvent()
 data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
 data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
+data class SetOnchainFeerates(val feerates: OnchainFeerates) : ChannelEvent()
 object Disconnected : ChannelEvent()
 data class Connected(val localInit: Init, val remoteInit: Init) : ChannelEvent()
 
@@ -579,6 +580,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 Pair(Offline(event.state), actions)
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             else -> unhandled(event)
         }
@@ -1065,6 +1067,7 @@ data class WaitForOpenChannel(
                 }
             event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -1193,6 +1196,7 @@ data class WaitForFundingCreated(
                 }
             event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -1264,6 +1268,7 @@ data class WaitForAcceptChannel(
             }
             event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -1344,6 +1349,7 @@ data class WaitForFundingInternal(
             }
             event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -1431,6 +1437,7 @@ data class WaitForFundingSigned(
             }
             event is ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnchainFeerates), listOf())
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -1509,6 +1516,7 @@ data class WaitForFundingConfirmed(
                     else -> unhandled(event)
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             is Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
@@ -1578,6 +1586,7 @@ data class WaitForFundingLocked(
                     else -> unhandled(event)
                 }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             is Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
@@ -1617,9 +1626,7 @@ data class Normal(
                             return handleCommandError(event.command, error)
                         }
                         when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
-                            is Try.Failure -> {
-                                Pair(this, listOf(ProcessLocalFailure(result.error, event)))
-                            }
+                            is Try.Failure -> handleCommandError(event.command, result.error)
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
                                 val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
@@ -1632,9 +1639,7 @@ data class Normal(
                     }
                     is CMD_FULFILL_HTLC -> {
                         when (val result = commitments.sendFulfill(event.command)) {
-                            is Try.Failure -> {
-                                Pair(this, listOf(ProcessLocalFailure(result.error, event)))
-                            }
+                            is Try.Failure -> handleCommandError(event.command, result.error)
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
                                 val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
@@ -1647,9 +1652,20 @@ data class Normal(
                     }
                     is CMD_FAIL_HTLC -> {
                         when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
-                            is Try.Failure -> {
-                                Pair(this, listOf(ProcessLocalFailure(result.error, event)))
+                            is Try.Failure -> handleCommandError(event.command, result.error)
+                            is Try.Success -> {
+                                val newState = this.copy(commitments = result.result.first)
+                                val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                    actions.add(SendToSelf(CMD_SIGN))
+                                }
+                                Pair(newState, actions)
                             }
+                        }
+                    }
+                    is CMD_UPDATE_FEE -> {
+                        when (val result = commitments.sendFee(event.command)) {
+                            is Try.Failure -> handleCommandError(event.command, result.error)
                             is Try.Success -> {
                                 val newState = this.copy(commitments = result.result.first)
                                 val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
@@ -1672,9 +1688,7 @@ data class Normal(
                             }
                             else -> {
                                 when (val result = commitments.sendCommit(keyManager, logger)) {
-                                    is Try.Failure -> {
-                                        handleLocalError(event, result.error)
-                                    }
+                                    is Try.Failure -> handleCommandError(event.command, result.error)
                                     is Try.Success -> {
                                         val commitments1 = result.result.first
                                         val nextRemoteCommit = commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit
@@ -1735,6 +1749,12 @@ data class Normal(
                         when (val result = commitments.receiveFail(event.message)) {
                             is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
+                        }
+                    }
+                    is UpdateFee -> {
+                        when (val result = commitments.receiveFee(this.currentOnchainFeerates.commitmentFeeratePerKw, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> Pair(this.copy(commitments = result.result), listOf())
                         }
                     }
                     is CommitSig -> {
@@ -1862,6 +1882,10 @@ data class Normal(
                 val newState = this.copy(currentTip = Pair(event.height, event.Header))
                 Pair(newState, listOf())
             }
+            is SetOnchainFeerates -> {
+                logger.info { "using onchain fee rates ${event.feerates}" }
+                Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
+            }
             is Disconnected -> Pair(Offline(this), listOf())
             is WatchReceived -> when (val watch = event.watch) {
                 is WatchEventSpent -> when {
@@ -1915,6 +1939,12 @@ data class ShuttingDown(
                         when (val result = commitments.receiveFail(event.message)) {
                             is Try.Failure -> handleLocalError(event, result.error)
                             is Try.Success -> Pair(this.copy(commitments = result.result.first), listOf())
+                        }
+                    }
+                    is UpdateFee -> {
+                        when (val result = commitments.receiveFee(this.currentOnchainFeerates.commitmentFeeratePerKw, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Success -> Pair(this.copy(commitments = result.result), listOf())
                         }
                     }
                     is CommitSig -> {
@@ -2031,9 +2061,7 @@ data class ShuttingDown(
                     }
                     event.command is CMD_SIGN ->
                         when (val result = commitments.sendCommit(keyManager, logger)) {
-                            is Try.Failure -> {
-                                handleLocalError(event, result.error)
-                            }
+                            is Try.Failure -> handleCommandError(event.command, result.error)
                             is Try.Success -> {
                                 val commitments1 = result.result.first
                                 val nextState = this.copy(commitments = commitments1)
@@ -2043,7 +2071,7 @@ data class ShuttingDown(
                         }
                     event.command is CMD_FULFILL_HTLC -> {
                         when (val result = commitments.sendFulfill(event.command)) {
-                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Failure -> handleCommandError(event.command, result.error)
                             is Try.Success -> {
                                 val actions = mutableListOf<ChannelAction>()
                                 if (event.command.commit) {
@@ -2058,7 +2086,7 @@ data class ShuttingDown(
                     }
                     event.command is CMD_FAIL_HTLC -> {
                         when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
-                            is Try.Failure -> handleLocalError(event, result.error)
+                            is Try.Failure -> handleCommandError(event.command, result.error)
                             is Try.Success -> {
                                 val actions = mutableListOf<ChannelAction>()
                                 if (event.command.commit) {
@@ -2071,6 +2099,19 @@ data class ShuttingDown(
                             }
                         }
                     }
+                    event.command is CMD_UPDATE_FEE -> {
+                        when (val result = commitments.sendFee(event.command)) {
+                            is Try.Failure -> handleCommandError(event.command, result.error)
+                            is Try.Success -> {
+                                val newState = this.copy(commitments = result.result.first)
+                                val actions = mutableListOf<ChannelAction>(SendMessage(result.result.second))
+                                if (event.command.commit) {
+                                    actions.add(SendToSelf(CMD_SIGN))
+                                }
+                                Pair(newState, actions)
+                            }
+                        }
+                    }
                     event.command is CMD_CLOSE -> {
                         Pair(this, listOf(HandleCommandFailed(event.command, ClosingAlreadyInProgress(channelId))))
                     }
@@ -2078,6 +2119,7 @@ data class ShuttingDown(
                 }
             }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -2220,6 +2262,7 @@ data class Negotiating(
                 Pair(nextState, actions)
             }
             event is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -2494,6 +2537,7 @@ data class Closing(
                 else -> unhandled(event)
             }
             is NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            is SetOnchainFeerates -> Pair(this.copy(currentOnchainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
     }
