@@ -1,5 +1,6 @@
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
@@ -9,6 +10,10 @@ sealed class CommitmentOutput {
     object ToLocal : CommitmentOutput()
 
     object ToRemote : CommitmentOutput()
+
+    data class ToLocalAnchor(val pub: PublicKey) : CommitmentOutput()
+
+    data class ToRemoteAnchor(val pub: PublicKey) : CommitmentOutput()
 
     data class InHtlc(val incomingHtlc: IncomingHtlc) : CommitmentOutput()
 

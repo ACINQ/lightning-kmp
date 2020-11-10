@@ -153,7 +153,8 @@ class ClosingTestsCommon {
                         Transactions.PlaceHolderSig,
                         Transactions.PlaceHolderSig,
                         ra1,
-                        ByteArray(130) { 33 }.byteVector()
+                        ByteArray(130) { 33 }.byteVector(),
+                        SigHash.SIGHASH_ALL
                     )
                 )
             ),

@@ -375,13 +375,13 @@ class NormalTestsCommon : EclairTestSuite() {
         // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
         // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
         val aliceMinReceive =
-            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcSuccessWeight)
+            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, CommitmentsFormat.LegacyFormat.htlcSuccessWeight)
         val aliceMinOffer =
-            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcTimeoutWeight)
+            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, CommitmentsFormat.LegacyFormat.htlcTimeoutWeight)
         val bobMinReceive =
-            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcSuccessWeight)
+            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, CommitmentsFormat.LegacyFormat.htlcSuccessWeight)
         val bobMinOffer =
-            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcTimeoutWeight)
+            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, CommitmentsFormat.LegacyFormat.htlcTimeoutWeight)
         val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
         val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
         val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx

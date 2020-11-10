@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.channel.CommitmentsFormat
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
@@ -63,7 +64,7 @@ class TransactionTestsJvm {
             assertEquals(15, tests.size, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
 
             tests.forEach { test ->
-                val fee = Transactions.commitTxFee(test.dustLimit, test.spec)
+                val fee = Transactions.commitTxFee(CommitmentsFormat.LegacyFormat, test.dustLimit, test.spec)
                 assertEquals(test.expectedFee, fee, "In '${test.name}'")
             }
         }

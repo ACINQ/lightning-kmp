@@ -1127,6 +1127,7 @@ data class WaitForFundingCreated(
                     is FundingCreated -> {
                         // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
                         val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
+                            if (channelVersion.hasAnchorOutputs) CommitmentsFormat.AnchorOutputs else CommitmentsFormat.LegacyFormat,
                             keyManager,
                             channelVersion,
                             temporaryChannelId,
@@ -1319,6 +1320,7 @@ data class WaitForFundingInternal(
             event is ChannelEvent.MakeFundingTxResponse -> {
                 // let's create the first commitment tx that spends the yet uncommitted funding tx
                 val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
+                    if (channelVersion.hasAnchorOutputs) CommitmentsFormat.AnchorOutputs else CommitmentsFormat.LegacyFormat,
                     keyManager,
                     channelVersion,
                     temporaryChannelId,
@@ -1716,7 +1718,7 @@ data class Normal(
                                 val nextCommitNumber = nextRemoteCommit.index
                                 // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                                 // counterparty, so only htlcs above remote's dust_limit matter
-                                val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
+                                val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.commitmentsFormat, commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.commitmentsFormat, commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
                                 val htlcInfos = trimmedHtlcs.map { it.add }.map {
                                     logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                     ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)

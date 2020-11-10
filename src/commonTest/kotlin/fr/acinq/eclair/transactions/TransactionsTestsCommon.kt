@@ -15,6 +15,7 @@ import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.MinimumFeeratePerKw
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.channel.CommitmentsFormat
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
@@ -38,8 +39,6 @@ import fr.acinq.eclair.transactions.Transactions.decodeTxNumber
 import fr.acinq.eclair.transactions.Transactions.encodeTxNumber
 import fr.acinq.eclair.transactions.Transactions.getCommitTxNumber
 import fr.acinq.eclair.transactions.Transactions.htlcPenaltyWeight
-import fr.acinq.eclair.transactions.Transactions.htlcSuccessWeight
-import fr.acinq.eclair.transactions.Transactions.htlcTimeoutWeight
 import fr.acinq.eclair.transactions.Transactions.mainPenaltyWeight
 import fr.acinq.eclair.transactions.Transactions.makeClaimDelayedOutputTx
 import fr.acinq.eclair.transactions.Transactions.makeClaimHtlcSuccessTx
@@ -109,7 +108,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000.msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket))
         )
         val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocal = 0.msat, toRemote = 0.msat)
-        val fee = commitTxFee(546.sat, spec)
+        val fee = commitTxFee(CommitmentsFormat.LegacyFormat, 546.sat, spec)
         assertEquals(5340.sat, fee)
     }
 
@@ -165,7 +164,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
             val paymentPreimage = randomBytes32()
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
-            val redeemScript = htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)
+            val redeemScript = htlcReceived(CommitmentsFormat.LegacyFormat, localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)
             val pubKeyScript = write(pay2wsh(redeemScript))
             val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, 0, write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
@@ -183,10 +182,24 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val spec = CommitmentSpec(setOf(OutgoingHtlc(htlc)), feeratePerKw, toLocal = 0.msat, toRemote = 0.msat)
             val outputs =
-                makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
-            val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash))))
+                makeCommitTxOutputs(
+                    CommitmentsFormat.LegacyFormat,
+                    localFundingPriv.publicKey(),
+                    remoteFundingPriv.publicKey(),
+                    true,
+                    localDustLimit,
+                    localRevocationPriv.publicKey(),
+                    toLocalDelay,
+                    localDelayedPaymentPriv.publicKey(),
+                    remotePaymentPriv.publicKey(),
+                    localHtlcPriv.publicKey(),
+                    remoteHtlcPriv.publicKey(),
+                    spec
+                )
+            val pubKeyScript = write(pay2wsh(htlcOffered(CommitmentsFormat.LegacyFormat, localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash))))
             val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
-            val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
+            val claimHtlcSuccessTx =
+                makeClaimHtlcSuccessTx(CommitmentsFormat.LegacyFormat, commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcSuccessTx is Success, "is $claimHtlcSuccessTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(claimHtlcSuccessTx.result, PlaceHolderSig, paymentPreimage).tx)
@@ -201,10 +214,24 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), toLocalDelay.toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val spec = CommitmentSpec(setOf(IncomingHtlc(htlc)), feeratePerKw, toLocal = 0.msat, toRemote = 0.msat)
             val outputs =
-                makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
-            val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
+                makeCommitTxOutputs(
+                    CommitmentsFormat.LegacyFormat,
+                    localFundingPriv.publicKey(),
+                    remoteFundingPriv.publicKey(),
+                    true,
+                    localDustLimit,
+                    localRevocationPriv.publicKey(),
+                    toLocalDelay,
+                    localDelayedPaymentPriv.publicKey(),
+                    remotePaymentPriv.publicKey(),
+                    localHtlcPriv.publicKey(),
+                    remoteHtlcPriv.publicKey(),
+                    spec
+                )
+            val pubKeyScript = write(pay2wsh(htlcReceived(CommitmentsFormat.LegacyFormat, localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
             val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
-            val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
+            val claimClaimHtlcTimeoutTx =
+                makeClaimHtlcTimeoutTx(CommitmentsFormat.LegacyFormat, commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimClaimHtlcTimeoutTx is Success, "is $claimClaimHtlcTimeoutTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx.result, PlaceHolderSig).tx)
@@ -225,9 +252,23 @@ class TransactionsTestsCommon : EclairTestSuite() {
         val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage2)), CltvExpiry(300), TestConstants.emptyOnionPacket)
         // htlc3 and htlc4 are dust htlcs IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
         val paymentPreimage3 = ByteVector32("05".repeat(32))
-        val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc3 = UpdateAddHtlc(
+            ByteVector32.Zeroes,
+            2,
+            (localDustLimit + weight2fee(feeratePerKw, CommitmentsFormat.LegacyFormat.htlcTimeoutWeight)).toMilliSatoshi(),
+            ByteVector32(sha256(paymentPreimage3)),
+            CltvExpiry(300),
+            TestConstants.emptyOnionPacket
+        )
         val paymentPreimage4 = ByteVector32("06".repeat(32))
-        val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).toMilliSatoshi(), ByteVector32(sha256(paymentPreimage4)), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc4 = UpdateAddHtlc(
+            ByteVector32.Zeroes,
+            3,
+            (localDustLimit + weight2fee(feeratePerKw, CommitmentsFormat.LegacyFormat.htlcSuccessWeight)).toMilliSatoshi(),
+            ByteVector32(sha256(paymentPreimage4)),
+            CltvExpiry(300),
+            TestConstants.emptyOnionPacket
+        )
         val spec = CommitmentSpec(
             htlcs = setOf(
                 OutgoingHtlc(htlc1),
@@ -240,11 +281,24 @@ class TransactionsTestsCommon : EclairTestSuite() {
             toRemote = 300.mbtc.toMilliSatoshi()
         )
 
-        val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
+        val outputs = makeCommitTxOutputs(
+            CommitmentsFormat.LegacyFormat,
+            localFundingPriv.publicKey(),
+            remoteFundingPriv.publicKey(),
+            true,
+            localDustLimit,
+            localRevocationPriv.publicKey(),
+            toLocalDelay,
+            localDelayedPaymentPriv.publicKey(),
+            remotePaymentPriv.publicKey(),
+            localHtlcPriv.publicKey(),
+            remoteHtlcPriv.publicKey(),
+            spec
+        )
 
         val commitTxNumber = 0x404142434445L
         val commitTx = run {
-            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+            val txinfo = makeCommitTx(CommitmentsFormat.LegacyFormat, commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
             val localSig = sign(txinfo, localPaymentPriv)
             val remoteSig = sign(txinfo, remotePaymentPriv)
             addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
@@ -257,7 +311,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val check = ((commitTx.tx.txIn.first().sequence and 0xffffffL) shl 24) or (commitTx.tx.lockTime and 0xffffffL)
             assertEquals(commitTxNumber, check xor num)
         }
-        val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), spec.feeratePerKw, outputs)
+        val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(CommitmentsFormat.LegacyFormat, commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), spec.feeratePerKw, outputs)
 
         assertEquals(2, htlcTimeoutTxs.size) // htlc1 and htlc3
         assertEquals(2, htlcSuccessTxs.size) // htlc2 and htlc4
@@ -267,7 +321,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             for (htlcTimeoutTx in htlcTimeoutTxs) {
                 val localSig = sign(htlcTimeoutTx, localHtlcPriv)
                 val remoteSig = sign(htlcTimeoutTx, remoteHtlcPriv)
-                val signed = addSigs(htlcTimeoutTx, localSig, remoteSig)
+                val signed = addSigs(htlcTimeoutTx, localSig, remoteSig, CommitmentsFormat.LegacyFormat.htlcTxSighashFlag)
                 val csResult = checkSpendable(signed)
                 assertTrue(csResult.isSuccess, "is $csResult")
             }
@@ -288,7 +342,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
         run {
             // remote spends local->remote htlc1/htlc3 output directly in case of success
             for ((htlc, paymentPreimage) in listOf(htlc1 to paymentPreimage1, htlc3 to paymentPreimage3)) {
-                val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
+                val claimHtlcSuccessTx =
+                    makeClaimHtlcSuccessTx(CommitmentsFormat.LegacyFormat, commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
                 assertTrue(claimHtlcSuccessTx is Success, "is $claimHtlcSuccessTx")
                 val localSig = sign(claimHtlcSuccessTx.result, remoteHtlcPriv)
                 val signed = addSigs(claimHtlcSuccessTx.result, localSig, paymentPreimage)
@@ -302,7 +357,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             for ((htlcSuccessTx, paymentPreimage) in listOf(htlcSuccessTxs[1] to paymentPreimage2, htlcSuccessTxs[0] to paymentPreimage4)) {
                 val localSig = sign(htlcSuccessTx, localHtlcPriv)
                 val remoteSig = sign(htlcSuccessTx, remoteHtlcPriv)
-                val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage)
+                val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, CommitmentsFormat.LegacyFormat.htlcTxSighashFlag)
                 val csResult = checkSpendable(signedTx)
                 assertTrue(csResult.isSuccess, "is $csResult")
                 // check remote sig
@@ -335,7 +390,8 @@ class TransactionsTestsCommon : EclairTestSuite() {
 
         run {
             // remote spends remote->local htlc output directly in case of timeout
-            val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc2, feeratePerKw)
+            val claimHtlcTimeoutTx =
+                makeClaimHtlcTimeoutTx(CommitmentsFormat.LegacyFormat, commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc2, feeratePerKw)
             assertTrue(claimHtlcTimeoutTx is Success, "is $claimHtlcTimeoutTx")
             val remoteSig = sign(claimHtlcTimeoutTx.result, remoteHtlcPriv)
             val signed = addSigs(claimHtlcTimeoutTx.result, remoteSig)
@@ -345,7 +401,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
 
         run {
             // remote spends offered HTLC output with revocation key
-            val script = write(htlcOffered(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc1.paymentHash)))
+            val script = write(htlcOffered(CommitmentsFormat.LegacyFormat, localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc1.paymentHash)))
             val htlcOutputIndex = outputs.indexOfFirst {
                 val outHtlc = (it.commitmentOutput as? OutHtlc)?.outgoingHtlc?.add
                 outHtlc != null && outHtlc.id == htlc1.id
@@ -360,7 +416,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
 
         run {
             // remote spends received HTLC output with revocation key
-            val script = write(htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
+            val script = write(htlcReceived(CommitmentsFormat.LegacyFormat, localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
             val htlcOutputIndex = outputs.indexOfFirst {
                 val inHtlc = (it.commitmentOutput as? CommitmentOutput.InHtlc)?.incomingHtlc?.add
                 inHtlc != null && inHtlc.id == htlc2.id
@@ -414,8 +470,21 @@ class TransactionsTestsCommon : EclairTestSuite() {
         val commitTxNumber = 0x404142434446L
         val (commitTx, outputs) = run {
             val outputs =
-                makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), spec)
-            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+                makeCommitTxOutputs(
+                    CommitmentsFormat.LegacyFormat,
+                    localFundingPriv.publicKey(),
+                    remoteFundingPriv.publicKey(),
+                    true,
+                    localDustLimit,
+                    localRevocationPriv.publicKey(),
+                    toLocalDelay,
+                    localDelayedPaymentPriv.publicKey(),
+                    remotePaymentPriv.publicKey(),
+                    localHtlcPriv.publicKey(),
+                    remoteHtlcPriv.publicKey(),
+                    spec
+                )
+            val txinfo = makeCommitTx(CommitmentsFormat.LegacyFormat, commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
             val localSig = sign(txinfo, localPaymentPriv)
             val remoteSig = sign(txinfo, remotePaymentPriv)
             Pair(addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig), outputs)

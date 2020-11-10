@@ -307,6 +307,7 @@ object Helpers {
          * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
          */
         fun makeFirstCommitTxs(
+            commitmentsFormat: CommitmentsFormat,
             keyManager: KeyManager,
             channelVersion: ChannelVersion,
             temporaryChannelId: ByteVector32,
@@ -328,7 +329,7 @@ object Helpers {
             if (!localParams.isFunder) {
                 // they are funder, therefore they pay the fee: we need to make sure they can afford it!
                 val localToRemoteMsat = remoteSpec.toLocal
-                val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
+                val fees = commitTxFee(commitmentsFormat, remoteParams.dustLimit, remoteSpec)
                 val missing = localToRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
                 if (missing < Satoshi(0)) {
                     return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
@@ -339,8 +340,8 @@ object Helpers {
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
             val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
-            val localCommitTx = Commitments.makeLocalTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
-            val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec).first
+            val localCommitTx = Commitments.makeLocalTxs(commitmentsFormat, keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
+            val remoteCommitTx = Commitments.makeRemoteTxs(commitmentsFormat, keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec).first
 
             return Either.Right(FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
@@ -459,12 +460,12 @@ object Helpers {
                     is HtlcSuccessTx -> {
                         preimages.firstOrNull { r ->
                             sha256(r).toByteVector() == txInfo.paymentHash
-                        }?.let { preimage -> Transactions.addSigs(txInfo, localSig, remoteSig, preimage) }
+                        }?.let { preimage -> Transactions.addSigs(txInfo, localSig, remoteSig, preimage, commitments.commitmentsFormat.htlcTxSighashFlag) }
                     }
                     // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
                     // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-                    is HtlcTimeoutTx -> Transactions.addSigs(txInfo, localSig, remoteSig)
+                    is HtlcTimeoutTx -> Transactions.addSigs(txInfo, localSig, remoteSig, commitments.commitmentsFormat.htlcTxSighashFlag)
                     else -> null
                 }
             }
@@ -510,7 +511,17 @@ object Helpers {
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
             val commitInput = commitments.commitInput
-            val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, channelVersion, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+            val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(
+                commitments.commitmentsFormat,
+                keyManager,
+                channelVersion,
+                remoteCommit.index,
+                localParams,
+                remoteParams,
+                commitInput,
+                remoteCommit.remotePerCommitmentPoint,
+                remoteCommit.spec
+            )
             require(remoteCommitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
@@ -519,7 +530,20 @@ object Helpers {
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
             val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
             val outputs =
-                makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteCommit.spec)
+                makeCommitTxOutputs(
+                    commitments.commitmentsFormat,
+                    commitments.remoteParams.fundingPubKey,
+                    keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey,
+                    !localParams.isFunder,
+                    remoteParams.dustLimit,
+                    remoteRevocationPubkey,
+                    localParams.toSelfDelay,
+                    remoteDelayedPaymentPubkey,
+                    localPaymentPubkey,
+                    remoteHtlcPubkey,
+                    localHtlcPubkey,
+                    remoteCommit.spec
+                )
 
             // we need to use a rather high fee for htlc-claim because we compete with the counterparty
             val feeratePerKwHtlc = feerates.commitmentFeeratePerKw
@@ -535,6 +559,7 @@ object Helpers {
                 preimages.firstOrNull { r -> sha256(r).toByteVector() == add.paymentHash }?.let { preimage ->
                     generateTx("claim-htlc-success") {
                         Transactions.makeClaimHtlcSuccessTx(
+                            commitments.commitmentsFormat,
                             remoteCommitTx.tx,
                             outputs,
                             localParams.dustLimit,
@@ -557,6 +582,7 @@ object Helpers {
                 // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
                 generateTx("claim-htlc-timeout") {
                     Transactions.makeClaimHtlcTimeoutTx(
+                        commitments.commitmentsFormat,
                         remoteCommitTx.tx,
                         outputs,
                         localParams.dustLimit,
@@ -878,8 +904,8 @@ object Helpers {
          * @param tx a tx that has reached mindepth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun LocalCommit.timedoutHtlcs(localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
-            val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, spec).map { it.add }
+        fun LocalCommit.timedoutHtlcs(commitmentsFormat: CommitmentsFormat, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+            val untrimmedHtlcs = Transactions.trimOfferedHtlcs(commitmentsFormat, localDustLimit, spec).map { it.add }
             return if (tx.txid == publishableTxs.commitTx.tx.txid) {
                 // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
                 (spec.htlcs.outgoings() - untrimmedHtlcs).toSet()
@@ -907,8 +933,8 @@ object Helpers {
          * @param tx a tx that has reached mindepth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun RemoteCommit.timedoutHtlcs(remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
-            val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, spec).map { it.add }
+        fun RemoteCommit.timedoutHtlcs(commitmentsFormat: CommitmentsFormat, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+            val untrimmedHtlcs = Transactions.trimReceivedHtlcs(commitmentsFormat, remoteDustLimit, spec).map { it.add }
             return if (tx.txid == txid) {
                 // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
                 (spec.htlcs.incomings() - untrimmedHtlcs).toSet()
