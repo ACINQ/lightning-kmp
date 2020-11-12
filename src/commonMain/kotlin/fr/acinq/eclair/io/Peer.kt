@@ -369,7 +369,6 @@ class Peer(
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
-                logger.verbose { "received $msg" }
                 when {
                     msg is Init -> {
                         logger.info { "received $msg" }
