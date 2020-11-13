@@ -61,15 +61,16 @@ class Peer(
 
     private val logger = newEclairLogger()
 
-    // channels map, indexed by channel id
-    // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
     private var _channels by _channelsFlow
 
     private val _connectionState = MutableStateFlow(Connection.CLOSED)
+    public val connectionState: StateFlow<Connection> get() = _connectionState
 
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
+    // channels map, indexed by channel id
+    // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     public val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
     public val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
 
@@ -222,8 +223,6 @@ class Peer(
         input.send(event)
     }
 
-    val connectionState: StateFlow<Connection> get() = _connectionState
-//    fun openChannelsSubscription() = channelsChannel.openSubscription()
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
     private suspend fun sendToPeer(msg: LightningMessage) {
@@ -581,12 +580,6 @@ class Peer(
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
-            }
-            event is ListChannels -> {
-                event.channels.complete(_channels.values.toList())
-            }
-            event is Getchannel -> {
-                event.channel.complete(_channels[event.channelId])
             }
         }
     }

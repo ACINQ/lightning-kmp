@@ -211,7 +211,7 @@ class ElectrumClient(
 
     private suspend fun run() {
         eventChannel.consumeEach { event ->
-            println("$event")
+
             val (newState, actions) = state.process(event)
             state = newState
 
@@ -275,7 +275,6 @@ class ElectrumClient(
 
     fun sendMessage(message: ElectrumMessage) {
         launch {
-            println("$message")
             when (message) {
                 is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
