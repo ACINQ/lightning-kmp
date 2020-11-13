@@ -515,11 +515,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
     @Ignore
     fun `recv CMD_SIGN (going above reserve)`() {
-        val (alice, _) = reachNormal()
-        val (alice1, actions1) = alice.process(ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000)))
-        assertTrue { actions1.hasOutgoingMessage<UpdateFee>() != null }
-        val (_, actions2) = alice1.process(ExecuteCommand(CMD_SIGN))
-        assertTrue { actions2.hasOutgoingMessage<CommitSig>() != null }
+        TODO("later")
     }
 
     @Test
