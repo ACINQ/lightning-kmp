@@ -64,13 +64,13 @@ class Peer(
 
     private val channelsChannel = ConflatedBroadcastChannel<Map<ByteVector32, ChannelState>>(HashMap())
 
-    private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
+    private val _connectionState = MutableStateFlow(Connection.CLOSED)
+
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
     private var channels by channelsChannel
-    private var connected by connectedChannel
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
@@ -134,12 +134,12 @@ class Peer(
     fun connect(address: String, port: Int) {
         launch {
             logger.info { "connecting to {$remoteNodeId}@{$address}" }
-            connected = Connection.ESTABLISHING
+            _connectionState.value = Connection.ESTABLISHING
             val socket = try {
                 socketBuilder.connect(address, port)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { ex.message }
-                connected = Connection.CLOSED
+                _connectionState.value = Connection.CLOSED
                 return@launch
             }
             val priv = nodeParams.keyManager.nodeKey.privateKey
@@ -153,7 +153,7 @@ class Peer(
                     { b -> socket.send(b) })
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { ex.message }
-                connected = Connection.CLOSED
+                _connectionState.value = Connection.CLOSED
                 return@launch
             }
             val session = LightningSession(enc, dec, ck)
@@ -196,7 +196,7 @@ class Peer(
                 } catch (ex: TcpSocket.IOException) {
                     logger.warning { ex.message }
                 } finally {
-                    connected = Connection.CLOSED
+                    _connectionState.value = Connection.CLOSED
                 }
             }
 
@@ -221,8 +221,8 @@ class Peer(
         input.send(event)
     }
 
+    val connectionState: StateFlow<Connection> get() = _connectionState
     fun openChannelsSubscription() = channelsChannel.openSubscription()
-    fun openConnectedSubscription() = connectedChannel.openSubscription()
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
     private suspend fun sendToPeer(msg: LightningMessage) {
@@ -237,7 +237,7 @@ class Peer(
         var actualChannelId: ByteVector32 = channelId
         actions.forEach { action ->
             when {
-                action is SendMessage && connected == Connection.ESTABLISHED -> sendToPeer(action.message)
+                action is SendMessage && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
                 // sometimes channel actions include "self" command (such as CMD_SIGN)
                 action is SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ExecuteCommand(action.command)))
                 action is ProcessLocalFailure -> input.send(WrappedChannelError(actualChannelId, action.error, action.trigger))
@@ -371,7 +371,7 @@ class Peer(
                         logger.info { "received $msg" }
                         logger.info { "peer is using features ${Features(msg.features)}" }
                         theirInit = msg
-                        connected = Connection.ESTABLISHED
+                        _connectionState.value = Connection.ESTABLISHED
                         logger.info { "before channels: $channels" }
                         channels = channels.mapValues { entry ->
                             val (state1, actions) = entry.value.process(Connected(ourInit, theirInit!!))

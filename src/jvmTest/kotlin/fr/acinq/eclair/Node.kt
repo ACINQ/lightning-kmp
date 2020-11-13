@@ -14,19 +14,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.utils.*
-import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.consumeEach
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.decodeFromHexString
-import kotlinx.serialization.encodeToHexString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.modules.SerializersModule
 import io.ktor.application.*
-import io.ktor.client.features.json.serializer.KotlinxSerializer.Companion.DefaultJson
 import io.ktor.features.*
 import io.ktor.http.*
 import io.ktor.request.*
@@ -35,11 +23,13 @@ import io.ktor.routing.*
 import io.ktor.serialization.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
 import java.sql.DriverManager
-import kotlin.concurrent.thread
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
@@ -190,7 +180,7 @@ object Node {
         Class.forName("org.sqlite.JDBC")
 
         suspend fun connectLoop(peer: Peer) {
-            peer.openConnectedSubscription().consumeEach {
+            peer.connectionState.collect {
                 logger.info { "Connected: $it" }
             }
         }
