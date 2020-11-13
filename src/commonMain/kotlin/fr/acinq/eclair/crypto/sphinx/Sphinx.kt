@@ -22,7 +22,9 @@ data class DecryptedPacket(val payload: ByteVector, val nextPacket: OnionRouting
     val isLastPacket: Boolean = nextPacket.hmac == ByteVector32.Zeroes
 }
 
-data class PacketAndSecrets(val packet: OnionRoutingPacket, val sharedSecrets: List<Pair<ByteVector32, PublicKey>>)
+data class SharedSecrets(val perHopSecrets: List<Pair<ByteVector32, PublicKey>>)
+
+data class PacketAndSecrets(val packet: OnionRoutingPacket, val sharedSecrets: SharedSecrets)
 
 /**
  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -38,7 +40,7 @@ object Sphinx {
 
     fun mac(key: ByteVector, message: ByteVector): ByteVector32 = mac(key.toByteArray(), message.toByteArray())
 
-    fun generateKey(keyType: ByteArray, secret: ByteVector32): ByteVector32 = mac(keyType, secret.toByteArray())
+    private fun generateKey(keyType: ByteArray, secret: ByteVector32): ByteVector32 = mac(keyType, secret.toByteArray())
 
     fun generateKey(keyType: String, secret: ByteVector32): ByteVector32 = generateKey(keyType.encodeToByteArray(), secret)
 
@@ -211,7 +213,7 @@ object Sphinx {
      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
      * @return the next packet.
      */
-    fun wrap(
+    private fun wrap(
         payload: ByteArray,
         associatedData: ByteVector32,
         ephemeralPublicKey: PublicKey,
@@ -269,7 +271,7 @@ object Sphinx {
         }
 
         val packet = loop(payloads.dropLast(1), ephemeralPublicKeys.dropLast(1), sharedsecrets.dropLast(1), lastPacket)
-        return PacketAndSecrets(packet, sharedsecrets.zip(publicKeys))
+        return PacketAndSecrets(packet, SharedSecrets(sharedsecrets.zip(publicKeys)))
     }
 }
 
@@ -365,7 +367,7 @@ object FailurePacket {
      * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
      *         decrypted, Failure otherwise.
      */
-    fun decrypt(packet: ByteArray, sharedSecrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
+    fun decrypt(packet: ByteArray, sharedSecrets: SharedSecrets): Try<DecryptedFailurePacket> {
         require(packet.size == PacketLength) { "invalid error packet length ${packet.size}, must be $PacketLength" }
 
         fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
@@ -384,6 +386,6 @@ object FailurePacket {
             }
         }
 
-        return loop(packet, sharedSecrets)
+        return loop(packet, sharedSecrets.perHopSecrets)
     }
 }

@@ -7,6 +7,7 @@ import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_ADD_HTLC
 import fr.acinq.eclair.crypto.sphinx.PacketAndSecrets
+import fr.acinq.eclair.crypto.sphinx.SharedSecrets
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.Hop
@@ -105,7 +106,7 @@ object OutgoingPacket {
      *
      * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
      */
-    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, List<Pair<ByteVector32, PublicKey>>> {
+    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, SharedSecrets> {
         val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, OnionRoutingPacket.PaymentPacketLength)
         return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
     }
