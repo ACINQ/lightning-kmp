@@ -21,10 +21,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.*
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
@@ -98,7 +95,6 @@ class Peer(
     private var onchainFeerates = OnchainFeerates(750, 750, 750, 750, 750)
 
     init {
-        val electrumConnectedChannel = watcher.client.openConnectedSubscription()
         val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
             electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
@@ -108,7 +104,7 @@ class Peer(
                 }
         }
         launch {
-            electrumConnectedChannel.consumeAsFlow().filter { it == Connection.ESTABLISHED }.collect {
+            watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.collect {
                 watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
         }
