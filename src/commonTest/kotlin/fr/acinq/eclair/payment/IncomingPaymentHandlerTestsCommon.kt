@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
-import fr.acinq.eclair.io.PayToOpenResult
+import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -462,11 +462,121 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
             assertEquals(
                 setOf(
-                    PayToOpenResult(
+                    PayToOpenResponseEvent(
                         PayToOpenResponse(
                             payToOpenRequest.chainHash,
                             payToOpenRequest.paymentHash,
-                            incomingPayment.paymentPreimage
+                            PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open payment with an unknown payment hash`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = ByteVector32.One, // <-- not associated to a pending invoice
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = ByteVector32.One, // <-- has to be the same as the one above otherwise encryption fails
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = totalAmount,
+                        totalAmount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.REJECTED }
+            assertEquals(
+                setOf(
+                    PayToOpenResponseEvent(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            PayToOpenResponse.Result.Failure(
+                                OutgoingPacket.buildHtlcFailure(
+                                    paymentHandler.nodeParams.nodePrivateKey,
+                                    payToOpenRequest.paymentHash,
+                                    payToOpenRequest.finalPacket,
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).get())
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open payment with an incorrect payment secret`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = totalAmount,
+                        totalAmount = totalAmount,
+                        paymentSecret = ByteVector32.One // <-- wrong value
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.REJECTED }
+            assertEquals(
+                setOf(
+                    PayToOpenResponseEvent(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            PayToOpenResponse.Result.Failure(
+                                OutgoingPacket.buildHtlcFailure(
+                                    paymentHandler.nodeParams.nodePrivateKey,
+                                    payToOpenRequest.paymentHash,
+                                    payToOpenRequest.finalPacket,
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).get())
                         )
                     )
                 ), par.actions.toSet()
@@ -699,11 +809,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
             assertEquals(
                 setOf(
-                    PayToOpenResult(
+                    PayToOpenResponseEvent(
                         PayToOpenResponse(
                             payToOpenRequest.chainHash,
                             payToOpenRequest.paymentHash,
-                            incomingPayment.paymentPreimage
+                            PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)
                         )
                     )
                 ), par.actions.toSet()
@@ -785,11 +895,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                         channelId1,
                         ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
-                    PayToOpenResult(
+                    PayToOpenResponseEvent(
                         PayToOpenResponse(
                             payToOpenRequest.chainHash,
                             payToOpenRequest.paymentHash,
-                            incomingPayment.paymentPreimage
+                            PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)
                         )
                     ),
                 ), par.actions.toSet()

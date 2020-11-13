@@ -15,6 +15,7 @@ import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
@@ -393,18 +394,13 @@ data class Commitments(
                 Try.Failure(UnknownHtlcId(channelId, cmd.id))
             }
             else -> {
-                // we need to decrypt the payment onion to obtain the shared secret to build the error packet
-                when (val result = Sphinx.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength)) {
-                    is Either.Right -> {
-                        val reason = when (cmd.reason) {
-                            is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(cmd.reason.bytes.toByteArray(), result.value.sharedSecret)
-                            is CMD_FAIL_HTLC.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, cmd.reason.message)
-                        }
-                        val fail = UpdateFailHtlc(channelId, cmd.id, ByteVector(reason))
+                when (val result = OutgoingPacket.buildHtlcFailure(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, cmd.reason)) {
+                    is Try.Success -> {
+                        val fail = UpdateFailHtlc(channelId, cmd.id, result.result)
                         val commitments1 = addLocalProposal(fail)
                         Try.Success(Pair(commitments1, fail))
                     }
-                    is Either.Left -> Try.Failure(CannotExtractSharedSecret(channelId, htlc))
+                    is Try.Failure -> Try.Failure(CannotExtractSharedSecret(channelId, htlc))
                 }
             }
         }

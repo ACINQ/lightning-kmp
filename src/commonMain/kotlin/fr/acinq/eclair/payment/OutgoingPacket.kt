@@ -1,17 +1,23 @@
 package fr.acinq.eclair.payment
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_ADD_HTLC
+import fr.acinq.eclair.channel.CMD_FAIL_HTLC
+import fr.acinq.eclair.crypto.sphinx.FailurePacket
 import fr.acinq.eclair.crypto.sphinx.PacketAndSecrets
 import fr.acinq.eclair.crypto.sphinx.SharedSecrets
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.router.NodeHop
+import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.Try
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.wire.*
 
@@ -109,5 +115,19 @@ object OutgoingPacket {
     fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, SharedSecrets> {
         val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, OnionRoutingPacket.PaymentPacketLength)
         return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
+    }
+
+    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: CMD_FAIL_HTLC.Reason): Try<ByteVector> {
+        // we need to decrypt the payment onion to obtain the shared secret to build the error packet
+        return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion, OnionRoutingPacket.PaymentPacketLength)) {
+            is Either.Right -> {
+                val encryptedReason = when (reason) {
+                    is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
+                    is CMD_FAIL_HTLC.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, reason.message)
+                }
+                Try.Success(ByteVector(encryptedReason))
+            }
+            is Either.Left -> Try.Failure(RuntimeException("failed to build htlc failure"))
+        }
     }
 }
