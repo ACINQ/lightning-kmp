@@ -228,15 +228,18 @@ object Node {
                         call.respond(pr)
                     }
                     get("/channels") {
-                        val channels = CompletableDeferred<List<ChannelState>>()
-                        peer.send(ListChannels(channels))
-                        call.respond(channels.await())
+//                        val channels = CompletableDeferred<List<ChannelState>>()
+//                        peer.send(ListChannels(channels))
+                        call.respond(peer.channels.values.toList())
                     }
                     get("/channels/{channelId}") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        val channel = CompletableDeferred<ChannelState?>()
-                        peer.send(Getchannel(channelId, channel))
-                        call.respond(channel.await() ?: "")
+//
+//                        val channel = CompletableDeferred<ChannelState?>()
+//                        peer.send(Getchannel(channelId, channel))
+//                        call.respond(channel.await() ?: "")
+
+                        call.respond(peer.channels[channelId] ?: "")
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
