@@ -11,8 +11,9 @@ import fr.acinq.eclair.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.Json
 import org.kodein.log.newLogger
@@ -184,10 +185,11 @@ class ElectrumClient(
 
     private val eventChannel: Channel<ClientEvent> = Channel(Channel.BUFFERED)
 
-    private val connectedChannel = ConflatedBroadcastChannel(Connection.CLOSED)
+    private val _connectionState = MutableStateFlow(Connection.CLOSED)
+    val connectionState: StateFlow<Connection> get() = _connectionState
+
     private val notificationsChannel = BroadcastChannel<ElectrumMessage>(Channel.BUFFERED)
 
-    fun openConnectedSubscription() = connectedChannel.openSubscription()
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
     private var state: ClientState = ClientClosed
@@ -220,7 +222,7 @@ class ElectrumClient(
                     is SendRequest -> send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
-                    is BroadcastStatus -> connectedChannel.send(action.connection)
+                    is BroadcastStatus -> _connectionState.value = action.connection
                     StartPing -> pingJob = pingScheduler()
                     is Shutdown -> closeConnection()
                 }
@@ -296,7 +298,6 @@ class ElectrumClient(
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels
-        connectedChannel.cancel()
         notificationsChannel.cancel()
         // Cancel event channel
         eventChannel.cancel()

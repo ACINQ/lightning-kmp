@@ -13,9 +13,7 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.*
 import kotlin.test.*
 import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
@@ -47,15 +45,11 @@ class ElectrumClientIntegrationTest : EclairTestSuite() {
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
         val client =
             ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
-        val connectedChannel = client.openConnectedSubscription()
         client.sendMessage(AskForStatusUpdate)
 
-        val state1 = connectedChannel.receive()
-        assertTrue { state1 == Connection.CLOSED }
-        val state2 = connectedChannel.receive()
-        assertTrue { state2 == Connection.ESTABLISHING }
-        val state3 = connectedChannel.receive()
-        assertTrue { state3 == Connection.ESTABLISHED }
+        client.connectionState.first { it == Connection.CLOSED }
+        client.connectionState.first { it == Connection.ESTABLISHING }
+        client.connectionState.first { it == Connection.ESTABLISHED }
 
         return client
     }

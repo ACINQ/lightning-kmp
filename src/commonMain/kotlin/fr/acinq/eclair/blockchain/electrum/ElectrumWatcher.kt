@@ -18,6 +18,7 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
+import kotlinx.coroutines.flow.collect
 import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 import kotlin.math.max
@@ -396,13 +397,12 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
 
-    private val clientConnectedSubscription = client.openConnectedSubscription()
     private val clientNotificationsSubscription = client.openNotificationsSubscription()
 
     private val input = produce(capacity = Channel.BUFFERED) {
         launch { eventChannel.consumeEach { send(it) } }
         launch {
-            clientConnectedSubscription.consumeEach {
+            client.connectionState.collect {
                 eventChannel.send(ClientStateUpdate(it))
             }
         }
@@ -479,7 +479,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
     fun stop() {
         logger.info { "Stop Electrum Watcher" }
         // Cancel subscriptions
-        clientConnectedSubscription.cancel()
         clientNotificationsSubscription.cancel()
         // Cancel event consumer
         runJob?.cancel()
