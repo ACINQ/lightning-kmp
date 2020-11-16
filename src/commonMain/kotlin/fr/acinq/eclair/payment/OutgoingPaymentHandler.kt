@@ -9,7 +9,6 @@ import fr.acinq.eclair.db.HopDesc
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.io.SendPayment
-import fr.acinq.eclair.io.WrappedChannelError
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
@@ -84,9 +83,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
         return childPayments
     }
 
-    fun processLocalFailure(event: WrappedChannelError, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
+    fun processAddFailure(channelId: ByteVector32, event: HandleCommandFailed, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
         // We are looking for errors from the channel in response to our CMD_ADD_HTLC request
-        val add = (event.trigger as? ExecuteCommand)?.command as? CMD_ADD_HTLC ?: return null
+        val add = event.cmd as? CMD_ADD_HTLC ?: return null
         val payment = getPaymentAttempt(add.paymentId)
         if (payment == null) {
             logger.error { "h:${add.paymentHash} i:${add.paymentId} paymentId doesn't match any known payment attempt" }
@@ -94,12 +93,12 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
             return UnknownPayment
         }
 
-        logger.verbose { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error.message}" }
+        logger.verbose { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error?.message}" }
         // TODO: update payment status in DB
 
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
-                val ignore = payment.ignore + event.channelId // we ignore the failing channel in retries
+                val ignore = payment.ignore + channelId // we ignore the failing channel in retries
                 val failure: List<Either<ChannelException, FailureMessage>> = if (event.error is ChannelException) listOf(Either.Left(event.error)) else listOf()
                 when (val routes = RouteCalculation.findRoutes(add.amount, channels - ignore)) {
                     is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, failure, logger)

@@ -11,7 +11,6 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.FailurePacket
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.SendPayment
-import fr.acinq.eclair.io.WrappedChannelError
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.utils.*
@@ -74,7 +73,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(1, result.actions.size)
             val processResult = alice.process(progress.actions.first().channelEvent)
             assertTrue { processResult.first is Normal }
-            assertTrue { processResult.second.filterIsInstance<ProcessLocalFailure>().isEmpty() }
+            assertTrue { processResult.second.filterIsInstance<HandleCommandFailed>().isEmpty() }
             alice = processResult.first as Normal
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         }
@@ -92,11 +91,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val localFailure = processResult.second.filterIsInstance<ProcessLocalFailure>().firstOrNull()
-            assertNotNull(localFailure)
-            val channelError = WrappedChannelError(alice.channelId, localFailure.error, cmdAdd)
+            val addFailure = processResult.second.filterIsInstance<HandleCommandFailed>().firstOrNull()
+            assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processLocalFailure(channelError, mapOf(alice.channelId to alice))
+            val result2 = outgoingPaymentHandler.processAddFailure(alice.channelId, addFailure, mapOf(alice.channelId to alice))
             val expected = OutgoingPaymentHandler.Failure(
                 payment,
                 OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1))))
@@ -124,7 +122,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(1, result.actions.size)
             val processResult = alice.process(progress.actions.first().channelEvent)
             assertTrue { processResult.first is Normal }
-            assertTrue { processResult.second.filterIsInstance<ProcessLocalFailure>().isEmpty() }
+            assertTrue { processResult.second.filterIsInstance<HandleCommandFailed>().isEmpty() }
             alice = processResult.first as Normal
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         }
@@ -142,11 +140,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val localFailure = processResult.second.filterIsInstance<ProcessLocalFailure>().firstOrNull()
-            assertNotNull(localFailure)
-            val channelError = WrappedChannelError(alice.channelId, localFailure.error, cmdAdd)
+            val addFailure = processResult.second.filterIsInstance<HandleCommandFailed>().firstOrNull()
+            assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processLocalFailure(channelError, mapOf(alice.channelId to alice))
+            val result2 = outgoingPaymentHandler.processAddFailure(alice.channelId, addFailure, mapOf(alice.channelId to alice))
             val expected = OutgoingPaymentHandler.Failure(
                 payment,
                 OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat))))
@@ -428,15 +425,15 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         )
         localFailures.forEach { localFailure ->
             val channelId = progress.actions.first().channelId
-            val channelEvent = progress.actions.first().channelEvent
-            progress = outgoingPaymentHandler.processLocalFailure(WrappedChannelError(channelId, localFailure(channelId), channelEvent), channels) as OutgoingPaymentHandler.Progress
+            val command = (progress.actions.first().channelEvent as ExecuteCommand).command
+            progress = outgoingPaymentHandler.processAddFailure(channelId, HandleCommandFailed(command, localFailure(channelId)), channels) as OutgoingPaymentHandler.Progress
             assertEquals(5_000.msat, filterAddHtlcCommands(progress).map { it.amount }.sum())
         }
 
         // The last channel fails: we don't have any channels available to retry.
         val channelId = progress.actions.first().channelId
-        val channelEvent = progress.actions.first().channelEvent
-        val fail = outgoingPaymentHandler.processLocalFailure(WrappedChannelError(channelId, TooManyAcceptedHtlcs(channelId, 15), channelEvent), channels) as OutgoingPaymentHandler.Failure
+        val command = (progress.actions.first().channelEvent as ExecuteCommand).command
+        val fail = outgoingPaymentHandler.processAddFailure(channelId, HandleCommandFailed(command, TooManyAcceptedHtlcs(channelId, 15)), channels) as OutgoingPaymentHandler.Failure
         assertEquals(FinalFailure.InsufficientBalance, fail.failure.reason)
         assertEquals(4, fail.failure.failures.filter { it.isLeft }.size)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -454,8 +451,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // This first payment fails:
         val channelId = progress1.actions.first().channelId
-        val channelEvent = progress1.actions.first().channelEvent
-        val progress2 = outgoingPaymentHandler.processLocalFailure(WrappedChannelError(channelId, TooManyAcceptedHtlcs(channelId, 1), channelEvent), channels) as OutgoingPaymentHandler.Progress
+        val command = (progress1.actions.first().channelEvent as ExecuteCommand).command
+        val progress2 = outgoingPaymentHandler.processAddFailure(channelId, HandleCommandFailed(command, TooManyAcceptedHtlcs(channelId, 1)), channels) as OutgoingPaymentHandler.Progress
         assertEquals(1, progress2.actions.size)
         val adds = filterAddHtlcCommands(progress2)
         assertEquals(5_000.msat, adds.map { it.amount }.sum())

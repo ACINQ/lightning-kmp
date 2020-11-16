@@ -28,7 +28,7 @@ class OutgoingPaymentFailureTestsCommon : EclairTestSuite() {
     @Test
     fun `defaults to simple message`() {
         val failure = OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(PaymentTimeout)))
-        assertEquals(failure.message(), "Not enough funds in wallet to afford payment.")
+        assertEquals(failure.message(), "Not enough funds in wallet to afford payment (note that fees may apply).")
     }
 
     @Test
