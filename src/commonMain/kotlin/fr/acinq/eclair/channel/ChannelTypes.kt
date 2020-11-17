@@ -49,7 +49,6 @@ data class CMD_ADD_HTLC(
     val onion: OnionRoutingPacket,
     val paymentId: UUID,
     val commit: Boolean = false,
-    val previousFailures: List<AddHtlcFailed> = emptyList()
 ) : Command()
 
 data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
@@ -59,7 +58,6 @@ data class CMD_UPDATE_RELAY_FEE(val feeBase: MilliSatoshi, val feeProportionalMi
 object CMD_FORCECLOSE : Command()
 object CMD_GETSTATE : Command()
 object CMD_GETSTATEDATA : Command()
-
 
 /*
       8888888b.        d8888 88888888888     d8888

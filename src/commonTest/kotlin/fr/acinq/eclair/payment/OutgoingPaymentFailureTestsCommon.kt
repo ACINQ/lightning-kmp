@@ -15,7 +15,7 @@ class OutgoingPaymentFailureTestsCommon : EclairTestSuite() {
     @Test
     fun `identify common route failures`() {
         val failure = OutgoingPaymentFailure(
-            FailureReason.InsufficientBalanceBase,
+            FinalFailure.InsufficientBalance,
             listOf(
                 Either.Right(TemporaryNodeFailure),
                 Either.Right(UnknownNextPeer),
@@ -27,14 +27,14 @@ class OutgoingPaymentFailureTestsCommon : EclairTestSuite() {
 
     @Test
     fun `defaults to simple message`() {
-        val failure = OutgoingPaymentFailure(FailureReason.InsufficientBalanceBase, listOf(Either.Right(PaymentTimeout)))
-        assertEquals(failure.message(), "Not enough funds in wallet to afford payment.")
+        val failure = OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(PaymentTimeout)))
+        assertEquals(failure.message(), "Not enough funds in wallet to afford payment (note that fees may apply).")
     }
 
     @Test
     fun `prints technical details`() {
         val failure = OutgoingPaymentFailure(
-            FailureReason.InsufficientBalanceBase,
+            FinalFailure.InsufficientBalance,
             listOf(
                 Either.Right(TemporaryNodeFailure),
                 Either.Right(UnknownNextPeer),

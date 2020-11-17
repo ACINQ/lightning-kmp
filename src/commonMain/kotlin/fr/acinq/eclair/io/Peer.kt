@@ -27,12 +27,15 @@ data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent()
 
-data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent()
+data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent() {
+    val paymentHash: ByteVector32 = paymentRequest.paymentHash
+    val recipientNodeId: PublicKey = paymentRequest.nodeId
+}
+
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-data class WrappedChannelError(val channelId: ByteVector32, val error: Throwable, val trigger: ChannelEvent) : PeerEvent()
 object CheckPaymentsTimeout : PeerEvent()
 data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
-data class Getchannel(val channelId: ByteVector32, val channel: CompletableDeferred<ChannelState?>) : PeerEvent()
+data class GetChannel(val channelId: ByteVector32, val channel: CompletableDeferred<ChannelState?>) : PeerEvent()
 data class PayToOpenResult(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 
 sealed class PeerListenerEvent
@@ -78,7 +81,7 @@ class Peer(
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
 
     // encapsulates logic for sending payments
-    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams)
+    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
 
     private val features = Features(
         setOf(
@@ -228,7 +231,7 @@ class Peer(
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         encoded?.let { bin ->
-            logger.info { "sending ${msg} encoded as ${Hex.encode(bin)}" }
+            logger.info { "sending $msg encoded as ${Hex.encode(bin)}" }
             output.send(bin)
         }
     }
@@ -240,39 +243,40 @@ class Peer(
                 action is SendMessage && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
                 // sometimes channel actions include "self" command (such as CMD_SIGN)
                 action is SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ExecuteCommand(action.command)))
-                action is ProcessLocalFailure -> input.send(WrappedChannelError(actualChannelId, action.error, action.trigger))
                 action is SendWatch -> watcher.watch(action.watch)
                 action is PublishTx -> watcher.publish(action.tx)
                 action is ProcessAdd -> processIncomingPayment(Either.Right(action.add))
+                action is HandleCommandFailed -> {
+                    when (val result = outgoingPaymentHandler.processAddFailure(actualChannelId, action, _channels)) {
+                        is OutgoingPaymentHandler.Progress -> {
+                            listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
+                            for (newAction in result.actions) {
+                                input.send(newAction)
+                            }
+                        }
+                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
+                        is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
+                        null -> logger.verbose { "non-final error, more partial payments are still pending: $actualChannelId->${action.error}" }
+                    }
+                }
                 action is ProcessRemoteFailure -> {
-                    val result = outgoingPaymentHandler.processRemoteFailure(action, _channels, currentTip.first)
-                    when (result) {
-                        is OutgoingPaymentHandler.ProcessFailureResult.Progress -> {
-                            listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
+                    when (val result = outgoingPaymentHandler.processRemoteFailure(action, _channels, currentTip.first)) {
+                        is OutgoingPaymentHandler.Progress -> {
+                            listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
                             for (subaction in result.actions) {
                                 input.send(subaction)
                             }
                         }
-                        is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
-                            listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
-                        }
-                        is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
-                            logger.error { "UnknownPaymentFailure" }
-                        }
+                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
+                        is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
+                        null -> logger.verbose { "non-final error, more partial payments are still pending: $action" }
                     }
                 }
                 action is ProcessFulfill -> {
-                    val result = outgoingPaymentHandler.processFulfill(action)
-                    when (result) {
-                        is OutgoingPaymentHandler.ProcessFulfillResult.Success -> {
-                            listenerEventChannel.send(PaymentSent(result.payment, result.trampolineFees))
-                        }
-                        is OutgoingPaymentHandler.ProcessFulfillResult.Failure -> {
-                            listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
-                        }
-                        is OutgoingPaymentHandler.ProcessFulfillResult.UnknownPaymentFailure -> {
-                            logger.error { "UnknownPaymentFailure" }
-                        }
+                    when (val result = outgoingPaymentHandler.processFulfill(action)) {
+                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
+                        is OutgoingPaymentHandler.PreimageReceived -> logger.verbose { "payment preimage received: ${result.payment.paymentId}->${result.preimage}" }
+                        is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
                     }
                 }
                 action is StoreState -> {
@@ -466,7 +470,7 @@ class Peer(
                     }
                     msg is HasTemporaryChannelId -> {
                         logger.info { "received $msg for temporary channel ${msg.temporaryChannelId}" }
-                        val state = _channels[msg.temporaryChannelId]!!
+                        val state = _channels[msg.temporaryChannelId] ?: error("channel ${msg.temporaryChannelId} not found")
                         val event1 = MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
                         _channels = _channels + (msg.temporaryChannelId to state1)
@@ -483,7 +487,7 @@ class Peer(
                     }
                     msg is HasChannelId -> {
                         logger.info { "received $msg for channel ${msg.channelId}" }
-                        val state = _channels[msg.channelId]!!
+                        val state = _channels[msg.channelId] ?: error("channel ${msg.channelId} not found")
                         val event1 = MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
                         _channels = _channels + (msg.channelId to state1)
@@ -501,7 +505,7 @@ class Peer(
                 logger.error { "received watch event ${event.watch} for unknown channel ${event.watch.channelId}}" }
             }
             event is WatchReceived -> {
-                val state = _channels[event.watch.channelId]!!
+                val state = _channels[event.watch.channelId] ?: error("channel ${event.watch.channelId} not found")
                 val event1 = fr.acinq.eclair.channel.WatchReceived(event.watch)
                 val (state1, actions) = state.process(event1)
                 processActions(event.watch.channelId, actions)
@@ -522,17 +526,14 @@ class Peer(
             // send payments
             //
             event is SendPayment -> {
-                val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)
-                when (result) {
-                    is OutgoingPaymentHandler.SendPaymentResult.Progress -> {
-                        listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
+                when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
+                    is OutgoingPaymentHandler.Progress -> {
+                        listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
                         for (action in result.actions) {
                             input.send(action)
                         }
                     }
-                    is OutgoingPaymentHandler.SendPaymentResult.Failure -> {
-                        listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
-                    }
+                    is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                 }
             }
             event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
@@ -547,30 +548,10 @@ class Peer(
                 logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
             }
             event is WrappedChannelEvent -> {
-                val state = _channels[event.channelId]!!
+                val state = _channels[event.channelId] ?: error("channel ${event.channelId} not found")
                 val (state1, actions) = state.process(event.channelEvent)
                 processActions(event.channelId, actions)
                 _channels = _channels + (event.channelId to state1)
-            }
-            event is WrappedChannelError -> {
-                val result = outgoingPaymentHandler.processLocalFailure(event, _channels, currentTip.first)
-                when (result) {
-                    is OutgoingPaymentHandler.ProcessFailureResult.Progress -> {
-                        listenerEventChannel.send(PaymentProgress(result.payment, result.trampolineFees))
-                        for (action in result.actions) {
-                            input.send(action)
-                        }
-                    }
-                    is OutgoingPaymentHandler.ProcessFailureResult.Failure -> {
-                        listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
-                    }
-                    is OutgoingPaymentHandler.ProcessFailureResult.UnknownPaymentFailure -> {
-                        logger.error { "UnknownPaymentFailure" }
-                    }
-                    null -> {
-                        // error that didn't affect an outgoing payment
-                    }
-                }
             }
             event is PayToOpenResult -> {
                 logger.info { "sending pay-to-open response" }

@@ -2047,9 +2047,8 @@ data class ShuttingDown(
                 when {
                     event.command is CMD_ADD_HTLC -> {
                         logger.info { "rejecting htlc request in state=$this" }
-                        val error = ChannelUnavailable(channelId)
                         // we don't provide a channel_update: this will be a permanent channel failure
-                        handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, event.command.paymentId, null, event.command))
+                        handleCommandError(event.command, ChannelUnavailable(channelId))
                     }
                     event.command is CMD_SIGN && !commitments.localHasChanges() -> {
                         logger.verbose { "ignoring CMD_SIGN (nothing to sign)" }
@@ -2478,9 +2477,8 @@ data class Closing(
                 is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
                 is CMD_ADD_HTLC -> {
                     logger.info { "rejecting htlc request in state=$this" }
-                    val error = ChannelUnavailable(channelId)
                     // we don't provide a channel_update: this will be a permanent channel failure
-                    handleCommandError(event.command, AddHtlcFailed(channelId, event.command.paymentHash, error, event.command.paymentId, null, event.command))
+                    handleCommandError(event.command, ChannelUnavailable(channelId))
                 }
                 is CMD_FULFILL_HTLC -> {
                     when (val result = commitments.sendFulfill(event.command)) {

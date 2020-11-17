@@ -196,7 +196,7 @@ class SphinxTestsCommon : EclairTestSuite() {
         val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), referenceFixedSizePayloads)
-        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.map { it.first })
+        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
 
         val packets = listOf(decrypted0.nextPacket, decrypted1.nextPacket, decrypted2.nextPacket, decrypted3.nextPacket, decrypted4.nextPacket)
         assertEquals(packets[0].hmac, ByteVector32("a93aa4f40241cef3e764e24b28570a0db39af82ab5102c3a04e51bec8cca9394"))
@@ -222,7 +222,7 @@ class SphinxTestsCommon : EclairTestSuite() {
         val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), referenceVariableSizePayloads)
-        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.map { it.first })
+        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
 
         val packets = listOf(decrypted0.nextPacket, decrypted1.nextPacket, decrypted2.nextPacket, decrypted3.nextPacket, decrypted4.nextPacket)
         assertEquals(packets[0].hmac, ByteVector32("4ecb91c341543953a34d424b64c36a9cd8b4b04285b0c8de0acab0b6218697fc"))
@@ -248,7 +248,7 @@ class SphinxTestsCommon : EclairTestSuite() {
         val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), variableSizePayloadsFull)
-        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.map { it.first })
+        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
 
         val packets = listOf(decrypted0.nextPacket, decrypted1.nextPacket, decrypted2.nextPacket, decrypted3.nextPacket, decrypted4.nextPacket)
         assertEquals(packets[0].hmac, ByteVector32("859cd694cf604442547246f4fae144f255e71e30cb366b9775f488cac713f0db"))
@@ -287,7 +287,7 @@ class SphinxTestsCommon : EclairTestSuite() {
         val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
         val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), trampolinePayloads)
-        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.map { it.first })
+        assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
     }
 
     @Test
@@ -374,17 +374,17 @@ class SphinxTestsCommon : EclairTestSuite() {
 
         val packet1 = FailurePacket.create(sharedSecrets.first(), expected.failureMessage)
         assertEquals(292, packet1.size)
-        val decrypted1 = FailurePacket.decrypt(packet1, listOf(Pair(sharedSecrets[0], publicKeys[0])))
+        val decrypted1 = FailurePacket.decrypt(packet1, SharedSecrets(listOf(Pair(sharedSecrets[0], publicKeys[0]))))
         assertEquals(expected, decrypted1.get())
 
         val packet2 = FailurePacket.wrap(packet1, sharedSecrets[1])
         assertEquals(292, packet2.size)
-        val decrypted2 = FailurePacket.decrypt(packet2, listOf(1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
+        val decrypted2 = FailurePacket.decrypt(packet2, SharedSecrets(listOf(1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }))
         assertEquals(expected, decrypted2.get())
 
         val packet3 = FailurePacket.wrap(packet2, sharedSecrets[2])
         assertEquals(292, packet3.size)
-        val decrypted3 = FailurePacket.decrypt(packet3, listOf(2, 1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
+        val decrypted3 = FailurePacket.decrypt(packet3, SharedSecrets(listOf(2, 1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }))
         assertEquals(expected, decrypted3.get())
     }
 
@@ -402,7 +402,7 @@ class SphinxTestsCommon : EclairTestSuite() {
             ),
             sharedSecrets[2]
         )
-        assertTrue(FailurePacket.decrypt(packet, listOf(0, 2, 1).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }).isFailure)
+        assertTrue(FailurePacket.decrypt(packet, SharedSecrets(listOf(0, 2, 1).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })).isFailure)
     }
 
     @Test

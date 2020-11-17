@@ -19,7 +19,7 @@ class ShutdownTestsCommon {
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.process(ExecuteCommand(add))
         assertTrue { bob1 is ShuttingDown }
-        assertTrue { actions1.any { it is HandleCommandFailed && it.error is AddHtlcFailed && (it.error as AddHtlcFailed).t == ChannelUnavailable(bob.channelId) } }
+        assertTrue { actions1.any { it is HandleCommandFailed && it.error == ChannelUnavailable(bob.channelId) } }
     }
 
     @Test

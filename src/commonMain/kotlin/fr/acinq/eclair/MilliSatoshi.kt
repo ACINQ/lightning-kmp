@@ -21,7 +21,8 @@ data class MilliSatoshi(val msat: Long) : Comparable<MilliSatoshi> {
     operator fun unaryMinus() = MilliSatoshi(-msat)
 
     override fun compareTo(other: MilliSatoshi): Int = msat.compareTo(other.msat)
-    // Since BtcAmount is a sealed trait that MilliSatoshi cannot extend, we need to redefine comparison operators.
+    fun max(other: MilliSatoshi): MilliSatoshi = if (this > other) this else other
+    fun min(other: MilliSatoshi): MilliSatoshi = if (this < other) this else other
 
     fun truncateToSatoshi() = Satoshi(msat / 1000)
     fun toLong(): Long = msat

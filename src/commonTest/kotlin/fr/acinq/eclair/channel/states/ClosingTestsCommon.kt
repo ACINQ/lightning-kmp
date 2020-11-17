@@ -45,11 +45,8 @@ class ClosingTestsCommon {
     fun `recv CMD_ADD_HTLC`() {
         val (alice, _, _) = init()
         val (_, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC(1000000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())))
-        assertTrue {
-            actions.size == 1 &&
-                    (actions.first() as HandleCommandFailed).error is AddHtlcFailed &&
-                    ((actions.first() as HandleCommandFailed).error as AddHtlcFailed).t == ChannelUnavailable(alice.channelId)
-        }
+        assertEquals(1, actions.size)
+        assertTrue { (actions.first() as HandleCommandFailed).error == ChannelUnavailable(alice.channelId) }
     }
 
     @Test
