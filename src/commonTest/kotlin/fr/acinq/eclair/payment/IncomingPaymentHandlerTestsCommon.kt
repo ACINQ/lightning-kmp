@@ -7,6 +7,7 @@ import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -556,6 +557,65 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                         paymentSecret = ByteVector32.One // <-- wrong value
                     ),
                     payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.REJECTED }
+            assertEquals(
+                setOf(
+                    PayToOpenResponseEvent(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            PayToOpenResponse.Result.Failure(
+                                OutgoingPacket.buildHtlcFailure(
+                                    paymentHandler.nodeParams.nodePrivateKey,
+                                    payToOpenRequest.paymentHash,
+                                    payToOpenRequest.finalPacket,
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).get())
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open trampoline payment with an incorrect payment secret`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        val trampolineHops = listOf(
+            NodeHop(TestConstants.Alice.nodeParams.nodeId, TestConstants.Bob.nodeParams.nodeId, CltvExpiryDelta(144), 0.msat)
+        )
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = trampolineHops,
+                    finalPayload = makeMppPayload(
+                        amount = totalAmount,
+                        totalAmount = totalAmount,
+                        paymentSecret = ByteVector32.One, // <-- wrong value
+                    ),
+                    payloadLength = OnionRoutingPacket.TrampolinePacketLength
                 ).third.packet
             )
 

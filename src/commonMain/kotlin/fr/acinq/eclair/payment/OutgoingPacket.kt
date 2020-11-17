@@ -119,7 +119,7 @@ object OutgoingPacket {
 
     fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: CMD_FAIL_HTLC.Reason): Try<ByteVector> {
         // we need to decrypt the payment onion to obtain the shared secret to build the error packet
-        return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion, OnionRoutingPacket.PaymentPacketLength)) {
+        return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion, onion.payload.size())) {
             is Either.Right -> {
                 val encryptedReason = when (reason) {
                     is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
