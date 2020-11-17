@@ -1009,14 +1009,10 @@ data class PayToOpenResponse(
                     writeBytes(message.result.paymentPreimage, out)
                 is Result.Failure -> {
                     writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
-                    when (message.result.reason) {
-                        is ByteVector -> {
-                            writeU16(message.result.reason.size(), out)
-                            writeBytes(message.result.reason, out)
-                        }
-                        else -> {
-                        }
-                    }
+                    message.result.reason?.let {
+                        writeU16(it.size(), out)
+                        writeBytes(it, out)
+                     }
                 }
             }
 
