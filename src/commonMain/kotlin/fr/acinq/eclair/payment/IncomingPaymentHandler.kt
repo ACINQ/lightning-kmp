@@ -205,13 +205,15 @@ class IncomingPaymentHandler(
 
         logger.info { "processing payload=${paymentPart.finalPayload} invoice=${incomingPayment?.paymentRequest}" }
 
-        // depending on the type of the payment part, the default rejection result changes
-        val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
-        val rejectedAction = when (paymentPart) {
-            is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
-            is PayToOpenPart -> actionForPayToOpenFailure(failureMsg, paymentPart.payToOpenRequest)
+        val rejectedResult by lazy {
+            // depending on the type of the payment part, the default rejection result changes
+            val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
+            val rejectedAction = when (paymentPart) {
+                is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
+                is PayToOpenPart -> actionForPayToOpenFailure(failureMsg, paymentPart.payToOpenRequest)
+            }
+            ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction), incomingPayment = incomingPayment)
         }
-        val rejectedResult = ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction), incomingPayment = incomingPayment)
 
         return when {
 
