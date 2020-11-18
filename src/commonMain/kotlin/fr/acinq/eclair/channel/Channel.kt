@@ -1505,7 +1505,7 @@ data class WaitForFundingConfirmed(
                         }
                         if (result is Try.Failure) {
                             logger.error { "funding tx verification failed: ${result.error}" }
-                            handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
+                            return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
                         val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)

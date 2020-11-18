@@ -30,7 +30,7 @@ import kotlin.test.*
 class NormalTestsCommon : EclairTestSuite() {
 
     private val currentBlockHeight = 144L
-    private val CMD_ADD_HTLC = CMD_ADD_HTLC(
+    private val defaultAdd = CMD_ADD_HTLC(
         50_000_000.msat,
         randomBytes32(),
         CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight),
@@ -42,9 +42,9 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_ADD_HTLC (empty origin)`() {
         val (alice0, _) = reachNormal()
         val h = randomBytes32()
-        val add = CMD_ADD_HTLC.copy(paymentHash = h)
+        val add = defaultAdd.copy(paymentHash = h)
 
-        val (alice1, actions) = alice0.process(ExecuteCommand(add))
+        val (alice1, actions) = alice0.process(ChannelEvent.ExecuteCommand(add))
         assertTrue((alice1 as Normal).commitments.availableBalanceForSend() < alice0.commitments.availableBalanceForSend())
 
         val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
@@ -69,9 +69,9 @@ class NormalTestsCommon : EclairTestSuite() {
 
         var alice = alice0
         for (i in 0 until 10) {
-            val add = CMD_ADD_HTLC.copy(paymentHash = h)
+            val add = defaultAdd.copy(paymentHash = h)
 
-            val (tempAlice, actions) = alice.process(ExecuteCommand(add))
+            val (tempAlice, actions) = alice.process(ChannelEvent.ExecuteCommand(add))
             alice = tempAlice as Normal
 
             val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
@@ -89,8 +89,8 @@ class NormalTestsCommon : EclairTestSuite() {
         val currentBlockHeight = alice0.currentBlockHeight.toLong()
         val expiryTooSmall = CltvExpiry(currentBlockHeight + 3)
 
-        val add = CMD_ADD_HTLC.copy(cltvExpiry = expiryTooSmall)
-        val (_, actions1) = alice0.process(ExecuteCommand(add))
+        val add = defaultAdd.copy(cltvExpiry = expiryTooSmall)
+        val (_, actions1) = alice0.process(ChannelEvent.ExecuteCommand(add))
         assertTrue { actions1.hasOutgoingMessage<UpdateAddHtlc>() != null }
     }
 
@@ -100,9 +100,9 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val currentBlockHeight = alice0.currentBlockHeight.toLong()
         val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
-        val add = CMD_ADD_HTLC.copy(cltvExpiry = expiryTooBig)
+        val add = defaultAdd.copy(cltvExpiry = expiryTooBig)
 
-        val (alice1, actions1) = alice0.process(ExecuteCommand(add))
+        val (alice1, actions1) = alice0.process(ChannelEvent.ExecuteCommand(add))
         val actualError = actions1.findCommandError<ExpiryTooBig>()
 
         val expectedError = ExpiryTooBig(
@@ -120,8 +120,8 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_ADD_HTLC (value too small)`() {
         val (alice0, _) = reachNormal()
 
-        val add = CMD_ADD_HTLC.copy(amount = 50.msat)
-        val (alice1, actions) = alice0.process(ExecuteCommand(add))
+        val add = defaultAdd.copy(amount = 50.msat)
+        val (alice1, actions) = alice0.process(ChannelEvent.ExecuteCommand(add))
         val actualError = actions.findCommandError<HtlcValueTooSmall>()
 
         val expectedError = HtlcValueTooSmall(alice0.channelId, 1000.msat, 50.msat)
@@ -134,8 +134,8 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, bob0) = reachNormal()
         // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
         assertEquals(0.msat, alice0.commitments.localParams.htlcMinimum)
-        val add = CMD_ADD_HTLC.copy(amount = 0.msat)
-        val (bob1, actions) = bob0.process(ExecuteCommand(add))
+        val add = defaultAdd.copy(amount = 0.msat)
+        val (bob1, actions) = bob0.process(ChannelEvent.ExecuteCommand(add))
         val actualError = actions.findCommandError<HtlcValueTooSmall>()
         val expectedError = HtlcValueTooSmall(bob0.channelId, 1.msat, 0.msat)
         assertEquals(expectedError, actualError)
@@ -150,8 +150,8 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds)`() {
         val (alice0, _) = reachNormal()
-        val add = CMD_ADD_HTLC.copy(amount = Int.MAX_VALUE.msat)
-        val (alice1, actions) = alice0.process(ExecuteCommand(add))
+        val add = defaultAdd.copy(amount = Int.MAX_VALUE.msat)
+        val (alice1, actions) = alice0.process(ChannelEvent.ExecuteCommand(add))
         val actualError = actions.findCommandError<InsufficientFunds>()
         val expectError = InsufficientFunds(
             alice0.channelId,
@@ -172,8 +172,8 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds, missing 1 msat)`() {
         val (_, bob0) = reachNormal()
-        val add = CMD_ADD_HTLC.copy(amount = bob0.commitments.availableBalanceForSend() + 1.sat.toMilliSatoshi())
-        val (bob1, actions) = bob0.process(ExecuteCommand(add))
+        val add = defaultAdd.copy(amount = bob0.commitments.availableBalanceForSend() + 1.sat.toMilliSatoshi())
+        val (bob1, actions) = bob0.process(ChannelEvent.ExecuteCommand(add))
         val actualError = actions.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(bob0.channelId, amount = add.amount, missing = 1.sat, reserve = 10000.sat, fees = 0.sat)
         assertEquals(expectedError, actualError)
@@ -188,7 +188,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(0.msat, (alice2 as ChannelStateWithCommitments).commitments.availableBalanceForSend())
 
         tailrec fun loop(bob: ChannelState, count: Int): ChannelState = if (count == 0) bob else {
-            val (newbob, actions1) = bob.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_000_000.msat)))
+            val (newbob, actions1) = bob.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 12_000_000.msat)))
             assertTrue { actions1.hasOutgoingMessage<UpdateAddHtlc>() != null }
             loop(newbob, count - 1)
         }
@@ -199,20 +199,20 @@ class NormalTestsCommon : EclairTestSuite() {
         val bob3 = loop(bob2, 7)
 
         // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
-        val (_, actionsBob4) = bob3.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 12_500_000.msat)))
+        val (_, actionsBob4) = bob3.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 12_500_000.msat)))
         actionsBob4.findCommandError<RemoteCannotAffordFeesForNewHtlc>()
     }
 
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs and 0 balance)`() {
         val (alice0, _) = reachNormal()
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 500_000_000.msat)))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 500_000_000.msat)))
         actionsAlice1.hasMessage<UpdateAddHtlc>()
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 200_000_000.msat)))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 200_000_000.msat)))
         actionsAlice2.hasMessage<UpdateAddHtlc>()
-        val (alice3, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 51_760_000.msat)))
+        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 51_760_000.msat)))
         actionsAlice3.hasMessage<UpdateAddHtlc>()
-        val (_, actionsAlice4) = alice3.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1000_000.msat)))
+        val (_, actionsAlice4) = alice3.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1000_000.msat)))
         val actualError = actionsAlice4.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1000.sat, reserve = 20_000.sat, fees = 12_400.sat)
         assertEquals(expectedError, actualError)
@@ -221,11 +221,11 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs 2-2)`() {
         val (alice0, _) = reachNormal()
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 300_000_000.msat)))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 300_000_000.msat)))
         actionsAlice1.hasMessage<UpdateAddHtlc>()
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 300_000_000.msat)))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 300_000_000.msat)))
         actionsAlice2.hasMessage<UpdateAddHtlc>()
-        val (_, actionsAlice3) = alice2.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 500_000_000.msat)))
+        val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 500_000_000.msat)))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
         val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 348240.sat, reserve = 20_000.sat, fees = 12_400.sat)
         assertEquals(expectError, actualError)
@@ -234,7 +234,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (over max inflight htlc value)`() {
         val (_, bob0) = reachNormal()
-        val (_, actions) = bob0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 151_000_000.msat)))
+        val (_, actions) = bob0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 151_000_000.msat)))
         val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
         val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
         assertEquals(expectedError, actualError)
@@ -243,9 +243,9 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (over max inflight htlc value with duplicate amounts)`() {
         val (_, bob0) = reachNormal()
-        val (bob1, actionsBob1) = bob0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 75_500_000.msat)))
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 75_500_000.msat)))
         actionsBob1.hasMessage<UpdateAddHtlc>()
-        val (_, actionsBob2) = bob1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 75_500_000.msat)))
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 75_500_000.msat)))
         val actualError = actionsBob2.findCommandError<HtlcValueTooHighInFlight>()
         val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
         assertEquals(expectedError, actualError)
@@ -259,14 +259,14 @@ class NormalTestsCommon : EclairTestSuite() {
         val alice1 = kotlin.run {
             var alice = alice0
             for (i in 0 until 100) { // TODO 30 ?
-                val (tempAlice, actions) = alice.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1_000_000.msat)))
+                val (tempAlice, actions) = alice.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
                 actions.hasMessage<UpdateAddHtlc>()
                 alice = tempAlice as Normal
             }
             alice
         }
 
-        val (_, actions) = alice1.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = 1_000_000.msat)))
+        val (_, actions) = alice1.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
         val actualError = actions.findCommandError<TooManyAcceptedHtlcs>()
         val expectedError = TooManyAcceptedHtlcs(alice0.channelId, maximum = 100)
         assertEquals(expectedError, actualError)
@@ -276,13 +276,13 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_ADD_HTLC (over capacity)`() {
         val (alice0, _) = reachNormal()
 
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_ADD_HTLC.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)))
         actionsAlice1.hasMessage<UpdateAddHtlc>()
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasMessage<CommitSig>()
         // this is over channel-capacity
-        val failAdd = CMD_ADD_HTLC.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
-        val (_, actionsAlice3) = alice2.process(ExecuteCommand(failAdd))
+        val failAdd = defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
+        val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(failAdd))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 578_133.sat, 20_000.sat, 10_680.sat)
         assertEquals(expectedError, actualError)
@@ -296,12 +296,12 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (after having sent Shutdown)`() {
         val (alice0, _) = reachNormal()
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(CMD_CLOSE(null)))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
         actionsAlice1.findOutgoingMessage<Shutdown>()
         assertTrue { alice1 is Normal && alice1.localShutdown != null && alice1.remoteShutdown == null }
 
         val (_, cmdAdd) = makeCmdAdd(500000000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
-        val (_, actionsAlice2) = alice1.process(ExecuteCommand(cmdAdd))
+        val (_, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(cmdAdd))
         assertNotNull(actionsAlice2.findCommandError<NoMoreHtlcsClosingInProgress>())
     }
 
@@ -311,16 +311,16 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // let's make alice send an htlc
         val (_, cmdAdd1) = makeCmdAdd(500000000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(cmdAdd1))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(cmdAdd1))
         actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
 
         // at the same time bob initiates a closing
-        val (_, actionsBob1) = bob0.process(ExecuteCommand(CMD_CLOSE(null)))
+        val (_, actionsBob1) = bob0.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
         val shutdown = actionsBob1.findOutgoingMessage<Shutdown>()
 
-        val (alice2, _) = alice1.process(MessageReceived(shutdown))
+        val (alice2, _) = alice1.process(ChannelEvent.MessageReceived(shutdown))
         val (_, cmdAdd2) = makeCmdAdd(100000000.msat, alice0.staticParams.nodeParams.nodeId, currentBlockHeight, randomBytes32())
-        val (_, actionsAlice3) = alice2.process(ExecuteCommand(cmdAdd2))
+        val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(cmdAdd2))
         assertNotNull(actionsAlice3.findCommandError<NoMoreHtlcsClosingInProgress>())
     }
 
@@ -328,7 +328,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_SIGN`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, payer = alice0, payee = bob0).first
-        val (alice2, actions) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actions) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions.findOutgoingMessage<CommitSig>()
         assertEquals(1, commitSig.htlcSignatures.size)
         assertTrue { (alice2 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isLeft }
@@ -346,23 +346,23 @@ class NormalTestsCommon : EclairTestSuite() {
             UUID.randomUUID()
         )
 
-        val (alice1, actionsAlice1) = alice0.process(ExecuteCommand(add))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(add))
         val htlc1 = actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
-        val (bob1, _) = bob0.process(MessageReceived(htlc1))
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(add))
+        val (bob1, _) = bob0.process(ChannelEvent.MessageReceived(htlc1))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(add))
         val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
-        val (bob2, _) = bob1.process(MessageReceived(htlc2))
+        val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(htlc2))
 
         val (alice3, bob3) = crossSign(alice2, bob2)
 
-        val (bob4, actionsBob4) = bob3.process(ExecuteCommand(add))
+        val (bob4, actionsBob4) = bob3.process(ChannelEvent.ExecuteCommand(add))
         val htlc3 = actionsBob4.findOutgoingMessage<UpdateAddHtlc>()
-        val (alice4, _) = alice3.process(MessageReceived(htlc3))
-        val (bob5, actionsBob5) = bob4.process(ExecuteCommand(add))
+        val (alice4, _) = alice3.process(ChannelEvent.MessageReceived(htlc3))
+        val (bob5, actionsBob5) = bob4.process(ChannelEvent.ExecuteCommand(add))
         val htlc4 = actionsBob5.findOutgoingMessage<UpdateAddHtlc>()
-        alice4.process(MessageReceived(htlc4))
+        alice4.process(ChannelEvent.MessageReceived(htlc4))
 
-        val (_, actionsBob6) = bob5.process(ExecuteCommand(CMD_SIGN))
+        val (_, actionsBob6) = bob5.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsBob6.findOutgoingMessage<CommitSig>()
         assertEquals(4, commitSig.htlcSignatures.size)
     }
@@ -396,35 +396,35 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob3, alice3) = addHtlc(b2a_1.toMilliSatoshi(), bob2, alice2).first
         val (bob4, alice4) = addHtlc(b2a_2.toMilliSatoshi(), bob3, alice3).first
 
-        val (alice5, aActions5) = alice4.process(ExecuteCommand(CMD_SIGN))
+        val (alice5, aActions5) = alice4.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig0 = aActions5.findOutgoingMessage<CommitSig>()
 
-        val (bob5, bActions5) = bob4.process(MessageReceived(commitSig0))
+        val (bob5, bActions5) = bob4.process(ChannelEvent.MessageReceived(commitSig0))
         val revokeAndAck0 = bActions5.findOutgoingMessage<RevokeAndAck>()
         val commandSign0 = bActions5.findProcessCommand<CMD_SIGN>()
 
-        val (alice6, _) = alice5.process(MessageReceived(revokeAndAck0))
-        val (bob6, bActions6) = bob5.process(ExecuteCommand(commandSign0))
+        val (alice6, _) = alice5.process(ChannelEvent.MessageReceived(revokeAndAck0))
+        val (bob6, bActions6) = bob5.process(ChannelEvent.ExecuteCommand(commandSign0))
         val commitSig1 = bActions6.findOutgoingMessage<CommitSig>()
 
-        val (alice7, aActions7) = alice6.process(MessageReceived(commitSig1))
+        val (alice7, aActions7) = alice6.process(ChannelEvent.MessageReceived(commitSig1))
         val revokeAndAck1 = aActions7.findOutgoingMessage<RevokeAndAck>()
-        val (bob7, _) = bob6.process(MessageReceived(revokeAndAck1))
+        val (bob7, _) = bob6.process(ChannelEvent.MessageReceived(revokeAndAck1))
 
         val commandSign1 = aActions7.findProcessCommand<CMD_SIGN>()
-        val (alice8, aActions8) = alice7.process(ExecuteCommand(commandSign1))
+        val (alice8, aActions8) = alice7.process(ChannelEvent.ExecuteCommand(commandSign1))
         val commitSig2 = aActions8.findOutgoingMessage<CommitSig>()
 
-        val (_, bActions8) = bob7.process(MessageReceived(commitSig2))
+        val (_, bActions8) = bob7.process(ChannelEvent.MessageReceived(commitSig2))
         val revokeAndAck2 = bActions8.findOutgoingMessage<RevokeAndAck>()
-        val (_, _) = alice8.process(MessageReceived(revokeAndAck2))
+        val (_, _) = alice8.process(ChannelEvent.MessageReceived(revokeAndAck2))
 
         val aliceHtlcInfos = buildList {
-            addAll(aActions5.filterIsInstance<StoreHtlcInfos>())
-            addAll(aActions8.filterIsInstance<StoreHtlcInfos>())
+            addAll(aActions5.filterIsInstance<ChannelAction.Storage.StoreHtlcInfos>())
+            addAll(aActions8.filterIsInstance<ChannelAction.Storage.StoreHtlcInfos>())
         }.map { it.htlcs }.flatten()
 
-        val bobHtlcInfos = bActions6.filterIsInstance<StoreHtlcInfos>().map { it.htlcs }.flatten()
+        val bobHtlcInfos = bActions6.filterIsInstance<ChannelAction.Storage.StoreHtlcInfos>().map { it.htlcs }.flatten()
 
         assertEquals(0, aliceHtlcInfos.count { it.channelId == alice0.channelId && it.commitmentNumber == 0L })
         assertEquals(2, aliceHtlcInfos.count { it.channelId == alice0.channelId && it.commitmentNumber == 1L })
@@ -449,19 +449,19 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, bob1) = kotlin.run {
             var (alice1, bob1) = alice0 to bob0
             for (i in epsilons) {
-                val (stateA, actionsA) = alice1.process(ExecuteCommand(add.copy(amount = add.amount + (i * 1000).msat)))
+                val (stateA, actionsA) = alice1.process(ChannelEvent.ExecuteCommand(add.copy(amount = add.amount + (i * 1000).msat)))
                 alice1 = stateA as Normal
                 val updateAddHtlc = actionsA.findOutgoingMessage<UpdateAddHtlc>()
-                val (stateB, _) = bob1.process(MessageReceived(updateAddHtlc))
+                val (stateB, _) = bob1.process(ChannelEvent.MessageReceived(updateAddHtlc))
                 bob1 = stateB as Normal
             }
             alice1 to bob1
         }
 
-        val (_, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (_, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         assertEquals(htlcCount, commitSig.htlcSignatures.size)
-        val (bob2, _) = bob1.process(MessageReceived(commitSig))
+        val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(commitSig))
         bob2 as ChannelStateWithCommitments
         val htlcTxs = bob2.commitments.localCommit.publishableTxs.htlcTxsAndSigs
         assertEquals(htlcCount, htlcTxs.size)
@@ -472,7 +472,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_SIGN (no changes)`() {
         val (alice0, _) = reachNormal()
-        val (_, actions) = alice0.process(ExecuteCommand(CMD_SIGN))
+        val (_, actions) = alice0.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertTrue(actions.isEmpty())
     }
 
@@ -481,7 +481,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasMessage<CommitSig>()
 
         (alice2 as ChannelStateWithCommitments)
@@ -489,7 +489,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left!!
         assertEquals(false, waitForRevocation.reSignAsap) // TODO
 
-        val (alice3, _) = alice2.process(ExecuteCommand(CMD_SIGN))
+        val (alice3, _) = alice2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertEquals<Either<WaitingForRevocation, PublicKey>>(Either.Left(waitForRevocation), (alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo)
     }
 
@@ -498,7 +498,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasMessage<CommitSig>()
 
         (alice2 as ChannelStateWithCommitments)
@@ -508,7 +508,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertFalse(waitForRevocation.reSignAsap) // TODO
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob1).first
-        val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
+        val (alice4, _) = alice3.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         (alice4 as ChannelStateWithCommitments)
         assertEquals(Either.Left(waitForRevocation.copy(reSignAsap = true)), alice4.commitments.remoteNextCommitInfo)
     }
@@ -521,9 +521,9 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
         val (alice, _) = reachNormal()
-        val (alice1, actions1) = alice.process(ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000)))
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000)))
         assertTrue { actions1.hasOutgoingMessage<UpdateFee>() != null }
-        val (_, actions2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (_, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertTrue { actions2.hasOutgoingMessage<CommitSig>() != null }
     }
 
@@ -536,11 +536,11 @@ class NormalTestsCommon : EclairTestSuite() {
             alice.staticParams.nodeParams.nodeId,
             currentBlockHeight
         )
-        val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
+        val (bob1, actions) = bob.process(ChannelEvent.ExecuteCommand(cmdAdd))
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
-        val (alice1, _) = alice.process(MessageReceived(add))
+        val (alice1, _) = alice.process(ChannelEvent.MessageReceived(add))
         assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
-        val (bob2, actions2) = bob1.process(ExecuteCommand(CMD_SIGN))
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
         val blob = Helpers.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
         assertEquals(blob.toByteVector(), commitSig.channelData)
@@ -553,7 +553,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, initialState) = nodes0
 
         val (_, bob2) = signAndRevack(alice1, initialState)
-        val (bob3, _) = bob2.process(ExecuteCommand(CMD_SIGN))
+        val (bob3, _) = bob2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
 
         bob3 as ChannelStateWithCommitments; initialState as ChannelStateWithCommitments
         assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc.id })
@@ -570,9 +570,9 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, initialState) = nodes0
 
         val (alice2, bob2) = signAndRevack(alice1, initialState)
-        val (bob3, actionsBob3) = bob2.process(ExecuteCommand(CMD_SIGN))
+        val (bob3, actionsBob3) = bob2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsBob3.findOutgoingMessage<CommitSig>()
-        val (alice3, _) = alice2.process(MessageReceived(commitSig))
+        val (alice3, _) = alice2.process(ChannelEvent.MessageReceived(commitSig))
 
         alice3 as ChannelStateWithCommitments; bob3 as ChannelStateWithCommitments; initialState as ChannelStateWithCommitments
         assertTrue(alice3.commitments.localCommit.spec.htlcs.outgoings().any { it.id == htlc.id })
@@ -600,9 +600,9 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob7, alice7) = nodes7
 
         val (alice8, bob8) = signAndRevack(alice7, bob7)
-        val (_, actionsBob9) = bob8.process(ExecuteCommand(CMD_SIGN))
+        val (_, actionsBob9) = bob8.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsBob9.findOutgoingMessage<CommitSig>()
-        val (alice9, _) = alice8.process(MessageReceived(commitSig))
+        val (alice9, _) = alice8.process(ChannelEvent.MessageReceived(commitSig))
 
         alice9 as ChannelStateWithCommitments
         assertEquals(1, alice9.commitments.localCommit.index)
@@ -613,15 +613,15 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CommitSig (only fee update)`() {
         val (alice0, bob0) = reachNormal()
         println(bob0)
-        val (alice1, actions1) = alice0.process(ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, false)))
+        val (alice1, actions1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, false)))
         val updateFee = actions1.findOutgoingMessage<UpdateFee>()
         assertEquals(TestConstants.feeratePerKw + 1000, updateFee.feeratePerKw)
-        val (bob1, _) = bob0.process(MessageReceived(updateFee))
-        val (alice2, actions2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (bob1, _) = bob0.process(ChannelEvent.MessageReceived(updateFee))
+        val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
-        val (_, actions3) = bob1.process(MessageReceived(commitSig))
+        val (_, actions3) = bob1.process(ChannelEvent.MessageReceived(commitSig))
         val revokeAndAck = actions3.findOutgoingMessage<RevokeAndAck>()
-        val (alice3, _) = alice2.process(MessageReceived(revokeAndAck))
+        val (alice3, _) = alice2.process(ChannelEvent.MessageReceived(revokeAndAck))
         assertTrue { alice3 is Normal }
     }
 
@@ -634,7 +634,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val currentBlockHeight = alice0.currentBlockHeight.toLong()
 
         val (alice1, actionsAlice1) = alice0.process(
-            ExecuteCommand(
+            ChannelEvent.ExecuteCommand(
                 CMD_ADD_HTLC(
                     50_000_000.msat,
                     h,
@@ -645,10 +645,10 @@ class NormalTestsCommon : EclairTestSuite() {
             )
         )
         val htlc1 = actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
-        val (bob1, _) = bob0.process(MessageReceived(htlc1))
+        val (bob1, _) = bob0.process(ChannelEvent.MessageReceived(htlc1))
 
         val (alice2, actionsAlice2) = alice1.process(
-            ExecuteCommand(
+            ChannelEvent.ExecuteCommand(
                 CMD_ADD_HTLC(
                     50_000_000.msat,
                     h,
@@ -659,7 +659,7 @@ class NormalTestsCommon : EclairTestSuite() {
             )
         )
         val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
-        val (bob2, _) = bob1.process(MessageReceived(htlc2))
+        val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(htlc2))
 
         assertEquals(listOf(htlc1, htlc2), (bob2 as ChannelStateWithCommitments).commitments.remoteChanges.proposed)
         val initialState = bob2
@@ -680,14 +680,14 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // signature is invalid but it doesn't matter
         val sig = CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, emptyList())
-        val (bob1, actionsBob1) = bob0.process(MessageReceived(sig))
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.MessageReceived(sig))
 
         assertTrue(bob1 is Closing)
         actionsBob1.hasMessage<Error>()
 
-        assertEquals(2, actionsBob1.filterIsInstance<PublishTx>().count())
-        assertEquals(tx, actionsBob1.filterIsInstance<PublishTx>().first().tx)
-        assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        assertEquals(2, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        assertEquals(tx, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
 
         assertEquals(2, actionsBob1.watches<WatchConfirmed>().count())
         actionsBob1.watches<WatchConfirmed>().first().run {
@@ -698,7 +698,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsBob1.watches<WatchConfirmed>().last().run {
             val e = event as? BITCOIN_TX_CONFIRMED
             assertNotNull(e)
-            assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(tx.txid, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
         }
     }
 
@@ -709,14 +709,14 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // signature is invalid but it doesn't matter
         val sig = CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, emptyList())
-        val (bob1, actionsBob1) = bob0.process(MessageReceived(sig))
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.MessageReceived(sig))
 
         assertTrue(bob1 is Closing)
         actionsBob1.hasMessage<Error>()
 
-        assertEquals(2, actionsBob1.filterIsInstance<PublishTx>().count())
-        assertEquals(tx, actionsBob1.filterIsInstance<PublishTx>().first().tx)
-        assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        assertEquals(2, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        assertEquals(tx, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
 
         assertEquals(2, actionsBob1.watches<WatchConfirmed>().count())
         actionsBob1.watches<WatchConfirmed>().first().run {
@@ -727,7 +727,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsBob1.watches<WatchConfirmed>().last().run {
             val e = event as? BITCOIN_TX_CONFIRMED
             assertNotNull(e)
-            assertEquals(tx.txid, actionsBob1.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(tx.txid, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
         }
     }
 
@@ -737,18 +737,18 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         val tx = (bob1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
-        val (_, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (_, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         val badCommitSig = commitSig.copy(htlcSignatures = commitSig.htlcSignatures + commitSig.htlcSignatures)
 
-        val (bob2, actionsBob2) = bob1.process(MessageReceived(badCommitSig))
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(badCommitSig))
 
         assertTrue(bob2 is Closing)
         actionsBob2.hasMessage<Error>()
 
-        assertEquals(2, actionsBob2.filterIsInstance<PublishTx>().count())
-        assertEquals(tx, actionsBob2.filterIsInstance<PublishTx>().first().tx)
-        assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        assertEquals(2, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        assertEquals(tx, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
 
         assertEquals(2, actionsBob2.watches<WatchConfirmed>().count())
         actionsBob2.watches<WatchConfirmed>().first().run {
@@ -759,7 +759,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsBob2.watches<WatchConfirmed>().last().run {
             val e = event as? BITCOIN_TX_CONFIRMED
             assertNotNull(e)
-            assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(tx.txid, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
         }
     }
 
@@ -769,17 +769,17 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         val tx = (bob1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
-        val (_, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (_, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         val badCommitSig = commitSig.copy(htlcSignatures = listOf(commitSig.signature))
-        val (bob2, actionsBob2) = bob1.process(MessageReceived(badCommitSig))
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(badCommitSig))
 
         assertTrue(bob2 is Closing)
         actionsBob2.hasMessage<Error>()
 
-        assertEquals(2, actionsBob2.filterIsInstance<PublishTx>().count())
-        assertEquals(tx, actionsBob2.filterIsInstance<PublishTx>().first().tx)
-        assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+        assertEquals(2, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        assertEquals(tx, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx)
+        assertEquals(tx.txid, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
 
         assertEquals(2, actionsBob2.watches<WatchConfirmed>().count())
         actionsBob2.watches<WatchConfirmed>().first().run {
@@ -790,7 +790,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsBob2.watches<WatchConfirmed>().last().run {
             val e = event as? BITCOIN_TX_CONFIRMED
             assertNotNull(e)
-            assertEquals(tx.txid, actionsBob2.filterIsInstance<PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(tx.txid, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
         }
     }
 
@@ -803,18 +803,18 @@ class NormalTestsCommon : EclairTestSuite() {
             alice.staticParams.nodeParams.nodeId,
             currentBlockHeight
         )
-        val (bob1, actions) = bob.process(ExecuteCommand(cmdAdd))
+        val (bob1, actions) = bob.process(ChannelEvent.ExecuteCommand(cmdAdd))
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
-        val (alice1, _) = alice.process(MessageReceived(add))
+        val (alice1, _) = alice.process(ChannelEvent.MessageReceived(add))
         assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
-        val (bob2, actions2) = bob1.process(ExecuteCommand(CMD_SIGN))
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
-        val (alice2, actions3) = alice1.process(MessageReceived(commitSig))
+        val (alice2, actions3) = alice1.process(ChannelEvent.MessageReceived(commitSig))
         val revack = actions3.findOutgoingMessage<RevokeAndAck>()
-        val (bob3, _) = bob2.process(MessageReceived(revack))
-        val (_, actions4) = alice2.process(ExecuteCommand(CMD_SIGN))
+        val (bob3, _) = bob2.process(ChannelEvent.MessageReceived(revack))
+        val (_, actions4) = alice2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig1 = actions4.findOutgoingMessage<CommitSig>()
-        val (bob4, actions5) = bob3.process(MessageReceived(commitSig1))
+        val (bob4, actions5) = bob3.process(ChannelEvent.MessageReceived(commitSig1))
         val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
         val blob = Helpers.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
         assertEquals(blob.toByteVector(), revack1.channelData)
@@ -825,13 +825,13 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
 
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
-        val (_, actionsBob2) = bob1.process(MessageReceived(commitSig))
+        val (_, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(commitSig))
         val revokeAndAck = actionsBob2.findOutgoingMessage<RevokeAndAck>()
 
         assertTrue((alice2 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isLeft)
-        val (alice3, _) = alice2.process(MessageReceived(revokeAndAck))
+        val (alice3, _) = alice2.process(ChannelEvent.MessageReceived(revokeAndAck))
         assertTrue((alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
         assertEquals(1, alice3.commitments.localChanges.acked.size)
     }
@@ -842,19 +842,19 @@ class NormalTestsCommon : EclairTestSuite() {
         val (nodes, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes
 
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
 
-        val (bob2, actionsBob2) = bob1.process(MessageReceived(commitSig0))
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(commitSig0))
         val revokeAndAck0 = actionsBob2.findOutgoingMessage<RevokeAndAck>()
         val cmd = actionsBob2.findProcessCommand<CMD_SIGN>()
-        val (bob3, actionsBob3) = bob2.process(ExecuteCommand(cmd))
-        val (alice3, _) = alice2.process(MessageReceived(revokeAndAck0))
+        val (bob3, actionsBob3) = bob2.process(ChannelEvent.ExecuteCommand(cmd))
+        val (alice3, _) = alice2.process(ChannelEvent.MessageReceived(revokeAndAck0))
         assertTrue((alice3 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
         val commitSig1 = actionsBob3.findOutgoingMessage<CommitSig>()
-        val (_, actionsAlice4) = alice3.process(MessageReceived(commitSig1))
+        val (_, actionsAlice4) = alice3.process(ChannelEvent.MessageReceived(commitSig1))
         val revokeAndAck1 = actionsAlice4.findOutgoingMessage<RevokeAndAck>()
-        val (bob4, _) = bob3.process(MessageReceived(revokeAndAck1))
+        val (bob4, _) = bob3.process(ChannelEvent.MessageReceived(revokeAndAck1))
         assertTrue((bob4 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
     }
 
@@ -876,19 +876,19 @@ class NormalTestsCommon : EclairTestSuite() {
         val (nodes7, _, _) = addHtlc(4_000_000.msat, bob6, alice6) //  b->a (regular)
         val (bob7, alice7) = nodes7
 
-        val (alice8, actionsAlice8) = alice7.process(ExecuteCommand(CMD_SIGN))
+        val (alice8, actionsAlice8) = alice7.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig0 = actionsAlice8.findOutgoingMessage<CommitSig>()
-        val (bob8, actionsBob8) = bob7.process(MessageReceived(commitSig0))
+        val (bob8, actionsBob8) = bob7.process(ChannelEvent.MessageReceived(commitSig0))
         val revokeAndAck0 = actionsBob8.findOutgoingMessage<RevokeAndAck>()
         val cmd = actionsBob8.findProcessCommand<CMD_SIGN>()
-        val (bob9, actionsBob9) = bob8.process(ExecuteCommand(cmd))
-        val (alice9, _) = alice8.process(MessageReceived(revokeAndAck0))
+        val (bob9, actionsBob9) = bob8.process(ChannelEvent.ExecuteCommand(cmd))
+        val (alice9, _) = alice8.process(ChannelEvent.MessageReceived(revokeAndAck0))
         assertTrue((alice9 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
 
         val commitSig1 = actionsBob9.findOutgoingMessage<CommitSig>()
-        val (_, actionsAlice10) = alice9.process(MessageReceived(commitSig1))
+        val (_, actionsAlice10) = alice9.process(ChannelEvent.MessageReceived(commitSig1))
         val revokeAndAck1 = actionsAlice10.findOutgoingMessage<RevokeAndAck>()
-        val (bob10, _) = bob9.process(MessageReceived(revokeAndAck1))
+        val (bob10, _) = bob9.process(ChannelEvent.MessageReceived(revokeAndAck1))
         bob10 as ChannelStateWithCommitments
 
         assertTrue(bob10.commitments.remoteNextCommitInfo.isRight)
@@ -902,18 +902,18 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue((alice1 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.isRight)
 
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
-        val (bob2, actionsBob2) = bob1.process(MessageReceived(commitSig0))
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(commitSig0))
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob2).first
-        val (alice4, _) = alice3.process(ExecuteCommand(CMD_SIGN))
+        val (alice4, _) = alice3.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertTrue((alice4 as ChannelStateWithCommitments).commitments.remoteNextCommitInfo.left?.reSignAsap == true)
 
         val revokeAndAck0 = actionsBob2.findOutgoingMessage<RevokeAndAck>()
-        val (alice5, actionsAlice5) = alice4.process(MessageReceived(revokeAndAck0))
+        val (alice5, actionsAlice5) = alice4.process(ChannelEvent.MessageReceived(revokeAndAck0))
         val cmd = actionsAlice5.findProcessCommand<CMD_SIGN>()
-        val (_, actionsAlice6) = alice5.process(ExecuteCommand(cmd))
+        val (_, actionsAlice6) = alice5.process(ChannelEvent.ExecuteCommand(cmd))
         actionsAlice6.hasMessage<CommitSig>()
     }
 
@@ -923,13 +923,13 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         val tx = (alice1 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
 
-        val (alice2, actionsAlice2) = alice1.process(ExecuteCommand(CMD_SIGN))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
-        val (_, actionsBob2) = bob1.process(MessageReceived(commitSig0))
+        val (_, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(commitSig0))
         actionsBob2.hasMessage<RevokeAndAck>()
 
         val (alice3, actionsAlice3) = alice2.process(
-            MessageReceived(
+            ChannelEvent.MessageReceived(
                 RevokeAndAck(
                     ByteVector32.Zeroes,
                     PrivateKey(randomBytes32()),
@@ -940,9 +940,9 @@ class NormalTestsCommon : EclairTestSuite() {
 
         assertTrue(alice3 is Closing)
         actionsAlice3.hasMessage<Error>()
-        assertEquals(2, actionsAlice3.filterIsInstance<PublishTx>().count())
+        assertEquals(2, actionsAlice3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice3.watches<WatchConfirmed>().count())
-        assertTrue { actionsAlice3.filterIsInstance<PublishTx>().any { it.tx == tx } }
+        assertTrue { actionsAlice3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().any { it.tx == tx } }
     }
 
     @Test
@@ -953,7 +953,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.process(
-            MessageReceived(
+            ChannelEvent.MessageReceived(
                 RevokeAndAck(
                     ByteVector32.Zeroes,
                     PrivateKey(randomBytes32()),
@@ -964,9 +964,9 @@ class NormalTestsCommon : EclairTestSuite() {
 
         assertTrue(alice2 is Closing)
         actionsAlice2.hasMessage<Error>()
-        assertEquals(2, actionsAlice2.filterIsInstance<PublishTx>().count())
+        assertEquals(2, actionsAlice2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice2.watches<WatchConfirmed>().count())
-        assertTrue { actionsAlice2.filterIsInstance<PublishTx>().any { it.tx == tx } }
+        assertTrue { actionsAlice2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().any { it.tx == tx } }
     }
 
     @Ignore
@@ -989,7 +989,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (_, bob1) = crossSign(nodes.first, nodes.second)
         val initialState = bob1 as Normal
 
-        val (bob2, actionsBob2) = bob1.process(ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, r)))
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, r)))
         val fulfillHtlc = actionsBob2.findOutgoingMessage<UpdateFulfillHtlc>()
         assertEquals(
             initialState.copy(
@@ -1006,7 +1006,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val cmd = CMD_FULFILL_HTLC(42, randomBytes32())
 
-        val (_, actions) = bob0.process(ExecuteCommand(cmd))
+        val (_, actions) = bob0.process(ChannelEvent.ExecuteCommand(cmd))
         val actualError = actions.findCommandError<UnknownHtlcId>()
         val expectedError = UnknownHtlcId(bob0.channelId, 42)
 
@@ -1021,7 +1021,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val initialState = bob1 as Normal
 
         val cmd = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes)
-        val (bob2, actionsBob2) = bob1.process(ExecuteCommand(cmd))
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(cmd))
         actionsBob2.hasCommandError<InvalidHtlcPreimage>()
 
         assertEquals(initialState, bob2)
@@ -1031,7 +1031,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv UpdateFee`() {
         val (_, bob) = reachNormal()
         val fee = UpdateFee(ByteVector32.Zeroes, 12000)
-        val (bob1, _) = bob.process(MessageReceived(fee))
+        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fee))
         bob1 as Normal
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee)), bob1.commitments)
     }
@@ -1045,9 +1045,9 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv UpdateFee (2 in a row)`() {
         val (_, bob) = reachNormal()
         val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
-        val (bob1, _) = bob.process(MessageReceived(fee1))
+        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fee1))
         val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
-        val (bob2, _) = bob1.process(MessageReceived(fee2))
+        val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(fee2))
         bob2 as Normal
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee2)), bob2.commitments)
     }
@@ -1056,10 +1056,10 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv UpdateFee (sender cannot afford it)`() {
         val (_, bob) = reachNormal()
         val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
-        val (bob1, _) = bob.process(SetOnchainFeerates(OnchainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
-        val (bob2, actions) = bob1.process(MessageReceived(fee))
+        val (bob1, _) = bob.process(ChannelEvent.SetOnChainFeerates(OnchainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
+        val (bob2, actions) = bob1.process(ChannelEvent.MessageReceived(fee))
         assertTrue { bob2 is Closing }
-        assertTrue { actions.contains(PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
+        assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
         actions.findOutgoingWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 71620000.sat, reserve = 20000.sat, fees = 72400000.sat).message)
@@ -1068,11 +1068,11 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFee (remote feerate is too small)`() {
         val (_, bob) = reachNormal()
-        val expectedFeeratePerKw = bob.currentOnchainFeerates.commitmentFeeratePerKw
+        val expectedFeeratePerKw = bob.currentOnChainFeerates.commitmentFeeratePerKw
         assertEquals(expectedFeeratePerKw, bob.commitments.localCommit.spec.feeratePerKw)
-        val (bob1, actions) = bob.process(MessageReceived(UpdateFee(bob.channelId, 252)))
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(UpdateFee(bob.channelId, 252)))
         assertTrue { bob1 is Closing }
-        assertTrue { actions.contains(PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
+        assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
         actions.findOutgoingWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertTrue { error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252") }
@@ -1113,7 +1113,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs and 4 pending htlcs
 
         val (aliceClosing, actions) = alice8.process(
-            WatchReceived(
+            ChannelEvent.WatchReceived(
                 WatchEventSpent(
                     alice8.channelId,
                     BITCOIN_FUNDING_SPENT,
@@ -1125,7 +1125,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(aliceClosing is Closing)
         assertTrue(actions.isNotEmpty())
         // in response to that, alice publishes its claim txes
-        val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
+        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(4, claimTxes.size)
         val claimMain = claimTxes.first()
         // in addition to its main output, alice can only claim 3 out of 4 htlcs,
@@ -1148,7 +1148,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // assert the feerate of the claim main is what we expect
         aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
-            val feerates = aliceClosing.currentOnchainFeerates
+            val feerates = aliceClosing.currentOnChainFeerates
             val expectedFeeRate = feerates.claimMainFeeratePerKw
             val expectedFee = weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
             val claimFee = claimMain.txIn.map {
@@ -1178,9 +1178,9 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob8, alice8) = fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
 
         // alice sign but we intercept bob's revocation
-        val (alice9, aActions8) = alice8.process(ExecuteCommand(CMD_SIGN))
+        val (alice9, aActions8) = alice8.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig0 = aActions8.findOutgoingMessage<CommitSig>()
-        val (bob9, _) = bob8.process(MessageReceived(commitSig0))
+        val (bob9, _) = bob8.process(ChannelEvent.MessageReceived(commitSig0))
 
         // as far as alice knows, bob currently has two valid unrevoked commitment transactions
 
@@ -1201,7 +1201,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(5, bobCommitTx.txOut.size) // 2 main outputs and 3 pending htlcs
 
         val (aliceClosing, actions) = alice9.process(
-            WatchReceived(
+            ChannelEvent.WatchReceived(
                 WatchEventSpent(
                     alice9.channelId,
                     BITCOIN_FUNDING_SPENT,
@@ -1214,7 +1214,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(actions.isNotEmpty())
 
         // in response to that, alice publishes its claim txes
-        val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
+        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(3, claimTxes.size)
         val claimMain = claimTxes.first()
         // in addition to its main output, alice can only claim 2 out of 3 htlcs,
@@ -1237,7 +1237,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // assert the feerate of the claim main is what we expect
         aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
-            val feerates = aliceClosing.currentOnchainFeerates
+            val feerates = aliceClosing.currentOnChainFeerates
             val expectedFeeRate = feerates.claimMainFeeratePerKw
             val expectedFee = weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
             val claimFee = claimMain.txIn.map {
@@ -1279,7 +1279,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(6, revokedTx.txOut.size)
 
         val (aliceClosing, actions) = alice.process(
-            WatchReceived(
+            ChannelEvent.WatchReceived(
                 WatchEventSpent(
                     alice.channelId,
                     BITCOIN_FUNDING_SPENT,
@@ -1293,7 +1293,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(actions.isNotEmpty())
         actions.hasMessage<Error>()
 
-        val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
+        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         val mainTx = claimTxes[0]
         val mainPenaltyTx = claimTxes[1]
         // TODO business code is disabled for now
@@ -1357,7 +1357,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(4, revokedTx.txOut.size)
 
         val (aliceClosing, actions) = alice5.process(
-            WatchReceived(
+            ChannelEvent.WatchReceived(
                 WatchEventSpent(
                     (alice5 as ChannelStateWithCommitments).channelId,
                     BITCOIN_FUNDING_SPENT,
@@ -1370,7 +1370,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(actions.isNotEmpty())
         actions.hasMessage<Error>()
 
-        val claimTxes = actions.filterIsInstance<PublishTx>().map { it.tx }
+        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         val mainTx = claimTxes[0]
         val mainPenaltyTx = claimTxes[1]
         // TODO business code is disabled for now
