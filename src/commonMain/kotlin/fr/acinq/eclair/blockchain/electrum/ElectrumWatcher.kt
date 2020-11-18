@@ -12,16 +12,16 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.makeDummySh
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.Connection
-import fr.acinq.eclair.utils.newEclairLogger
+import fr.acinq.eclair.utils.eclairLogger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.flow.collect
-import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 import kotlin.math.max
+import kotlin.native.concurrent.ThreadLocal
 
 sealed class WatcherEvent
 private object StartWatcher : WatcherEvent()
@@ -488,8 +488,9 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
         eventChannel.cancel()
     }
 
+    @ThreadLocal
     companion object {
-        val logger by newEclairLogger<ElectrumWatcher>()
+        val logger by eclairLogger<ElectrumWatcher>()
 
         internal fun registerToScriptHash(watch: Watch): WatcherAction? = when (watch) {
             is WatchSpent -> {

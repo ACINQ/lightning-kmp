@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.utils.newEclairLogger
+import fr.acinq.eclair.utils.eclairLogger
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 
@@ -21,7 +21,7 @@ sealed class FailureMessage {
         const val NODE = 0x2000
         const val UPDATE = 0x1000
 
-        val logger = newEclairLogger()
+        val logger = eclairLogger()
 
         private fun readChannelUpdate(stream: ByteArrayInput): ChannelUpdate {
             val len = LightningSerializer.u16(stream)

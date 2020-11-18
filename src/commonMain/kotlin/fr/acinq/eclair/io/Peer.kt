@@ -62,7 +62,7 @@ class Peer(
     private val input = Channel<PeerEvent>(BUFFERED)
     private val output = Channel<ByteArray>(BUFFERED)
 
-    private val logger by newEclairLogger()
+    private val logger by eclairLogger()
 
     private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
     private var _channels by _channelsFlow

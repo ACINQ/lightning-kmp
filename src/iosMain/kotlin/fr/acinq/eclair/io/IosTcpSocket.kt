@@ -3,7 +3,7 @@ package fr.acinq.eclair.io
 import fr.acinq.eclair.io.ios_network_framework.nw_k_connection_receive
 import fr.acinq.eclair.io.ios_network_framework.nw_k_parameters_create_secure_tcp
 import fr.acinq.eclair.io.ios_network_framework.nw_k_parameters_create_secure_tcp_custom
-import fr.acinq.eclair.utils.newEclairLogger
+import fr.acinq.eclair.utils.eclairLogger
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Network.*
@@ -17,6 +17,7 @@ import platform.posix.ECONNRESET
 import platform.posix.memcpy
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.native.concurrent.ThreadLocal
 
 @OptIn(ExperimentalUnsignedTypes::class)
 class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
@@ -62,8 +63,9 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
     }
 }
 
+@ThreadLocal
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    private val logger by newEclairLogger<IosTcpSocket>()
+    private val logger by eclairLogger<IosTcpSocket>()
 
     @OptIn(ExperimentalUnsignedTypes::class)
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =

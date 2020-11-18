@@ -2,7 +2,6 @@ package fr.acinq.eclair.utils
 
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import kotlin.jvm.JvmName
 import kotlin.reflect.KClass
 
 
@@ -14,12 +13,12 @@ fun setEclairLoggerFactory(loggerFactory: LoggerFactory) {
     EclairLoggerFactory = loggerFactory
 }
 
-fun newEclairLogger(of: KClass<*>) = lazy {
+fun eclairLogger(of: KClass<*>) = lazy {
     val factory = EclairLoggerFactory ?: LoggerFactory.default.also { setEclairLoggerFactory(it) }
     factory.newLogger(of)
 }
 
 @Suppress("unused")
-inline fun <reified T> T.newEclairLogger() = newEclairLogger(T::class)
+inline fun <reified T> T.eclairLogger() = eclairLogger(T::class)
 
-inline fun <reified T> newEclairLogger() = newEclairLogger(T::class)
+inline fun <reified T> eclairLogger() = eclairLogger(T::class)

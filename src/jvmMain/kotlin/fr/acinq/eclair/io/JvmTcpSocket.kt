@@ -1,6 +1,6 @@
 package fr.acinq.eclair.io
 
-import fr.acinq.eclair.utils.newEclairLogger
+import fr.acinq.eclair.utils.eclairLogger
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
@@ -9,7 +9,6 @@ import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.withContext
-import org.kodein.log.newLogger
 import java.net.ConnectException
 import java.net.SocketException
 import java.security.cert.X509Certificate
@@ -65,7 +64,7 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)
-    private val logger by newEclairLogger<JvmTcpSocket>()
+    private val logger by eclairLogger<JvmTcpSocket>()
 
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
         withContext(Dispatchers.IO) {

@@ -9,7 +9,6 @@ import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlin.math.log
 
 data class IncomingPayment(
     val paymentRequest: PaymentRequest,
@@ -82,7 +81,7 @@ class IncomingPaymentHandler(
         }
     }
 
-    private val logger by newEclairLogger()
+    private val logger by eclairLogger()
     private val pending = mutableMapOf<ByteVector32, FinalPacketSet>()
     private val privateKey get() = nodeParams.nodePrivateKey
 

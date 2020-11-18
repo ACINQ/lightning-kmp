@@ -7,7 +7,6 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.CMD_CLOSE
-import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.channel.ExecuteCommand
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
@@ -34,7 +33,7 @@ import java.sql.DriverManager
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
-    private val logger by newEclairLogger()
+    private val logger by eclairLogger()
 
     @Serializable
     data class Ping(val payload: String)

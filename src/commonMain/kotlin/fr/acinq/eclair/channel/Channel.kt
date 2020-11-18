@@ -18,14 +18,12 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import org.kodein.log.Logger
-import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -407,7 +405,7 @@ sealed class ChannelState {
         }
     }
 
-    val logger by newEclairLogger()
+    val logger by eclairLogger()
 }
 
 @Serializable

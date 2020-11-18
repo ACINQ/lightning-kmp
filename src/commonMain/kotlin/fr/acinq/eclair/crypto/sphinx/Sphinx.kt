@@ -10,6 +10,7 @@ import fr.acinq.eclair.crypto.ChaCha20
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.secp256k1.Hex
+import kotlin.native.concurrent.ThreadLocal
 
 /**
  * Decrypting an onion packet yields a payload for the current node and the encrypted packet for the next node.
@@ -290,9 +291,10 @@ data class DecryptedFailurePacket(val originNode: PublicKey, val failureMessage:
  * +----------------+----------------------------------+-----------------+----------------------+-----+
  * with failure message length + pad length = 256
  */
+@ThreadLocal
 object FailurePacket {
 
-    private val logger by newEclairLogger()
+    private val logger by eclairLogger()
 
     private const val MaxPayloadLength = 256
     private const val PacketLength = Sphinx.MacLength + MaxPayloadLength + 2 + 2

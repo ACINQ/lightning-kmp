@@ -30,10 +30,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.native.concurrent.ThreadLocal
 
+@ThreadLocal
 object Helpers {
 
-    val logger by newEclairLogger()
+    val logger by eclairLogger()
 
     /**
      * Returns the number of confirmations needed to safely handle the funding transaction,

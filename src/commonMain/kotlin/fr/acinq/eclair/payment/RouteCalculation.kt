@@ -8,7 +8,9 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.utils.*
+import kotlin.native.concurrent.ThreadLocal
 
+@ThreadLocal
 object RouteCalculation {
 
     data class TrampolineParams(val nodeId: PublicKey, val attempts: List<TrampolineFees>)
@@ -34,7 +36,7 @@ object RouteCalculation {
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 
-    private val logger by newEclairLogger()
+    private val logger by eclairLogger()
 
     fun findRoutes(amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
         data class ChannelBalance(val c: Normal) {

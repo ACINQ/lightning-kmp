@@ -37,7 +37,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
     /** The payment is unknown. */
     object UnknownPayment : ProcessFailureResult, ProcessFulfillResult
 
-    private val logger by newEclairLogger()
+    private val logger by eclairLogger()
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
 
