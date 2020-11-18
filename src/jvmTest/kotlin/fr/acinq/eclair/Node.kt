@@ -134,6 +134,7 @@ object Node {
                     ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
                     ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
                     ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
                 )
             ),
             dustLimit = 546.sat,

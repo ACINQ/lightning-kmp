@@ -36,7 +36,7 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 object CheckPaymentsTimeout : PeerEvent()
 data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
 data class GetChannel(val channelId: ByteVector32, val channel: CompletableDeferred<ChannelState?>) : PeerEvent()
-data class PayToOpenResult(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
+data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -553,7 +553,7 @@ class Peer(
                 processActions(event.channelId, actions)
                 _channels = _channels + (event.channelId to state1)
             }
-            event is PayToOpenResult -> {
+            event is PayToOpenResponseEvent -> {
                 logger.info { "sending pay-to-open response" }
                 sendToPeer(event.payToOpenResponse)
             }
