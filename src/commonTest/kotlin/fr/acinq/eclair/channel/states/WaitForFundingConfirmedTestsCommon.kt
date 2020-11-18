@@ -8,6 +8,7 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.FundingLocked
@@ -15,7 +16,7 @@ import fr.acinq.eclair.wire.FundingSigned
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class WaitForFundingConfirmedTestsCommon {
+class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     @Test
     fun `receive FundingLocked`() {
         val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)

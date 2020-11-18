@@ -1,12 +1,13 @@
 package fr.acinq.eclair.crypto.noise
 
 import fr.acinq.eclair.crypto.assertArrayEquals
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.secp256k1.Hex
 import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.junit.Test
 
 @ExperimentalStdlibApi
-class NoiseTestsJvm {
+class NoiseTestsJvm : EclairTestSuite() {
     @Test
     fun `SymmetricState test`() {
         val name = "Noise_NN_25519_ChaChaPoly_SHA256"

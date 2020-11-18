@@ -407,8 +407,7 @@ sealed class ChannelState {
         }
     }
 
-    @Transient
-    val logger = EclairLoggerFactory.newLogger<ChannelState>()
+    val logger by newEclairLogger()
 }
 
 @Serializable
@@ -779,7 +778,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         Pair(state, actions)
                     }
                     state is WaitForFundingLocked -> {
-                        logger.verbose { "re-sending fundingLocked" }
+                        logger.debug { "re-sending fundingLocked" }
                         val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                         val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
@@ -831,7 +830,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 val actions = ArrayList<ChannelAction>()
                                 if (event.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommit.index == 0L) {
                                     // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
-                                    logger.verbose { "re-sending fundingLocked" }
+                                    logger.debug { "re-sending fundingLocked" }
                                     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                                     val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
                                     actions.add(SendMessage(fundingLocked))
@@ -841,7 +840,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
 
                                 // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
                                 state.localShutdown?.let {
-                                    logger.verbose { "re-sending localShutdown" }
+                                    logger.debug { "re-sending localShutdown" }
                                     actions.add(SendMessage(it))
                                 }
 
@@ -1242,7 +1241,7 @@ data class WaitForAcceptChannel(
                     htlcBasepoint = event.message.htlcBasepoint,
                     features = Features(initFunder.remoteInit.features)
                 )
-                logger.verbose { "remote params: $remoteParams" }
+                logger.debug { "remote params: $remoteParams" }
                 val localFundingPubkey = keyManager.fundingPublicKey(initFunder.localParams.fundingKeyPath)
                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey))))
                 val makeFundingTx = MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeeratePerKw)
@@ -2051,11 +2050,11 @@ data class ShuttingDown(
                         handleCommandError(event.command, ChannelUnavailable(channelId))
                     }
                     event.command is CMD_SIGN && !commitments.localHasChanges() -> {
-                        logger.verbose { "ignoring CMD_SIGN (nothing to sign)" }
+                        logger.debug { "ignoring CMD_SIGN (nothing to sign)" }
                         Pair(this, listOf())
                     }
                     event.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
-                        logger.verbose { "already in the process of signing, will sign again as soon as possible" }
+                        logger.debug { "already in the process of signing, will sign again as soon as possible" }
                         Pair(this.copy(commitments = this.commitments.copy(remoteNextCommitInfo = Either.Left(this.commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))), listOf())
                     }
                     event.command is CMD_SIGN ->
@@ -2731,16 +2730,16 @@ object Channel {
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
         // first we clean up unacknowledged updates
-        log.verbose { "discarding proposed OUT: ${d.commitments.localChanges.proposed}" }
-        log.verbose { "discarding proposed IN: ${d.commitments.remoteChanges.proposed}" }
+        log.debug { "discarding proposed OUT: ${d.commitments.localChanges.proposed}" }
+        log.debug { "discarding proposed IN: ${d.commitments.remoteChanges.proposed}" }
         val commitments1 = d.commitments.copy(
             localChanges = d.commitments.localChanges.copy(proposed = emptyList()),
             remoteChanges = d.commitments.remoteChanges.copy(proposed = emptyList()),
             localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>().size,
             remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size
         )
-        log.verbose { "localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}" }
-        log.verbose { "remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}" }
+        log.debug { "localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}" }
+        log.debug { "remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}" }
 
         fun resendRevocation(): Unit {
             // let's see the state of remote sigs
@@ -2748,7 +2747,7 @@ object Channel {
                 // nothing to do
             } else if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber + 1) {
                 // our last revocation got lost, let's resend it
-                log.verbose { "re-sending last revocation" }
+                log.debug { "re-sending last revocation" }
                 val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
                 val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, d.commitments.localCommit.index - 1)
                 val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index + 1)
@@ -2766,7 +2765,7 @@ object Channel {
                 // we had sent a new sig and were waiting for their revocation
                 // they had received the new sig but their revocation was lost during the disconnection
                 // they will send us the revocation, nothing to do here
-                log.verbose { "waiting for them to re-send their last revocation" }
+                log.debug { "waiting for them to re-send their last revocation" }
                 resendRevocation()
             }
             commitments1.remoteNextCommitInfo.isLeft && commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit.index == channelReestablish.nextLocalCommitmentNumber -> {
@@ -2777,9 +2776,9 @@ object Channel {
                 val revWasSentLast = commitments1.localCommit.index > commitments1.remoteNextCommitInfo.left!!.sentAfterLocalCommitIndex
                 if (!revWasSentLast) resendRevocation()
 
-                log.verbose { "re-sending previously local signed changes: ${commitments1.localChanges.signed}" }
+                log.debug { "re-sending previously local signed changes: ${commitments1.localChanges.signed}" }
                 commitments1.localChanges.signed.forEach { sendQueue.add(SendMessage(it)) }
-                log.verbose { "re-sending the exact same previous sig" }
+                log.debug { "re-sending the exact same previous sig" }
                 sendQueue.add(SendMessage(commitments1.remoteNextCommitInfo.left!!.sent))
                 if (revWasSentLast) resendRevocation()
             }

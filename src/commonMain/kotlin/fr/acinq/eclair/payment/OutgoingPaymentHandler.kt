@@ -37,7 +37,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
     /** The payment is unknown. */
     object UnknownPayment : ProcessFailureResult, ProcessFulfillResult
 
-    private val logger = newEclairLogger()
+    private val logger by newEclairLogger()
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
 
@@ -93,7 +93,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
             return UnknownPayment
         }
 
-        logger.verbose { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error?.message}" }
+        logger.debug { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error?.message}" }
         // TODO: update payment status in DB
 
         val (updated, result) = when (payment) {
@@ -139,7 +139,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
             }
         }
 
-        logger.verbose { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC failed: ${decryptedFailure?.message}" }
+        logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC failed: ${decryptedFailure?.message}" }
         // TODO: update payment status in DB
 
         val (updated, result) = when (payment) {
@@ -154,7 +154,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
                     PaymentAttempt.PaymentAborted(payment.request, finalError, payment.pending, listOf()).failChild(event.paymentId, failure, logger)
                 } else {
                     // The trampoline node is asking us to retry the payment with more fees.
-                    logger.verbose { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} c:${event.channelId} child payment failed because of fees" }
+                    logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} c:${event.channelId} child payment failed because of fees" }
                     val updated = payment.copy(pending = payment.pending - event.paymentId)
                     if (updated.pending.isNotEmpty()) {
                         // We wait for all pending HTLCs to be settled before retrying.
@@ -208,7 +208,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
             return UnknownPayment
         }
 
-        logger.verbose { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC fulfilled" }
+        logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC fulfilled" }
         // TODO: update payment status in DB
         val part = payment.pending[event.paymentId]?.first
 

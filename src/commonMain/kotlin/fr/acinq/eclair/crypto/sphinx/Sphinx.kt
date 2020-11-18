@@ -292,7 +292,7 @@ data class DecryptedFailurePacket(val originNode: PublicKey, val failureMessage:
  */
 object FailurePacket {
 
-    private val logger = newEclairLogger()
+    private val logger by newEclairLogger()
 
     private const val MaxPayloadLength = 256
     private const val PacketLength = Sphinx.MacLength + MaxPayloadLength + 2 + 2

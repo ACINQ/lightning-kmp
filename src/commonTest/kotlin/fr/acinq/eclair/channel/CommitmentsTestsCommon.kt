@@ -19,7 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class CommitmentsTestsCommon : EclairTestSuite() {
-    private val logger = EclairLoggerFactory.newLogger<CommitmentSpecTestsCommon>()
+    private val logger by newEclairLogger()
 
     @Test
     fun `reach normal state`() {

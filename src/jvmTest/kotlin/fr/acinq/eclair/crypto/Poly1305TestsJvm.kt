@@ -1,11 +1,12 @@
 package fr.acinq.eclair.crypto
 
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import org.bouncycastle.crypto.params.KeyParameter
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class Poly1305TestsJvm {
+class Poly1305TestsJvm : EclairTestSuite() {
     @Test
     fun `poly1305`() {
         val random = Random

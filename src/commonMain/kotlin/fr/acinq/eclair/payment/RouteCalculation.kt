@@ -34,7 +34,7 @@ object RouteCalculation {
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 
-    private val logger = newEclairLogger()
+    private val logger by newEclairLogger()
 
     fun findRoutes(amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
         data class ChannelBalance(val c: Normal) {

@@ -82,7 +82,7 @@ class IncomingPaymentHandler(
         }
     }
 
-    private val logger = newEclairLogger()
+    private val logger by newEclairLogger()
     private val pending = mutableMapOf<ByteVector32, FinalPacketSet>()
     private val privateKey get() = nodeParams.nodePrivateKey
 

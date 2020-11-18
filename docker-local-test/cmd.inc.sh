@@ -2,19 +2,6 @@
 
 basedir=$(dirname ${BASH_SOURCE[0]})
 
-if [ "$(uname)" = "Linux" ]; then
-    displayAddr=unix$DISPLAY
-    preUICommand=""
-    GID=$(id -g)
-elif [ "$(uname)" = "Darwin" ]; then
-    displayAddr=host.docker.internal:0
-    preUICommand="xhost + 127.0.0.1"
-    GID=$(id -u)
-else
-    echo "Unsupported OS: $(uname)"
-    exit 1
-fi
-
 function net_create {
     docker network create \
         --driver=bridge \
@@ -163,6 +150,17 @@ function ecl_remove {
 }
 
 function ecl_gui_create {
+    if [ "$(uname)" = "Linux" ]; then
+        displayAddr=unix$DISPLAY
+        GID=$(id -g)
+    elif [ "$(uname)" = "Darwin" ]; then
+        displayAddr=host.docker.internal:0
+        GID=$(id -u)
+    else
+        echo "Unsupported OS: $(uname)"
+        exit 1
+    fi
+
     docker build \
         --build-arg user=$USER \
         --build-arg uid=$(id -u) \
@@ -181,7 +179,10 @@ function ecl_gui_create {
 }
 
 function ecl_gui_run {
-    ${preUICommand}
+    if [ "$(uname)" = "Darwin" ]; then
+        xhost + 127.0.0.1
+    fi
+
     docker start -a eclair-gui
 }
 

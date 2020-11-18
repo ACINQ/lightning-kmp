@@ -32,14 +32,14 @@ object BitcoinJsonRPCClient {
         }
     }
 
-    private val logger = newEclairLogger()
+    private val logger by newEclairLogger()
 
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
-            logger.verbose { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
+            logger.debug { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
             body = request.asJsonRPCRequest()
         }
-        logger.verbose { "Receive bitcoind response: $rpcResponse" }
+        logger.debug { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T
     }

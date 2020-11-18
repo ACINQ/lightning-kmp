@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
@@ -15,7 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class TransactionTestsJvm {
+class TransactionTestsJvm : EclairTestSuite() {
 
     // This test is JVM only until both these issues have been resolved:
     // - https://youtrack.jetbrains.com/issue/KT-39789
