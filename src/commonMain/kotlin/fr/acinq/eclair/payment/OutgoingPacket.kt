@@ -17,7 +17,6 @@ import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.utils.Either
-import fr.acinq.eclair.utils.Try
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.wire.*
 
@@ -117,7 +116,7 @@ object OutgoingPacket {
         return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
     }
 
-    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: CMD_FAIL_HTLC.Reason): Try<ByteVector> {
+    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: CMD_FAIL_HTLC.Reason): Either<FailureMessage, ByteVector> {
         // we need to decrypt the payment onion to obtain the shared secret to build the error packet
         return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion, onion.payload.size())) {
             is Either.Right -> {
@@ -125,9 +124,9 @@ object OutgoingPacket {
                     is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
                     is CMD_FAIL_HTLC.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, reason.message)
                 }
-                Try.Success(ByteVector(encryptedReason))
+                Either.Right(ByteVector(encryptedReason))
             }
-            is Either.Left -> Try.Failure(RuntimeException("failed to build htlc failure"))
+            is Either.Left -> Either.Left(result.value)
         }
     }
 }

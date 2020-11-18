@@ -395,12 +395,12 @@ data class Commitments(
             }
             else -> {
                 when (val result = OutgoingPacket.buildHtlcFailure(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, cmd.reason)) {
-                    is Try.Success -> {
-                        val fail = UpdateFailHtlc(channelId, cmd.id, result.result)
+                    is Either.Right -> {
+                        val fail = UpdateFailHtlc(channelId, cmd.id, result.value)
                         val commitments1 = addLocalProposal(fail)
                         Try.Success(Pair(commitments1, fail))
                     }
-                    is Try.Failure -> Try.Failure(CannotExtractSharedSecret(channelId, htlc))
+                    is Either.Left -> Try.Failure(CannotExtractSharedSecret(channelId, htlc))
                 }
             }
         }

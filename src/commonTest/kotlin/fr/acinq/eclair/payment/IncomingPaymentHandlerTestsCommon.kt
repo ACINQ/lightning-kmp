@@ -522,7 +522,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                                     paymentHandler.nodeParams.nodePrivateKey,
                                     payToOpenRequest.paymentHash,
                                     payToOpenRequest.finalPacket,
-                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).get())
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).right!!)
                         )
                     )
                 ), par.actions.toSet()
@@ -577,7 +577,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                                     paymentHandler.nodeParams.nodePrivateKey,
                                     payToOpenRequest.paymentHash,
                                     payToOpenRequest.finalPacket,
-                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).get())
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).right!!)
                         )
                     )
                 ), par.actions.toSet()
@@ -636,7 +636,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                                     paymentHandler.nodeParams.nodePrivateKey,
                                     payToOpenRequest.paymentHash,
                                     payToOpenRequest.finalPacket,
-                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).get())
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).right!!)
                         )
                     )
                 ), par.actions.toSet()

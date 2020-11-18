@@ -409,8 +409,8 @@ class IncomingPaymentHandler(
     ): PayToOpenResponseEvent {
         val reason = CMD_FAIL_HTLC.Reason.Failure(failure)
         val encryptedReason = when (val result = OutgoingPacket.buildHtlcFailure(nodeParams.nodePrivateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
-            is Try.Success -> result.result
-            is Try.Failure -> null
+            is Either.Right -> result.value
+            is Either.Left -> null
         }
         return PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
     }
