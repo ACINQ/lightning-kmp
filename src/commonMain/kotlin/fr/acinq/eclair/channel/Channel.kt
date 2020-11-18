@@ -97,13 +97,14 @@ sealed class ChannelAction {
      * Process the result of executing a given command.
      * [[CMD_ADD_HTLC]] has a special treatment: there are two response patterns for this command:
      *  - either [[ProcessCmdRes.AddFailed]] immediately
-     *  - or [[ProcessCmdRes.AddSettled]] (usually a while later)
+     *  - or [[ProcessCmdRes.AddSettledFail]] / [[ProcessCmdRes.AddSettledFulfill]] (usually a while later)
      */
-    sealed class ProcessCmdRes<C : Command> : ChannelAction() {
-        data class NotExecuted<C : Command>(val cmd: C, val t: Throwable) : ProcessCmdRes<C>()
-        data class AddSettled<R : HtlcResult>(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: R) : ProcessCmdRes<CMD_ADD_HTLC>()
-        data class AddFailed(val c: CMD_ADD_HTLC, val error: ChannelException, val channelUpdate: ChannelUpdate?) : ProcessCmdRes<CMD_ADD_HTLC>() {
-            override fun toString() = "cannot add htlc with paymentId=${c.paymentId} reason=${error.message}"
+    sealed class ProcessCmdRes : ChannelAction() {
+        data class NotExecuted(val cmd: Command, val t: Throwable) : ProcessCmdRes()
+        data class AddSettledFulfill(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fulfill) : ProcessCmdRes()
+        data class AddSettledFail(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fail) : ProcessCmdRes()
+        data class AddFailed(val cmd: CMD_ADD_HTLC, val error: ChannelException, val channelUpdate: ChannelUpdate?) : ProcessCmdRes() {
+            override fun toString() = "cannot add htlc with paymentId=${cmd.paymentId} reason=${error.message}"
         }
     }
 
@@ -1757,7 +1758,7 @@ data class Normal(
                         is Either.Right -> {
                             val (commitments1, paymentId, add) = result.value
                             val htlcResult = ChannelAction.HtlcResult.Fulfill.RemoteFulfill(event.message)
-                            Pair(this.copy(commitments = commitments1), listOf(ChannelAction.ProcessCmdRes.AddSettled(paymentId, add, htlcResult)))
+                            Pair(this.copy(commitments = commitments1), listOf(ChannelAction.ProcessCmdRes.AddSettledFulfill(paymentId, add, htlcResult)))
                         }
                     }
                     is UpdateFailHtlc -> when (val result = commitments.receiveFail(event.message)) {
@@ -1931,7 +1932,7 @@ data class ShuttingDown(
                         is Either.Right -> {
                             val (commitments1, paymentId, add) = result.value
                             val htlcResult = ChannelAction.HtlcResult.Fulfill.RemoteFulfill(event.message)
-                            Pair(this.copy(commitments = commitments1), listOf(ChannelAction.ProcessCmdRes.AddSettled(paymentId, add, htlcResult)))
+                            Pair(this.copy(commitments = commitments1), listOf(ChannelAction.ProcessCmdRes.AddSettledFulfill(paymentId, add, htlcResult)))
                         }
                     }
                     is UpdateFailHtlc -> when (val result = commitments.receiveFail(event.message)) {

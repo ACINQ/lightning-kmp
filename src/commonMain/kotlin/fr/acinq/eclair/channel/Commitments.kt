@@ -592,14 +592,14 @@ data class Commitments(
                     val paymentId = payments[it.id]
                     val add = remoteCommit.spec.findIncomingHtlcById(it.id)?.add
                     if (paymentId != null && add != null) {
-                        actions += ChannelAction.ProcessCmdRes.AddSettled(paymentId, add, ChannelAction.HtlcResult.Fail.RemoteFail(it))
+                        actions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.RemoteFail(it))
                     }
                 }
                 is UpdateFailMalformedHtlc -> {
                     val paymentId = payments[it.id]
                     val add = remoteCommit.spec.findIncomingHtlcById(it.id)?.add
                     if (paymentId != null && add != null) {
-                        actions += ChannelAction.ProcessCmdRes.AddSettled(paymentId, add, ChannelAction.HtlcResult.Fail.RemoteFailMalformed(it))
+                        actions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.RemoteFailMalformed(it))
                     }
                 }
                 else -> Unit

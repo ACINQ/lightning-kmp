@@ -25,18 +25,16 @@ import kotlinx.coroutines.flow.*
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PeerEvent()
+data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 
-data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PeerEvent() {
+sealed class PaymentEvent : PeerEvent()
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
+object CheckPaymentsTimeout : PaymentEvent()
+data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
+data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PaymentEvent() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
     val recipientNodeId: PublicKey = paymentRequest.nodeId
 }
-
-data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object CheckPaymentsTimeout : PeerEvent()
-data class ListChannels(val channels: CompletableDeferred<List<ChannelState>>) : PeerEvent()
-data class GetChannel(val channelId: ByteVector32, val channel: CompletableDeferred<ChannelState?>) : PeerEvent()
-data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -67,15 +65,15 @@ class Peer(
     private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
     private var _channels by _channelsFlow
 
-    private val _connectionState = MutableStateFlow(Connection.CLOSED)
-    public val connectionState: StateFlow<Connection> get() = _connectionState
-
-    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
-
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
-    public val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
-    public val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
+    val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
+    val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
+
+    private val _connectionState = MutableStateFlow(Connection.CLOSED)
+    val connectionState: StateFlow<Connection> get() = _connectionState
+
+    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
@@ -105,7 +103,7 @@ class Peer(
             electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
                     currentTip = msg.height to msg.header
-                    send(WrappedChannelEvent(ByteVector32.Zeroes, NewBlock(msg.height, msg.header)))
+                    send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
                 }
         }
         launch {
@@ -117,7 +115,7 @@ class Peer(
             val sub = watcher.openNotificationsSubscription()
             sub.consumeEach {
                 logger.info { "notification: $it" }
-                input.send(WrappedChannelEvent(it.channelId, fr.acinq.eclair.channel.WatchReceived(it)))
+                input.send(WrappedChannelEvent(it.channelId, ChannelEvent.WatchReceived(it)))
             }
         }
         launch {
@@ -125,7 +123,7 @@ class Peer(
             channelsDb.listLocalChannels().filterNot { it is Closed }.forEach {
                 logger.info { "restoring $it" }
                 val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
-                val (state1, actions) = state.process(Restore(it as ChannelState))
+                val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
             }
@@ -147,7 +145,7 @@ class Peer(
                 _connectionState.value = Connection.CLOSED
                 return@launch
             }
-            val priv = nodeParams.keyManager.nodeKey.privateKey
+            val priv = nodeParams.nodePrivateKey
             val pub = priv.publicKey()
             val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
             val (enc, dec, ck) = try {
@@ -155,7 +153,8 @@ class Peer(
                     keyPair,
                     remoteNodeId.value.toByteArray(),
                     { s -> socket.receiveFully(s) },
-                    { b -> socket.send(b) })
+                    { b -> socket.send(b) }
+                )
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { ex.message }
                 _connectionState.value = Connection.CLOSED
@@ -240,60 +239,54 @@ class Peer(
         var actualChannelId: ByteVector32 = channelId
         actions.forEach { action ->
             when {
-                action is SendMessage && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
+                action is ChannelAction.Message.Send && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
                 // sometimes channel actions include "self" command (such as CMD_SIGN)
-                action is SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ExecuteCommand(action.command)))
-                action is SendWatch -> watcher.watch(action.watch)
-                action is PublishTx -> watcher.publish(action.tx)
-                action is ProcessAdd -> processIncomingPayment(Either.Right(action.add))
-                action is HandleCommandFailed -> {
-                    when (val result = outgoingPaymentHandler.processAddFailure(actualChannelId, action, _channels)) {
+                action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ChannelEvent.ExecuteCommand(action.command)))
+                action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
+                action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
+                action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
+                action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "command not executed in channel $actualChannelId" }
+                action is ChannelAction.ProcessCmdRes.AddFailed -> {
+                    when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
                         is OutgoingPaymentHandler.Progress -> {
                             listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
-                            for (newAction in result.actions) {
-                                input.send(newAction)
-                            }
+                            result.actions.forEach { input.send(it) }
                         }
                         is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
-                        null -> logger.verbose { "non-final error, more partial payments are still pending: $actualChannelId->${action.error}" }
+                        null -> logger.verbose { "non-final error, more partial payments are still pending: $actualChannelId->${action.error.message}" }
                     }
                 }
-                action is ProcessRemoteFailure -> {
-                    when (val result = outgoingPaymentHandler.processRemoteFailure(action, _channels, currentTip.first)) {
+                action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
+                    when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
                         is OutgoingPaymentHandler.Progress -> {
                             listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
-                            for (subaction in result.actions) {
-                                input.send(subaction)
-                            }
+                            result.actions.forEach { input.send(it) }
                         }
+                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
                         is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
-                        null -> logger.verbose { "non-final error, more partial payments are still pending: $action" }
+                        null -> logger.verbose { "non-final error, more partial payments are still pending: $actualChannelId->${action.result}" }
                     }
                 }
-                action is ProcessFulfill -> {
-                    when (val result = outgoingPaymentHandler.processFulfill(action)) {
+                action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
+                    when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                         is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
                         is OutgoingPaymentHandler.PreimageReceived -> logger.verbose { "payment preimage received: ${result.payment.paymentId}->${result.preimage}" }
                         is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
                     }
                 }
-                action is StoreState -> {
+                action is ChannelAction.Storage.StoreState -> {
                     logger.info { "storing state for channelId=$actualChannelId data=${action.data}" }
                     channelsDb.addOrUpdateChannel(action.data)
                 }
-                action is ChannelIdSwitch -> {
+                action is ChannelAction.ChannelId.IdSwitch -> {
                     logger.info { "switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
                     actualChannelId = action.newChannelId
-                    _channels[action.oldChannelId]?.let {
-                        _channels = _channels + (action.newChannelId to it)
-                    }
+                    _channels[action.oldChannelId]?.let { _channels = _channels + (action.newChannelId to it) }
                 }
-                else -> {
-                    logger.warning { "unhandled action : $action" }
-                    Unit
-                }
+                action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
+                else -> logger.warning { "unhandled action: $actualChannelId->$action" }
             }
         }
     }
@@ -307,9 +300,7 @@ class Peer(
         if (result.status == IncomingPaymentHandler.Status.ACCEPTED && result.incomingPayment != null) {
             listenerEventChannel.send(PaymentReceived(result.incomingPayment))
         }
-        for (subaction in result.actions) {
-            input.send(subaction)
-        }
+        result.actions.forEach { input.send(it) }
     }
 
     private suspend fun handshake(
@@ -365,7 +356,6 @@ class Peer(
     }
 
     private suspend fun processEvent(event: PeerEvent) {
-
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
@@ -377,7 +367,7 @@ class Peer(
                         _connectionState.value = Connection.ESTABLISHED
                         logger.info { "before channels: $_channels" }
                         _channels = _channels.mapValues { entry ->
-                            val (state1, actions) = entry.value.process(Connected(ourInit, theirInit!!))
+                            val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))
                             processActions(entry.key, actions)
                             state1
                         }
@@ -388,6 +378,7 @@ class Peer(
                         output.send(LightningMessage.encode(pong)!!)
                     }
                     msg is Pong -> {
+                        logger.verbose { "received pong" }
                     }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }
@@ -424,14 +415,8 @@ class Peer(
                             currentTip,
                             onchainFeerates
                         )
-                        val (state1, actions1) = state.process(
-                            InitFundee(
-                                msg.temporaryChannelId,
-                                localParams,
-                                theirInit!!
-                            )
-                        )
-                        val (state2, actions2) = state1.process(MessageReceived(msg))
+                        val (state1, actions1) = state.process(ChannelEvent.InitFundee(msg.temporaryChannelId, localParams, theirInit!!))
+                        val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
                         processActions(msg.temporaryChannelId, actions1 + actions2)
                         _channels = _channels + (msg.temporaryChannelId to state2)
                         logger.info { "new state for ${msg.temporaryChannelId}: $state2" }
@@ -445,15 +430,15 @@ class Peer(
                                     logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
                                     val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
-                                    val event1 = Restore(backup as ChannelState)
+                                    val event1 = ChannelEvent.Restore(backup as ChannelState)
                                     val (state1, actions1) = state.process(event1)
                                     processActions(msg.channelId, actions1)
 
-                                    val event2 = Connected(ourInit, theirInit!!)
+                                    val event2 = ChannelEvent.Connected(ourInit, theirInit!!)
                                     val (state2, actions2) = state1.process(event2)
                                     processActions(msg.channelId, actions2)
 
-                                    val event3 = MessageReceived(msg)
+                                    val event3 = ChannelEvent.MessageReceived(msg)
                                     val (state3, actions3) = state2.process(event3)
                                     processActions(msg.channelId, actions3)
                                     _channels = _channels + (msg.channelId to state3)
@@ -471,12 +456,12 @@ class Peer(
                     msg is HasTemporaryChannelId -> {
                         logger.info { "received $msg for temporary channel ${msg.temporaryChannelId}" }
                         val state = _channels[msg.temporaryChannelId] ?: error("channel ${msg.temporaryChannelId} not found")
-                        val event1 = MessageReceived(msg)
+                        val event1 = ChannelEvent.MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
                         _channels = _channels + (msg.temporaryChannelId to state1)
                         logger.info { "channel ${msg.temporaryChannelId} new state $state1" }
                         processActions(msg.temporaryChannelId, actions)
-                        actions.filterIsInstance<ChannelIdSwitch>().forEach {
+                        actions.filterIsInstance<ChannelAction.ChannelId.IdSwitch>().forEach {
                             logger.info { "id switch from ${it.oldChannelId} to ${it.newChannelId}" }
                             _channels = _channels - it.oldChannelId + (it.newChannelId to state1)
                         }
@@ -488,7 +473,7 @@ class Peer(
                     msg is HasChannelId -> {
                         logger.info { "received $msg for channel ${msg.channelId}" }
                         val state = _channels[msg.channelId] ?: error("channel ${msg.channelId} not found")
-                        val event1 = MessageReceived(msg)
+                        val event1 = ChannelEvent.MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
                         _channels = _channels + (msg.channelId to state1)
                         logger.info { "channel ${msg.channelId} new state $state1" }
@@ -500,21 +485,18 @@ class Peer(
                     }
                     else -> logger.warning { "received unhandled message ${Hex.encode(event.data)}" }
                 }
-            } // event is ByteReceived
+            }
             event is WatchReceived && !_channels.containsKey(event.watch.channelId) -> {
                 logger.error { "received watch event ${event.watch} for unknown channel ${event.watch.channelId}}" }
             }
             event is WatchReceived -> {
                 val state = _channels[event.watch.channelId] ?: error("channel ${event.watch.channelId} not found")
-                val event1 = fr.acinq.eclair.channel.WatchReceived(event.watch)
+                val event1 = ChannelEvent.WatchReceived(event.watch)
                 val (state1, actions) = state.process(event1)
                 processActions(event.watch.channelId, actions)
                 _channels = _channels + (event.watch.channelId to state1)
                 logger.info { "channel ${event.watch.channelId} new state $state1" }
-            } // event is WatchReceived
-            //
-            // receive payments
-            //
+            }
             event is ReceivePayment -> {
                 logger.info { "creating invoice $event" }
                 val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description)
@@ -522,19 +504,22 @@ class Peer(
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 event.result.complete(pr)
             }
-            //
-            // send payments
-            //
+            event is PayToOpenResponseEvent -> {
+                logger.info { "sending pay-to-open response" }
+                sendToPeer(event.payToOpenResponse)
+            }
             event is SendPayment -> {
                 when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
                         listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
-                        for (action in result.actions) {
-                            input.send(action)
-                        }
+                        result.actions.forEach { input.send(it) }
                     }
                     is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                 }
+            }
+            event is CheckPaymentsTimeout -> {
+                val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
+                actions.forEach { input.send(it) }
             }
             event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
                 // this is for all channels
@@ -544,22 +529,13 @@ class Peer(
                     _channels = _channels + (key to state1)
                 }
             }
-            event is WrappedChannelEvent && !_channels.containsKey(event.channelId) -> {
-                logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
-            }
-            event is WrappedChannelEvent -> {
-                val state = _channels[event.channelId] ?: error("channel ${event.channelId} not found")
-                val (state1, actions) = state.process(event.channelEvent)
-                processActions(event.channelId, actions)
-                _channels = _channels + (event.channelId to state1)
-            }
-            event is PayToOpenResponseEvent -> {
-                logger.info { "sending pay-to-open response" }
-                sendToPeer(event.payToOpenResponse)
-            }
-            event is CheckPaymentsTimeout -> {
-                val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
-                actions.forEach { input.send(it) }
+            event is WrappedChannelEvent -> when (val state = _channels[event.channelId]) {
+                null -> logger.error { "received ${event.channelEvent} for a unknown channel ${event.channelId}" }
+                else -> {
+                    val (state1, actions) = state.process(event.channelEvent)
+                    processActions(event.channelId, actions)
+                    _channels = _channels + (event.channelId to state1)
+                }
             }
         }
     }
