@@ -16,7 +16,6 @@ import fr.acinq.eclair.wire.FailureMessage
 import fr.acinq.eclair.wire.OnionRoutingPacket
 import kotlinx.serialization.Serializable
 
-
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
       d88P  Y88b d88P" "Y88b 8888b   d8888 8888b   d8888       d88888 8888b   888 888  "Y88b d88P  Y88b
@@ -29,35 +28,29 @@ import kotlinx.serialization.Serializable
  */
 
 sealed class Command
-sealed class HasHtlcId : Command() {
+
+data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false) : Command()
+
+sealed class HtlcSettlementCommand : Command() {
     abstract val id: Long
 }
 
-data class CMD_FULFILL_HTLC(override val id: Long, val r: ByteVector32, val commit: Boolean = false) : HasHtlcId()
-data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: Boolean = false) : HasHtlcId() {
+data class CMD_FULFILL_HTLC(override val id: Long, val r: ByteVector32, val commit: Boolean = false) : HtlcSettlementCommand()
+data class CMD_FAIL_MALFORMED_HTLC(override val id: Long, val onionHash: ByteVector32, val failureCode: Int, val commit: Boolean = false) : HtlcSettlementCommand()
+data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: Boolean = false) : HtlcSettlementCommand() {
     sealed class Reason {
         data class Bytes(val bytes: ByteVector) : Reason()
         data class Failure(val message: FailureMessage) : Reason()
     }
 }
 
-data class CMD_FAIL_MALFORMED_HTLC(override val id: Long, val onionHash: ByteVector32, val failureCode: Int, val commit: Boolean = false) : HasHtlcId()
-data class CMD_ADD_HTLC(
-    val amount: MilliSatoshi,
-    val paymentHash: ByteVector32,
-    val cltvExpiry: CltvExpiry,
-    val onion: OnionRoutingPacket,
-    val paymentId: UUID,
-    val commit: Boolean = false,
-) : Command()
-
-data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
 object CMD_SIGN : Command()
-data class CMD_CLOSE(val scriptPubKey: ByteVector?) : Command()
+data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
 data class CMD_UPDATE_RELAY_FEE(val feeBase: MilliSatoshi, val feeProportionalMillionths: Long) : Command()
-object CMD_FORCECLOSE : Command()
-object CMD_GETSTATE : Command()
-object CMD_GETSTATEDATA : Command()
+
+sealed class CloseCommand : Command()
+data class CMD_CLOSE(val scriptPubKey: ByteVector?) : CloseCommand()
+object CMD_FORCECLOSE : CloseCommand()
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -118,7 +111,7 @@ data class LocalCommitPublished(
 
         // are there remaining spendable outputs from the commitment tx? we just subtract all known spent outputs from the ones we control
         val commitOutputsSpendableByUs = (listOfNotNull(claimMainDelayedOutputTx) + htlcSuccessTxs + htlcTimeoutTxs)
-            .flatMap { it.txIn.map { it.outPoint }.toSet() - irrevocablySpent.keys }
+            .flatMap { it.txIn.map { txIn -> txIn.outPoint }.toSet() - irrevocablySpent.keys }
 
         // which htlc delayed txes can we expect to be confirmed?
         val unconfirmedHtlcDelayedTxes = claimHtlcDelayedTxs
@@ -343,7 +336,6 @@ data class RevokedCommitPublished(
         }
         val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
 
-
         // we watch outputs of the commitment tx that both parties may spend
         val watchSpentQueue = buildList {
             mainPenaltyTx?.let { add(it) }
@@ -404,7 +396,6 @@ data class ChannelVersion(val bits: BitField) {
     infix fun and(other: ChannelVersion) = ChannelVersion(bits and other.bits)
     infix fun xor(other: ChannelVersion) = ChannelVersion(bits xor other.bits)
 
-    // TODO: This is baaad performance! The copy needs to be optimized out.
     fun isSet(bit: Int) = bits.getRight(bit)
 
     val hasPubkeyKeyPath: Boolean by lazy { isSet(USE_PUBKEY_KEYPATH_BIT) }
@@ -434,8 +425,8 @@ data class ChannelVersion(val bits: BitField) {
 }
 
 object ChannelFlags {
-    val AnnounceChannel = 0x01.toByte()
-    val Empty = 0x00.toByte()
+    const val AnnounceChannel = 0x01.toByte()
+    const val Empty = 0x00.toByte()
 }
 
 @Serializable

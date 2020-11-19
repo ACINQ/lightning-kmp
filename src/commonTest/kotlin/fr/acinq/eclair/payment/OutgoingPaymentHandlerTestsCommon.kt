@@ -73,7 +73,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(1, result.actions.size)
             val processResult = alice.process(progress.actions.first().channelEvent)
             assertTrue { processResult.first is Normal }
-            assertTrue { processResult.second.filterIsInstance<HandleCommandFailed>().isEmpty() }
+            assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
             alice = processResult.first as Normal
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         }
@@ -91,10 +91,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val addFailure = processResult.second.filterIsInstance<HandleCommandFailed>().firstOrNull()
+            val addFailure = processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processAddFailure(alice.channelId, addFailure, mapOf(alice.channelId to alice))
+            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
             val expected = OutgoingPaymentHandler.Failure(
                 payment,
                 OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1))))
@@ -122,7 +122,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(1, result.actions.size)
             val processResult = alice.process(progress.actions.first().channelEvent)
             assertTrue { processResult.first is Normal }
-            assertTrue { processResult.second.filterIsInstance<HandleCommandFailed>().isEmpty() }
+            assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
             alice = processResult.first as Normal
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         }
@@ -140,10 +140,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
 
-            val addFailure = processResult.second.filterIsInstance<HandleCommandFailed>().firstOrNull()
+            val addFailure = processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processAddFailure(alice.channelId, addFailure, mapOf(alice.channelId to alice))
+            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
             val expected = OutgoingPaymentHandler.Failure(
                 payment,
                 OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat))))
@@ -164,13 +164,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds = filterAddHtlcCommands(result)
         assertEquals(1, adds.size)
-        val add = adds.first()
+        val (channelId, add) = adds.first()
         assertEquals(205_000.msat, add.amount)
         assertEquals(payment.paymentHash, add.paymentHash)
-        val channelId = result.actions.first().channelId
 
         // The trampoline node should receive the right forwarding information.
-        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(UpdateAddHtlc(channelId, 0, add.amount, add.paymentHash, add.cltvExpiry, add.onion), TestConstants.Bob.nodeParams.nodePrivateKey)
+        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
         assertEquals(205_000.msat, outerB.amount)
         assertEquals(205_000.msat, outerB.totalAmount)
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
@@ -189,9 +188,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(payloadC.amount, payloadC.totalAmount)
         assertEquals(payment.paymentRequest.paymentSecret, payloadC.paymentSecret)
 
-        val fulfill = UpdateFulfillHtlc(channelId, 0, randomBytes32())
-        val success = outgoingPaymentHandler.processFulfill(ProcessFulfill(fulfill, add.paymentId))
-        assertEquals(OutgoingPaymentHandler.Success(payment, fulfill.paymentPreimage, 5_000.msat), success)
+        val preimage = randomBytes32()
+        val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId, add, preimage))
+        assertEquals(OutgoingPaymentHandler.Success(payment, preimage, 5_000.msat), success)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
     }
 
@@ -206,12 +205,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds = filterAddHtlcCommands(result)
         assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.amount }.sum())
-        adds.forEach { assertEquals(payment.paymentHash, it.paymentHash) }
+        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
+        adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
 
-        adds.forEach { add ->
+        adds.forEach { (channelId, add) ->
             // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(UpdateAddHtlc(randomBytes32(), 0, add.amount, add.paymentHash, add.cltvExpiry, add.onion), TestConstants.Bob.nodeParams.nodePrivateKey)
+            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
             assertEquals(add.amount, outerB.amount)
             assertEquals(310_000.msat, outerB.totalAmount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
@@ -232,9 +231,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         val preimage = randomBytes32()
-        val success1 = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[0].paymentId))
+        val (channelId1, add1) = adds[0]
+        val fulfill1 = createRemoteFulfill(channelId1, add1, preimage)
+        val success1 = outgoingPaymentHandler.processAddSettled(fulfill1)
         assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-        val success2 = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[1].paymentId))
+        val (channelId2, add2) = adds[1]
+        val fulfill2 = ChannelAction.ProcessCmdRes.AddSettledFulfill(add2.paymentId, makeUpdateAddHtlc(channelId2, add2), ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
+        val success2 = outgoingPaymentHandler.processAddSettled(fulfill2)
         assertEquals(OutgoingPaymentHandler.Success(payment, preimage, 10_000.msat), success2)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
     }
@@ -251,12 +254,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds = filterAddHtlcCommands(result)
         assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.amount }.sum())
-        adds.forEach { assertEquals(payment.paymentHash, it.paymentHash) }
+        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
+        adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
 
-        adds.forEach { add ->
+        adds.forEach { (channelId, add) ->
             // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptNodeRelay(UpdateAddHtlc(randomBytes32(), 0, add.amount, add.paymentHash, add.cltvExpiry, add.onion), TestConstants.Bob.nodeParams.nodePrivateKey)
+            val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
             assertEquals(add.amount, outerB.amount)
             assertEquals(310_000.msat, outerB.totalAmount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
@@ -270,9 +273,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         val preimage = randomBytes32()
-        val success1 = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[0].paymentId))
+        val (channelId1, add1) = adds[0]
+        val success1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId1, add1, preimage))
         assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-        val success2 = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[1].paymentId))
+        val (channelId2, add2) = adds[1]
+        val success2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId2, add2, preimage))
         assertEquals(OutgoingPaymentHandler.Success(payment, preimage, 10_000.msat), success2)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
     }
@@ -287,20 +292,20 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds1 = filterAddHtlcCommands(progress1)
         assertEquals(2, adds1.size)
-        assertEquals(300_000.msat, adds1.map { it.amount }.sum())
+        assertEquals(300_000.msat, adds1.map { it.second.amount }.sum())
 
         // This first attempt fails because fees are too low.
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val fail1 = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds1[0], attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight)
+        val fail1 = outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight)
         assertNull(fail1)
-        val progress2 = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds1[1], attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val progress2 = outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds2 = filterAddHtlcCommands(progress2)
         assertEquals(2, adds2.size)
-        assertEquals(301_030.msat, adds2.map { it.amount }.sum())
-        adds2.forEach { assertEquals(payment.paymentHash, it.paymentHash) }
-        adds2.forEach { add ->
+        assertEquals(301_030.msat, adds2.map { it.second.amount }.sum())
+        adds2.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
+        adds2.forEach { (channelId, add) ->
             // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(UpdateAddHtlc(randomBytes32(), 0, add.amount, add.paymentHash, add.cltvExpiry, add.onion), TestConstants.Bob.nodeParams.nodePrivateKey)
+            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
             assertEquals(add.amount, outerB.amount)
             assertEquals(301_030.msat, outerB.totalAmount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(576) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
@@ -322,10 +327,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // The second attempt succeeds.
         val preimage = randomBytes32()
-        val success1 = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds2[0].paymentId))
+        val success1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds2[0].first, adds2[0].second, preimage))
         assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
         assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        val success2 = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds2[1].paymentId))
+        val success2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds2[1].first, adds2[1].second, preimage))
         assertEquals(OutgoingPaymentHandler.Success(payment, preimage, 1_030.msat), success2)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
     }
@@ -345,12 +350,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds1 = filterAddHtlcCommands(progress1)
         assertEquals(3, adds1.size)
-        assertEquals(560_000.msat, adds1.map { it.amount }.sum())
+        assertEquals(560_000.msat, adds1.map { it.second.amount }.sum())
 
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        assertNull(outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds1[0], attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
-        assertNull(outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds1[1], attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
-        val fail = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds1[2], attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        assertNull(outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
+        assertNull(outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
+        val fail = outgoingPaymentHandler.processAddSettled(adds1[2].first, createRemoteFailure(adds1[2].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeInsufficient))))
         assertEquals(expected, fail)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -371,16 +376,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds1 = filterAddHtlcCommands(progress1)
         assertEquals(1, adds1.size)
-        assertEquals(230_000.msat, adds1.map { it.amount }.sum())
+        assertEquals(230_000.msat, adds1.map { it.second.amount }.sum())
 
         val attempt1 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val progress2 = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds1[0], attempt1, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val progress2 = outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt1, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds2 = filterAddHtlcCommands(progress2)
         assertEquals(1, adds2.size)
-        assertEquals(240_000.msat, adds2.map { it.amount }.sum())
+        assertEquals(240_000.msat, adds2.map { it.second.amount }.sum())
 
         val attempt2 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val fail = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds2[0], attempt2, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        val fail = outgoingPaymentHandler.processAddSettled(adds2[0].first, createRemoteFailure(adds2[0].second, attempt2, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeInsufficient))))
         assertEquals(expected, fail)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -397,10 +402,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
             val adds = filterAddHtlcCommands(progress)
             assertEquals(1, adds.size)
-            assertEquals(50_000.msat, adds.map { it.amount }.sum())
+            assertEquals(50_000.msat, adds.map { it.second.amount }.sum())
 
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-            val fail = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds[0], attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+            val fail = outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.UnknownError, listOf(Either.Right(remoteFailure))))
             assertEquals(expected, fail)
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -415,7 +420,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         var progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         assertEquals(1, progress.actions.size)
-        assertEquals(5_000.msat, filterAddHtlcCommands(progress).map { it.amount }.sum())
+        assertEquals(5_000.msat, filterAddHtlcCommands(progress).map { it.second.amount }.sum())
 
         // Channels fail, so we retry with different channels, without raising the fees.
         val localFailures = listOf(
@@ -424,16 +429,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             { channelId: ByteVector32 -> HtlcValueTooHighInFlight(channelId, 150_000U, 155_000.msat) },
         )
         localFailures.forEach { localFailure ->
-            val channelId = progress.actions.first().channelId
-            val command = (progress.actions.first().channelEvent as ExecuteCommand).command
-            progress = outgoingPaymentHandler.processAddFailure(channelId, HandleCommandFailed(command, localFailure(channelId)), channels) as OutgoingPaymentHandler.Progress
-            assertEquals(5_000.msat, filterAddHtlcCommands(progress).map { it.amount }.sum())
+            val (channelId, add) = filterAddHtlcCommands(progress).first()
+            progress = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, localFailure(channelId), null), channels) as OutgoingPaymentHandler.Progress
+            assertEquals(5_000.msat, add.amount)
         }
 
         // The last channel fails: we don't have any channels available to retry.
-        val channelId = progress.actions.first().channelId
-        val command = (progress.actions.first().channelEvent as ExecuteCommand).command
-        val fail = outgoingPaymentHandler.processAddFailure(channelId, HandleCommandFailed(command, TooManyAcceptedHtlcs(channelId, 15)), channels) as OutgoingPaymentHandler.Failure
+        val (channelId, add) = filterAddHtlcCommands(progress).first()
+        val fail = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 15), null), channels) as OutgoingPaymentHandler.Failure
         assertEquals(FinalFailure.InsufficientBalance, fail.failure.reason)
         assertEquals(4, fail.failure.failures.filter { it.isLeft }.size)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -447,19 +450,18 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         assertEquals(1, progress1.actions.size)
-        assertEquals(5_000.msat, filterAddHtlcCommands(progress1).map { it.amount }.sum())
+        assertEquals(5_000.msat, filterAddHtlcCommands(progress1).map { it.second.amount }.sum())
 
         // This first payment fails:
-        val channelId = progress1.actions.first().channelId
-        val command = (progress1.actions.first().channelEvent as ExecuteCommand).command
-        val progress2 = outgoingPaymentHandler.processAddFailure(channelId, HandleCommandFailed(command, TooManyAcceptedHtlcs(channelId, 1)), channels) as OutgoingPaymentHandler.Progress
+        val (channelId, add) = filterAddHtlcCommands(progress1).first()
+        val progress2 = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 1), null), channels) as OutgoingPaymentHandler.Progress
         assertEquals(1, progress2.actions.size)
         val adds = filterAddHtlcCommands(progress2)
-        assertEquals(5_000.msat, adds.map { it.amount }.sum())
+        assertEquals(5_000.msat, adds.map { it.second.amount }.sum())
 
         // This second attempt succeeds:
         val preimage = randomBytes32()
-        val success = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[0].paymentId))
+        val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage))
         assertEquals(OutgoingPaymentHandler.Success(payment, preimage, 0.msat), success)
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
     }
@@ -473,16 +475,16 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds = filterAddHtlcCommands(progress)
         assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.amount }.sum())
+        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
 
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
         val remoteFailure = IncorrectOrUnknownPaymentDetails(310_000.msat, TestConstants.defaultBlockHeight.toLong())
-        assertNull(outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds[0], attempt, remoteFailure), channels, TestConstants.defaultBlockHeight))
+        assertNull(outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight))
 
         // The recipient released the preimage without receiving the full payment amount.
         // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
         val preimage = randomBytes32()
-        val success = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[1].paymentId)) as OutgoingPaymentHandler.Success
+        val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[1].first, adds[1].second, preimage)) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success.preimage)
         assertTrue(success.fees < 0.msat) // since we paid much less than the expected amount, it results in negative fees
     }
@@ -496,18 +498,18 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds = filterAddHtlcCommands(progress)
         assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.amount }.sum())
+        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
 
         val preimage = randomBytes32()
         val expected = OutgoingPaymentHandler.PreimageReceived(payment, preimage)
-        val result = outgoingPaymentHandler.processFulfill(ProcessFulfill(UpdateFulfillHtlc(randomBytes32(), 0, preimage), adds[0].paymentId))
+        val result = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage))
         assertEquals(expected, result)
 
         // The recipient released the preimage without receiving the full payment amount.
         // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
         val remoteFailure = IncorrectOrUnknownPaymentDetails(310_000.msat, TestConstants.defaultBlockHeight.toLong())
-        val success = outgoingPaymentHandler.processRemoteFailure(createRemoteFailure(adds[1], attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Success
+        val success = outgoingPaymentHandler.processAddSettled(adds[1].first, createRemoteFailure(adds[1].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success.preimage)
         assertTrue(success.fees < 0.msat) // since we paid much less than the expected amount, it results in negative fees
     }
@@ -560,17 +562,34 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         }.toMap()
     }
 
-    private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<CMD_ADD_HTLC> =
-        progress.actions.map {
-            it.channelEvent
-        }.filterIsInstance<ExecuteCommand>().map {
-            it.command
-        }.filterIsInstance<CMD_ADD_HTLC>()
+    private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<Pair<ByteVector32, CMD_ADD_HTLC>> {
+        val addCommands = mutableListOf<Pair<ByteVector32, CMD_ADD_HTLC>>()
+        for (action in progress.actions) {
+            val addCommand = (action.channelEvent as? ChannelEvent.ExecuteCommand)?.command as? CMD_ADD_HTLC
+            if (addCommand != null) {
+                addCommands.add(Pair(action.channelId, addCommand))
+            }
+        }
+        return addCommands.toList()
+    }
 
-    private fun createRemoteFailure(add: CMD_ADD_HTLC, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ProcessFail {
+    private fun makeUpdateAddHtlc(channelId: ByteVector32, cmd: CMD_ADD_HTLC, htlcId: Long = 0): UpdateAddHtlc =
+        UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+
+    private fun createRemoteFulfill(channelId: ByteVector32, add: CMD_ADD_HTLC, preimage: ByteVector32): ChannelAction.ProcessCmdRes.AddSettledFulfill {
+        val updateAddHtlc = makeUpdateAddHtlc(channelId, add)
+        return ChannelAction.ProcessCmdRes.AddSettledFulfill(add.paymentId, updateAddHtlc, ChannelAction.HtlcResult.Fulfill.RemoteFulfill(UpdateFulfillHtlc(channelId, updateAddHtlc.id, preimage)))
+    }
+
+    private fun createRemoteFailure(add: CMD_ADD_HTLC, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ChannelAction.ProcessCmdRes.AddSettledFail {
         val sharedSecrets = attempt.pending.getValue(add.paymentId).second
         val reason = FailurePacket.create(sharedSecrets.perHopSecrets.last().first, failureMessage)
-        return ProcessFail(UpdateFailHtlc(randomBytes32(), 0, reason.toByteVector()), add.paymentId)
+        val updateAddHtlc = makeUpdateAddHtlc(randomBytes32(), add)
+        return ChannelAction.ProcessCmdRes.AddSettledFail(
+            add.paymentId,
+            updateAddHtlc,
+            ChannelAction.HtlcResult.Fail.RemoteFail(UpdateFailHtlc(updateAddHtlc.channelId, updateAddHtlc.id, reason.toByteVector()))
+        )
     }
 
 }

@@ -323,13 +323,9 @@ class IncomingPaymentHandler(
                 val actions = parts.map { part ->
                     when (part) {
                         is HtlcPart -> {
-                            val cmd = CMD_FULFILL_HTLC(
-                                id = part.htlc.id,
-                                r = incomingPayment.paymentPreimage,
-                                commit = true
-                            )
-                            val channelEvent = ExecuteCommand(command = cmd)
-                            WrappedChannelEvent(channelId = part.htlc.channelId, channelEvent = channelEvent)
+                            val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.paymentPreimage, true)
+                            val channelEvent = ChannelEvent.ExecuteCommand(cmd)
+                            WrappedChannelEvent(part.htlc.channelId, channelEvent)
                         }
                         is PayToOpenPart -> PayToOpenResponseEvent(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)))
                     }
@@ -371,36 +367,14 @@ class IncomingPaymentHandler(
         return actions
     }
 
-    /**
-     * Creates and returns a CMD_FAIL_HTLC (wrapped in a WrappedChannelEvent)
-     */
-    private fun actionForFailureMessage(
-        msg: FailureMessage,
-        htlc: UpdateAddHtlc,
-        commit: Boolean = true
-    ): WrappedChannelEvent {
-
+    /** Creates and returns a CMD_FAIL_HTLC (wrapped in a WrappedChannelEvent) */
+    private fun actionForFailureMessage(msg: FailureMessage, htlc: UpdateAddHtlc, commit: Boolean = true): WrappedChannelEvent {
         val cmd: Command = when (msg) {
-            is BadOnion -> {
-                CMD_FAIL_MALFORMED_HTLC(
-                    id = htlc.id,
-                    onionHash = msg.onionHash,
-                    failureCode = msg.code,
-                    commit = commit
-                )
-            }
-            else -> {
-                val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
-                CMD_FAIL_HTLC(
-                    id = htlc.id,
-                    reason = reason,
-                    commit = commit
-                )
-            }
+            is BadOnion -> CMD_FAIL_MALFORMED_HTLC(htlc.id, msg.onionHash, msg.code, commit)
+            else -> CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(msg), commit)
         }
-
-        val channelEvent = ExecuteCommand(command = cmd)
-        return WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
+        val channelEvent = ChannelEvent.ExecuteCommand(cmd)
+        return WrappedChannelEvent(htlc.channelId, channelEvent)
     }
 
     private fun actionForPayToOpenFailure(

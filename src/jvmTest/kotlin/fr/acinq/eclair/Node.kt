@@ -7,8 +7,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.CMD_CLOSE
-import fr.acinq.eclair.channel.ChannelState
-import fr.acinq.eclair.channel.ExecuteCommand
+import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
@@ -30,7 +29,6 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
 import java.sql.DriverManager
-
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
@@ -237,7 +235,7 @@ object Node {
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        peer.send(WrappedChannelEvent(channelId, ExecuteCommand(CMD_CLOSE(null))))
+                        peer.send(WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_CLOSE(null))))
                         call.respond(CloseChannelResponse("pending"))
                     }
                 }

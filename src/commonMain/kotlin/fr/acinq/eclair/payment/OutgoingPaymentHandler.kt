@@ -83,9 +83,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
         return childPayments
     }
 
-    fun processAddFailure(channelId: ByteVector32, event: HandleCommandFailed, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
-        // We are looking for errors from the channel in response to our CMD_ADD_HTLC request
-        val add = event.cmd as? CMD_ADD_HTLC ?: return null
+    fun processAddFailed(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddFailed, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
+        val add = event.cmd
         val payment = getPaymentAttempt(add.paymentId)
         if (payment == null) {
             logger.error { "h:${add.paymentHash} i:${add.paymentId} paymentId doesn't match any known payment attempt" }
@@ -93,25 +92,24 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
             return UnknownPayment
         }
 
-        logger.verbose { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error?.message}" }
+        logger.verbose { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error.message}" }
         // TODO: update payment status in DB
 
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
                 val ignore = payment.ignore + channelId // we ignore the failing channel in retries
-                val failure: List<Either<ChannelException, FailureMessage>> = if (event.error is ChannelException) listOf(Either.Left(event.error)) else listOf()
                 when (val routes = RouteCalculation.findRoutes(add.amount, channels - ignore)) {
-                    is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, failure, logger)
+                    is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, listOf(Either.Left(event.error)), logger)
                     is Either.Right -> {
                         val newPayments = createChildPayments(payment.request, routes.value, payment.trampolinePayload)
                         val updatedPayments = payment.pending - add.paymentId + newPayments.map { it.first.id to Pair(it.first, it.second) }
-                        val updated = payment.copy(ignore = ignore, failures = payment.failures + failure, pending = updatedPayments)
+                        val updated = payment.copy(ignore = ignore, failures = payment.failures + Either.Left(event.error), pending = updatedPayments)
                         val result = Progress(payment.request, updated.fees, newPayments.map { it.third })
                         Pair(updated, result)
                     }
                 }
             }
-            is PaymentAttempt.PaymentAborted -> payment.failChild(add.paymentId, if (event.error is ChannelException) listOf(Either.Left(event.error)) else listOf(), logger)
+            is PaymentAttempt.PaymentAborted -> payment.failChild(add.paymentId, listOf(Either.Left(event.error)), logger)
             is PaymentAttempt.PaymentSucceeded -> payment.failChild(add.paymentId, logger)
         }
 
@@ -120,7 +118,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
         return result
     }
 
-    fun processRemoteFailure(event: ProcessRemoteFailure, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): ProcessFailureResult? {
+    fun processAddSettled(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddSettledFail, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): ProcessFailureResult? {
         val payment = getPaymentAttempt(event.paymentId)
         if (payment == null) {
             logger.error { "i:${event.paymentId} paymentId doesn't match any known payment attempt" }
@@ -128,15 +126,15 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
             return UnknownPayment
         }
 
-        val decryptedFailure = when (event) {
-            is ProcessFailMalformed -> null
-            is ProcessFail -> when (val part = payment.pending[event.paymentId]) {
+        val decryptedFailure: FailureMessage? = when (event.result) {
+            is ChannelAction.HtlcResult.Fail.RemoteFail -> when (val part = payment.pending[event.paymentId]) {
                 null -> null
-                else -> when (val decrypted = FailurePacket.decrypt(event.fail.reason.toByteArray(), part.second)) {
+                else -> when (val decrypted = FailurePacket.decrypt(event.result.fail.reason.toByteArray(), part.second)) {
                     is Try.Failure -> null
                     is Try.Success -> decrypted.result.failureMessage
                 }
             }
+            else -> null
         }
 
         logger.verbose { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC failed: ${decryptedFailure?.message}" }
@@ -154,7 +152,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
                     PaymentAttempt.PaymentAborted(payment.request, finalError, payment.pending, listOf()).failChild(event.paymentId, failure, logger)
                 } else {
                     // The trampoline node is asking us to retry the payment with more fees.
-                    logger.verbose { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} c:${event.channelId} child payment failed because of fees" }
+                    logger.verbose { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} c:$channelId child payment failed because of fees" }
                     val updated = payment.copy(pending = payment.pending - event.paymentId)
                     if (updated.pending.isNotEmpty()) {
                         // We wait for all pending HTLCs to be settled before retrying.
@@ -200,7 +198,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
         return result
     }
 
-    fun processFulfill(event: ProcessFulfill): ProcessFulfillResult {
+    fun processAddSettled(event: ChannelAction.ProcessCmdRes.AddSettledFulfill): ProcessFulfillResult {
         val payment = getPaymentAttempt(event.paymentId)
         if (payment == null) {
             logger.error { "i:${event.paymentId} paymentId doesn't match any known payment attempt" }
@@ -213,13 +211,13 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
         val part = payment.pending[event.paymentId]?.first
 
         val updated = when (payment) {
-            is PaymentAttempt.PaymentInProgress -> PaymentAttempt.PaymentSucceeded(payment.request, event.fulfill.paymentPreimage, part?.let { listOf(it) } ?: listOf(), payment.pending - event.paymentId)
+            is PaymentAttempt.PaymentInProgress -> PaymentAttempt.PaymentSucceeded(payment.request, event.result.paymentPreimage, part?.let { listOf(it) } ?: listOf(), payment.pending - event.paymentId)
             is PaymentAttempt.PaymentSucceeded -> payment.copy(pending = payment.pending - event.paymentId, parts = part?.let { payment.parts + it } ?: payment.parts)
             is PaymentAttempt.PaymentAborted -> {
                 // The recipient released the preimage without receiving the full payment amount.
                 // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
                 logger.warning { "payment succeeded after partial failure: we may have paid less than the full amount" }
-                PaymentAttempt.PaymentSucceeded(payment.request, event.fulfill.paymentPreimage, part?.let { listOf(it) } ?: listOf(), payment.pending - event.paymentId)
+                PaymentAttempt.PaymentSucceeded(payment.request, event.result.paymentPreimage, part?.let { listOf(it) } ?: listOf(), payment.pending - event.paymentId)
             }
         }
 
@@ -227,9 +225,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
 
         return if (updated.isComplete()) {
             logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment successfully sent (fees=${updated.fees})" }
-            Success(payment.request, event.fulfill.paymentPreimage, updated.fees)
+            Success(payment.request, event.result.paymentPreimage, updated.fees)
         } else {
-            PreimageReceived(payment.request, event.fulfill.paymentPreimage)
+            PreimageReceived(payment.request, event.result.paymentPreimage)
         }
     }
 
@@ -260,7 +258,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, private val trampolineP
 
         val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
         val (add, secrets) = OutgoingPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
-        return Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ExecuteCommand(add)))
+        return Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ChannelEvent.ExecuteCommand(add)))
     }
 
     private fun createTrampolinePayload(request: SendPayment, fees: RouteCalculation.TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
