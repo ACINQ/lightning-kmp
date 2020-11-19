@@ -1021,9 +1021,11 @@ data class WaitForOpenChannel(
                             event.message.channelVersion ?: ChannelVersion.STANDARD
                         }
                         require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
-                        Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeeratePerKw)?.let {
-                            logger.error(it.cause) { "invalid ${it.message} in state $this" }
-                            return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, it.message))))
+                        when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeeratePerKw)) {
+                            is Either.Left -> {
+                                logger.error(err.value) { "invalid ${event.message} in state $this" }
+                                return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, err.value.message))))
+                            }
                         }
 
                         val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
@@ -1237,9 +1239,11 @@ data class WaitForAcceptChannel(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived && event.message is AcceptChannel -> {
-                Helpers.validateParamsFunder(staticParams.nodeParams, lastSent, event.message)?.let {
-                    logger.error(it.cause) { "invalid ${it.message} in state $this" }
-                    return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(initFunder.temporaryChannelId, it.message))))
+                when (val err = Helpers.validateParamsFunder(staticParams.nodeParams, lastSent, event.message)) {
+                    is Either.Left -> {
+                        logger.error(err.value) { "invalid ${event.message} in state $this" }
+                        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(initFunder.temporaryChannelId, err.value.message))))
+                    }
                 }
                 // TODO: check equality of temporaryChannelId? or should be done upstream
                 val remoteParams = RemoteParams(
