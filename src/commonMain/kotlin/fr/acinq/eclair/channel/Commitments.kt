@@ -6,6 +6,7 @@ import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
@@ -329,14 +330,14 @@ data class Commitments(
         return Either.Right(commitments1)
     }
 
-    fun getOutgoingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
+    private fun getOutgoingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
         val localSigned = (remoteNextCommitInfo.left?.nextRemoteCommit ?: remoteCommit).spec.findIncomingHtlcById(htlcId) ?: return null
         val remoteSigned = localCommit.spec.findOutgoingHtlcById(htlcId) ?: return null
         require(localSigned.add == remoteSigned.add)
         return localSigned.add
     }
 
-    fun getIncomingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
+    private fun getIncomingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
         val localSigned = (remoteNextCommitInfo.left?.nextRemoteCommit ?: remoteCommit).spec.findOutgoingHtlcById(htlcId) ?: return null
         val remoteSigned = localCommit.spec.findIncomingHtlcById(htlcId) ?: return null
         require(localSigned.add == remoteSigned.add)
@@ -429,10 +430,10 @@ data class Commitments(
         return Either.Right(Pair(commitments1, fee))
     }
 
-    fun receiveFee(localCommitmentFeerate: FeeratePerKw, fee: UpdateFee, maxFeerateMismatch: Double): Either<ChannelException, Commitments> {
+    fun receiveFee(localCommitmentFeerate: FeeratePerKw, fee: UpdateFee, feerateTolerance: FeerateTolerance): Either<ChannelException, Commitments> {
         if (localParams.isFunder) return Either.Left(FundeeCannotSendUpdateFee(channelId))
         if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) return Either.Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
-        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localCommitmentFeerate, maxFeerateMismatch)) return Either.Left(FeerateTooDifferent(channelId, localCommitmentFeerate, fee.feeratePerKw))
+        if (Helpers.isFeeDiffTooHigh(localCommitmentFeerate, fee.feeratePerKw, feerateTolerance)) return Either.Left(FeerateTooDifferent(channelId, localCommitmentFeerate, fee.feeratePerKw))
         // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
         // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
         // and it would be tricky to check if the conditions are met at signing

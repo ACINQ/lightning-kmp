@@ -1,6 +1,8 @@
 package fr.acinq.eclair.blockchain.fee
 
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.io.SatoshiKSerializer
 import fr.acinq.eclair.utils.sat
 import kotlinx.serialization.Serializable
@@ -18,7 +20,10 @@ interface FeeProvider {
 data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val commitmentFeerate: FeeratePerKw, val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
 
 @Serializable
-data class OnChainFeeConf(val maxFeerateMismatch: Double, val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double)
+data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)
+
+@Serializable
+data class OnChainFeeConf(val maxFeerateMismatch: Double, val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double, val feerateTolerance: FeerateTolerance)
 
 @Serializable
 /** Fee rate in satoshi-per-bytes. */

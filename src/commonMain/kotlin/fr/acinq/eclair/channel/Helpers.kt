@@ -13,6 +13,7 @@ import fr.acinq.eclair.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
@@ -27,7 +28,6 @@ import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.native.concurrent.ThreadLocal
 
@@ -107,7 +107,7 @@ object Helpers {
             return Either.Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
         }
 
-        if (isFeeDiffTooHigh(open.feeratePerKw, localFeerate, nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+        if (isFeeDiffTooHigh(localFeerate, open.feeratePerKw, nodeParams.onChainFeeConf.feerateTolerance)) {
             return Either.Left(FeerateTooDifferent(open.temporaryChannelId, localFeerate, open.feeratePerKw))
         }
 
@@ -170,26 +170,19 @@ object Helpers {
     }
 
     /**
-     * @param referenceFee reference fee rate per kiloweight
-     * @param currentFee current fee rate per kiloweight
-     * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
-     */
-    fun feeRateMismatch(referenceFee: FeeratePerKw, currentFee: FeeratePerKw): Double = abs((2.0 * (referenceFee.toLong() - currentFee.toLong())) / (currentFee.toLong() + referenceFee.toLong()))
-
-    /**
      * @param remoteFeerate remote fee rate per kiloweight
      * @return true if the remote fee rate is too small
      */
-    fun isFeeTooSmall(remoteFeerate: FeeratePerKw): Boolean = remoteFeerate < FeeratePerKw.MinimumFeeratePerKw
+    private fun isFeeTooSmall(remoteFeerate: FeeratePerKw): Boolean = remoteFeerate < FeeratePerKw.MinimumFeeratePerKw
 
     /**
      * @param referenceFee reference fee rate per kiloweight
      * @param currentFee current fee rate per kiloweight
-     * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
-     * @return true if the difference between current and reference fee rates is too high.
-     *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
+     * @param tolerance maximum fee rate mismatch tolerated
+     * @return true if the difference between proposed and reference fee rates is too high.
      */
-    fun isFeeDiffTooHigh(referenceFee: FeeratePerKw, currentFee: FeeratePerKw, maxFeerateMismatchRatio: Double): Boolean = feeRateMismatch(referenceFee, currentFee) > maxFeerateMismatchRatio
+    fun isFeeDiffTooHigh(referenceFee: FeeratePerKw, currentFee: FeeratePerKw, tolerance: FeerateTolerance): Boolean =
+        currentFee < referenceFee * tolerance.ratioLow || referenceFee * tolerance.ratioHigh < currentFee
 
     /**
      * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,

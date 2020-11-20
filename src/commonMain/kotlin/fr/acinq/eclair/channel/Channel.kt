@@ -1732,7 +1732,7 @@ data class Normal(
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }
@@ -1920,7 +1920,7 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }

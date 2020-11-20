@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -44,7 +45,8 @@ object TestConstants {
             onChainFeeConf = OnChainFeeConf(
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1
+                updateFeeMinDiffRatio = 0.1,
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
             ),
             maxHtlcValueInFlightMsat = 150000000L,
             maxAcceptedHtlcs = 100,
@@ -110,7 +112,8 @@ object TestConstants {
             onChainFeeConf = OnChainFeeConf(
                 maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1
+                updateFeeMinDiffRatio = 0.1,
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
             ),
             maxHtlcValueInFlightMsat = Long.MAX_VALUE,
             maxAcceptedHtlcs = 100,
