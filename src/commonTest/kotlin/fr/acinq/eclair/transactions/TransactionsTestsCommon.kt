@@ -298,7 +298,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
 
         val commitTxNumber = 0x404142434445L
         val commitTx = run {
-            val txinfo = makeCommitTx(CommitmentsFormat.LegacyFormat, commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
             val localSig = sign(txinfo, localPaymentPriv)
             val remoteSig = sign(txinfo, remotePaymentPriv)
             addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
@@ -484,7 +484,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val txinfo = makeCommitTx(CommitmentsFormat.LegacyFormat, commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
             val localSig = sign(txinfo, localPaymentPriv)
             val remoteSig = sign(txinfo, remotePaymentPriv)
             Pair(addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig), outputs)

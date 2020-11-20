@@ -697,7 +697,7 @@ data class Commitments(
                 remoteHtlcPubkey,
                 spec
             )
-            val commitTx = Transactions.makeCommitTx(commitmentsFormat, commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitmentsFormat, commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feeratePerKw, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
         }
@@ -732,7 +732,7 @@ data class Commitments(
                 localHtlcPubkey,
                 spec
             )
-            val commitTx = Transactions.makeCommitTx(commitmentsFormat, commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitmentsFormat, commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feeratePerKw, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
         }

@@ -348,7 +348,6 @@ object Transactions {
     }
 
     fun makeCommitTx(
-        commitmentsFormat: CommitmentsFormat,
         commitTxInput: InputInfo,
         commitTxNumber: Long,
         localPaymentBasePoint: PublicKey,
@@ -356,7 +355,6 @@ object Transactions {
         localIsFunder: Boolean,
         outputs: TransactionsCommitmentOutputs
     ): TransactionWithInputInfo.CommitTx {
-        println(commitmentsFormat)
         val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
         val (sequence, locktime) = encodeTxNumber(txnumber)
 
