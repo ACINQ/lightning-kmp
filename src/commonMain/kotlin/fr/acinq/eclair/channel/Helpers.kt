@@ -13,7 +13,7 @@ import fr.acinq.eclair.blockchain.BITCOIN_OUTPUT_SPENT
 import fr.acinq.eclair.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
-import fr.acinq.eclair.blockchain.fee.OnchainFeerates
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.Generators
@@ -422,7 +422,7 @@ object Helpers {
          * @param commitments our commitment data, which include payment preimages
          * @return a list of transactions (one per HTLC that we can claim)
          */
-        fun claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnchainFeerates): LocalCommitPublished {
+        fun claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): LocalCommitPublished {
             val localCommit = commitments.localCommit
             val localParams = commitments.localParams
             val channelVersion = commitments.channelVersion
@@ -505,7 +505,7 @@ object Helpers {
          * @param tx           the remote commitment transaction that has just been published
          * @return a list of transactions (one per HTLC that we can claim)
          */
-        fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnchainFeerates): RemoteCommitPublished {
+        fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
             val channelVersion = commitments.channelVersion
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
@@ -643,7 +643,7 @@ object Helpers {
          *
          * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
          */
-        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnchainFeerates): RevokedCommitPublished? {
+        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): RevokedCommitPublished? {
             val channelVersion = commitments.channelVersion
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
@@ -774,7 +774,7 @@ object Helpers {
          * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
          * this is the purpose of this method.
          */
-        fun claimRevokedHtlcTxOutputs(keyManager: KeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: OnchainFeerates): Pair<RevokedCommitPublished, Transaction?> {
+        fun claimRevokedHtlcTxOutputs(keyManager: KeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: OnChainFeerates): Pair<RevokedCommitPublished, Transaction?> {
             val claimTxs = buildList {
                 revokedCommitPublished.claimMainOutputTx?.let { add(it) }
                 revokedCommitPublished.mainPenaltyTx?.let { add(it) }

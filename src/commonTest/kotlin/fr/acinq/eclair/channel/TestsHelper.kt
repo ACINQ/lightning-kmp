@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.fee.OnchainFeerates
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.UUID
@@ -44,8 +44,8 @@ internal inline fun <reified T : ChannelException> List<ChannelAction>.hasComman
 
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
-fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnChainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
-fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnChainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
+fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
+fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
 
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
@@ -53,13 +53,13 @@ object TestsHelper {
             WaitForInit(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnchainFeerates(10000, 10000, 10000, 10000, 10000)
+                currentOnChainFeerates = OnChainFeerates(10000, 10000, 10000, 10000, 10000)
             )
         var bob: ChannelState =
             WaitForInit(
                 StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnchainFeerates(10000, 10000, 10000, 10000, 10000)
+                currentOnChainFeerates = OnChainFeerates(10000, 10000, 10000, 10000, 10000)
             )
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams

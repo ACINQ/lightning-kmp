@@ -9,7 +9,7 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.fee.OnchainFeerates
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
@@ -1264,7 +1264,7 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv UpdateFee (sender cannot afford it)`() {
         val (_, bob) = reachNormal()
         val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
-        val (bob1, _) = bob.process(ChannelEvent.SetOnChainFeerates(OnchainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
+        val (bob1, _) = bob.process(ChannelEvent.SetOnChainFeerates(OnChainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
         val (bob2, actions) = bob1.process(ChannelEvent.MessageReceived(fee))
         assertTrue { bob2 is Closing }
         assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
