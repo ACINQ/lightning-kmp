@@ -1688,6 +1688,17 @@ data class Normal(
                             Pair(newState, actions)
                         }
                     }
+                    is CMD_FAIL_MALFORMED_HTLC -> when (val result = commitments.sendFailMalformed(event.command)) {
+                        is Either.Left -> handleCommandError(event.command, result.value, channelUpdate)
+                        is Either.Right -> {
+                            val newState = this.copy(commitments = result.value.first)
+                            val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(result.value.second))
+                            if (event.command.commit) {
+                                actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                            }
+                            Pair(newState, actions)
+                        }
+                    }
                     is CMD_UPDATE_FEE -> when (val result = commitments.sendFee(event.command)) {
                         is Either.Left -> handleCommandError(event.command, result.value, channelUpdate)
                         is Either.Right -> {
@@ -2083,6 +2094,18 @@ data class ShuttingDown(
                     }
                 }
                 event.command is CMD_FAIL_HTLC -> when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
+                    is Either.Left -> handleCommandError(event.command, result.value)
+                    is Either.Right -> {
+                        val actions = mutableListOf<ChannelAction>()
+                        if (event.command.commit) {
+                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                        }
+                        val (commitments1, fail) = result.value
+                        actions.add(ChannelAction.Message.Send(fail))
+                        Pair(this.copy(commitments = commitments1), actions)
+                    }
+                }
+                event.command is CMD_FAIL_MALFORMED_HTLC -> when (val result = commitments.sendFailMalformed(event.command)) {
                     is Either.Left -> handleCommandError(event.command, result.value)
                     is Either.Right -> {
                         val actions = mutableListOf<ChannelAction>()
