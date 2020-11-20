@@ -20,7 +20,7 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
         val (_, b, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
         val bob = b as ChannelState
         assertEquals<TlvStream<out ChannelTlv>>(TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))), open.tlvStream)
-        val (bob1, _) = bob.process(MessageReceived(open))
+        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(open))
         assertTrue { bob1 is WaitForFundingCreated }
     }
 
@@ -29,7 +29,7 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
         val (_, b, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
         val bob = b as ChannelState
         val open1 = open.copy(chainHash = Block.LivenetGenesisBlock.hash)
-        val (bob1, actions) = bob.process(MessageReceived(open1))
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, bob.staticParams.nodeParams.chainHash, Block.LivenetGenesisBlock.hash).message))
         assertTrue { bob1 is Aborted }
@@ -40,7 +40,7 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
         val (a, b, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 100.sat)
         val alice = a as ChannelState
         val bob = b as ChannelState
-        val (bob1, actions) = bob.process(MessageReceived(open))
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100.sat, alice.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
         assertTrue { bob1 is Aborted }
@@ -51,7 +51,7 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
         val (_, bob, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)
         val reserveTooSmall = open.dustLimitSatoshis - 1.sat
         val open1 = open.copy(channelReserveSatoshis = reserveTooSmall)
-        val (bob1, actions) = bob.process(MessageReceived(open1))
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).message))
         assertTrue { bob1 is Aborted }
@@ -61,21 +61,21 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
     fun `recv OpenChannel (reserve below dust, zero-reserve channel)`() {
         val (_, bob, open) = TestsHelper.init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, 0, 1000000.sat)
         assertEquals(Satoshi(0), open.channelReserveSatoshis)
-        val (bob1, _) = bob.process(MessageReceived(open))
+        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(open))
         assertTrue { bob1 is WaitForFundingCreated }
     }
 
     @Test
     fun `recv Error`() {
         val (_, bob, _) = TestsHelper.init(ChannelVersion.STANDARD, 0, 100.sat)
-        val (bob1, _) = bob.process(MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertTrue { bob1 is Aborted }
     }
 
     @Test
     fun `recv CMD_CLOSE`() {
         val (_, bob, _) = TestsHelper.init(ChannelVersion.STANDARD, 0, 100.sat)
-        val (bob1, _) = bob.process(ExecuteCommand(CMD_CLOSE(null)))
+        val (bob1, _) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
         assertTrue { bob1 is Aborted }
     }
 }

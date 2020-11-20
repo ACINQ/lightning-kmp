@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
-import fr.acinq.eclair.io.PayToOpenResult
+import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.*
@@ -132,8 +132,8 @@ class IncomingPaymentHandler(
         // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
         return when (val decrypted = IncomingPacket.decrypt(htlc, this.privateKey)) {
             is Either.Left -> { // Unable to decrypt onion
-                val failureMessage = decrypted.value
-                val action = actionForFailureMessage(failureMessage, htlc)
+                val failureMsg = decrypted.value
+                val action = actionForFailureMessage(failureMsg, htlc)
                 Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
             }
             is Either.Right -> Either.Right(HtlcPart(htlc, decrypted.value))
@@ -148,7 +148,8 @@ class IncomingPaymentHandler(
     private fun toPaymentPart(payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult, PayToOpenPart> {
         return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
             is Either.Left -> {
-                val action = actionForPayToOpenFailure(payToOpenRequest)
+                val failureMsg = decrypted.value
+                val action = actionForPayToOpenFailure(failureMsg, payToOpenRequest)
                 Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
             }
             is Either.Right -> Either.Right(PayToOpenPart(payToOpenRequest, decrypted.value))
@@ -204,15 +205,15 @@ class IncomingPaymentHandler(
 
         logger.info { "processing payload=${paymentPart.finalPayload} invoice=${incomingPayment?.paymentRequest}" }
 
-        // depending on the type of the payment part, the default rejection result changes
-        val rejectedAction = when (paymentPart) {
-            is HtlcPart -> {
-                val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
-                actionForFailureMessage(failureMsg, paymentPart.htlc)
+        val rejectedResult by lazy {
+            // depending on the type of the payment part, the default rejection result changes
+            val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
+            val rejectedAction = when (paymentPart) {
+                is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
+                is PayToOpenPart -> actionForPayToOpenFailure(failureMsg, paymentPart.payToOpenRequest)
             }
-            is PayToOpenPart -> actionForPayToOpenFailure(paymentPart.payToOpenRequest)
+            ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction), incomingPayment = incomingPayment)
         }
-        val rejectedResult = ProcessAddResult(status = Status.REJECTED, actions = listOf(rejectedAction), incomingPayment = incomingPayment)
 
         return when {
 
@@ -296,12 +297,10 @@ class IncomingPaymentHandler(
                 // - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
                 logger.warning { "Discovered htlc set total_msat_mismatch. Failing entire set with paymentHash = ${paymentPart.paymentHash}" }
                 val actions = parts.map { part ->
+                    val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                     when (part) {
-                        is HtlcPart -> {
-                            val msg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
-                            actionForFailureMessage(msg, part.htlc)
-                        }
-                        is PayToOpenPart -> actionForPayToOpenFailure(part.payToOpenRequest) // this will fail all parts, we could only return one
+                        is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
+                        is PayToOpenPart -> actionForPayToOpenFailure(failureMsg, part.payToOpenRequest) // this will fail all parts, we could only return one
                     }
                 }
                 pending.remove(paymentPart.paymentHash)
@@ -324,15 +323,11 @@ class IncomingPaymentHandler(
                 val actions = parts.map { part ->
                     when (part) {
                         is HtlcPart -> {
-                            val cmd = CMD_FULFILL_HTLC(
-                                id = part.htlc.id,
-                                r = incomingPayment.paymentPreimage,
-                                commit = true
-                            )
-                            val channelEvent = ExecuteCommand(command = cmd)
-                            WrappedChannelEvent(channelId = part.htlc.channelId, channelEvent = channelEvent)
+                            val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.paymentPreimage, true)
+                            val channelEvent = ChannelEvent.ExecuteCommand(cmd)
+                            WrappedChannelEvent(part.htlc.channelId, channelEvent)
                         }
-                        is PayToOpenPart -> PayToOpenResult(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, incomingPayment.paymentPreimage))
+                        is PayToOpenPart -> PayToOpenResponseEvent(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)))
                     }
                 }
                 pending.remove(paymentPart.paymentHash)
@@ -359,9 +354,10 @@ class IncomingPaymentHandler(
             if (isExpired) {
                 keysToRemove += paymentHash
                 set.parts.forEach { part ->
+                    val failureMsg = PaymentTimeout
                     when (part) {
-                        is HtlcPart -> actions += actionForFailureMessage(msg = PaymentTimeout, htlc = part.htlc)
-                        is PayToOpenPart -> actions += actionForPayToOpenFailure(part.payToOpenRequest)
+                        is HtlcPart -> actions += actionForFailureMessage(failureMsg, part.htlc)
+                        is PayToOpenPart -> actions += actionForPayToOpenFailure(failureMsg, part.payToOpenRequest)
                     }
                 }
             }
@@ -371,40 +367,26 @@ class IncomingPaymentHandler(
         return actions
     }
 
-    /**
-     * Creates and returns a CMD_FAIL_HTLC (wrapped in a WrappedChannelEvent)
-     */
-    private fun actionForFailureMessage(
-        msg: FailureMessage,
-        htlc: UpdateAddHtlc,
-        commit: Boolean = true
-    ): WrappedChannelEvent {
-
+    /** Creates and returns a CMD_FAIL_HTLC (wrapped in a WrappedChannelEvent) */
+    private fun actionForFailureMessage(msg: FailureMessage, htlc: UpdateAddHtlc, commit: Boolean = true): WrappedChannelEvent {
         val cmd: Command = when (msg) {
-            is BadOnion -> {
-                CMD_FAIL_MALFORMED_HTLC(
-                    id = htlc.id,
-                    onionHash = msg.onionHash,
-                    failureCode = msg.code,
-                    commit = commit
-                )
-            }
-            else -> {
-                val reason = CMD_FAIL_HTLC.Reason.Failure(msg)
-                CMD_FAIL_HTLC(
-                    id = htlc.id,
-                    reason = reason,
-                    commit = commit
-                )
-            }
+            is BadOnion -> CMD_FAIL_MALFORMED_HTLC(htlc.id, msg.onionHash, msg.code, commit)
+            else -> CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(msg), commit)
         }
-
-        val channelEvent = ExecuteCommand(command = cmd)
-        return WrappedChannelEvent(channelId = htlc.channelId, channelEvent = channelEvent)
+        val channelEvent = ChannelEvent.ExecuteCommand(cmd)
+        return WrappedChannelEvent(htlc.channelId, channelEvent)
     }
 
-    private fun actionForPayToOpenFailure(payToOpenRequest: PayToOpenRequest): PayToOpenResult {
-        return PayToOpenResult(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, ByteVector32.Zeroes))
+    private fun actionForPayToOpenFailure(
+        failure: FailureMessage,
+        payToOpenRequest: PayToOpenRequest
+    ): PayToOpenResponseEvent {
+        val reason = CMD_FAIL_HTLC.Reason.Failure(failure)
+        val encryptedReason = when (val result = OutgoingPacket.buildHtlcFailure(nodeParams.nodePrivateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
+            is Either.Right -> result.value
+            is Either.Left -> null
+        }
+        return PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
     }
 
     private fun minFinalCltvExpiry(incomingPayment: IncomingPayment, currentBlockHeight: Int): CltvExpiry {

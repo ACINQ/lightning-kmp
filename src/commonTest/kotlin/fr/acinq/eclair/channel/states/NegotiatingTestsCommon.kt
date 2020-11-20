@@ -14,11 +14,11 @@ class NegotiatingTestsCommon : EclairTestSuite() {
     @Test
     fun `recv ClosingSigned (theirCloseFee != ourCloseFee)`() {
         val (alice, bob, aliceCloseSig) = init()
-        val (_, actions) = bob.process(MessageReceived(aliceCloseSig))
+        val (_, actions) = bob.process(ChannelEvent.MessageReceived(aliceCloseSig))
         // Bob answers with a counter proposition
         val bobCloseSig = actions.findOutgoingMessage<ClosingSigned>()
         assertTrue { aliceCloseSig.feeSatoshis > bobCloseSig.feeSatoshis }
-        val (alice1, actions1) = alice.process(MessageReceived(bobCloseSig))
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(bobCloseSig))
         val aliceCloseSig1 = actions1.findOutgoingMessage<ClosingSigned>()
         // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
         assertTrue { aliceCloseSig1.feeSatoshis < aliceCloseSig.feeSatoshis && aliceCloseSig1.feeSatoshis > bobCloseSig.feeSatoshis }
@@ -49,16 +49,16 @@ class NegotiatingTestsCommon : EclairTestSuite() {
                 a !is ChannelStateWithCommitments || b !is ChannelStateWithCommitments -> null
                 a is Closing && b is Closing -> Pair(a, b)
                 aliceCloseSig != null -> {
-                    val (b1, actions) = b.process(MessageReceived(aliceCloseSig))
+                    val (b1, actions) = b.process(ChannelEvent.MessageReceived(aliceCloseSig))
                     val bobCloseSig = actions.hasOutgoingMessage<ClosingSigned>()
                     if (bobCloseSig != null) {
-                        val (a1, actions2) = a.process(MessageReceived(bobCloseSig))
+                        val (a1, actions2) = a.process(ChannelEvent.MessageReceived(bobCloseSig))
                         return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
                     }
-                    val bobClosingTx = actions.filterIsInstance<PublishTx>().map { it.tx }.firstOrNull()
+                    val bobClosingTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.firstOrNull()
                     if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.localCommit.publishableTxs.commitTx.input.outPoint && a !is Closing) {
                         // Bob just spent the funding tx
-                        val (a1, actions2) = a.process(WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
+                        val (a1, actions2) = a.process(ChannelEvent.WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
                         return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
                     }
                     converge(a, b1, null)

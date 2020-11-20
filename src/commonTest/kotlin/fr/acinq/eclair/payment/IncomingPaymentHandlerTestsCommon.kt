@@ -4,9 +4,10 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
-import fr.acinq.eclair.io.PayToOpenResult
+import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -15,17 +16,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-
 class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private var nextId: Long = 0
 
-    private fun channelHops(
-        destination: PublicKey,
-    ): List<ChannelHop> {
-
-        val dummyKey =
-            PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
+    private fun channelHops(destination: PublicKey): List<ChannelHop> {
+        val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
         val dummyUpdate = ChannelUpdate(
             signature = ByteVector64.Zeroes,
             chainHash = ByteVector32.Zeroes,
@@ -40,20 +36,14 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             htlcMaximumMsat = null
         )
         val channelHop = ChannelHop(dummyKey, destination, dummyUpdate)
-
         return listOf(channelHop)
     }
 
     /**
      * Creates a multipart htlc, and wraps it in CMD_ADD_HTLC.
-     * The result is ready to be processed thru the sender's channel.
+     * The result is ready to be processed through the sender's channel.
      */
-    private fun makeCmdAddHtlc(
-        destination: PublicKey,
-        paymentHash: ByteVector32,
-        finalPayload: FinalPayload
-    ): CMD_ADD_HTLC {
-
+    private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: FinalPayload): CMD_ADD_HTLC {
         return OutgoingPacket.buildCommand(
             paymentId = UUID.randomUUID(),
             paymentHash = paymentHash,
@@ -62,20 +52,13 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         ).first.copy(commit = true)
     }
 
-    private fun makeUpdateAddHtlc(
-        channelId: ByteVector32,
-        destination: IncomingPaymentHandler,
-        paymentHash: ByteVector32,
-        finalPayload: FinalPayload
-    ): UpdateAddHtlc {
-
+    private fun makeUpdateAddHtlc(channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: FinalPayload): UpdateAddHtlc {
         val (_, _, packetAndSecrets) = OutgoingPacket.buildPacket(
             paymentHash = paymentHash,
             hops = channelHops(destination.nodeParams.nodeId),
             finalPayload = finalPayload,
             payloadLength = OnionRoutingPacket.PaymentPacketLength
         )
-
         return UpdateAddHtlc(
             channelId = channelId,
             id = nextId++,
@@ -86,12 +69,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         )
     }
 
-    private fun makeLegacyPayload(
-        amount: MilliSatoshi,
-        cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
-        currentBlockHeight: Int = TestConstants.defaultBlockHeight
-    ): FinalPayload {
-
+    private fun makeLegacyPayload(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144), currentBlockHeight: Int = TestConstants.defaultBlockHeight): FinalPayload {
         val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
         return FinalPayload.createSinglePartPayload(amount, expiry)
     }
@@ -103,13 +81,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
         currentBlockHeight: Int = TestConstants.defaultBlockHeight
     ): FinalPayload {
-
         val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
         return FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
     }
 
     /**
-     * Walks thru the following steps:
+     * Walks through the following steps:
      *
      * 1) alice => update_add_htlc   => bob
      * 2) alice => commitment_signed => bob
@@ -120,7 +97,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
      * Along the way it verifies the state of the htlc as it flows thru the commitment process.
      */
     @Test
-    fun `Commitments should pass thru MPP as normal htlc`() {
+    fun `Commitments should pass through MPP as normal htlc`() {
 
         val paymentSecret = Eclair.randomBytes32()
         val paymentPreimage = Eclair.randomBytes32()
@@ -161,26 +138,26 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         var actions: List<ChannelAction>
 
         val a2b = object {
-            var updateAddHtlc: SendMessage? = null
-            var commitmentSigned: SendMessage? = null
-            var revokeAndAck: SendMessage? = null
+            var updateAddHtlc: ChannelAction.Message.Send? = null
+            var commitmentSigned: ChannelAction.Message.Send? = null
+            var revokeAndAck: ChannelAction.Message.Send? = null
         }
         val a2a = object {
-            var cmdSign: SendToSelf? = null
+            var cmdSign: ChannelAction.Message.SendToSelf? = null
         }
         val b2a = object {
-            var revokeAndAck: SendMessage? = null
-            var commitmentSigned: SendMessage? = null
+            var revokeAndAck: ChannelAction.Message.Send? = null
+            var commitmentSigned: ChannelAction.Message.Send? = null
         }
         val b2b = object {
-            var cmdSign: SendToSelf? = null
+            var cmdSign: ChannelAction.Message.SendToSelf? = null
         }
 
         // Step 1 of 5:
         //
         // alice => update_add_htlc => bob
 
-        processResult = alice.process(ExecuteCommand(cmdAddHtlc))
+        processResult = alice.process(ChannelEvent.ExecuteCommand(cmdAddHtlc))
 
         alice = processResult.first
         assertTrue { alice is Normal }
@@ -188,19 +165,19 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        a2b.updateAddHtlc = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is UpdateAddHtlc }
+        a2b.updateAddHtlc = actions.filterIsInstance<ChannelAction.Message.Send>().firstOrNull { it.message is UpdateAddHtlc }
         assertNotNull(a2b.updateAddHtlc)
 
-        a2a.cmdSign = actions.filterIsInstance<SendToSelf>().firstOrNull { it.command == CMD_SIGN }
+        a2a.cmdSign = actions.filterIsInstance<ChannelAction.Message.SendToSelf>().firstOrNull { it.command == CMD_SIGN }
         assertNotNull(a2a.cmdSign)
 
-        processResult = bob.process(MessageReceived(a2b.updateAddHtlc!!.message))
+        processResult = bob.process(ChannelEvent.MessageReceived(a2b.updateAddHtlc!!.message))
 
         bob = processResult.first
         assertTrue { bob is Normal }
 
         actions = processResult.second
-        assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
+        assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
 
         assertTrue { (alice as Normal).commitments.localChanges.proposed.size == 1 } // size == 1
         assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
@@ -214,7 +191,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         //
         // alice => commitment_signed => bob
 
-        processResult = alice.process(ExecuteCommand(a2a.cmdSign!!.command))
+        processResult = alice.process(ChannelEvent.ExecuteCommand(a2a.cmdSign!!.command))
 
         alice = processResult.first
         assertTrue { alice is Normal }
@@ -222,10 +199,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        a2b.commitmentSigned = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is CommitSig }
+        a2b.commitmentSigned = actions.filterIsInstance<ChannelAction.Message.Send>().firstOrNull { it.message is CommitSig }
         assertNotNull(a2b.commitmentSigned)
 
-        processResult = bob.process(MessageReceived(a2b.commitmentSigned!!.message))
+        processResult = bob.process(ChannelEvent.MessageReceived(a2b.commitmentSigned!!.message))
 
         bob = processResult.first
         assertTrue { bob is Normal }
@@ -233,10 +210,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        b2a.revokeAndAck = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is RevokeAndAck }
+        b2a.revokeAndAck = actions.filterIsInstance<ChannelAction.Message.Send>().firstOrNull { it.message is RevokeAndAck }
         assertNotNull(b2a.revokeAndAck)
 
-        b2b.cmdSign = actions.filterIsInstance<SendToSelf>().firstOrNull { it.command == CMD_SIGN }
+        b2b.cmdSign = actions.filterIsInstance<ChannelAction.Message.SendToSelf>().firstOrNull { it.command == CMD_SIGN }
         assertNotNull(b2b.cmdSign)
 
         assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
@@ -251,13 +228,13 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         //
         // alice <= revoke_and_ack <= bob
 
-        processResult = alice.process(MessageReceived(b2a.revokeAndAck!!.message))
+        processResult = alice.process(ChannelEvent.MessageReceived(b2a.revokeAndAck!!.message))
 
         alice = processResult.first
         assertTrue { alice is Normal }
 
         actions = processResult.second
-        assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
+        assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
 
         assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
         assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
@@ -271,18 +248,18 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         //
         // alice <= commitment_signed <= bob
 
-        processResult = bob.process(ExecuteCommand(b2b.cmdSign!!.command))
+        processResult = bob.process(ChannelEvent.ExecuteCommand(b2b.cmdSign!!.command))
 
         bob = processResult.first
         assertTrue { bob is Normal }
 
-        actions = processResult.second.filterIsInstance<SendMessage>()
+        actions = processResult.second.filterIsInstance<ChannelAction.Message.Send>()
         assertTrue { actions.size == 1 }
 
-        b2a.commitmentSigned = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is CommitSig }
+        b2a.commitmentSigned = actions.filterIsInstance<ChannelAction.Message.Send>().firstOrNull { it.message is CommitSig }
         assertNotNull(b2a.commitmentSigned)
 
-        processResult = alice.process(MessageReceived(b2a.commitmentSigned!!.message))
+        processResult = alice.process(ChannelEvent.MessageReceived(b2a.commitmentSigned!!.message))
 
         alice = processResult.first
         assertTrue { alice is Normal }
@@ -290,7 +267,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         actions = processResult.second
         assertTrue { actions.isNotEmpty() }
 
-        a2b.revokeAndAck = actions.filterIsInstance<SendMessage>().firstOrNull { it.message is RevokeAndAck }
+        a2b.revokeAndAck = actions.filterIsInstance<ChannelAction.Message.Send>().firstOrNull { it.message is RevokeAndAck }
         assertNotNull(a2b.revokeAndAck)
 
         assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
@@ -305,14 +282,14 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         //
         // alice => revoke_and_ack => bob
 
-        processResult = bob.process(MessageReceived(a2b.revokeAndAck!!.message))
+        processResult = bob.process(ChannelEvent.MessageReceived(a2b.revokeAndAck!!.message))
 
         bob = processResult.first
         assertTrue { bob is Normal }
 
         actions = processResult.second
-        assertTrue { actions.filterIsInstance<SendMessage>().isEmpty() }
-        assertTrue { actions.filterIsInstance<ProcessAdd>().isNotEmpty() }
+        assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
+        assertTrue { actions.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().isNotEmpty() }
 
         assertTrue { (alice as Normal).commitments.localChanges.proposed.isEmpty() } // size == 0
         assertTrue { (alice as Normal).commitments.localChanges.signed.isEmpty() }   // size == 0
@@ -349,9 +326,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 channelId = channelId,
                 destination = paymentHandler,
                 paymentHash = incomingPayment.paymentRequest.paymentHash,
-                finalPayload = makeLegacyPayload(
-                    amount = totalAmount
-                )
+                finalPayload = makeLegacyPayload(totalAmount)
             )
 
             val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
@@ -364,13 +339,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         updateAddHtlc.channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )
@@ -411,13 +383,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         updateAddHtlc.channelId,
-                        ExecuteCommand(
-                            CMD_FULFILL_HTLC(
-                                updateAddHtlc.id,
-                                incomingPayment.paymentPreimage,
-                                commit = true
-                            )
-                        )
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(updateAddHtlc.id, incomingPayment.paymentPreimage, commit = true))
                     )
                 ), par.actions.toSet()
             )
@@ -462,11 +428,180 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
             assertEquals(
                 setOf(
-                    PayToOpenResult(
+                    PayToOpenResponseEvent(
                         PayToOpenResponse(
                             payToOpenRequest.chainHash,
                             payToOpenRequest.paymentHash,
-                            incomingPayment.paymentPreimage
+                            PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open payment with an unknown payment hash`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = ByteVector32.One, // <-- not associated to a pending invoice
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = ByteVector32.One, // <-- has to be the same as the one above otherwise encryption fails
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = totalAmount,
+                        totalAmount = totalAmount,
+                        paymentSecret = incomingPayment.paymentRequest.paymentSecret!!
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.REJECTED }
+            assertEquals(
+                setOf(
+                    PayToOpenResponseEvent(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            PayToOpenResponse.Result.Failure(
+                                OutgoingPacket.buildHtlcFailure(
+                                    paymentHandler.nodeParams.nodePrivateKey,
+                                    payToOpenRequest.paymentHash,
+                                    payToOpenRequest.finalPacket,
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).right!!)
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open payment with an incorrect payment secret`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = channelHops(paymentHandler.nodeParams.nodeId),
+                    finalPayload = makeMppPayload(
+                        amount = totalAmount,
+                        totalAmount = totalAmount,
+                        paymentSecret = ByteVector32.One // <-- wrong value
+                    ),
+                    payloadLength = OnionRoutingPacket.PaymentPacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.REJECTED }
+            assertEquals(
+                setOf(
+                    PayToOpenResponseEvent(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            PayToOpenResponse.Result.Failure(
+                                OutgoingPacket.buildHtlcFailure(
+                                    paymentHandler.nodeParams.nodePrivateKey,
+                                    payToOpenRequest.paymentHash,
+                                    payToOpenRequest.finalPacket,
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).right!!)
+                        )
+                    )
+                ), par.actions.toSet()
+            )
+        }
+    }
+
+    @Test
+    fun `receive pay-to-open trampoline payment with an incorrect payment secret`() {
+
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+
+        val totalAmount = MilliSatoshi(100.sat)
+        val incomingPayment = makeIncomingPayment(payee = paymentHandler, amount = totalAmount)
+
+        val trampolineHops = listOf(
+            NodeHop(TestConstants.Alice.nodeParams.nodeId, TestConstants.Bob.nodeParams.nodeId, CltvExpiryDelta(144), 0.msat)
+        )
+
+        run {
+            val payToOpenRequest = PayToOpenRequest(
+                chainHash = ByteVector32.Zeroes,
+                fundingSatoshis = 100000.sat,
+                amountMsat = totalAmount,
+                feeSatoshis = 100.sat,
+                paymentHash = incomingPayment.paymentRequest.paymentHash,
+                feeThresholdSatoshis = 1000.sat,
+                feeProportionalMillionths = 100,
+                expireAt = Long.MAX_VALUE,
+                finalPacket = OutgoingPacket.buildPacket(
+                    paymentHash = incomingPayment.paymentRequest.paymentHash,
+                    hops = trampolineHops,
+                    finalPayload = makeMppPayload(
+                        amount = totalAmount,
+                        totalAmount = totalAmount,
+                        paymentSecret = ByteVector32.One, // <-- wrong value
+                    ),
+                    payloadLength = OnionRoutingPacket.TrampolinePacketLength
+                ).third.packet
+            )
+
+            val par: IncomingPaymentHandler.ProcessAddResult = paymentHandler.process(
+                payToOpenRequest = payToOpenRequest,
+                currentBlockHeight = TestConstants.defaultBlockHeight
+            )
+
+            assertTrue { par.status == IncomingPaymentHandler.Status.REJECTED }
+            assertEquals(
+                setOf(
+                    PayToOpenResponseEvent(
+                        PayToOpenResponse(
+                            payToOpenRequest.chainHash,
+                            payToOpenRequest.paymentHash,
+                            PayToOpenResponse.Result.Failure(
+                                OutgoingPacket.buildHtlcFailure(
+                                    paymentHandler.nodeParams.nodePrivateKey,
+                                    payToOpenRequest.paymentHash,
+                                    payToOpenRequest.finalPacket,
+                                    CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))).right!!)
                         )
                     )
                 ), par.actions.toSet()
@@ -536,11 +671,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -610,11 +745,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId1,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId2,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -699,11 +834,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertTrue { par.status == IncomingPaymentHandler.Status.ACCEPTED } // Yay!
             assertEquals(
                 setOf(
-                    PayToOpenResult(
+                    PayToOpenResponseEvent(
                         PayToOpenResponse(
                             payToOpenRequest.chainHash,
                             payToOpenRequest.paymentHash,
-                            incomingPayment.paymentPreimage
+                            PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)
                         )
                     )
                 ), par.actions.toSet()
@@ -783,13 +918,13 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId1,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
-                    PayToOpenResult(
+                    PayToOpenResponseEvent(
                         PayToOpenResponse(
                             payToOpenRequest.chainHash,
                             payToOpenRequest.paymentHash,
-                            incomingPayment.paymentPreimage
+                            PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)
                         )
                     ),
                 ), par.actions.toSet()
@@ -828,13 +963,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
-                            CMD_FULFILL_HTLC(
-                                updateAddHtlc.id,
-                                incomingPayment.paymentPreimage,
-                                commit = true
-                            )
-                        )
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(updateAddHtlc.id, incomingPayment.paymentPreimage, commit = true))
                     )
                 ), par.actions.toSet()
             )
@@ -903,11 +1032,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -979,15 +1108,15 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 2, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 2, incomingPayment.paymentPreimage, commit = true))
                     )
                 ), par.actions.toSet()
             )
@@ -1034,13 +1163,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )
@@ -1079,13 +1205,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        amount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(amount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )
@@ -1136,7 +1259,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_MALFORMED_HTLC(
                                 updateAddHtlc.id,
                                 onionHash = expectedErr.onionHash,
@@ -1187,13 +1310,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )
@@ -1250,13 +1370,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        payload.totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(payload.totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )
@@ -1334,14 +1451,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 firstId,
                                 CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ),
                                 commit = true
                             )
@@ -1349,14 +1463,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 firstId + 1,
                                 CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount + 1.msat,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, TestConstants.defaultBlockHeight.toLong())
                                 ),
                                 commit = true
                             )
@@ -1401,13 +1512,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )
@@ -1476,7 +1584,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 firstId,
                                 CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout),
@@ -1538,7 +1646,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 firstId,
                                 CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout),
@@ -1598,11 +1706,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 2, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 2, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -1670,11 +1778,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId, incomingPayment.paymentPreimage, commit = true))
                     ),
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
+                        ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(firstId + 1, incomingPayment.paymentPreimage, commit = true))
                     ),
                 ), par.actions.toSet()
             )
@@ -1709,13 +1817,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 setOf(
                     WrappedChannelEvent(
                         channelId,
-                        ExecuteCommand(
+                        ChannelEvent.ExecuteCommand(
                             CMD_FAIL_HTLC(
                                 updateAddHtlc.id, CMD_FAIL_HTLC.Reason.Failure(
-                                    IncorrectOrUnknownPaymentDetails(
-                                        totalAmount,
-                                        TestConstants.defaultBlockHeight.toLong()
-                                    )
+                                    IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
                                 ), commit = true
                             )
                         )

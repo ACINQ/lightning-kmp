@@ -45,105 +45,129 @@ object Helpers {
      * @return number of confirmations needed
      */
     fun minDepthForFunding(nodeParams: NodeParams, fundingSatoshis: Satoshi): Int =
-        if (fundingSatoshis <= Channel.MAX_FUNDING) nodeParams.minDepthBlocks
-        else {
+        if (fundingSatoshis <= Channel.MAX_FUNDING) {
+            nodeParams.minDepthBlocks
+        } else {
             val blockReward = 6.25f // this is true as of ~May 2020, but will be too large after 2024
             val scalingFactor = 15
             val btc = fundingSatoshis.toLong().toDouble() / 100_000_000L
             val blocksToReachFunding: Int = (((scalingFactor * btc) / blockReward) + 1).toInt()
-            kotlin.math.max(nodeParams.minDepthBlocks, blocksToReachFunding)
+            max(nodeParams.minDepthBlocks, blocksToReachFunding)
         }
 
-    /**
-     * Called by the fundee
-     */
-    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion, localFeeratePerKw: Long): ChannelVersion {
+    /** Called by the fundee. */
+    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion, localFeeratePerKw: Long): Either<ChannelException, Unit> {
         // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
         // MUST reject the channel.
-        if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
+        if (nodeParams.chainHash != open.chainHash) {
+            return Either.Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
+        }
 
-        if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) throw InvalidFundingAmount(
-            open.temporaryChannelId,
-            open.fundingSatoshis,
-            nodeParams.minFundingSatoshis,
-            nodeParams.maxFundingSatoshis
-        )
+        if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) {
+            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
+        }
 
         // BOLT #2: Channel funding limits
-        if (open.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Feature.Wumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING)
+        if (open.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Feature.Wumbo)) {
+            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
+        }
 
         // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-        if (open.pushMsat.truncateToSatoshi() > open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi())
+        if (open.pushMsat.truncateToSatoshi() > open.fundingSatoshis) {
+            return Either.Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi()))
+        }
 
         // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
-        if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+        if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) {
+            return Either.Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
+        }
 
         // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-        if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
+        if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) {
+            return Either.Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+        }
 
         // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-        if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
+        if (isFeeTooSmall(open.feeratePerKw)) {
+            return Either.Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
+        }
 
         if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
             // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
         } else {
             // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-            if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
+            if (open.dustLimitSatoshis > open.channelReserveSatoshis) {
+                return Either.Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis))
+            }
         }
 
         // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
         // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
         val (toLocalMsat, toRemoteMsat) = Pair(open.pushMsat, open.fundingSatoshis.toMilliSatoshi() - open.pushMsat)
         if (toLocalMsat.truncateToSatoshi() < open.channelReserveSatoshis && toRemoteMsat.truncateToSatoshi() < open.channelReserveSatoshis) {
-            throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
+            return Either.Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
         }
 
-        if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+        if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
+        }
+
         // only enforce dust limit check on mainnet
-        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
-            if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash && open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) {
+            return Either.Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))
         }
 
         // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
         // now, but it will be done later when we receive `funding_created`
-
         val reserveToFundingRatio = open.channelReserveSatoshis.toLong().toDouble() / max(open.fundingSatoshis.toLong(), 1)
-        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
+            return Either.Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
+        }
 
-        return channelVersion
+        return Either.Right(Unit)
     }
 
-    /**
-     * Called by the funder
-     */
-    fun validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel) {
-        if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
+    /** Called by the funder. */
+    fun validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Either<ChannelException, Unit> {
+        if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) {
+            return Either.Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+        }
         // only enforce dust limit check on mainnet
-        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
-            if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash && accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) {
+            return Either.Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))
         }
 
         // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-        if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) throw DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis)
+        if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) {
+            return Either.Left(DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis))
+        }
 
-        // if minimum_depth is unreasonably large:
-        // MAY reject the channel.
-        if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+        // if minimum_depth is unreasonably large: MAY reject the channel.
+        if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) {
+            return Either.Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
+        }
 
         if ((open.channelVersion ?: ChannelVersion.STANDARD).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
             // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
         } else {
             // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
             // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
-            if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
+            if (open.channelReserveSatoshis < accept.dustLimitSatoshis) {
+                return Either.Left(DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis))
+            }
         }
 
-        // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
-        //  MUST reject the channel.
-        if (accept.channelReserveSatoshis < open.dustLimitSatoshis) throw ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis)
+        // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message: MUST reject the channel.
+        if (accept.channelReserveSatoshis < open.dustLimitSatoshis) {
+            return Either.Left(ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis))
+        }
 
-        val reserveToFundingRatio = accept.channelReserveSatoshis.toLong().toDouble() / kotlin.math.max(open.fundingSatoshis.toLong(), 1)
-        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+        val reserveToFundingRatio = accept.channelReserveSatoshis.toLong().toDouble() / max(open.fundingSatoshis.toLong(), 1)
+        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
+            return Either.Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
+        }
+
+        return Either.Right(Unit)
     }
 
     /**
@@ -151,8 +175,7 @@ object Helpers {
      * @param currentFeePerKw   current fee rate per kiloweight
      * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
      */
-    fun feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
-        abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
+    fun feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double = abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
 
     /**
      * @param remoteFeeratePerKw remote fee rate per kiloweight
@@ -167,23 +190,20 @@ object Helpers {
      * @return true if the difference between current and reference fee rates is too high.
      *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
      */
-    fun isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
-        feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
-
+    fun isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
 
     /**
      * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
      * this tells if we can use the channel to make a payment.
-     *
      */
     fun aboveReserve(commitments: Commitments): Boolean {
         val remoteCommit = when (commitments.remoteNextCommitInfo) {
             is Either.Left -> commitments.remoteNextCommitInfo.value.nextRemoteCommit
             else -> commitments.remoteCommit
         }
-        val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi()
+        val toRemote = remoteCommit.spec.toRemote.truncateToSatoshi()
         // NB: this is an approximation (we don't take network fees into account)
-        return toRemoteSatoshis > commitments.remoteParams.channelReserve
+        return toRemote > commitments.remoteParams.channelReserve
     }
 
     /**
@@ -237,48 +257,28 @@ object Helpers {
         }
     }
 
-    /**
-     * This helper method will publish txes only if they haven't yet reached minDepth
-     */
-    fun publishIfNeeded(txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>): List<PublishTx> {
-        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx ->
-            logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" }
-        }
+    /** This helper method will publish txs only if they haven't yet reached minDepth. */
+    fun publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>): List<ChannelAction.Blockchain.PublishTx> {
+        val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx -> logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx ->
             logger.info { "publishing txid=${tx.txid}" }
-            PublishTx(tx)
+            ChannelAction.Blockchain.PublishTx(tx)
         }
     }
 
-    /**
-     * This helper method will watch txes only if they haven't yet reached minDepth
-     */
-    fun watchConfirmedIfNeeded(txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32, minDepth: Long): List<SendWatch> {
-        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx ->
-            logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" }
-        }
-        return process.map { tx ->
-            SendWatch(
-                WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))
-            )
-        }
+    /** This helper method will watch txs only if they haven't yet reached minDepth. */
+    fun watchConfirmedIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32, minDepth: Long): List<ChannelAction.Blockchain.SendWatch> {
+        val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx -> logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" } }
+        return process.map { tx -> ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))) }
     }
 
-    /**
-     * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
-     */
-    fun watchSpentIfNeeded(parentTx: Transaction, txes: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32): List<SendWatch> {
-        val (skip, process) = txes.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx ->
-            logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" }
-        }
-        return process.map {
-            SendWatch(
-                WatchSpent(channelId, parentTx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT)
-            )
-        }
+    /** This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent. */
+    fun watchSpentIfNeeded(parentTx: Transaction, txs: List<Transaction>, irrevocablySpent: Map<OutPoint, ByteVector32>, channelId: ByteVector32): List<ChannelAction.Blockchain.SendWatch> {
+        val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx -> logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" } }
+        return process.map { ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, parentTx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT)) }
     }
 
     object Funding {
@@ -286,12 +286,12 @@ object Helpers {
         fun makeFundingInputInfo(
             fundingTxId: ByteVector32,
             fundingTxOutputIndex: Int,
-            fundingSatoshis: Satoshi,
+            fundingAmount: Satoshi,
             fundingPubkey1: PublicKey,
             fundingPubkey2: PublicKey
         ): Transactions.InputInfo {
             val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
-            val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
+            val fundingTxOut = TxOut(fundingAmount, pay2wsh(fundingScript))
             return Transactions.InputInfo(
                 OutPoint(fundingTxId, fundingTxOutputIndex.toLong()),
                 fundingTxOut,
@@ -302,7 +302,7 @@ object Helpers {
         data class FirstCommitTx(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx)
 
         /**
-         * Creates both sides's first commitment transaction
+         * Creates both sides' first commitment transaction.
          *
          * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
          */
@@ -318,7 +318,7 @@ object Helpers {
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
-        ): FirstCommitTx {
+        ): Either<ChannelException, FirstCommitTx> {
             val toLocalMsat = if (localParams.isFunder) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
             val toRemoteMsat = if (localParams.isFunder) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
 
@@ -331,7 +331,7 @@ object Helpers {
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
                 val missing = localToRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
                 if (missing < Satoshi(0)) {
-                    throw CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees)
+                    return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
                 }
             }
 
@@ -342,7 +342,7 @@ object Helpers {
             val localCommitTx = Commitments.makeLocalTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
             val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec).first
 
-            return FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
+            return Either.Right(FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
     }
 
@@ -350,7 +350,7 @@ object Helpers {
         // used only to compute tx weights and estimate fees
         private val dummyPublicKey by lazy { PrivateKey(ByteArray(32) { 1.toByte() }).publicKey() }
 
-        fun isValidFinalScriptPubkey(scriptPubKey: ByteArray): Boolean {
+        private fun isValidFinalScriptPubkey(scriptPubKey: ByteArray): Boolean {
             return runTrying {
                 val script = Script.parse(scriptPubKey)
                 Script.isPay2pkh(script) || Script.isPay2sh(script) || Script.isPay2wpkh(script) || Script.isPay2wsh(script)
@@ -358,7 +358,6 @@ object Helpers {
         }
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
-
 
         fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeeratePerKw: Long): Satoshi {
             // this is just to estimate the weight, it depends on size of the pubkey scripts
@@ -390,31 +389,35 @@ object Helpers {
         ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
             require(isValidFinalScriptPubkey(localScriptPubkey)) { "invalid localScriptPubkey" }
             require(isValidFinalScriptPubkey(remoteScriptPubkey)) { "invalid remoteScriptPubkey" }
-            val dustLimitSatoshis = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
-            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
+            val dustLimit = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
+            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFee, commitments.localCommit.spec)
             val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
             val closingSigned = ClosingSigned(commitments.channelId, closingFee, localClosingSig)
-            //log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
-            //log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
             return Pair(closingTx, closingSigned)
         }
 
-        fun checkClosingSignature(keyManager: KeyManager, commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64): Try<Transaction> {
-            val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map { it.amount }.sum()
-            if (remoteClosingFee > lastCommitFeeSatoshi) {
-                return Try.Failure(InvalidCloseFee(commitments.channelId, remoteClosingFee))
+        fun checkClosingSignature(
+            keyManager: KeyManager,
+            commitments: Commitments,
+            localScriptPubkey: ByteArray,
+            remoteScriptPubkey: ByteArray,
+            remoteClosingFee: Satoshi,
+            remoteClosingSig: ByteVector64
+        ): Either<ChannelException, Transaction> {
+            val lastCommitFee = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map { it.amount }.sum()
+            if (remoteClosingFee > lastCommitFee) {
+                return Either.Left(InvalidCloseFee(commitments.channelId, remoteClosingFee))
             }
             val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
             val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
             return when (Transactions.checkSpendable(signedClosingTx)) {
-                is Try.Success -> Try.Success(signedClosingTx.tx)
-                is Try.Failure -> Try.Failure(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+                is Try.Success -> Either.Right(signedClosingTx.tx)
+                is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
             }
         }
 
         /**
-         * Claim all the HTLCs that we've received from our current commit tx. This will be
-         * done using 2nd stage HTLC transactions
+         * Claim all the HTLCs that we've received from our current commit tx. This will be done using 2nd stage HTLC transactions.
          *
          * @param commitments our commitment data, which include payment preimages
          * @return a list of transactions (one per HTLC that we can claim)
@@ -449,30 +452,28 @@ object Helpers {
             // those are the preimages to existing received htlcs
             val preimages = commitments.localChanges.all.filterIsInstance<UpdateFulfillHtlc>().map { it.paymentPreimage }
 
-            val htlcTxes = localCommit.publishableTxs.htlcTxsAndSigs.mapNotNull {
-                val (txinfo, localSig, remoteSig) = it
-
-                when (txinfo) {
+            val htlcTxs = localCommit.publishableTxs.htlcTxsAndSigs.mapNotNull {
+                val (txInfo, localSig, remoteSig) = it
+                when (txInfo) {
                     // incoming htlc for which we have the preimage: we spend it directly
                     is HtlcSuccessTx -> {
-                        preimages.firstOrNull { r -> sha256(r).toByteVector() == txinfo.paymentHash }?.let { preimage ->
-                            Transactions.addSigs(txinfo, localSig, remoteSig, preimage)
-                        }
+                        preimages.firstOrNull { r ->
+                            sha256(r).toByteVector() == txInfo.paymentHash
+                        }?.let { preimage -> Transactions.addSigs(txInfo, localSig, remoteSig, preimage) }
                     }
                     // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
                     // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-                    is HtlcTimeoutTx -> Transactions.addSigs(txinfo, localSig, remoteSig)
+                    is HtlcTimeoutTx -> Transactions.addSigs(txInfo, localSig, remoteSig)
                     else -> null
                 }
-
             }
 
             // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
-            val htlcDelayedTxes = htlcTxes.mapNotNull { txinfo ->
+            val htlcDelayedTxes = htlcTxs.mapNotNull { txInfo ->
                 generateTx("claim-htlc-delayed") {
                     Transactions.makeClaimDelayedOutputTx(
-                        txinfo.tx,
+                        txInfo.tx,
                         localParams.dustLimit,
                         localRevocationPubkey,
                         commitments.remoteParams.toSelfDelay,
@@ -486,12 +487,11 @@ object Helpers {
                 }
             }
 
-
             return LocalCommitPublished(
                 commitTx = tx,
                 claimMainDelayedOutputTx = mainDelayedTx,
-                htlcSuccessTxs = htlcTxes.filterIsInstance<HtlcSuccessTx>().map(HtlcSuccessTx::tx),
-                htlcTimeoutTxs = htlcTxes.filterIsInstance<HtlcTimeoutTx>().map(HtlcTimeoutTx::tx),
+                htlcSuccessTxs = htlcTxs.filterIsInstance<HtlcSuccessTx>().map(HtlcSuccessTx::tx),
+                htlcTimeoutTxs = htlcTxs.filterIsInstance<HtlcTimeoutTx>().map(HtlcTimeoutTx::tx),
                 claimHtlcDelayedTxs = htlcDelayedTxes
             )
         }
@@ -584,7 +584,7 @@ object Helpers {
         }
 
         /**
-         * Claim our Main output only, not used if option_static_remotekey was negotiated
+         * Claim our main output only, not used if option_static_remotekey was negotiated
          *
          * @param commitments              either our current commitment data in case of usual remote uncooperative closing
          *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
@@ -649,8 +649,7 @@ object Helpers {
             )
 //            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
             val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-//            val localHtlcPubkey =
-//                Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+//            val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
             val feeratePerKwMain = feerates.claimMainFeeratePerKw
             // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
@@ -755,15 +754,13 @@ object Helpers {
          * this is the purpose of this method.
          */
         fun claimRevokedHtlcTxOutputs(keyManager: KeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: OnchainFeerates): Pair<RevokedCommitPublished, Transaction?> {
-            val claimTxes = buildList {
+            val claimTxs = buildList {
                 revokedCommitPublished.claimMainOutputTx?.let { add(it) }
                 revokedCommitPublished.mainPenaltyTx?.let { add(it) }
                 addAll(revokedCommitPublished.htlcPenaltyTxs)
             }
 
-            if (htlcTx.txIn.map { it.outPoint.txid }.contains(revokedCommitPublished.commitTx.txid) &&
-                !claimTxes.map { it.txid }.toSet().contains(htlcTx.txid)
-            ) {
+            if (htlcTx.txIn.map { it.outPoint.txid }.contains(revokedCommitPublished.commitTx.txid) && !claimTxs.map { it.txid }.toSet().contains(htlcTx.txid)) {
                 logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val localParams = commitments.localParams
@@ -776,23 +773,19 @@ object Helpers {
                 val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
 
                 // this tx has been published by remote, so we need to invert local/remote params
-                val txnumber = Transactions.obscuredCommitTxNumber(
+                val txNumber = Transactions.obscuredCommitTxNumber(
                     obscuredTxNumber,
                     !localParams.isFunder,
                     remoteParams.paymentBasepoint,
                     keyManager.paymentPoint(channelKeyPath).publicKey
                 )
                 // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-                val hash = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber) ?: return revokedCommitPublished to null
+                val hash = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber) ?: return revokedCommitPublished to null
 
                 val remotePerCommitmentSecret = PrivateKey(hash)
                 val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey()
-                val remoteDelayedPaymentPubkey =
-                    Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-                val remoteRevocationPubkey = Generators.revocationPubKey(
-                    keyManager.revocationPoint(channelKeyPath).publicKey,
-                    remotePerCommitmentPoint
-                )
+                val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+                val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
                 // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
                 val feeratePerKwPenalty = feerates.fastFeeratePerKw
@@ -811,8 +804,10 @@ object Helpers {
                     val sig = keyManager.sign(it, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret)
                     val signedTx = Transactions.addSigs(it, sig).tx
                     // we need to make sure that the tx is indeed valid
-                    Transaction.correctlySpends(signedTx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-                    signedTx
+                    when (runTrying { Transaction.correctlySpends(signedTx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
+                        is Try.Success -> signedTx
+                        is Try.Failure -> null
+                    }
                 } ?: return revokedCommitPublished to null
 
                 return revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs + signedTx) to signedTx
@@ -844,9 +839,7 @@ object Helpers {
                 // if an outgoing htlc is in the remote commitment, then:
                 // - either it is in the local commitment (it was never fulfilled)
                 // - or we have already received the fulfill and forwarded it upstream
-                spec.htlcs.filter {
-                    it is OutgoingHtlc && it.add.paymentHash.contentEquals(sha256(paymentPreimage))
-                }.map { it.add to paymentPreimage }
+                spec.htlcs.filter { it is OutgoingHtlc && it.add.paymentHash.contentEquals(sha256(paymentPreimage)) }.map { it.add to paymentPreimage }
             }.toSet()
         }
 
@@ -942,7 +935,7 @@ object Helpers {
          *
          * @param tx a transaction that is sufficiently buried in the blockchain
          */
-        fun onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: RemoteCommit?, tx: Transaction): Set<UpdateAddHtlc> =
+        fun onChainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: RemoteCommit?, tx: Transaction): Set<UpdateAddHtlc> =
             when {
                 localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> localCommit.spec.htlcs.outgoings().toSet()
                 remoteCommit.txid == tx.txid -> remoteCommit.spec.htlcs.incomings().toSet()
@@ -958,7 +951,6 @@ object Helpers {
          *   - not watch for confirmations if we know the tx is already confirmed
          *   - not watch the corresponding utxo when we already know the final spending tx
          *
-         * @param tx               a tx with only one input
          * @param irrevocablySpent a map of known spent outpoints
          * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
          */
@@ -975,11 +967,7 @@ object Helpers {
             when (val result = runTrying { attempt() }) {
                 is Try.Success -> when (val txResult = result.get()) {
                     is Transactions.TxResult.Success -> {
-                        logger.info {
-                            "tx generation success: desc=$desc txid=${txResult.result.tx.txid} amount=${
-                                txResult.result.tx.txOut.map { it.amount }.sum()
-                            } tx=${txResult.result.tx}"
-                        }
+                        logger.info { "tx generation success: desc=$desc txid=${txResult.result.tx.txid} amount=${txResult.result.tx.txOut.map { it.amount }.sum()} tx=${txResult.result.tx}" }
                         txResult.result
                     }
                     is Transactions.TxResult.Skipped -> {
@@ -999,7 +987,7 @@ object Helpers {
         val bin = ChannelStateWithCommitments.serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
         // See https://en.wikipedia.org/wiki/Birthday_attack
-        val nonce = Crypto.sha256(bin).take(12).toByteArray()
+        val nonce = sha256(bin).take(12).toByteArray()
         val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
         return ciphertext + nonce + tag
     }

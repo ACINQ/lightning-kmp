@@ -978,12 +978,22 @@ data class PayToOpenRequest(
     }
 }
 
+
 @OptIn(ExperimentalUnsignedTypes::class)
 data class PayToOpenResponse(
     override val chainHash: ByteVector32,
     val paymentHash: ByteVector32,
-    val paymentPreimage: ByteVector32
+    val result: Result
 ) : LightningMessage, HasChainHash, LightningSerializable<PayToOpenResponse> {
+
+    //@formatter:off
+    sealed class Result {
+        data class Success(val paymentPreimage: ByteVector32) : Result()
+        /** reason is an onion-encrypted failure message, like those in UpdateFailHtlc */
+        data class Failure(val reason: ByteVector?) : Result()
+    }
+    //@formatter:on
+
     override fun serializer(): LightningSerializer<PayToOpenResponse> = PayToOpenResponse
 
     companion object : LightningSerializer<PayToOpenResponse>() {
@@ -997,7 +1007,18 @@ data class PayToOpenResponse(
         override fun write(message: PayToOpenResponse, out: Output) {
             writeBytes(message.chainHash, out)
             writeBytes(message.paymentHash, out)
-            writeBytes(message.paymentPreimage, out)
+            when (message.result) {
+                is Result.Success ->
+                    writeBytes(message.result.paymentPreimage, out)
+                is Result.Failure -> {
+                    writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
+                    message.result.reason?.let {
+                        writeU16(it.size(), out)
+                        writeBytes(it, out)
+                     }
+                }
+            }
+
         }
     }
 }

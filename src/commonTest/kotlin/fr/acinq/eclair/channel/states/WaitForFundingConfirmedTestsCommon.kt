@@ -21,10 +21,10 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     fun `receive FundingLocked`() {
         val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
         val fundingTx = alice.fundingTx!!
-        val (bob1, actions) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+        val (bob1, actions) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
         val fundingLocked = actions.findOutgoingMessage<FundingLocked>()
         assertTrue { bob1 is WaitForFundingLocked }
-        val (alice1, _) = alice.process(MessageReceived(fundingLocked))
+        val (alice1, _) = alice.process(ChannelEvent.MessageReceived(fundingLocked))
         assertTrue { alice1 is WaitForFundingConfirmed && alice1.deferred == fundingLocked }
     }
 
@@ -32,7 +32,7 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     fun `receive BITCOIN_FUNDING_DEPTHOK`() {
         val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
         val fundingTx = alice.fundingTx!!
-        val (bob1, actions) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+        val (bob1, actions) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
         actions.findOutgoingMessage<FundingLocked>()
         assertTrue { bob1 is WaitForFundingLocked }
     }
@@ -43,7 +43,7 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         val fundingTx = alice.fundingTx!!
         val badOutputScript = Scripts.multiSig2of2(Eclair.randomKey().publicKey(), Eclair.randomKey().publicKey())
         val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updatePublicKeyScript(badOutputScript)))
-        val (bob1, _) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
+        val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
         assertTrue { bob1 is Aborted }
     }
 
@@ -53,16 +53,16 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         val fundingTx = alice.fundingTx!!
         val badAmount = 1234567.sat
         val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updateAmount(badAmount)))
-        val (bob1, _) = bob.process(WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
+        val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
         assertTrue { bob1 is Aborted }
     }
 
     companion object {
         fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
             val (alice, bob, fundingCreated) = WaitForFundingCreatedTestsCommon.init(channelVersion, fundingAmount, pushAmount)
-            val (bob1, actions1) = bob.process(MessageReceived(fundingCreated))
+            val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
             val fundingSigned = actions1.findOutgoingMessage<FundingSigned>()
-            val (alice1, _) = alice.process(MessageReceived(fundingSigned))
+            val (alice1, _) = alice.process(ChannelEvent.MessageReceived(fundingSigned))
             return Pair(alice1 as WaitForFundingConfirmed, bob1 as WaitForFundingConfirmed)
         }
     }
