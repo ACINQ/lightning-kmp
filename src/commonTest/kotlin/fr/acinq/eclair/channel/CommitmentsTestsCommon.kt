@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -350,13 +351,13 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `funder keeps additional reserve to avoid channel being stuck`() {
         val isFunder = true
         val currentBlockHeight = 144L
-        val c = makeCommitments(100000000.msat, 50000000.msat, 2500, 546.sat, isFunder)
+        val c = makeCommitments(100000000.msat, 50000000.msat, FeeratePerKw(2500.sat), 546.sat, isFunder)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
         val (c1, _) = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).right!!
         assertEquals(c1.availableBalanceForSend(), 0.msat)
 
         // We should be able to handle a fee increase.
-        val (c2, _) = c1.sendFee(CMD_UPDATE_FEE(3000)).right!!
+        val (c2, _) = c1.sendFee(CMD_UPDATE_FEE(FeeratePerKw(3000.sat))).right!!
 
         // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
         val (_, cmdAdd1) = TestsHelper.makeCmdAdd(100.msat, randomKey().publicKey(), currentBlockHeight)
@@ -368,7 +369,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `can send availableForSend`() {
         val currentBlockHeight = 144L
         listOf(true, false).forEach {
-            val c = makeCommitments(702000000.msat, 52000000.msat, 2679, 546.sat, it)
+            val c = makeCommitments(702000000.msat, 52000000.msat, FeeratePerKw(2679.sat), 546.sat, it)
             val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
             val result = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight)
             assertTrue(result.isRight)
@@ -379,7 +380,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `can receive availableForReceive`() {
         val currentBlockHeight = 144L
         listOf(true, false).forEach {
-            val c = makeCommitments(31000000.msat, 702000000.msat, 2679, 546.sat, it)
+            val c = makeCommitments(31000000.msat, 702000000.msat, FeeratePerKw(2679.sat), 546.sat, it)
             val add = UpdateAddHtlc(
                 randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive(), randomBytes32(), CltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket
             )
@@ -390,7 +391,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
     @OptIn(ExperimentalUnsignedTypes::class)
     companion object {
-        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: Long = 0, dustLimit: Satoshi = 0.sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments {
+        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments {
             val localParams = LocalParams(
                 randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, randomKey().publicKey(), Features.empty
             )
@@ -403,19 +404,14 @@ class CommitmentsTestsCommon : EclairTestSuite() {
                 randomBytes32(),
                 0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey
             )
+            val localCommitTx = Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0))
             return Commitments(
                 ChannelVersion.STANDARD,
                 localParams,
                 remoteParams,
                 channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-                LocalCommit(
-                    0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(
-                        Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0)), listOf()
-                    )
-                ),
-                RemoteCommit(
-                    0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()
-                ),
+                LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
+                RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
                 LocalChanges(listOf(), listOf(), listOf()),
                 RemoteChanges(listOf(), listOf(), listOf()),
                 localNextHtlcId = 1,
@@ -444,8 +440,8 @@ class CommitmentsTestsCommon : EclairTestSuite() {
                 localParams,
                 remoteParams,
                 channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-                LocalCommit(0, CommitmentSpec(setOf(), 0, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
-                RemoteCommit(0, CommitmentSpec(setOf(), 0, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
+                RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
                 LocalChanges(listOf(), listOf(), listOf()),
                 RemoteChanges(listOf(), listOf(), listOf()),
                 localNextHtlcId = 1,

@@ -3,11 +3,13 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
@@ -44,8 +46,8 @@ internal inline fun <reified T : ChannelException> List<ChannelAction>.hasComman
 
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
-fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
-fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
+fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
+fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
 
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
@@ -53,13 +55,13 @@ object TestsHelper {
             WaitForInit(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(10000, 10000, 10000, 10000, 10000)
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             )
         var bob: ChannelState =
             WaitForInit(
                 StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(10000, 10000, 10000, 10000, 10000)
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             )
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams
@@ -143,8 +145,8 @@ object TestsHelper {
     }
 
     fun mutualClose(alice: Normal, bob: Normal, tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
-        val alice1 = alice.updateFeerate(if (tweakFees) 4319 else 10000)
-        val bob1 = bob.updateFeerate(if (tweakFees) 4319 else 10000)
+        val alice1 = alice.updateFeerate(if (tweakFees) FeeratePerKw(4_319.sat) else FeeratePerKw(10_000.sat))
+        val bob1 = bob.updateFeerate(if (tweakFees) FeeratePerKw(4_319.sat) else FeeratePerKw(10_000.sat))
 
         // Bob is fundee and initiates the closing
         val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
@@ -156,8 +158,8 @@ object TestsHelper {
         val shutdown1 = actions1.findOutgoingMessage<Shutdown>()
         val closingSigned = actions1.findOutgoingMessage<ClosingSigned>()
 
-        val alice3 = (alice2 as Negotiating).updateFeerate(if (tweakFees) 4316 else 5000)
-        val bob3 = (bob2 as Normal).updateFeerate(if (tweakFees) 4316 else 5000)
+        val alice3 = (alice2 as Negotiating).updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
+        val bob3 = (bob2 as Normal).updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
 
         val (bob4, _) = bob3.process(ChannelEvent.MessageReceived(shutdown1))
         assertTrue { bob4 is Negotiating }

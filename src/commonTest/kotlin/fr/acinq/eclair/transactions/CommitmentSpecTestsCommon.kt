@@ -6,7 +6,9 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.wire.UpdateFailHtlc
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
@@ -16,7 +18,7 @@ import kotlin.test.assertEquals
 class CommitmentSpecTestsCommon : EclairTestSuite() {
     @Test
     fun `add, fulfill and fail htlcs from the sender side`() {
-        val spec = CommitmentSpec(htlcs = setOf(), feeratePerKw = 1000, toLocal = MilliSatoshi(5000000), toRemote = MilliSatoshi(0))
+        val spec = CommitmentSpec(htlcs = setOf(), feerate = FeeratePerKw(1_000.sat), toLocal = MilliSatoshi(5000000), toRemote = MilliSatoshi(0))
         val R = randomBytes32()
         val H = ByteVector32(Crypto.sha256(R))
 
@@ -39,7 +41,7 @@ class CommitmentSpecTestsCommon : EclairTestSuite() {
 
     @Test
     fun `add, fulfill and fail htlcs from the receiver side`() {
-        val spec = CommitmentSpec(htlcs = setOf(), feeratePerKw = 1000, toLocal = MilliSatoshi(0), toRemote = MilliSatoshi(5000 * 1000))
+        val spec = CommitmentSpec(htlcs = setOf(), feerate = FeeratePerKw(1_000.sat), toLocal = MilliSatoshi(0), toRemote = MilliSatoshi(5000 * 1000))
         val R = randomBytes32()
         val H = ByteVector32(Crypto.sha256(R))
 

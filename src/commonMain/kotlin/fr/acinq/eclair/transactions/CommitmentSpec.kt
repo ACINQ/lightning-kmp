@@ -2,13 +2,13 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
 sealed class CommitmentOutput {
     object ToLocal : CommitmentOutput()
-
     object ToRemote : CommitmentOutput()
 
     data class ToLocalAnchor(val pub: PublicKey) : CommitmentOutput()
@@ -16,7 +16,6 @@ sealed class CommitmentOutput {
     data class ToRemoteAnchor(val pub: PublicKey) : CommitmentOutput()
 
     data class InHtlc(val incomingHtlc: IncomingHtlc) : CommitmentOutput()
-
     data class OutHtlc(val outgoingHtlc: OutgoingHtlc) : CommitmentOutput()
 }
 
@@ -44,11 +43,10 @@ data class OutgoingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
 fun Iterable<DirectedHtlc>.incomings(): List<UpdateAddHtlc> = mapNotNull { (it as? IncomingHtlc)?.add }
 fun Iterable<DirectedHtlc>.outgoings(): List<UpdateAddHtlc> = mapNotNull { (it as? OutgoingHtlc)?.add }
 
-
 @Serializable
 data class CommitmentSpec(
     val htlcs: Set<DirectedHtlc>,
-    val feeratePerKw: Long,
+    val feerate: FeeratePerKw,
     val toLocal: MilliSatoshi,
     val toRemote: MilliSatoshi
 ) {
@@ -138,7 +136,7 @@ data class CommitmentSpec(
             })
             val spec5 = (localChanges + remoteChanges).fold(spec4, { spec, u ->
                 when (u) {
-                    is UpdateFee -> spec.copy(feeratePerKw = u.feeratePerKw)
+                    is UpdateFee -> spec.copy(feerate = u.feeratePerKw)
                     else -> spec
                 }
             })

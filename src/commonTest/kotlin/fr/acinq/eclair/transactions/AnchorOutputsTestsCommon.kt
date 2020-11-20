@@ -3,6 +3,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.LocalParams
@@ -24,8 +25,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AnchorOutputsTestsCommon {
-    private val logger by eclairLogger()
-
     val channelVersion = ChannelVersion.STANDARD
 
     val local_funding_privkey = PrivateKey.fromHex("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
@@ -108,7 +107,7 @@ class AnchorOutputsTestsCommon {
         )
         val spec = CommitmentSpec(
             if (testCase.UseTestHtlcs) htlcs.toSet() else setOf(),
-            testCase.FeePerKw.toLong(),
+            FeeratePerKw(testCase.FeePerKw.sat),
             testCase.LocalBalance.msat,
             testCase.RemoteBalance.msat
         )
@@ -216,7 +215,7 @@ class AnchorOutputsTestsCommon {
     fun runLowLevelTest(testCase: TestCase) {
         val spec = CommitmentSpec(
             if (testCase.UseTestHtlcs) htlcs.toSet() else setOf(),
-            testCase.FeePerKw.toLong(),
+            FeeratePerKw(testCase.FeePerKw.sat),
             testCase.LocalBalance.msat,
             testCase.RemoteBalance.msat
         )
@@ -248,7 +247,7 @@ class AnchorOutputsTestsCommon {
 
         val txs = testCase.HtlcDescs.map { it.ResolutionTx.txid to it.ResolutionTx }.toMap()
         val remoteHtlcSigs = testCase.HtlcDescs.map { it.ResolutionTx.txid to ByteVector(it.RemoteSigHex) }.toMap()
-        val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feeratePerKw, outputs)
+        val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feerate, outputs)
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcTimeoutTxs.map { it.tx.txid }) }
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcSuccessTxs.map { it.tx.txid }) }
         htlcTimeoutTxs.forEach {

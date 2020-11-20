@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
@@ -38,8 +39,8 @@ sealed class ChannelEvent {
         @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
         @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
-        val initialFeeratePerKw: Long,
-        val fundingTxFeeratePerKw: Long,
+        val initialFeerate: FeeratePerKw,
+        val fundingTxFeerate: FeeratePerKw,
         val localParams: LocalParams,
         val remoteInit: Init,
         val channelFlags: Byte,
@@ -79,7 +80,7 @@ sealed class ChannelAction {
     }
 
     sealed class Blockchain : ChannelAction() {
-        data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feeratePerKw: Long) : Blockchain()
+        data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feerate: FeeratePerKw) : Blockchain()
         data class SendWatch(val watch: Watch) : Blockchain()
         data class PublishTx(val tx: Transaction) : Blockchain()
     }
@@ -504,7 +505,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     maxHtlcValueInFlightMsat = event.localParams.maxHtlcValueInFlightMsat,
                     channelReserveSatoshis = event.localParams.channelReserve,
                     htlcMinimumMsat = event.localParams.htlcMinimum,
-                    feeratePerKw = event.initialFeeratePerKw,
+                    feeratePerKw = event.initialFeerate,
                     toSelfDelay = event.localParams.toSelfDelay,
                     maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
                     fundingPubkey = fundingPubKey,
@@ -898,7 +899,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             state.commitments,
                             state.localShutdown.scriptPubKey.toByteArray(),
                             state.remoteShutdown.scriptPubKey.toByteArray(),
-                            currentOnChainFeerates.mutualCloseFeeratePerKw
+                            currentOnChainFeerates.mutualCloseFeerate
                         )
                         val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned)))
                         val nextState = state.copy(closingTxProposed = closingTxProposed1)
@@ -981,7 +982,7 @@ data class WaitForRemotePublishFutureComitment(
                 commitments,
                 remotePerCommitmentPoint,
                 tx,
-                currentOnChainFeerates.claimMainFeeratePerKw
+                currentOnChainFeerates.claimMainFeerate
             )
             val nextState = Closing(
                 staticParams = staticParams,
@@ -1019,7 +1020,7 @@ data class WaitForOpenChannel(
                         val channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
                         require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
-                        when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeeratePerKw)) {
+                        when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeerate)) {
                             is Either.Left -> {
                                 logger.error(err.value) { "invalid ${event.message} in state $this" }
                                 return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, err.value.message))))
@@ -1112,7 +1113,7 @@ data class WaitForFundingCreated(
     val remoteParams: RemoteParams,
     @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val initialFeeratePerKw: Long,
+    val initialFeerate: FeeratePerKw,
     @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
@@ -1132,7 +1133,7 @@ data class WaitForFundingCreated(
                             remoteParams,
                             fundingAmount,
                             pushAmount,
-                            initialFeeratePerKw,
+                            initialFeerate,
                             event.message.fundingTxid,
                             event.message.fundingOutputIndex,
                             remoteFirstPerCommitmentPoint
@@ -1262,7 +1263,7 @@ data class WaitForAcceptChannel(
                 logger.debug { "remote params: $remoteParams" }
                 val localFundingPubkey = keyManager.fundingPublicKey(initFunder.localParams.fundingKeyPath)
                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey))))
-                val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeeratePerKw)
+                val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeerate)
                 val nextState = WaitForFundingInternal(
                     staticParams,
                     currentTip,
@@ -1272,7 +1273,7 @@ data class WaitForAcceptChannel(
                     remoteParams,
                     initFunder.fundingAmount,
                     initFunder.pushAmount,
-                    initFunder.initialFeeratePerKw,
+                    initFunder.initialFeerate,
                     event.message.firstPerCommitmentPoint,
                     initFunder.channelVersion,
                     lastSent
@@ -1307,7 +1308,7 @@ data class WaitForFundingInternal(
     val remoteParams: RemoteParams,
     @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val initialFeeratePerKw: Long,
+    val initialFeerate: FeeratePerKw,
     @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
     val channelVersion: ChannelVersion,
     val lastSent: OpenChannel
@@ -1324,7 +1325,7 @@ data class WaitForFundingInternal(
                     remoteParams,
                     fundingAmount,
                     pushAmount,
-                    initialFeeratePerKw,
+                    initialFeerate,
                     event.fundingTx.hash,
                     event.fundingTxOutputIndex,
                     remoteFirstPerCommitmentPoint
@@ -1731,7 +1732,7 @@ data class Normal(
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeeratePerKw, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }
@@ -1808,7 +1809,7 @@ data class Normal(
                                             commitments1,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             event.message.scriptPubKey.toByteArray(),
-                                            currentOnChainFeerates.commitmentFeeratePerKw,
+                                            currentOnChainFeerates.commitmentFeerate,
                                         )
                                         val nextState = Negotiating(
                                             staticParams,
@@ -1919,7 +1920,7 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeeratePerKw, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.maxFeerateMismatch)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }
@@ -1934,7 +1935,7 @@ data class ShuttingDown(
                                         commitments1,
                                         localShutdown.scriptPubKey.toByteArray(),
                                         remoteShutdown.scriptPubKey.toByteArray(),
-                                        currentOnChainFeerates.mutualCloseFeeratePerKw
+                                        currentOnChainFeerates.mutualCloseFeerate
                                     )
                                     val nextState = Negotiating(
                                         staticParams,
@@ -1982,7 +1983,7 @@ data class ShuttingDown(
                                         commitments1,
                                         localShutdown.scriptPubKey.toByteArray(),
                                         remoteShutdown.scriptPubKey.toByteArray(),
-                                        currentOnChainFeerates.mutualCloseFeeratePerKw
+                                        currentOnChainFeerates.mutualCloseFeerate
                                     )
                                     val nextState = Negotiating(
                                         staticParams,
@@ -2123,7 +2124,7 @@ data class Negotiating(
                     result is Either.Right -> {
                         val signedClosingTx = result.value
                         val nextClosingFee = Helpers.Closing.nextClosingFee(
-                            lastLocalClosingFee ?: Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), currentOnChainFeerates.mutualCloseFeeratePerKw),
+                            lastLocalClosingFee ?: Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), currentOnChainFeerates.mutualCloseFeerate),
                             event.message.feeSatoshis
                         )
                         when {

@@ -9,6 +9,7 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
@@ -521,7 +522,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
         val (alice, _) = reachNormal()
-        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000)))
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + FeeratePerKw(1_000.sat))))
         actions1.hasOutgoingMessage<UpdateFee>()
         val (_, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         actions2.hasOutgoingMessage<CommitSig>()
@@ -613,9 +614,9 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CommitSig (only fee update)`() {
         val (alice0, bob0) = reachNormal()
         println(bob0)
-        val (alice1, actions1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, false)))
+        val (alice1, actions1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + FeeratePerKw(1_000.sat), false)))
         val updateFee = actions1.findOutgoingMessage<UpdateFee>()
-        assertEquals(TestConstants.feeratePerKw + 1000, updateFee.feeratePerKw)
+        assertEquals(TestConstants.feeratePerKw + FeeratePerKw(1_000.sat), updateFee.feeratePerKw)
         val (bob1, _) = bob0.process(ChannelEvent.MessageReceived(updateFee))
         val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
@@ -1238,7 +1239,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFee`() {
         val (_, bob) = reachNormal()
-        val fee = UpdateFee(ByteVector32.Zeroes, 12000)
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12_000.sat))
         val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fee))
         bob1 as Normal
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee)), bob1.commitments)
@@ -1252,9 +1253,9 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFee (2 in a row)`() {
         val (_, bob) = reachNormal()
-        val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
+        val fee1 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12_000.sat))
         val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fee1))
-        val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
+        val fee2 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(14_000.sat))
         val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(fee2))
         bob2 as Normal
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee2)), bob2.commitments)
@@ -1263,7 +1264,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFee (sender cannot afford it)`() {
         val (_, bob) = reachNormal()
-        val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100_000_000.sat))
         val (bob1, _) = bob.process(ChannelEvent.SetOnChainFeerates(OnChainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
         val (bob2, actions) = bob1.process(ChannelEvent.MessageReceived(fee))
         assertTrue { bob2 is Closing }
@@ -1276,9 +1277,9 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFee (remote feerate is too small)`() {
         val (_, bob) = reachNormal()
-        val expectedFeeratePerKw = bob.currentOnChainFeerates.commitmentFeeratePerKw
-        assertEquals(expectedFeeratePerKw, bob.commitments.localCommit.spec.feeratePerKw)
-        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(UpdateFee(bob.channelId, 252)))
+        val expectedFeeratePerKw = bob.currentOnChainFeerates.commitmentFeerate
+        assertEquals(expectedFeeratePerKw, bob.commitments.localCommit.spec.feerate)
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
         assertTrue { bob1 is Closing }
         assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
         actions.hasWatch<WatchConfirmed>()
