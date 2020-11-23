@@ -11,6 +11,7 @@ import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*

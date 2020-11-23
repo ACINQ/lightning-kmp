@@ -6,6 +6,72 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.utils.UUID
+import fr.acinq.eclair.utils.currentTimestampMillis
+
+interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb
+
+interface IncomingPaymentsDb {
+    /** Add a new expected incoming payment (not yet received). */
+    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: PaymentType)
+
+    /**
+     * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
+     * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
+     */
+    suspend fun receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
+
+    /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
+    suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
+
+    /** List incoming payments (pending, expired and succeeded). */
+    suspend fun listIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
+
+    /** List pending (not paid, not expired) incoming payments. */
+    suspend fun listPendingIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
+
+    /** List expired (not paid) incoming payments. */
+    suspend fun listExpiredIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
+
+    /** List received (paid) incoming payments. */
+    suspend fun listReceivedIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
+}
+
+enum class PaymentType { Standard, SwapIn, SwapOut, KeySend }
+
+/**
+ * An incoming payment received by this node.
+ * At first it is in a pending state once the payment request has been generated, then will become either a success (if we receive a valid HTLC)
+ * or a failure (if the payment request expires).
+ *
+ * @param paymentRequest Bolt 11 payment request.
+ * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param paymentType distinguish different payment types (standard, swaps, etc).
+ * @param createdAt absolute time in milli-seconds since UNIX epoch when the payment request was generated.
+ * @param status current status of the payment.
+ */
+data class IncomingPayment(val paymentRequest: PaymentRequest, val paymentPreimage: ByteVector32, val paymentType: PaymentType, val createdAt: Long, val status: IncomingPaymentStatus) {
+    constructor(paymentRequest: PaymentRequest, paymentPreimage: ByteVector32, paymentType: PaymentType = PaymentType.Standard) : this(paymentRequest, paymentPreimage, paymentType, currentTimestampMillis(), IncomingPaymentStatus.Pending)
+}
+
+sealed class IncomingPaymentStatus {
+    /** Payment is pending (waiting to receive). */
+    object Pending : IncomingPaymentStatus()
+
+    /** Payment has expired. */
+    object Expired : IncomingPaymentStatus()
+
+    /**
+     * Payment has been successfully received.
+     *
+     * @param amount amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+     * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+     */
+    data class Received(val amount: MilliSatoshi, val receivedAt: Long) : IncomingPaymentStatus()
+}
+
+interface OutgoingPaymentsDb {
+    // TODO
+}
 
 /**
  * An outgoing payment sent by this node.
@@ -63,8 +129,4 @@ data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortCh
         null -> "$nodeId->$nextNodeId"
         else -> "$nodeId->$shortChannelId->$nextNodeId"
     }
-}
-
-interface PaymentsDb {
-    // TODO: @t-bast
 }

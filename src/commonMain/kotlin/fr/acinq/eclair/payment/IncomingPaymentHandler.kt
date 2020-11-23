@@ -4,16 +4,12 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-
-data class IncomingPayment(
-    val paymentRequest: PaymentRequest,
-    val paymentPreimage: ByteVector32
-)
 
 sealed class PaymentPart {
     abstract val amount: MilliSatoshi
@@ -22,27 +18,19 @@ sealed class PaymentPart {
     abstract val finalPayload: FinalPayload
 }
 
-data class HtlcPart( // htlc + decrypted onion
-    val htlc: UpdateAddHtlc,
-    override val finalPayload: FinalPayload
-) : PaymentPart() {
+data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = htlc.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = htlc.paymentHash
 }
 
-data class PayToOpenPart(
-    val payToOpenRequest: PayToOpenRequest,
-    override val finalPayload: FinalPayload
-) : PaymentPart() {
+data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val finalPayload: FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = payToOpenRequest.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
 }
 
-class IncomingPaymentHandler(
-    val nodeParams: NodeParams
-) {
+class IncomingPaymentHandler(val nodeParams: NodeParams) {
 
     enum class Status {
         ACCEPTED,
@@ -50,6 +38,7 @@ class IncomingPaymentHandler(
         PENDING // neither accepted or rejected yet
     }
 
+    // TODO: replace by reading from DB
     // pending incoming payments, indexed by payment hash
     private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
 
