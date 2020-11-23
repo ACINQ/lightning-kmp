@@ -1654,51 +1654,12 @@ data class Normal(
                             val error = NoMoreHtlcsClosingInProgress(channelId)
                             return handleCommandError(event.command, error, channelUpdate)
                         }
-                        when (val result = commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong())) {
-                            is Either.Left -> handleCommandError(event.command, result.value, channelUpdate)
-                            is Either.Right -> {
-                                val newState = this.copy(commitments = result.value.first)
-                                val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(result.value.second))
-                                if (event.command.commit) {
-                                    actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                                }
-                                Pair(newState, actions)
-                            }
-                        }
+                        handleCommandResult(event.command, commitments.sendAdd(event.command, event.command.paymentId, currentBlockHeight.toLong()), event.command.commit)
                     }
-                    is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(event.command)) {
-                        is Either.Left -> handleCommandError(event.command, result.value, channelUpdate)
-                        is Either.Right -> {
-                            val newState = this.copy(commitments = result.value.first)
-                            val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(result.value.second))
-                            if (event.command.commit) {
-                                actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                            }
-                            Pair(newState, actions)
-                        }
-                    }
-                    is CMD_FAIL_HTLC -> when (val result = commitments.sendFail(event.command, this.privateKey)) {
-                        is Either.Left -> handleCommandError(event.command, result.value, channelUpdate)
-                        is Either.Right -> {
-                            val newState = this.copy(commitments = result.value.first)
-                            val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(result.value.second))
-                            if (event.command.commit) {
-                                actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                            }
-                            Pair(newState, actions)
-                        }
-                    }
-                    is CMD_UPDATE_FEE -> when (val result = commitments.sendFee(event.command)) {
-                        is Either.Left -> handleCommandError(event.command, result.value, channelUpdate)
-                        is Either.Right -> {
-                            val newState = this.copy(commitments = result.value.first)
-                            val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(result.value.second))
-                            if (event.command.commit) {
-                                actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                            }
-                            Pair(newState, actions)
-                        }
-                    }
+                    is CMD_FULFILL_HTLC -> handleCommandResult(event.command, commitments.sendFulfill(event.command), event.command.commit)
+                    is CMD_FAIL_HTLC -> handleCommandResult(event.command, commitments.sendFail(event.command, this.privateKey), event.command.commit)
+                    is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(event.command, commitments.sendFailMalformed(event.command), event.command.commit)
+                    is CMD_UPDATE_FEE -> handleCommandResult(event.command, commitments.sendFee(event.command), event.command.commit)
                     is CMD_SIGN -> when {
                         !commitments.localHasChanges() -> {
                             logger.warning { "no changes to sign" }
@@ -1914,6 +1875,20 @@ data class Normal(
             else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
         }
     }
+
+    private fun handleCommandResult(command: Command, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
+        return when (result) {
+            is Either.Left -> handleCommandError(command, result.value, channelUpdate)
+            is Either.Right -> {
+                val (commitments1, message) = result.value
+                val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(message))
+                if (commit) {
+                    actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                }
+                Pair(this.copy(commitments = commitments1), actions)
+            }
+        }
+    }
 }
 
 @Serializable
@@ -2070,41 +2045,10 @@ data class ShuttingDown(
                         Pair(nextState, actions)
                     }
                 }
-                event.command is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(event.command)) {
-                    is Either.Left -> handleCommandError(event.command, result.value)
-                    is Either.Right -> {
-                        val actions = mutableListOf<ChannelAction>()
-                        if (event.command.commit) {
-                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                        }
-                        val (commitments1, fulfill) = result.value
-                        actions.add(ChannelAction.Message.Send(fulfill))
-                        Pair(this.updateCommitments(commitments1) as ShuttingDown, actions)
-                    }
-                }
-                event.command is CMD_FAIL_HTLC -> when (val result = commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey)) {
-                    is Either.Left -> handleCommandError(event.command, result.value)
-                    is Either.Right -> {
-                        val actions = mutableListOf<ChannelAction>()
-                        if (event.command.commit) {
-                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                        }
-                        val (commitments1, fail) = result.value
-                        actions.add(ChannelAction.Message.Send(fail))
-                        Pair(this.copy(commitments = commitments1), actions)
-                    }
-                }
-                event.command is CMD_UPDATE_FEE -> when (val result = commitments.sendFee(event.command)) {
-                    is Either.Left -> handleCommandError(event.command, result.value)
-                    is Either.Right -> {
-                        val newState = this.copy(commitments = result.value.first)
-                        val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(result.value.second))
-                        if (event.command.commit) {
-                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
-                        }
-                        Pair(newState, actions)
-                    }
-                }
+                event.command is CMD_FULFILL_HTLC -> handleCommandResult(event.command, commitments.sendFulfill(event.command), event.command.commit)
+                event.command is CMD_FAIL_HTLC -> handleCommandResult(event.command, commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey), event.command.commit)
+                event.command is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(event.command, commitments.sendFailMalformed(event.command), event.command.commit)
+                event.command is CMD_UPDATE_FEE -> handleCommandResult(event.command, commitments.sendFee(event.command), event.command.commit)
                 event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
                 else -> unhandled(event)
             }
@@ -2116,6 +2060,20 @@ data class ShuttingDown(
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         TODO("Not yet implemented")
+    }
+
+    private fun handleCommandResult(command: Command, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
+        return when (result) {
+            is Either.Left -> handleCommandError(command, result.value)
+            is Either.Right -> {
+                val (commitments1, message) = result.value
+                val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(message))
+                if (commit) {
+                    actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                }
+                Pair(this.copy(commitments = commitments1), actions)
+            }
+        }
     }
 }
 

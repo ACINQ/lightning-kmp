@@ -1,5 +1,8 @@
 package fr.acinq.eclair.channel.states
 
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
@@ -48,10 +51,54 @@ class ShutdownTestsCommon {
     }
 
     @Test
+    fun `recv CMD_FAIL_HTLC (unknown htlc id)`() {
+        val (_, bob) = init()
+        val cmdFail = CMD_FAIL_HTLC(42, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(cmdFail))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmdFail, UnknownHtlcId(bob.channelId, 42))))
+        assertEquals(bob, bob1)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_MALFORMED_HTLC`() {
+        val (_, bob) = init()
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FAIL_MALFORMED_HTLC(1, ByteVector32(Crypto.sha256(ByteVector.empty)), FailureMessage.BADONION)))
+        val fail = actions1.findOutgoingMessage<UpdateFailMalformedHtlc>()
+        assertTrue { bob1 is ShuttingDown && bob1.commitments.localChanges.proposed.contains(fail) }
+    }
+
+    @Test
+    fun `recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)`() {
+        val (_, bob) = init()
+        val cmdFail = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32(Crypto.sha256(ByteVector.empty)), FailureMessage.BADONION)
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(cmdFail))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmdFail, UnknownHtlcId(bob.channelId, 42))))
+        assertEquals(bob, bob1)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_MALFORMED_HTLC (invalid failure_code)`() {
+        val (_, bob) = init()
+        val cmdFail = CMD_FAIL_MALFORMED_HTLC(42, randomBytes32(), 42)
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(cmdFail))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmdFail, InvalidFailureCode(bob.channelId))))
+        assertEquals(bob, bob1)
+    }
+
+    @Test
     fun `recv UpdateFailHtlc`() {
         val (alice, bob) = init()
         val (_, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))))
         val fail = actions1.findOutgoingMessage<UpdateFailHtlc>()
+        val (alice1, _) = alice.process(ChannelEvent.MessageReceived(fail))
+        assertTrue { alice1 is ShuttingDown && alice1.commitments.remoteChanges.proposed.contains(fail) }
+    }
+
+    @Test
+    fun `recv UpdateFailMalformedHtlc`() {
+        val (alice, bob) = init()
+        val (_, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FAIL_MALFORMED_HTLC(1, ByteVector32(Crypto.sha256(ByteVector.empty)), FailureMessage.BADONION)))
+        val fail = actions1.findOutgoingMessage<UpdateFailMalformedHtlc>()
         val (alice1, _) = alice.process(ChannelEvent.MessageReceived(fail))
         assertTrue { alice1 is ShuttingDown && alice1.commitments.remoteChanges.proposed.contains(fail) }
     }

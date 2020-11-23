@@ -17,6 +17,7 @@ import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
 import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
+import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.weight2fee
@@ -1025,6 +1026,217 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsBob2.hasCommandError<InvalidHtlcPreimage>()
 
         assertEquals(initialState, bob2)
+    }
+
+    @Test
+    fun `recv UpdateFulfillHtlc`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = crossSign(nodes.first, nodes.second)
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, r)))
+        val fulfill = actionsBob2.findOutgoingMessage<UpdateFulfillHtlc>()
+        val initialState = alice1 as Normal
+
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(fulfill))
+        assertEquals(initialState.copy(commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed + fulfill))), alice2)
+        val addSettled = actionsAlice2.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().first()
+        assertEquals(htlc, addSettled.htlc)
+        assertEquals(ChannelAction.HtlcResult.Fulfill.RemoteFulfill(fulfill), addSettled.result)
+    }
+
+    @Test
+    fun `recv UpdateFulfillHtlc (unknown htlc id)`() {
+        val (alice0, _) = reachNormal()
+        val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice1, actions1) = alice0.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice0.channelId, 42, randomBytes32())))
+        assertTrue(alice1 is Closing)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertTrue(actions1.watches<WatchConfirmed>().isNotEmpty())
+        assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
+        val error = actions1.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), UnknownHtlcId(alice0.channelId, 42).message)
+    }
+
+    @Test
+    fun `recv UpdateFulfillHtlc (sender has not signed htlc)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, actions1) = nodes.first.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        actions1.findOutgoingMessage<CommitSig>()
+        val commitTx = (alice1 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice2, actions2) = alice1.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice1.channelId, htlc.id, r)))
+        assertTrue(alice2 is Closing)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertTrue(actions2.watches<WatchConfirmed>().isNotEmpty())
+        assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
+        val error = actions2.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), UnknownHtlcId(alice0.channelId, 0).message)
+    }
+
+    @Test
+    fun `recv UpdateFulfillHtlc (invalid preimage)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = crossSign(nodes.first, nodes.second)
+        val commitTx = (alice1 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice2, actions2) = alice1.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice0.channelId, htlc.id, ByteVector32.Zeroes)))
+        assertTrue(alice2 is Closing)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
+        assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
+        val error = actions2.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), InvalidHtlcPreimage(alice0.channelId, htlc.id).message)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_HTLC`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+        val initialState = bob1 as Normal
+
+        val cmd = CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(cmd))
+        val fail = actions2.findOutgoingMessage<UpdateFailHtlc>()
+        assertEquals(initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed + fail))), bob2)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_HTLC (unknown htlc id)`() {
+        val (_, bob0) = reachNormal()
+        val cmdFail = CMD_FAIL_HTLC(42, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))
+        val (bob1, actions1) = bob0.process(ChannelEvent.ExecuteCommand(cmdFail))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmdFail, UnknownHtlcId(bob0.channelId, 42))))
+        assertEquals(bob0, bob1)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_HTLC_MALFORMED`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+        val initialState = bob1 as Normal
+
+        val cmdFail = CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessage.BADONION)
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(cmdFail))
+        val fail = actions2.findOutgoingMessage<UpdateFailMalformedHtlc>()
+        assertEquals(initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed + fail))), bob2)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_HTLC_MALFORMED (unknown htlc id)`() {
+        val (_, bob0) = reachNormal()
+        val cmdFail = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessage.BADONION)
+        val (bob1, actions1) = bob0.process(ChannelEvent.ExecuteCommand(cmdFail))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmdFail, UnknownHtlcId(bob0.channelId, 42))))
+        assertEquals(bob0, bob1)
+    }
+
+    @Test
+    fun `recv CMD_FAIL_HTLC_MALFORMED (invalid failure_code)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+
+        val cmdFail = CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), 42)
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(cmdFail))
+        assertEquals(actions2, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmdFail, InvalidFailureCode(bob0.channelId))))
+        assertEquals(bob1, bob2)
+    }
+
+    @Test
+    fun `recv UpdateFailHtlc`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = crossSign(nodes.first, nodes.second)
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))))
+        val fail = actionsBob2.findOutgoingMessage<UpdateFailHtlc>()
+        val initialState = alice1 as Normal
+
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(fail))
+        assertTrue(alice2 is Normal)
+        assertTrue(actionsAlice2.isEmpty())
+        assertEquals(initialState.copy(commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed + fail))), alice2)
+    }
+
+    @Test
+    fun `recv UpdateFailHtlc (unknown htlc id)`() {
+        val (alice0, _) = reachNormal()
+        val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice1, actions1) = alice0.process(ChannelEvent.MessageReceived(UpdateFailHtlc(alice0.channelId, 42, ByteVector.empty)))
+        assertTrue(alice1 is Closing)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertTrue(actions1.watches<WatchConfirmed>().isNotEmpty())
+        assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
+        val error = actions1.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), UnknownHtlcId(alice0.channelId, 42).message)
+    }
+
+    @Test
+    fun `recv UpdateFailHtlc (sender has not signed htlc)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, actions1) = nodes.first.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        actions1.findOutgoingMessage<CommitSig>()
+        val commitTx = (alice1 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice2, actions2) = alice1.process(ChannelEvent.MessageReceived(UpdateFailHtlc(alice1.channelId, htlc.id, ByteVector.empty)))
+        assertTrue(alice2 is Closing)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertTrue(actions2.watches<WatchConfirmed>().isNotEmpty())
+        assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
+        val error = actions2.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), UnknownHtlcId(alice0.channelId, 0).message)
+    }
+
+    @Test
+    fun `recv UpdateFailMalformedHtlc`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = crossSign(nodes.first, nodes.second)
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessage.BADONION)))
+        val fail = actionsBob2.findOutgoingMessage<UpdateFailMalformedHtlc>()
+        val initialState = alice1 as Normal
+
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(fail))
+        assertTrue(alice2 is Normal)
+        assertTrue(actionsAlice2.isEmpty())
+        assertEquals(initialState.copy(commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed + fail))), alice2)
+    }
+
+    @Test
+    fun `recv UpdateFailMalformedHtlc (unknown htlc id)`() {
+        val (alice0, _) = reachNormal()
+        val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice1, actions1) = alice0.process(ChannelEvent.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, 42, ByteVector32.Zeroes, FailureMessage.BADONION)))
+        assertTrue(alice1 is Closing)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertTrue(actions1.watches<WatchConfirmed>().isNotEmpty())
+        assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
+        val error = actions1.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), UnknownHtlcId(alice0.channelId, 42).message)
+    }
+
+    @Test
+    fun `recv UpdateFailMalformedHtlc (invalid failure_code)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = crossSign(nodes.first, nodes.second)
+        val commitTx = (alice1 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
+
+        val (alice2, actions2) = alice1.process(ChannelEvent.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, htlc.id, Sphinx.hash(htlc.onionRoutingPacket), 42)))
+        assertTrue(alice2 is Closing)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
+        assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
+        val error = actions2.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), InvalidFailureCode(alice0.channelId).message)
     }
 
     @Test
