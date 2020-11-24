@@ -54,4 +54,8 @@ data class NodeParams(
 ) {
     val nodePrivateKey get() = keyManager.nodeKey.privateKey
     val nodeId get() = keyManager.nodeId
+
+    init {
+        Features.validateFeatureGraph(features)
+    }
 }

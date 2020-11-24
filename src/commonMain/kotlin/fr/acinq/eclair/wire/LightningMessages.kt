@@ -1012,7 +1012,7 @@ data class PayToOpenResponse(
                     message.result.reason?.let {
                         writeU16(it.size(), out)
                         writeBytes(it, out)
-                     }
+                    }
                 }
             }
 

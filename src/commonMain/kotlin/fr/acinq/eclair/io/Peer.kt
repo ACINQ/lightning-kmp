@@ -362,16 +362,25 @@ class Peer(
                 when {
                     msg is Init -> {
                         logger.info { "received $msg" }
-                        logger.info { "peer is using features ${Features(msg.features)}" }
-                        theirInit = msg
-                        _connectionState.value = Connection.ESTABLISHED
-                        logger.info { "before channels: $_channels" }
-                        _channels = _channels.mapValues { entry ->
-                            val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))
-                            processActions(entry.key, actions)
-                            state1
+                        val theirFeatures = Features(msg.features)
+                        logger.info { "peer is using features $theirFeatures" }
+                        when (val checkFeatures = Try { Features.validateFeatureGraph(features) }) {
+                            is Try.Failure -> {
+                                logger.error(checkFeatures.error)
+                                // TODO: disconnect peer
+                            }
+                            is Try.Success -> {
+                                theirInit = msg
+                                _connectionState.value = Connection.ESTABLISHED
+                                logger.info { "before channels: $_channels" }
+                                _channels = _channels.mapValues { entry ->
+                                    val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))
+                                    processActions(entry.key, actions)
+                                    state1
+                                }
+                                logger.info { "after channels: $_channels" }
+                            }
                         }
-                        logger.info { "after channels: $_channels" }
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
@@ -393,9 +402,7 @@ class Peer(
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
                         val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                        val walletStaticPaymentBasepoint: PublicKey? = if (Features.canUseFeature(features, Features(theirInit!!.features), Feature.StaticRemoteKey)) {
-                            closingPubkey
-                        } else null
+                        val walletStaticPaymentBasepoint: PublicKey = closingPubkey
                         val localParams = LocalParams(
                             nodeParams.nodeId,
                             fundingKeyPath,

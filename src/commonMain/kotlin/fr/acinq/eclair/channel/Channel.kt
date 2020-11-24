@@ -48,7 +48,7 @@ sealed class ChannelEvent {
         val channelVersion: ChannelVersion
     ) : ChannelEvent() {
         init {
-            require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
+            require(channelVersion.hasStaticRemotekey) { "channel version $channelVersion is invalid (static_remote_key is not set)" }
         }
     }
 
@@ -496,7 +496,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             event is ChannelEvent.InitFunder -> {
                 val fundingPubKey = keyManager.fundingPublicKey(event.localParams.fundingKeyPath).publicKey
                 val channelKeyPath = keyManager.channelKeyPath(event.localParams, event.channelVersion)
-                val paymentBasepoint = event.localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
+                val paymentBasepoint = event.localParams.walletStaticPaymentBasepoint
                 val open = OpenChannel(
                     staticParams.nodeParams.chainHash,
                     temporaryChannelId = event.temporaryChannelId,
@@ -1015,12 +1015,14 @@ data class WaitForOpenChannel(
             event is ChannelEvent.MessageReceived ->
                 when (event.message) {
                     is OpenChannel -> {
-                        val channelVersion = if (Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.StaticRemoteKey)) {
-                            (event.message.channelVersion ?: ChannelVersion.STANDARD) or ChannelVersion.STATIC_REMOTEKEY
-                        } else {
-                            event.message.channelVersion ?: ChannelVersion.STANDARD
+                        require(Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.StaticRemoteKey)) {
+                            "static_remote_key is not set"
                         }
-                        require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
+                        require(Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.AnchorOutputs)) {
+                            "anchor_outputs is not set"
+                        }
+                        val channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
+                        require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
                         when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeeratePerKw)) {
                             is Either.Left -> {
                                 logger.error(err.value) { "invalid ${event.message} in state $this" }
@@ -1032,7 +1034,7 @@ data class WaitForOpenChannel(
                         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
                         // TODO: maybe also check uniqueness of temporary channel id
                         val minimumDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
-                        val paymentBasepoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
+                        val paymentBasepoint = localParams.walletStaticPaymentBasepoint
                         val accept = AcceptChannel(
                             temporaryChannelId = event.message.temporaryChannelId,
                             dustLimitSatoshis = localParams.dustLimit,
@@ -1127,7 +1129,6 @@ data class WaitForFundingCreated(
                     is FundingCreated -> {
                         // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
                         val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
-                            if (channelVersion.hasAnchorOutputs) CommitmentsFormat.AnchorOutputs else CommitmentsFormat.LegacyFormat,
                             keyManager,
                             channelVersion,
                             temporaryChannelId,
@@ -1320,7 +1321,6 @@ data class WaitForFundingInternal(
             event is ChannelEvent.MakeFundingTxResponse -> {
                 // let's create the first commitment tx that spends the yet uncommitted funding tx
                 val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
-                    if (channelVersion.hasAnchorOutputs) CommitmentsFormat.AnchorOutputs else CommitmentsFormat.LegacyFormat,
                     keyManager,
                     channelVersion,
                     temporaryChannelId,
@@ -1718,7 +1718,7 @@ data class Normal(
                                 val nextCommitNumber = nextRemoteCommit.index
                                 // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                                 // counterparty, so only htlcs above remote's dust_limit matter
-                                val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.commitmentsFormat, commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.commitmentsFormat, commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
+                                val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
                                 val htlcInfos = trimmedHtlcs.map { it.add }.map {
                                     logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                     ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)

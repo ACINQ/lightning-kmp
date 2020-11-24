@@ -10,10 +10,10 @@ class OpenTlvTestsCommon : EclairTestSuite() {
     @Test
     fun `channel version TLV`() {
         val testCases = listOf(
-            Triple(ChannelVersion.STANDARD, Hex.decode("fe47000000 00000001"), Hex.decode("fe47000000 00000001")),
-            Triple(ChannelVersion.STANDARD, Hex.decode("fe47000001 04 00000001"), Hex.decode("fe47000000 00000001")),
-            Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000000 00000009"), Hex.decode("fe47000000 00000009")),
-            Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000001 04 00000009"), Hex.decode("fe47000000 00000009"))
+            Triple(ChannelVersion.STANDARD, Hex.decode("fe47000000 00000007"), Hex.decode("fe47000000 00000001")),
+            Triple(ChannelVersion.STANDARD, Hex.decode("fe47000001 04 00000007"), Hex.decode("fe47000000 00000001")),
+            Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000000 0000000f"), Hex.decode("fe47000000 0000000f")),
+            Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000001 04 0000000f"), Hex.decode("fe47000000 0000000f"))
         )
         val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
         @Suppress("UNCHECKED_CAST")

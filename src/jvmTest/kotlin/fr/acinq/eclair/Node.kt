@@ -1,7 +1,9 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
@@ -23,7 +25,7 @@ import io.ktor.serialization.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -131,7 +133,8 @@ object Node {
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
                     ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
                     ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
+                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Mandatory),
                     ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
                 )
             ),

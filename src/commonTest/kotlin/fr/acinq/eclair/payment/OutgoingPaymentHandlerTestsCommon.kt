@@ -543,11 +543,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val (alice, _) = TestsHelper.reachNormal()
         val reserve = alice.commitments.remoteParams.channelReserve
         val channelDetails = listOf(
-            Pair(ShortChannelId(1), 250_000.msat),
-            Pair(ShortChannelId(2), 150_000.msat),
-            Pair(ShortChannelId(3), 0.msat),
-            Pair(ShortChannelId(4), 10_000.msat),
-            Pair(ShortChannelId(5), 200_000.msat),
+            Pair(ShortChannelId(1), 660_000.msat + 250_000.msat),
+            Pair(ShortChannelId(2), 660_000.msat + 150_000.msat),
+            Pair(ShortChannelId(3), 660_000.msat + 0.msat),
+            Pair(ShortChannelId(4), 660_000.msat + 10_000.msat),
+            Pair(ShortChannelId(5), 660_000.msat + 200_000.msat),
         )
         return channelDetails.map {
             val channelId = randomBytes32()

@@ -86,10 +86,10 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
         return Transactions.sign(tx, privateKey.privateKey)
     }
 
-    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey): ByteVector64 {
+    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHhash: Int): ByteVector64 {
         val privateKey = privateKey(publicKey.path)
         val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-        return Transactions.sign(tx, currentKey)
+        return Transactions.sign(tx, currentKey, sigHhash)
     }
 
     override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 {

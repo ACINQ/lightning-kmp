@@ -38,16 +38,16 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
     fun `make channel fixture`() {
         val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
         val offlineChannels = mapOf(
-            channelId1 to Offline(makeChannel(channelId1, 15_000.msat, 10.msat)),
-            channelId2 to Offline(makeChannel(channelId2, 20_000.msat, 5.msat)),
-            channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
+            channelId1 to Offline(makeChannel(channelId1, 660_000.msat + 15_000.msat, 10.msat)),
+            channelId2 to Offline(makeChannel(channelId2, 660_000.msat + 20_000.msat, 5.msat)),
+            channelId3 to Offline(makeChannel(channelId3, 660_000.msat + 10_000.msat, 10.msat)),
         )
         assertEquals(setOf(10_000.msat, 15_000.msat, 20_000.msat), offlineChannels.map { it.value.state.commitments.availableBalanceForSend() }.toSet())
 
         val normalChannels = mapOf(
-            channelId1 to makeChannel(channelId1, 15_000.msat, 10.msat),
-            channelId2 to makeChannel(channelId2, 15_000.msat, 5.msat),
-            channelId3 to makeChannel(channelId3, 10_000.msat, 10.msat),
+            channelId1 to makeChannel(channelId1, 660_000.msat + 15_000.msat, 10.msat),
+            channelId2 to makeChannel(channelId2, 660_000.msat + 15_000.msat, 5.msat),
+            channelId3 to makeChannel(channelId3, 660_000.msat + 10_000.msat, 10.msat),
         )
         assertEquals(setOf(10_000.msat, 15_000.msat), normalChannels.map { it.value.commitments.availableBalanceForSend() }.toSet())
     }
@@ -56,9 +56,9 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
     fun `no available channels`() {
         val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
         val channels = mapOf(
-            channelId1 to Offline(makeChannel(channelId1, 15_000.msat, 10.msat)),
-            channelId2 to Syncing(makeChannel(channelId2, 20_000.msat, 5.msat), false),
-            channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
+            channelId1 to Offline(makeChannel(channelId1, 660_000.msat + 15_000.msat, 10.msat)),
+            channelId2 to Syncing(makeChannel(channelId2, 660_000.msat + 20_000.msat, 5.msat), false),
+            channelId3 to Offline(makeChannel(channelId3, 660_000.msat + 10_000.msat, 10.msat)),
         )
         assertEquals(Either.Left(FinalFailure.NoAvailableChannels), findRoutes(5_000.msat, channels))
     }
@@ -67,9 +67,9 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
     fun `insufficient balance`() {
         val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
         val channels = mapOf(
-            channelId1 to makeChannel(channelId1, 15_000.msat, 10.msat),
-            channelId2 to makeChannel(channelId2, 18_000.msat, 5.msat),
-            channelId3 to makeChannel(channelId3, 12_000.msat, 10.msat),
+            channelId1 to makeChannel(channelId1, 660_000.msat + 15_000.msat, 10.msat),
+            channelId2 to makeChannel(channelId2, 660_000.msat + 18_000.msat, 5.msat),
+            channelId3 to makeChannel(channelId3, 660_000.msat + 12_000.msat, 10.msat),
         )
         assertEquals(Either.Left(FinalFailure.InsufficientBalance), findRoutes(50_000.msat, channels))
     }
@@ -79,15 +79,15 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
         val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
         run {
             val channels = mapOf(
-                channelId1 to makeChannel(channelId1, 35_000.msat, 10.msat),
-                channelId2 to makeChannel(channelId2, 30_000.msat, 5.msat),
-                channelId3 to makeChannel(channelId3, 38_000.msat, 10.msat),
+                channelId1 to makeChannel(channelId1, 660_000.msat + 35_000.msat, 10.msat),
+                channelId2 to makeChannel(channelId2, 660_000.msat + 30_000.msat, 5.msat),
+                channelId3 to makeChannel(channelId3, 660_000.msat + 38_000.msat, 10.msat),
             )
             val routes = findRoutes(38_000.msat, channels).right!!
             assertEquals(listOf(RouteCalculation.Route(38_000.msat, channels.getValue(channelId3))), routes)
         }
         run {
-            val channels = mapOf(channelId3 to makeChannel(channelId3, 38_000.msat, 10.msat))
+            val channels = mapOf(channelId3 to makeChannel(channelId3, 660_000.msat + 38_000.msat, 10.msat))
             val routes = findRoutes(38_000.msat, channels).right!!
             assertEquals(listOf(RouteCalculation.Route(38_000.msat, channels.getValue(channelId3))), routes)
         }
@@ -97,10 +97,10 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
     fun `ignore empty channels`() {
         val (channelId1, channelId2, channelId3, channelId4) = listOf(randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
         val channels = mapOf(
-            channelId1 to makeChannel(channelId1, 0.msat, 10.msat),
-            channelId2 to makeChannel(channelId2, 50.msat, 100.msat),
-            channelId3 to makeChannel(channelId3, 30_000.msat, 15.msat),
-            channelId4 to makeChannel(channelId4, 20_000.msat, 50.msat),
+            channelId1 to makeChannel(channelId1, 660_000.msat + 0.msat, 10.msat),
+            channelId2 to makeChannel(channelId2, 660_000.msat + 50.msat, 100.msat),
+            channelId3 to makeChannel(channelId3, 660_000.msat + 30_000.msat, 15.msat),
+            channelId4 to makeChannel(channelId4, 660_000.msat + 20_000.msat, 50.msat),
         )
         val routes = findRoutes(50_000.msat, channels).right!!
         val expected = setOf(
@@ -115,10 +115,10 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
     fun `split payment across many channels`() {
         val (channelId1, channelId2, channelId3, channelId4) = listOf(randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
         val channels = mapOf(
-            channelId1 to makeChannel(channelId1, 50.msat, 10.msat),
-            channelId2 to makeChannel(channelId2, 150.msat, 100.msat),
-            channelId3 to makeChannel(channelId3, 25.msat, 15.msat),
-            channelId4 to makeChannel(channelId4, 75.msat, 50.msat),
+            channelId1 to makeChannel(channelId1, 660_000.msat + 50.msat, 10.msat),
+            channelId2 to makeChannel(channelId2, 660_000.msat + 150.msat, 100.msat),
+            channelId3 to makeChannel(channelId3, 660_000.msat + 25.msat, 15.msat),
+            channelId4 to makeChannel(channelId4, 660_000.msat + 75.msat, 50.msat),
         )
         run {
             val routes = findRoutes(300.msat, channels).right!!

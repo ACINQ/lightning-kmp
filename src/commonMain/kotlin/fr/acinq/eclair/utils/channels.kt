@@ -1,9 +1,7 @@
 package fr.acinq.eclair.utils
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.ConflatedBroadcastChannel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlin.reflect.KProperty
 
 @ExperimentalCoroutinesApi
