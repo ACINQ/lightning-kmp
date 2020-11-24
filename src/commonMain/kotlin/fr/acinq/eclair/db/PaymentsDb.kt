@@ -6,6 +6,81 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.utils.UUID
+import fr.acinq.eclair.utils.currentTimestampMillis
+
+interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb
+
+interface IncomingPaymentsDb {
+    /** Add a new expected incoming payment (not yet received). */
+    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, details: IncomingPaymentDetails)
+
+    /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
+    suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
+
+    /**
+     * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
+     * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
+     *
+     * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+     */
+    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
+
+    /** List received payments (with most recent payments first). */
+    suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
+}
+
+interface OutgoingPaymentsDb {
+    // TODO
+}
+
+enum class PaymentTypeFilter { Normal, SwapIn, SwapOut, KeySend }
+
+sealed class IncomingPaymentDetails {
+    object Normal : IncomingPaymentDetails()
+    data class SwapIn(val address: String) : IncomingPaymentDetails()
+
+    fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
+        is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
+        is SwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
+    }
+}
+
+/**
+ * An incoming payment received by this node.
+ * At first it is in a pending state once the payment request has been generated, then will become either a success (if we receive a valid HTLC)
+ * or a failure (if the payment request expires).
+ *
+ * @param paymentRequest Bolt 11 payment request.
+ * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param details details specific to the type of payment (normal, swaps, etc).
+ * @param createdAt absolute time in milli-seconds since UNIX epoch when the payment request was generated.
+ * @param status current status of the payment.
+ */
+data class IncomingPayment(val paymentRequest: PaymentRequest, val paymentPreimage: ByteVector32, val details: IncomingPaymentDetails, val createdAt: Long, val status: IncomingPaymentStatus) {
+    constructor(paymentRequest: PaymentRequest, paymentPreimage: ByteVector32, details: IncomingPaymentDetails = IncomingPaymentDetails.Normal) : this(
+        paymentRequest,
+        paymentPreimage,
+        details,
+        currentTimestampMillis(),
+        IncomingPaymentStatus.Pending
+    )
+}
+
+sealed class IncomingPaymentStatus {
+    /** Payment is pending (waiting to receive). */
+    object Pending : IncomingPaymentStatus()
+
+    /** Payment has expired. */
+    object Expired : IncomingPaymentStatus()
+
+    /**
+     * Payment has been successfully received.
+     *
+     * @param amount amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+     * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+     */
+    data class Received(val amount: MilliSatoshi, val receivedAt: Long) : IncomingPaymentStatus()
+}
 
 /**
  * An outgoing payment sent by this node.
@@ -63,8 +138,4 @@ data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortCh
         null -> "$nodeId->$nextNodeId"
         else -> "$nodeId->$shortChannelId->$nextNodeId"
     }
-}
-
-interface PaymentsDb {
-    // TODO: @t-bast
 }

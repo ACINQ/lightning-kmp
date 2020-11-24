@@ -9,6 +9,8 @@ import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.CMD_CLOSE
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases
+import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
@@ -120,7 +122,10 @@ object Node {
         val electrumServerAddress = parseElectrumServerAddress(config.getString("phoenix.electrum-server"))
         val keyManager = LocalKeyManager(seed, chainHash)
         logger.info { "node ${keyManager.nodeId} is starting" }
-        val channelsDb = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
+        val db = object : Databases {
+            override val channels = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
+            override val payments = InMemoryPaymentsDb()
+        }
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "phoenix",
@@ -187,7 +192,7 @@ object Node {
         runBlocking {
             val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
-            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, channelsDb, this)
+            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, db, this)
 
             launch { connectLoop(peer) }
 

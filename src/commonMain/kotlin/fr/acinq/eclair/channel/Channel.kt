@@ -100,7 +100,7 @@ sealed class ChannelAction {
      *  - or [[ProcessCmdRes.AddSettledFail]] / [[ProcessCmdRes.AddSettledFulfill]] (usually a while later)
      */
     sealed class ProcessCmdRes : ChannelAction() {
-        data class NotExecuted(val cmd: Command, val t: Throwable) : ProcessCmdRes()
+        data class NotExecuted(val cmd: Command, val t: ChannelException) : ProcessCmdRes()
         data class AddSettledFulfill(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fulfill) : ProcessCmdRes()
         data class AddSettledFail(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fail) : ProcessCmdRes()
         data class AddFailed(val cmd: CMD_ADD_HTLC, val error: ChannelException, val channelUpdate: ChannelUpdate?) : ProcessCmdRes() {

@@ -525,7 +525,7 @@ class ClosingTestsCommon {
         val (alice3, bob3) = nodes2
 
         val (alice4, aliceActions4) = alice3.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
-        aliceActions4.hasMessage<CommitSig>() // We stop here: Alice sent her CommitSig, but doesn't hear back from Bob.
+        aliceActions4.hasOutgoingMessage<CommitSig>() // We stop here: Alice sent her CommitSig, but doesn't hear back from Bob.
 
         // Now Bob publishes the first commit tx (force-close).
         val bobCommitTx = (bob3 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
@@ -548,9 +548,9 @@ class ClosingTestsCommon {
         assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcSuccessTx), publishTxs[1])
 
         // Alice resets watches on all relevant transactions.
-        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), aliceActions5.watches<WatchConfirmed>()[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), aliceActions5.watches<WatchConfirmed>()[1].event)
-        val watchHtlcSuccess = aliceActions5.findOutgoingWatch<WatchSpent>()
+        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), aliceActions5.findWatches<WatchConfirmed>()[0].event)
+        assertEquals(BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), aliceActions5.findWatches<WatchConfirmed>()[1].event)
+        val watchHtlcSuccess = aliceActions5.findWatch<WatchSpent>()
         assertEquals(BITCOIN_OUTPUT_SPENT, watchHtlcSuccess.event)
         assertEquals(bobCommitTx.txid, watchHtlcSuccess.txId)
         assertEquals(claimHtlcSuccessTx.txIn.first().outPoint.index, watchHtlcSuccess.outputIndex.toLong())
@@ -600,10 +600,10 @@ class ClosingTestsCommon {
         val (alice5, aliceActions5) = alice4.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = aliceActions5.findOutgoingMessage<CommitSig>()
         val (bob5, bobActions5) = bob4.process(ChannelEvent.MessageReceived(commitSig))
-        bobActions5.hasMessage<RevokeAndAck>() // not forwarded to Alice (malicious Bob)
-        val cmdSign = bobActions5.findProcessCommand<CMD_SIGN>()
+        bobActions5.hasOutgoingMessage<RevokeAndAck>() // not forwarded to Alice (malicious Bob)
+        val cmdSign = bobActions5.findCommand<CMD_SIGN>()
         val (bob6, bobActions6) = bob5.process(ChannelEvent.ExecuteCommand(cmdSign))
-        bobActions6.hasMessage<CommitSig>() // not forwarded to Alice (malicious Bob)
+        bobActions6.hasOutgoingMessage<CommitSig>() // not forwarded to Alice (malicious Bob)
 
         // Bob publishes the next commit tx.
         val bobCommitTx = (bob6 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
@@ -645,10 +645,10 @@ class ClosingTestsCommon {
         val (alice4, aliceActions4) = alice3.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = aliceActions4.findOutgoingMessage<CommitSig>()
         val (bob4, bobActions4) = bob3.process(ChannelEvent.MessageReceived(commitSig))
-        bobActions4.hasMessage<RevokeAndAck>() // not forwarded to Alice (malicious Bob)
-        val cmdSign = bobActions4.findProcessCommand<CMD_SIGN>()
+        bobActions4.hasOutgoingMessage<RevokeAndAck>() // not forwarded to Alice (malicious Bob)
+        val cmdSign = bobActions4.findCommand<CMD_SIGN>()
         val (bob5, bobActions5) = bob4.process(ChannelEvent.ExecuteCommand(cmdSign))
-        bobActions5.hasMessage<CommitSig>() // not forwarded to Alice (malicious Bob)
+        bobActions5.hasOutgoingMessage<CommitSig>() // not forwarded to Alice (malicious Bob)
 
         // Now Bob publishes the next commit tx (force-close).
         val bobCommitTx = (bob5 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
@@ -722,8 +722,8 @@ class ClosingTestsCommon {
         // alice is able to claim its main output
         val claimMainTx = aliceActions10.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx
         Transaction.correctlySpends(claimMainTx, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        assertEquals(bobCommitTx.txid, aliceActions10.watches<WatchConfirmed>()[0].txId)
-        assertEquals(claimMainTx.txid, aliceActions10.watches<WatchConfirmed>()[1].txId)
+        assertEquals(bobCommitTx.txid, aliceActions10.findWatches<WatchConfirmed>()[0].txId)
+        assertEquals(claimMainTx.txid, aliceActions10.findWatches<WatchConfirmed>()[1].txId)
 
         // actual test starts here
         val (alice11, _) = alice10.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)))
@@ -759,9 +759,9 @@ class ClosingTestsCommon {
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        assertEquals(bobRevokedTx.txOut.size, penalties.map { it.txIn.first().outPoint }.toSet().size)
 
-        assertEquals(bobRevokedTx.txid, aliceActions1.watches<WatchConfirmed>()[0].txId)
-        assertEquals(claimMain.txid, aliceActions1.watches<WatchConfirmed>()[1].txId)
-        assertEquals(mainPenalty.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[0].outputIndex.toLong())
+        assertEquals(bobRevokedTx.txid, aliceActions1.findWatches<WatchConfirmed>()[0].txId)
+        assertEquals(claimMain.txid, aliceActions1.findWatches<WatchConfirmed>()[1].txId)
+        assertEquals(mainPenalty.txIn.first().outPoint.index, aliceActions1.findWatches<WatchSpent>()[0].outputIndex.toLong())
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        assertEquals(htlcPenalty.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[1].outputIndex)
     }
@@ -786,9 +786,9 @@ class ClosingTestsCommon {
             Transaction.correctlySpends(penaltyTx, bobCommitTxes.first().commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
-        assertEquals(bobCommitTxes.first().commitTx.tx.txid, aliceActions1.watches<WatchConfirmed>()[0].txId)
-        assertEquals(claimMain1.txid, aliceActions1.watches<WatchConfirmed>()[1].txId)
-        assertEquals(mainPenalty1.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[0].outputIndex.toLong())
+        assertEquals(bobCommitTxes.first().commitTx.tx.txid, aliceActions1.findWatches<WatchConfirmed>()[0].txId)
+        assertEquals(claimMain1.txid, aliceActions1.findWatches<WatchConfirmed>()[1].txId)
+        assertEquals(mainPenalty1.txIn.first().outPoint.index, aliceActions1.findWatches<WatchSpent>()[0].outputIndex.toLong())
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        assertEquals(htlcPenalty1.txIn.first().outPoint.index, aliceActions1.watches<WatchSpent>()[1].outputIndex)
 
@@ -802,9 +802,9 @@ class ClosingTestsCommon {
             Transaction.correctlySpends(penaltyTx, bobCommitTxes[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
-        assertEquals(bobCommitTxes[1].commitTx.tx.txid, aliceActions2.watches<WatchConfirmed>()[0].txId)
-        assertEquals(claimMain2.txid, aliceActions2.watches<WatchConfirmed>()[1].txId)
-        assertEquals(mainPenalty2.txIn.first().outPoint.index, aliceActions2.watches<WatchSpent>()[0].outputIndex.toLong())
+        assertEquals(bobCommitTxes[1].commitTx.tx.txid, aliceActions2.findWatches<WatchConfirmed>()[0].txId)
+        assertEquals(claimMain2.txid, aliceActions2.findWatches<WatchConfirmed>()[1].txId)
+        assertEquals(mainPenalty2.txIn.first().outPoint.index, aliceActions2.findWatches<WatchSpent>()[0].outputIndex.toLong())
 
         val (alice3, aliceActions3) = alice2.process(ChannelEvent.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobCommitTxes[2].commitTx.tx)))
         assertTrue { alice3 is Closing }; alice3 as Closing
@@ -819,9 +819,9 @@ class ClosingTestsCommon {
             Transaction.correctlySpends(penaltyTx, bobCommitTxes[2].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
-        assertEquals(bobCommitTxes[2].commitTx.tx.txid, aliceActions3.watches<WatchConfirmed>()[0].txId)
-        assertEquals(claimMain3.txid, aliceActions3.watches<WatchConfirmed>()[1].txId)
-        assertEquals(mainPenalty3.txIn.first().outPoint.index, aliceActions3.watches<WatchSpent>()[0].outputIndex.toLong())
+        assertEquals(bobCommitTxes[2].commitTx.tx.txid, aliceActions3.findWatches<WatchConfirmed>()[0].txId)
+        assertEquals(claimMain3.txid, aliceActions3.findWatches<WatchConfirmed>()[1].txId)
+        assertEquals(mainPenalty3.txIn.first().outPoint.index, aliceActions3.findWatches<WatchSpent>()[0].outputIndex.toLong())
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        assertEquals(htlcPenalty3.txIn.first().outPoint.index, aliceActions3.watches<WatchSpent>()[1].outputIndex)
 
