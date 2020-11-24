@@ -11,6 +11,7 @@ import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.payment.*
 import fr.acinq.eclair.utils.*
@@ -50,7 +51,7 @@ class Peer(
     val nodeParams: NodeParams,
     val remoteNodeId: PublicKey,
     val watcher: ElectrumWatcher,
-    val channelsDb: ChannelsDb,
+    val db: Databases,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
@@ -77,7 +78,7 @@ class Peer(
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
     // encapsulates logic for validating incoming payments
-    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams)
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
 
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
@@ -121,7 +122,7 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            channelsDb.listLocalChannels().filterNot { it is Closed }.forEach {
+            db.channels.listLocalChannels().filterNot { it is Closed }.forEach {
                 logger.info { "restoring $it" }
                 val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onchainFeerates)
                 val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState))
@@ -279,7 +280,7 @@ class Peer(
                 }
                 action is ChannelAction.Storage.StoreState -> {
                     logger.info { "storing state for channelId=$actualChannelId data=${action.data}" }
-                    channelsDb.addOrUpdateChannel(action.data)
+                    db.channels.addOrUpdateChannel(action.data)
                 }
                 action is ChannelAction.ChannelId.IdSwitch -> {
                     logger.info { "switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }

@@ -5,12 +5,14 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
+import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlin.test.Test
@@ -126,9 +128,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `unsupported legacy onion (payment secret missing)`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, _) = makeIncomingPayment(paymentHandler, defaultAmount)
+    fun `unsupported legacy onion (payment secret missing)`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentRequest.paymentHash, makeLegacyPayload(defaultAmount))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
@@ -138,9 +139,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with single HTLC`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, defaultAmount)
+    fun `receive multipart payment with single HTLC`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentRequest.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
@@ -150,9 +150,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive pay-to-open payment with single HTLC`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, defaultAmount)
+    fun `receive pay-to-open payment with single HTLC`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
@@ -162,8 +161,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive pay-to-open payment with an unknown payment hash`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+    fun `receive pay-to-open payment with an unknown payment hash`() = runSuspendTest {
+        val (paymentHandler, _, _) = createFixture(defaultAmount)
         val payToOpenRequest = PayToOpenRequest(
             chainHash = ByteVector32.Zeroes,
             fundingSatoshis = 100_000.sat,
@@ -201,9 +200,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive pay-to-open payment with an incorrect payment secret`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, defaultAmount)
+    fun `receive pay-to-open payment with an incorrect payment secret`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret.reversed())) // <--- wrong secret
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
@@ -226,9 +224,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive pay-to-open trampoline payment with an incorrect payment secret`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, defaultAmount)
+    fun `receive pay-to-open trampoline payment with an incorrect payment secret`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val trampolineHops = listOf(
             NodeHop(TestConstants.Alice.nodeParams.nodeId, TestConstants.Bob.nodeParams.nodeId, CltvExpiryDelta(144), 0.msat)
         )
@@ -269,12 +266,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with multiple HTLCs via same channel`() {
+    fun `receive multipart payment with multiple HTLCs via same channel`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -302,12 +298,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with multiple HTLCs via different channels`() {
+    fun `receive multipart payment with multiple HTLCs via different channels`() = runSuspendTest {
         val (channelId1, channelId2) = Pair(randomBytes32(), randomBytes32())
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -335,11 +330,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment via pay-to-open`() {
+    fun `receive multipart payment via pay-to-open`() = runSuspendTest {
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -370,12 +364,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with a mix of HTLC and pay-to-open`() {
+    fun `receive multipart payment with a mix of HTLC and pay-to-open`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -405,9 +398,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive normal single HTLC, with amount-less invoice`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, amount = null)
+    fun `receive normal single HTLC, with amount-less invoice`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(invoiceAmount = null)
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentRequest.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
@@ -417,12 +409,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment, with amount-less invoice`() {
+    fun `receive multipart payment, with amount-less invoice`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, amount = null)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(invoiceAmount = null)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -450,13 +441,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment, with amount greater than total amount`() {
+    fun `receive multipart payment, with amount greater than total amount`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2, amount3) = listOf(100_000.msat, 60_000.msat, 40_000.msat)
         val requestedAmount = 180_000.msat
         val totalAmount = amount1 + amount2 + amount3
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, requestedAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(requestedAmount)
 
         // Step 1 of 2:
         // - Alice sends first 2 multipart htlcs to Bob.
@@ -485,8 +475,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `invoice expired`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+    fun `invoice expired`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val (incomingPayment, paymentSecret) = makeIncomingPayment(
             payee = paymentHandler,
             amount = defaultAmount,
@@ -502,8 +492,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `invoice unknown`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+    fun `invoice unknown`() = runSuspendTest {
+        val (paymentHandler, _, _) = createFixture(defaultAmount)
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, randomBytes32(), makeMppPayload(defaultAmount, defaultAmount, randomBytes32()))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
@@ -513,10 +503,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `invalid onion`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, _) = makeIncomingPayment(paymentHandler, defaultAmount)
-
+    fun `invalid onion`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
         val cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val badOnion = OnionRoutingPacket(0, ByteVector("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), Eclair.randomBytes(OnionRoutingPacket.PaymentPacketLength).toByteVector(), randomBytes32())
         val add = UpdateAddHtlc(randomBytes32(), 0, defaultAmount, incomingPayment.paymentRequest.paymentHash, cltvExpiry, badOnion)
@@ -533,9 +521,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `invalid cltv expiry`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, defaultAmount)
+    fun `invalid cltv expiry`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val lowExpiry = CltvExpiryDelta(2)
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentRequest.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret, lowExpiry))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
@@ -546,10 +533,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `amount too low or too high`() {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
+    fun `amount too low or too high`() = runSuspendTest {
         val requestedAmount = 30_000.msat
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, requestedAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(requestedAmount)
 
         val payloads = listOf(
             makeMppPayload(requestedAmount / 3, requestedAmount / 3, paymentSecret), // too low
@@ -565,12 +551,11 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `multipart total_amount mismatch`() {
+    fun `multipart total_amount mismatch`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2, amount3) = listOf(25_000.msat, 40_000.msat, 30_000.msat)
         val totalAmount = amount1 + amount2 + amount3
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -606,11 +591,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `invalid payment secret`() {
+    fun `invalid payment secret`() = runSuspendTest {
         val (amount1, amount2) = listOf(50_000.msat, 45_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -636,11 +620,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `mpp timeout`() {
+    fun `mpp timeout`() = runSuspendTest {
         val startTime = currentTimestampSeconds()
         val channelId = randomBytes32()
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, defaultAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
 
         // Step 1 of 3:
         // - Alice sends (unfinished) multipart htlcs to Bob.
@@ -675,13 +658,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `mpp timeout then success`() {
+    fun `mpp timeout then success`() = runSuspendTest {
         val startTime = currentTimestampSeconds()
         val channelId = randomBytes32()
         val (amount1, amount2) = listOf(60_000.msat, 30_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 4:
         // - Alice sends single (unfinished) multipart htlc to Bob.
@@ -726,11 +708,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `mpp success then additional HTLC`() {
+    fun `mpp success then additional HTLC`() = runSuspendTest {
         val (amount1, amount2) = listOf(60_000.msat, 30_000.msat)
         val totalAmount = amount1 + amount2
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams)
-        val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
         // Step 1 of 2:
         // - Alice receives complete mpp set
@@ -829,9 +810,15 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             )
         }
 
-        private fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
+        private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, "unit test", expirySeconds, timestamp)
             return Pair(IncomingPayment(paymentRequest, defaultPreimage), paymentRequest.paymentSecret!!)
+        }
+
+        private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
+            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+            val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, invoiceAmount)
+            return Triple(paymentHandler, incomingPayment, paymentSecret)
         }
     }
 }

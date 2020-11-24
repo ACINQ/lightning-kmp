@@ -6,6 +6,9 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.IncomingPayment
+import fr.acinq.eclair.db.IncomingPaymentDetails
+import fr.acinq.eclair.db.IncomingPaymentStatus
+import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.PeerEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
@@ -31,17 +34,9 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
 }
 
-class IncomingPaymentHandler(val nodeParams: NodeParams) {
+class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
 
-    enum class Status {
-        ACCEPTED,
-        REJECTED,
-        PENDING // neither accepted or rejected yet
-    }
-
-    // TODO: replace by reading from DB
-    // pending incoming payments, indexed by payment hash
-    private val pendingIncomingPayments: HashMap<ByteVector32, IncomingPayment> = HashMap()
+    enum class Status { ACCEPTED, REJECTED, PENDING }
 
     data class ProcessAddResult(val status: Status, val actions: List<PeerEvent>, val incomingPayment: IncomingPayment?)
 
@@ -55,9 +50,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
      * @param startedAt time at which we received the first partial payment (in seconds).
      */
     private data class PendingPayment(val parts: Set<PaymentPart>, val totalAmount: MilliSatoshi, val startedAt: Long) {
-        val amountReceived: MilliSatoshi = parts.map { it.amount }.sum()
-
         constructor(firstPart: PaymentPart) : this(setOf(firstPart), firstPart.totalAmount, currentTimestampSeconds())
+
+        val amountReceived: MilliSatoshi = parts.map { it.amount }.sum()
 
         fun add(part: PaymentPart): PendingPayment = copy(parts = parts + part)
     }
@@ -66,7 +61,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 
-    fun createInvoice(
+    suspend fun createInvoice(
         paymentPreimage: ByteVector32,
         amount: MilliSatoshi?,
         description: String,
@@ -101,7 +96,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
             timestamp
         )
         logger.info { "h:$paymentHash generated payment request ${pr.write()}" }
-        pendingIncomingPayments[paymentHash] = IncomingPayment(pr, paymentPreimage)
+        db.addIncomingPayment(pr, paymentPreimage, IncomingPaymentDetails.Normal)
         return pr
     }
 
@@ -113,7 +108,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
      * accepted, rejected, or still pending (as the case may be for multipart payments).
      * Also includes the list of actions to be queued.
      */
-    fun process(htlc: UpdateAddHtlc, currentBlockHeight: Int): ProcessAddResult {
+    suspend fun process(htlc: UpdateAddHtlc, currentBlockHeight: Int): ProcessAddResult {
         // Security note:
         // There are several checks we could perform before decrypting the onion.
         // However an error message here would differ from an error message below,
@@ -130,7 +125,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
      * Process an incoming pay-to-open request.
      * This is very similar to the processing of an htlc.
      */
-    fun process(payToOpenRequest: PayToOpenRequest, currentBlockHeight: Int): ProcessAddResult {
+    suspend fun process(payToOpenRequest: PayToOpenRequest, currentBlockHeight: Int): ProcessAddResult {
         logger.info { "h:${payToOpenRequest.paymentHash} received pay-to-open amount=${payToOpenRequest.amountMsat} funding=${payToOpenRequest.fundingSatoshis} fees=${payToOpenRequest.feeSatoshis}" }
         return when (val res = toPaymentPart(privateKey, payToOpenRequest)) {
             is Either.Left -> res.value
@@ -139,7 +134,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
     }
 
     /** Main payment processing, that handles payment parts. */
-    private fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): ProcessAddResult {
+    private suspend fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): ProcessAddResult {
         return when (val validationResult = validatePaymentPart(paymentPart, currentBlockHeight)) {
             is Either.Left -> validationResult.value
             is Either.Right -> {
@@ -178,7 +173,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
                             }
                         }
                         pending.remove(paymentPart.paymentHash)
-                        pendingIncomingPayments.remove(paymentPart.paymentHash)
+                        db.receivePayment(paymentPart.paymentHash, payment.amountReceived, currentTimestampMillis())
                         return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment)
                     }
                 }
@@ -186,15 +181,19 @@ class IncomingPaymentHandler(val nodeParams: NodeParams) {
         }
     }
 
-    private fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult, IncomingPayment> {
-        val incomingPayment: IncomingPayment? = pendingIncomingPayments[paymentPart.paymentHash]
+    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult, IncomingPayment> {
+        val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
         return when {
             incomingPayment == null -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for which we don't have a preimage" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
-            incomingPayment.paymentRequest.isExpired() -> {
+            incomingPayment.status is IncomingPaymentStatus.Expired -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for expired invoice" }
+                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+            }
+            incomingPayment.status is IncomingPaymentStatus.Received -> {
+                logger.warning { "h:${paymentPart.paymentHash} received payment for an invoice that has already been paid" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             incomingPayment.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {

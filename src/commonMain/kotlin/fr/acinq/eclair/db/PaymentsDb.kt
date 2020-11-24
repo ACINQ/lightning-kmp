@@ -12,31 +12,38 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: PaymentType)
-
-    /**
-     * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-     * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
-     */
-    suspend fun receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
+    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, details: IncomingPaymentDetails)
 
     /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
     suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
 
-    /** List incoming payments (pending, expired and succeeded). */
-    suspend fun listIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
+    /**
+     * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
+     * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
+     *
+     * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+     */
+    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
 
-    /** List pending (not paid, not expired) incoming payments. */
-    suspend fun listPendingIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
-
-    /** List expired (not paid) incoming payments. */
-    suspend fun listExpiredIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
-
-    /** List received (paid) incoming payments. */
-    suspend fun listReceivedIncomingPayments(count: Int, skip: Int): List<IncomingPayment>
+    /** List received payments (with most recent payments first). */
+    suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
 }
 
-enum class PaymentType { Standard, SwapIn, SwapOut, KeySend }
+interface OutgoingPaymentsDb {
+    // TODO
+}
+
+enum class PaymentTypeFilter { Normal, SwapIn, SwapOut, KeySend }
+
+sealed class IncomingPaymentDetails {
+    object Normal : IncomingPaymentDetails()
+    data class SwapIn(val address: String) : IncomingPaymentDetails()
+
+    fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
+        is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
+        is SwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
+    }
+}
 
 /**
  * An incoming payment received by this node.
@@ -45,12 +52,18 @@ enum class PaymentType { Standard, SwapIn, SwapOut, KeySend }
  *
  * @param paymentRequest Bolt 11 payment request.
  * @param paymentPreimage pre-image associated with the payment request's payment_hash.
- * @param paymentType distinguish different payment types (standard, swaps, etc).
+ * @param details details specific to the type of payment (normal, swaps, etc).
  * @param createdAt absolute time in milli-seconds since UNIX epoch when the payment request was generated.
  * @param status current status of the payment.
  */
-data class IncomingPayment(val paymentRequest: PaymentRequest, val paymentPreimage: ByteVector32, val paymentType: PaymentType, val createdAt: Long, val status: IncomingPaymentStatus) {
-    constructor(paymentRequest: PaymentRequest, paymentPreimage: ByteVector32, paymentType: PaymentType = PaymentType.Standard) : this(paymentRequest, paymentPreimage, paymentType, currentTimestampMillis(), IncomingPaymentStatus.Pending)
+data class IncomingPayment(val paymentRequest: PaymentRequest, val paymentPreimage: ByteVector32, val details: IncomingPaymentDetails, val createdAt: Long, val status: IncomingPaymentStatus) {
+    constructor(paymentRequest: PaymentRequest, paymentPreimage: ByteVector32, details: IncomingPaymentDetails = IncomingPaymentDetails.Normal) : this(
+        paymentRequest,
+        paymentPreimage,
+        details,
+        currentTimestampMillis(),
+        IncomingPaymentStatus.Pending
+    )
 }
 
 sealed class IncomingPaymentStatus {
@@ -67,10 +80,6 @@ sealed class IncomingPaymentStatus {
      * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
      */
     data class Received(val amount: MilliSatoshi, val receivedAt: Long) : IncomingPaymentStatus()
-}
-
-interface OutgoingPaymentsDb {
-    // TODO
 }
 
 /**
