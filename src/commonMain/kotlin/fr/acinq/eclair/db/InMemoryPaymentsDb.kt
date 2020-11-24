@@ -36,7 +36,7 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
         payments.values
             .filter { it.status is IncomingPaymentStatus.Received && it.details.matchesFilters(filters) }
-            .sortedByDescending { it.createdAt }
+            .sortedByDescending { (it.status as IncomingPaymentStatus.Received).receivedAt }
             .drop(skip)
             .take(count)
 }
