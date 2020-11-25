@@ -50,16 +50,16 @@ class NegotiatingTestsCommon : EclairTestSuite() {
                 a is Closing && b is Closing -> Pair(a, b)
                 aliceCloseSig != null -> {
                     val (b1, actions) = b.process(ChannelEvent.MessageReceived(aliceCloseSig))
-                    val bobCloseSig = actions.hasOutgoingMessage<ClosingSigned>()
+                    val bobCloseSig = actions.findOutgoingMessageOpt<ClosingSigned>()
                     if (bobCloseSig != null) {
                         val (a1, actions2) = a.process(ChannelEvent.MessageReceived(bobCloseSig))
-                        return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
+                        return converge(a1, b1, actions2.findOutgoingMessageOpt<ClosingSigned>())
                     }
                     val bobClosingTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.firstOrNull()
                     if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.localCommit.publishableTxs.commitTx.input.outPoint && a !is Closing) {
                         // Bob just spent the funding tx
                         val (a1, actions2) = a.process(ChannelEvent.WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
-                        return converge(a1, b1, actions2.hasOutgoingMessage<ClosingSigned>())
+                        return converge(a1, b1, actions2.findOutgoingMessageOpt<ClosingSigned>())
                     }
                     converge(a, b1, null)
                 }

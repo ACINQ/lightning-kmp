@@ -26,15 +26,15 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         assertTrue { bob1 is WaitForFundingConfirmed }
         actions1.findOutgoingMessage<FundingSigned>()
-        actions1.findOutgoingWatch<WatchSpent>()
-        actions1.findOutgoingWatch<WatchConfirmed>()
+        actions1.hasWatch<WatchSpent>()
+        actions1.hasWatch<WatchConfirmed>()
     }
 
     @Test
     fun `recv FundingCreated (funder can't pay fees)`() {
         val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, 1000100.sat, 1000000.sat.toMilliSatoshi())
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
-        assertTrue { actions1.hasOutgoingMessage<Error>() != null }
+        actions1.hasOutgoingMessage<Error>()
         assertTrue { bob1 is Aborted }
     }
 
