@@ -10,9 +10,9 @@ import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
 import fr.acinq.eclair.blockchain.fee.OnchainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
-import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.IncomingPayment
+import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.payment.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -33,16 +33,15 @@ sealed class PaymentEvent : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
 object CheckPaymentsTimeout : PaymentEvent()
 data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
-data class SendPayment(val paymentId: UUID, val paymentRequest: PaymentRequest, val paymentAmount: MilliSatoshi) : PaymentEvent() {
-    val paymentHash: ByteVector32 = paymentRequest.paymentHash
-    val recipientNodeId: PublicKey = paymentRequest.nodeId
+data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val details: OutgoingPayment.Details.Normal) : PaymentEvent() {
+    val paymentHash: ByteVector32 = details.paymentHash
 }
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
 data class PaymentProgress(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
-data class PaymentSent(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
+data class PaymentSent(val payment: OutgoingPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val payment: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
@@ -81,7 +80,7 @@ class Peer(
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
 
     // encapsulates logic for sending payments
-    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
+    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, db.payments, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
 
     private val features = Features(
         setOf(

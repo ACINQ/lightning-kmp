@@ -22,11 +22,11 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         val (db, preimage, pr) = createFixture()
         assertNull(db.getIncomingPayment(pr.paymentHash))
 
-        db.addIncomingPayment(pr, preimage, IncomingPaymentDetails.Normal)
+        db.addIncomingPayment(pr, preimage, IncomingPayment.Details.Normal)
         val pending = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(pending)
-        assertEquals(IncomingPaymentStatus.Pending, pending.status)
-        assertEquals(IncomingPaymentDetails.Normal, pending.details)
+        assertEquals(IncomingPayment.Status.Pending, pending.status)
+        assertEquals(IncomingPayment.Details.Normal, pending.details)
         assertEquals(preimage, pending.paymentPreimage)
         assertEquals(pr, pending.paymentRequest)
 
@@ -34,26 +34,26 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         db.receivePayment(pr.paymentHash, 200_000.msat, now)
         val received = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received)
-        assertEquals(pending.copy(status = IncomingPaymentStatus.Received(200_000.msat, now)), received)
+        assertEquals(pending.copy(status = IncomingPayment.Status.Received(200_000.msat, now)), received)
     }
 
     @Test
     fun `reject duplicate payment hash`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
-        db.addIncomingPayment(pr, preimage, IncomingPaymentDetails.Normal)
-        assertFails { db.addIncomingPayment(pr, preimage, IncomingPaymentDetails.Normal) }
+        db.addIncomingPayment(pr, preimage, IncomingPayment.Details.Normal)
+        assertFails { db.addIncomingPayment(pr, preimage, IncomingPayment.Details.Normal) }
     }
 
     @Test
     fun `set expired invoices`() = runSuspendTest {
         val (db, preimage, _) = createFixture()
         val pr = createExpiredInvoice(preimage)
-        db.addIncomingPayment(pr, preimage, IncomingPaymentDetails.Normal)
+        db.addIncomingPayment(pr, preimage, IncomingPayment.Details.Normal)
 
         val expired = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(expired)
-        assertEquals(IncomingPaymentStatus.Expired, expired.status)
-        assertEquals(IncomingPaymentDetails.Normal, expired.details)
+        assertEquals(IncomingPayment.Status.Expired, expired.status)
+        assertEquals(IncomingPayment.Details.Normal, expired.details)
         assertEquals(preimage, expired.paymentPreimage)
         assertEquals(pr, expired.paymentRequest)
     }
@@ -61,32 +61,32 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
     @Test
     fun `list received payments`() = runSuspendTest {
         val (db, pendingPreimage, pending) = createFixture()
-        db.addIncomingPayment(pending, pendingPreimage, IncomingPaymentDetails.Normal)
-        assertEquals(IncomingPaymentStatus.Pending, db.getIncomingPayment(pending.paymentHash)?.status)
+        db.addIncomingPayment(pending, pendingPreimage, IncomingPayment.Details.Normal)
+        assertEquals(IncomingPayment.Status.Pending, db.getIncomingPayment(pending.paymentHash)?.status)
 
         val expiredPreimage = randomBytes32()
         val expired = createExpiredInvoice(expiredPreimage)
-        db.addIncomingPayment(expired, expiredPreimage, IncomingPaymentDetails.Normal)
-        assertEquals(IncomingPaymentStatus.Expired, db.getIncomingPayment(expired.paymentHash)?.status)
+        db.addIncomingPayment(expired, expiredPreimage, IncomingPayment.Details.Normal)
+        assertEquals(IncomingPayment.Status.Expired, db.getIncomingPayment(expired.paymentHash)?.status)
 
         val preimage1 = randomBytes32()
         val received1 = createInvoice(preimage1)
-        db.addIncomingPayment(received1, preimage1, IncomingPaymentDetails.Normal)
+        db.addIncomingPayment(received1, preimage1, IncomingPayment.Details.Normal)
         db.receivePayment(received1.paymentHash, 180_000.msat, 50)
 
         val preimage2 = randomBytes32()
         val received2 = createInvoice(preimage2)
-        db.addIncomingPayment(received2, preimage2, IncomingPaymentDetails.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"))
+        db.addIncomingPayment(received2, preimage2, IncomingPayment.Details.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"))
         db.receivePayment(received2.paymentHash, 180_000.msat, 60)
 
         val preimage3 = randomBytes32()
         val received3 = createInvoice(preimage3)
-        db.addIncomingPayment(received3, preimage3, IncomingPaymentDetails.Normal)
+        db.addIncomingPayment(received3, preimage3, IncomingPayment.Details.Normal)
         db.receivePayment(received3.paymentHash, 180_000.msat, 70)
 
         val all = db.listReceivedPayments(count = 10, skip = 0)
         assertEquals(setOf(received1, received2, received3), all.map { it.paymentRequest }.toSet())
-        assertTrue(all.all { it.status is IncomingPaymentStatus.Received })
+        assertTrue(all.all { it.status is IncomingPayment.Status.Received })
 
         val skipped = db.listReceivedPayments(count = 5, skip = 2)
         assertEquals(setOf(received1), skipped.map { it.paymentRequest }.toSet())

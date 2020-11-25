@@ -6,8 +6,6 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.IncomingPayment
-import fr.acinq.eclair.db.IncomingPaymentDetails
-import fr.acinq.eclair.db.IncomingPaymentStatus
 import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.PeerEvent
@@ -96,7 +94,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             timestamp
         )
         logger.info { "h:$paymentHash generated payment request ${pr.write()}" }
-        db.addIncomingPayment(pr, paymentPreimage, IncomingPaymentDetails.Normal)
+        db.addIncomingPayment(pr, paymentPreimage, IncomingPayment.Details.Normal)
         return pr
     }
 
@@ -188,11 +186,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 logger.warning { "h:${paymentPart.paymentHash} received payment for which we don't have a preimage" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
-            incomingPayment.status is IncomingPaymentStatus.Expired -> {
+            incomingPayment.status is IncomingPayment.Status.Expired -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for expired invoice" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            incomingPayment.status is IncomingPaymentStatus.Received -> {
+            incomingPayment.status is IncomingPayment.Status.Received -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for an invoice that has already been paid" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
