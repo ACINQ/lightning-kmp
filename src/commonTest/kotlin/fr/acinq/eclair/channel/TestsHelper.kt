@@ -13,45 +13,36 @@ import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
 // LN Message
-inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage(): T? {
-    val candidates = this.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<T>()
-    return candidates.firstOrNull()
-}
+internal inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessages(): List<T> = filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<T>()
+internal inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessageOpt(): T? = findOutgoingMessages<T>().firstOrNull()
+internal inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T = findOutgoingMessageOpt<T>() ?: fail("cannot find outgoing message ${T::class}")
+internal inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoingMessage() = assertNotNull(findOutgoingMessageOpt<T>())
 
-inline fun <reified T : LightningMessage> List<ChannelAction>.findOutgoingMessage(): T {
-    return hasOutgoingMessage() ?: throw IllegalArgumentException("cannot find ${T::class}")
-}
-
-internal inline fun <reified T> List<ChannelAction>.hasMessage() = assertTrue { any { it is ChannelAction.Message.Send && it.message is T } }
-internal inline fun <reified T> List<ChannelAction>.messages() = filterIsInstance<ChannelAction.Message.Send>().filter { it.message is T }.map { it.message as T }
-internal inline fun <reified T> List<ChannelAction>.watches() = filterIsInstance<ChannelAction.Blockchain.SendWatch>().filter { it.watch is T }.map { it.watch as T }
-inline fun <reified T : Watch> List<ChannelAction>.findOutgoingWatch(): T {
-    val candidates = this.filterIsInstance<ChannelAction.Blockchain.SendWatch>().map { it.watch }.filterIsInstance<T>()
-    if (candidates.isEmpty()) throw IllegalArgumentException("cannot find ${T::class}")
-    return candidates.first()
-}
+// Blockchain Watches
+internal inline fun <reified T : Watch> List<ChannelAction>.findWatches(): List<T> = filterIsInstance<ChannelAction.Blockchain.SendWatch>().map { it.watch }.filterIsInstance<T>()
+internal inline fun <reified T : Watch> List<ChannelAction>.findWatch(): T = findWatches<T>().firstOrNull() ?: fail("cannot find watch ${T::class}")
+internal inline fun <reified T : Watch> List<ChannelAction>.hasWatch() = assertNotNull(findWatches<T>().firstOrNull())
 
 // Commands
-inline fun <reified T : Command> List<ChannelAction>.findProcessCommand(): T =
-    filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessCommand ${T::class}.")
-
-internal inline fun <reified T> List<ChannelAction>.hasCommand() = assertTrue { any { it is ChannelAction.Message.SendToSelf && it.command is T } }
+internal inline fun <reified T : Command> List<ChannelAction>.findCommandOpt(): T? = filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.filterIsInstance<T>().firstOrNull()
+internal inline fun <reified T : Command> List<ChannelAction>.findCommand(): T = findCommandOpt<T>() ?: fail("cannot find command ${T::class}")
+internal inline fun <reified T : Command> List<ChannelAction>.hasCommand() = assertNotNull(findCommandOpt<T>())
 
 // Errors
-inline fun <reified T : Throwable> List<ChannelAction>.findError(): T =
-    filterIsInstance<ChannelAction.ProcessLocalError>().map { it.error }.firstOrNull { it is T } as T? ?: fail("cannot find ProcessLocalFailure ${T::class}.")
+internal inline fun <reified T : Throwable> List<ChannelAction>.findErrorOpt(): T? = filterIsInstance<ChannelAction.ProcessLocalError>().map { it.error }.filterIsInstance<T>().firstOrNull()
+internal inline fun <reified T : Throwable> List<ChannelAction>.findError(): T = findErrorOpt<T>() ?: fail("cannot find error ${T::class}")
+internal inline fun <reified T : Throwable> List<ChannelAction>.hasError() = assertNotNull(findErrorOpt<T>())
 
-internal inline fun <reified T> List<ChannelAction>.hasError() = assertTrue { any { it is ChannelAction.ProcessLocalError && it.error is T } }
-
-inline fun <reified T : Throwable> List<ChannelAction>.findCommandError(): T? {
-    val cmdAddError = filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().map { it.error }.firstOrNull { it is T } as T?
-    val otherCmdError = filterIsInstance<ChannelAction.ProcessCmdRes.NotExecuted>().map { it.t }.firstOrNull { it is T } as T?
+internal inline fun <reified T : ChannelException> List<ChannelAction>.findCommandErrorOpt(): T? {
+    val cmdAddError = filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().map { it.error }.filterIsInstance<T>().firstOrNull()
+    val otherCmdError = filterIsInstance<ChannelAction.ProcessCmdRes.NotExecuted>().map { it.t }.filterIsInstance<T>().firstOrNull()
     return cmdAddError ?: otherCmdError
 }
 
-internal inline fun <reified T : Throwable> List<ChannelAction>.hasCommandError() = assertNotNull(findCommandError<T>())
+internal inline fun <reified T : ChannelException> List<ChannelAction>.findCommandError(): T = findCommandErrorOpt<T>() ?: fail("cannot find command error ${T::class}")
+internal inline fun <reified T : ChannelException> List<ChannelAction>.hasCommandError() = assertNotNull(findCommandErrorOpt<T>())
 
-internal inline fun <reified T> List<ChannelAction>.has() = assertTrue { any { it is T } }
+internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
 fun Normal.updateFeerate(feerate: Long): Normal = this.copy(currentOnChainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
 fun Negotiating.updateFeerate(feerate: Long): Negotiating = this.copy(currentOnChainFeerates = OnchainFeerates(feerate, feerate, feerate, feerate, feerate))
@@ -201,17 +192,17 @@ object TestsHelper {
         }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-        val watchConfirmedList = actions1.watches<WatchConfirmed>()
+        val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
         assertEquals(BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), watchConfirmedList[0].event)
         assertEquals(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), watchConfirmedList[1].event)
         assertEquals(
             localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it) }.toSet(),
-            actions1.watches<WatchConfirmed>().drop(2).map { it.event }.toSet()
+            actions1.findWatches<WatchConfirmed>().drop(2).map { it.event }.toSet()
         )
 
         // we watch outputs of the commitment tx that both parties may spend
         val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).map { it.txIn.first().outPoint.index }
-        val spentWatches = htlcOutputIndexes.zip(actions1.watches<WatchSpent>())
+        val spentWatches = htlcOutputIndexes.zip(actions1.findWatches<WatchSpent>())
         spentWatches.forEach { (_, watch) ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, sCommitTx.txid)
@@ -244,7 +235,7 @@ object TestsHelper {
         assertTrue { actions1.containsAll(claimHtlcTxes.map { ChannelAction.Blockchain.PublishTx(it) }) }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-        val watchConfirmedList = actions1.watches<WatchConfirmed>()
+        val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
         assertEquals(BITCOIN_TX_CONFIRMED(rCommitTx), watchConfirmedList.first().event)
         remoteCommitPublished.claimMainOutputTx?.let { tx ->
             assertEquals(BITCOIN_TX_CONFIRMED(tx), watchConfirmedList.drop(1).first().event)
@@ -252,7 +243,7 @@ object TestsHelper {
 
         // we watch outputs of the commitment tx that both parties may spend
         val htlcOutputIndexes = claimHtlcTxes.map { it.txIn.first().outPoint.index }
-        val spentWatches = htlcOutputIndexes.zip(actions1.watches<WatchSpent>())
+        val spentWatches = htlcOutputIndexes.zip(actions1.findWatches<WatchSpent>())
         spentWatches.forEach { (_, watch) ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, rCommitTx.txid)
@@ -326,7 +317,7 @@ object TestsHelper {
 
         val (receiver0, rActions0) = nodeB.process(ChannelEvent.MessageReceived(commitSig0))
         val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
-        val commandSign0 = rActions0.findProcessCommand<CMD_SIGN>()
+        val commandSign0 = rActions0.findCommand<CMD_SIGN>()
 
         val (sender1, _) = sender0.process(ChannelEvent.MessageReceived(revokeAndAck0))
         val (receiver1, rActions1) = receiver0.process(ChannelEvent.ExecuteCommand(commandSign0))
@@ -337,7 +328,7 @@ object TestsHelper {
         val (receiver2, _) = receiver1.process(ChannelEvent.MessageReceived(revokeAndAck1))
 
         if (rHasChanges) {
-            val commandSign1 = sActions2.findProcessCommand<CMD_SIGN>()
+            val commandSign1 = sActions2.findCommand<CMD_SIGN>()
             val (sender3, sActions3) = sender2.process(ChannelEvent.ExecuteCommand(commandSign1))
             val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
 
