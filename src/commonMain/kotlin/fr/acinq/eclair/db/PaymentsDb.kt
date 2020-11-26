@@ -13,7 +13,7 @@ import fr.acinq.eclair.wire.FailureMessage
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
     /** List sent and received payments (with most recent payments first). */
-    suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<Either<IncomingPayment, OutgoingPayment>>
+    suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<WalletPayment>
 }
 
 interface IncomingPaymentsDb {
@@ -67,6 +67,24 @@ interface OutgoingPaymentsDb {
 
 enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut }
 
+/** A payment made to or from the wallet. */
+sealed class WalletPayment {
+    companion object {
+        /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
+        fun completedAt(payment: WalletPayment): Long = when (payment) {
+            is IncomingPayment -> when (val status = payment.status) {
+                is IncomingPayment.Status.Received -> status.receivedAt
+                else -> 0
+            }
+            is OutgoingPayment -> when (val status = payment.status) {
+                is OutgoingPayment.Status.Succeeded -> status.completedAt
+                is OutgoingPayment.Status.Failed -> status.completedAt
+                else -> 0
+            }
+        }
+    }
+}
+
 /**
  * An incoming payment received by this node.
  * At first it is in a pending state, then will become either a success (if we receive a matching payment) or a failure (if the payment request expires).
@@ -76,7 +94,7 @@ enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut }
  * @param status current status of the payment.
  * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
-data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val status: Status, val createdAt: Long = currentTimestampMillis()) {
+data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val status: Status, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
     constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, Status.Pending, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
@@ -118,19 +136,19 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val s
  * The payment may be split in multiple parts, which may fail, be retried, and then either succeed or fail.
  *
  * @param id internal payment identifier.
- * @param amount total amount that will be received by the final recipient (NB: it doesn't contain the fees paid).
+ * @param recipientAmount total amount that will be received by the final recipient (NB: it doesn't contain the fees paid).
  * @param recipient final recipient nodeId.
  * @param details details that depend on the payment type (normal payments, swaps, etc).
  * @param parts partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
-data class OutgoingPayment(val id: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status) {
+data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status) : WalletPayment() {
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
     val fees: MilliSatoshi = when (status) {
         is Status.Failed -> 0.msat
-        else -> parts.filter { it.status is Part.Status.Succeeded || it.status == Part.Status.Pending }.map { it.amount }.sum() - amount
+        else -> parts.filter { it.status is Part.Status.Succeeded || it.status == Part.Status.Pending }.map { it.amount }.sum() - recipientAmount
     }
 
     sealed class Details {

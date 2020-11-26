@@ -50,7 +50,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment)
-        assertEquals(100_000.msat, dbPayment.amount)
+        assertEquals(100_000.msat, dbPayment.recipientAmount)
         assertEquals(invoice.nodeId, dbPayment.recipient)
         assertTrue(dbPayment.status is OutgoingPayment.Status.Failed)
         assertEquals(FinalFailure.NoAvailableChannels, (dbPayment.status as OutgoingPayment.Status.Failed).reason)
@@ -70,7 +70,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment)
-        assertEquals(amount, dbPayment.amount)
+        assertEquals(amount, dbPayment.recipientAmount)
         assertTrue(dbPayment.status is OutgoingPayment.Status.Failed)
         assertEquals(FinalFailure.InsufficientBalance, (dbPayment.status as OutgoingPayment.Status.Failed).reason)
         assertTrue(dbPayment.parts.isEmpty())
@@ -229,7 +229,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId, add, preimage)) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success.preimage)
         assertEquals(5_000.msat, success.fees)
-        assertEquals(200_000.msat, success.payment.amount)
+        assertEquals(200_000.msat, success.payment.recipientAmount)
         assertEquals(success.fees, success.payment.fees)
         assertEquals(invoice.nodeId, success.payment.recipient)
         assertEquals(invoice.paymentHash, success.payment.paymentHash)
@@ -292,7 +292,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val success2 = outgoingPaymentHandler.processAddSettled(fulfill2) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success2.preimage)
         assertEquals(10_000.msat, success2.fees)
-        assertEquals(300_000.msat, success2.payment.amount)
+        assertEquals(300_000.msat, success2.payment.recipientAmount)
         assertEquals(success2.fees, success2.payment.fees)
         assertEquals(invoice.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
@@ -345,7 +345,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val success2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId2, add2, preimage)) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success2.preimage)
         assertEquals(10_000.msat, success2.fees)
-        assertEquals(300_000.msat, success2.payment.amount)
+        assertEquals(300_000.msat, success2.payment.recipientAmount)
         assertEquals(success2.fees, success2.payment.fees)
         assertEquals(invoice.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
@@ -417,7 +417,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val success2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds2[1].first, adds2[1].second, preimage)) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success2.preimage)
         assertEquals(1_030.msat, success2.fees)
-        assertEquals(300_000.msat, success2.payment.amount)
+        assertEquals(300_000.msat, success2.payment.recipientAmount)
         assertEquals(success2.fees, success2.payment.fees)
         assertEquals(invoice.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
@@ -576,7 +576,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val preimage = randomBytes32()
         val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage)) as OutgoingPaymentHandler.Success
         assertEquals(0.msat, success.fees)
-        assertEquals(5_000.msat, success.payment.amount)
+        assertEquals(5_000.msat, success.payment.recipientAmount)
         assertEquals(preimage, success.preimage)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -701,7 +701,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val result2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[2].first, adds[2].second, preimage)) as OutgoingPaymentHandler.Success
             assertEquals(preimage, result2.preimage)
             assertEquals(3, result2.payment.parts.size)
-            assertEquals(payment, SendPayment(result2.payment.id, result2.payment.amount, result2.payment.recipient, result2.payment.details as OutgoingPayment.Details.Normal))
+            assertEquals(payment, SendPayment(result2.payment.id, result2.payment.recipientAmount, result2.payment.recipient, result2.payment.details as OutgoingPayment.Details.Normal))
             assertEquals(preimage, (result2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
         }
     }
@@ -795,7 +795,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     private suspend fun assertDbPaymentSucceeded(db: OutgoingPaymentsDb, paymentId: UUID, amount: MilliSatoshi, fees: MilliSatoshi, partsCount: Int) {
         val dbPayment = db.getOutgoingPayment(paymentId)
         assertNotNull(dbPayment)
-        assertEquals(amount, dbPayment.amount)
+        assertEquals(amount, dbPayment.recipientAmount)
         assertEquals(fees, dbPayment.fees)
         assertTrue(dbPayment.status is OutgoingPayment.Status.Succeeded)
         assertEquals(partsCount, dbPayment.parts.size)

@@ -51,7 +51,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         incoming.values
             .asSequence()
             .filter { it.status is IncomingPayment.Status.Received && it.origin.matchesFilters(filters) }
-            .sortedByDescending { completedAt(it) }
+            .sortedByDescending { WalletPayment.completedAt(it) }
             .drop(skip)
             .take(count)
             .toList()
@@ -123,29 +123,18 @@ class InMemoryPaymentsDb : PaymentsDb {
         outgoing.values
             .asSequence()
             .filter { it.details.matchesFilters(filters) && (it.status is OutgoingPayment.Status.Failed || it.status is OutgoingPayment.Status.Succeeded) }
-            .sortedByDescending { completedAt(it) }
+            .sortedByDescending { WalletPayment.completedAt(it) }
             .drop(skip)
             .take(count)
             .toList()
 
-    override suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<Either<IncomingPayment, OutgoingPayment>> {
-        val incoming: List<Either<IncomingPayment, OutgoingPayment>> = listReceivedPayments(count + skip, 0, filters).map { Either.Left(it) }
-        val outgoing: List<Either<IncomingPayment, OutgoingPayment>> = listOutgoingPayments(count + skip, 0, filters).map { Either.Right(it) }
+    override suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<WalletPayment> {
+        val incoming: List<WalletPayment> = listReceivedPayments(count + skip, 0, filters)
+        val outgoing: List<WalletPayment> = listOutgoingPayments(count + skip, 0, filters)
         return (incoming + outgoing)
-            .sortedByDescending { it.fold({ i -> completedAt(i) }, { o -> completedAt(o) }) }
+            .sortedByDescending { WalletPayment.completedAt(it) }
             .drop(skip)
             .take(count)
-    }
-
-    private fun completedAt(payment: IncomingPayment): Long = when (val status = payment.status) {
-        is IncomingPayment.Status.Received -> status.receivedAt
-        else -> 0
-    }
-
-    private fun completedAt(payment: OutgoingPayment): Long = when (val status = payment.status) {
-        is OutgoingPayment.Status.Succeeded -> status.completedAt
-        is OutgoingPayment.Status.Failed -> status.completedAt
-        else -> 0
     }
 
 }

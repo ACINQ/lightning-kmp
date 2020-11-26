@@ -204,7 +204,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
                     logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted.message}" }
                     db.updateOutgoingPayment(payment.id, FinalFailure.WalletRestarted)
                     Failure(
-                        SendPayment(payment.id, payment.amount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
+                        SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
                         OutgoingPaymentFailure(FinalFailure.WalletRestarted, payment.parts.map { it.status }.filterIsInstance<OutgoingPayment.Part.Status.Failed>().map { it.failure } + failure)
                     )
                 } else {
@@ -261,7 +261,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
                     val succeeded = db.getOutgoingPayment(payment.id)!! //  NB: we reload the payment to ensure all parts status are updated
                     Success(succeeded, preimage, succeeded.fees)
                 } else {
-                    PreimageReceived(SendPayment(payment.id, payment.amount, payment.recipient, payment.details as OutgoingPayment.Details.Normal), preimage)
+                    PreimageReceived(SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal), preimage)
                 }
             }
         }
