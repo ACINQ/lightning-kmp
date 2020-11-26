@@ -18,7 +18,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, details: IncomingPayment.Details)
+    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, details: IncomingPayment.Details, createdAt: Long = currentTimestampMillis())
 
     /** Get information about an incoming payment (paid or not) for the given payment hash, if any. */
     suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
@@ -27,7 +27,7 @@ interface IncomingPaymentsDb {
      * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      */
-    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
+    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = currentTimestampMillis())
 
     /** List received payments (with most recent payments first). */
     suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
@@ -41,19 +41,19 @@ interface OutgoingPaymentsDb {
     suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
 
     /** Mark an outgoing payment as failed. */
-    suspend fun updateOutgoingPayment(id: UUID, failure: FinalFailure)
+    suspend fun updateOutgoingPayment(id: UUID, failure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment as succeeded. This should delete all intermediate failed payment parts and only keep the successful ones. */
-    suspend fun updateOutgoingPayment(id: UUID, preimage: ByteVector32)
+    suspend fun updateOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
     suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>)
 
     /** Mark an outgoing payment part as failed. */
-    suspend fun updateOutgoingPart(partId: UUID, failure: Either<ChannelException, FailureMessage>)
+    suspend fun updateOutgoingPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment part as succeeded. This should not update the parent payment, since some parts may still be pending. */
-    suspend fun updateOutgoingPart(partId: UUID, preimage: ByteVector32)
+    suspend fun updateOutgoingPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Get information about an outgoing payment from the id of one of its parts. */
     suspend fun getOutgoingPart(partId: UUID): OutgoingPayment?

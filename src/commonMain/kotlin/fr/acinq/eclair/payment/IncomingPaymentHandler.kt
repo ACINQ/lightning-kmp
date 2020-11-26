@@ -171,7 +171,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             }
                         }
                         pending.remove(paymentPart.paymentHash)
-                        db.receivePayment(paymentPart.paymentHash, payment.amountReceived, currentTimestampMillis())
+                        db.receivePayment(paymentPart.paymentHash, payment.amountReceived)
                         return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment)
                     }
                 }
