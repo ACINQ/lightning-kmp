@@ -1,7 +1,9 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
@@ -11,6 +13,7 @@ import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.InMemoryPaymentsDb
+import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
@@ -25,7 +28,7 @@ import io.ktor.serialization.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -223,7 +226,8 @@ object Node {
                     post("/invoice/pay") {
                         val request = call.receive<PayInvoiceRequest>()
                         val pr = PaymentRequest.read(request.invoice)
-                        peer.send(SendPayment(UUID.randomUUID(), pr, pr.amount ?: request.amount?.run { MilliSatoshi(this) } ?: MilliSatoshi(50000)))
+                        val amount = pr.amount ?: request.amount?.let { MilliSatoshi(it) } ?: MilliSatoshi(50000)
+                        peer.send(SendPayment(UUID.randomUUID(), amount, pr.nodeId, OutgoingPayment.Details.Normal(pr)))
                         call.respond(PayInvoiceResponse("pending"))
                     }
                     post("/invoice/decode") {

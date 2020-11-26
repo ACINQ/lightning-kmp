@@ -6,8 +6,6 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.IncomingPayment
-import fr.acinq.eclair.db.IncomingPaymentDetails
-import fr.acinq.eclair.db.IncomingPaymentStatus
 import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.PeerEvent
@@ -96,7 +94,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             timestamp
         )
         logger.info { "h:$paymentHash generated payment request ${pr.write()}" }
-        db.addIncomingPayment(pr, paymentPreimage, IncomingPaymentDetails.Normal)
+        db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr))
         return pr
     }
 
@@ -165,16 +163,21 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                         val actions = payment.parts.map { part ->
                             when (part) {
                                 is HtlcPart -> {
-                                    val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.paymentPreimage, true)
+                                    val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.preimage, true)
                                     val channelEvent = ChannelEvent.ExecuteCommand(cmd)
                                     WrappedChannelEvent(part.htlc.channelId, channelEvent)
                                 }
-                                is PayToOpenPart -> PayToOpenResponseEvent(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.paymentPreimage)))
+                                is PayToOpenPart -> PayToOpenResponseEvent(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
                             }
                         }
                         pending.remove(paymentPart.paymentHash)
-                        db.receivePayment(paymentPart.paymentHash, payment.amountReceived, currentTimestampMillis())
-                        return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment)
+                        val receivedWith = if (actions.any { it is PayToOpenResponseEvent }) {
+                            IncomingPayment.ReceivedWith.NewChannel(channelId = null)
+                        } else {
+                            IncomingPayment.ReceivedWith.LightningPayment
+                        }
+                        db.receivePayment(paymentPart.paymentHash, payment.amountReceived, receivedWith)
+                        return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment.copy(status = IncomingPayment.Status.Received(payment.amountReceived, receivedWith)))
                     }
                 }
             }
@@ -188,15 +191,19 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 logger.warning { "h:${paymentPart.paymentHash} received payment for which we don't have a preimage" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
-            incomingPayment.status is IncomingPaymentStatus.Expired -> {
+            incomingPayment.status is IncomingPayment.Status.Expired -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for expired invoice" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            incomingPayment.status is IncomingPaymentStatus.Received -> {
+            incomingPayment.status is IncomingPayment.Status.Received -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for an invoice that has already been paid" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            incomingPayment.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {
+            incomingPayment.origin !is IncomingPayment.Origin.Invoice -> {
+                logger.warning { "h:${paymentPart.paymentHash} received unsupported payment type: ${incomingPayment.origin::class}" }
+                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+            }
+            incomingPayment.origin.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {
                 // BOLT 04:
                 // - if the payment_secret doesn't match the expected value for that payment_hash,
                 //   or the payment_secret is required and is not present:
@@ -209,15 +216,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 logger.warning { "h:${paymentPart.paymentHash} received payment with invalid paymentSecret (${paymentPart.finalPayload.paymentSecret})" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            incomingPayment.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.paymentRequest.amount -> {
+            incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.origin.paymentRequest.amount -> {
                 // BOLT 04:
                 // - if the amount paid is less than the amount expected:
                 //   - MUST fail the HTLC.
                 //   - MUST return an incorrect_or_unknown_payment_details error.
-                logger.warning { "h:${paymentPart.paymentHash} received invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.paymentRequest.amount}" }
+                logger.warning { "h:${paymentPart.paymentHash} received invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            incomingPayment.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.paymentRequest.amount * 2 -> {
+            incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.origin.paymentRequest.amount * 2 -> {
                 // BOLT 04:
                 // - if the amount paid is more than twice the amount expected:
                 //   - SHOULD fail the HTLC.
@@ -225,11 +232,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 //
                 //   Note: this allows the origin node to reduce information leakage by altering
                 //   the amount while not allowing for accidental gross overpayment.
-                logger.warning { "h:${paymentPart.paymentHash} received invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.paymentRequest.amount}" }
+                logger.warning { "h:${paymentPart.paymentHash} received invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment, currentBlockHeight) -> {
-                logger.warning { "h:${paymentPart.paymentHash} received payment with expiry too small: received ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment, currentBlockHeight)}" }
+            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
+                logger.warning { "h:${paymentPart.paymentHash} received payment with expiry too small: received ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             else -> Either.Right(incomingPayment)
@@ -317,8 +324,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             return PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
         }
 
-        private fun minFinalCltvExpiry(incomingPayment: IncomingPayment, currentBlockHeight: Int): CltvExpiry {
-            val minFinalCltvExpiryDelta = incomingPayment.paymentRequest.minFinalExpiryDelta ?: PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+        private fun minFinalCltvExpiry(paymentRequest: PaymentRequest, currentBlockHeight: Int): CltvExpiry {
+            val minFinalCltvExpiryDelta = paymentRequest.minFinalExpiryDelta ?: PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
             return minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
         }
     }
