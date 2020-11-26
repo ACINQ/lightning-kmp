@@ -83,16 +83,7 @@ class Peer(
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
 
-    private val features = Features(
-        setOf(
-            ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-            ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
-            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-            ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-        )
-    )
+    private val features = nodeParams.features
 
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
@@ -175,7 +166,7 @@ class Peer(
                     logger.warning { ex.message }
                 }
             }
-            logger.info { "sending init ${LightningMessage.encode(ourInit)!!}" }
+            logger.info { "sending init $ourInit!!" }
             send(LightningMessage.encode(ourInit)!!)
 
             suspend fun doPing() {
@@ -366,12 +357,12 @@ class Peer(
                         logger.info { "received $msg" }
                         val theirFeatures = Features(msg.features)
                         logger.info { "peer is using features $theirFeatures" }
-                        when (val checkFeatures = Try { Features.validateFeatureGraph(features) }) {
-                            is Try.Failure -> {
-                                logger.error(checkFeatures.error)
+                        when (val error = Features.validateFeatureGraph(features)) {
+                            is Features.Companion.FeatureException -> {
+                                logger.error(error)
                                 // TODO: disconnect peer
                             }
-                            is Try.Success -> {
+                            null -> {
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
                                 logger.info { "before channels: $_channels" }

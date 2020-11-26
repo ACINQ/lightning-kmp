@@ -40,7 +40,6 @@ data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<Upda
 
 @Serializable
 data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
-data class Changes(val ourChanges: LocalChanges, val theirChanges: RemoteChanges)
 @Serializable
 data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64)
 @Serializable
@@ -84,7 +83,6 @@ data class Commitments(
         // either we use static remote key and have a static point or we don't and we don't have a static point
         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
     }
-
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
         localParams = localParams.copy(features = Features(localInit.features)),
@@ -471,6 +469,7 @@ data class Commitments(
 
         val sortedHtlcTxs: List<TransactionWithInputInfo> = (htlcTimeoutTxs + htlcSuccessTxs).sortedBy { it.input.outPoint.index }
         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
+        // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
@@ -550,6 +549,7 @@ data class Commitments(
                 }
                 is HtlcSuccessTx -> {
                     // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
+                    // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
                     if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
                         return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx))
                     }

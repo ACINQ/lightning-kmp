@@ -135,26 +135,28 @@ object Scripts {
 
     fun htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteArray): List<ScriptElt> = listOf(
         // @formatter:off
-            // To you with revocation key
-            OP_DUP, OP_HASH160, OP_PUSHDATA(revocationPubKey.hash160()), OP_EQUAL,
-            OP_IF,
-                OP_CHECKSIG,
+        // To you with revocation key
+        OP_DUP, OP_HASH160, OP_PUSHDATA(revocationPubKey.hash160()), OP_EQUAL,
+        OP_IF,
+            OP_CHECKSIG,
+        OP_ELSE,
+            OP_PUSHDATA(remoteHtlcPubkey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
+            OP_NOTIF,
+                // To me via HTLC-timeout transaction (timelocked).
+                OP_DROP, OP_2, OP_SWAP, OP_PUSHDATA(localHtlcPubkey), OP_2, OP_CHECKMULTISIG,
             OP_ELSE,
-                OP_PUSHDATA(remoteHtlcPubkey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
-                OP_NOTIF,
-                    // To me via HTLC-timeout transaction (timelocked).
-                    OP_DROP, OP_2, OP_SWAP, OP_PUSHDATA(localHtlcPubkey), OP_2, OP_CHECKMULTISIG,
-                OP_ELSE,
-                    OP_HASH160, OP_PUSHDATA(paymentHash), OP_EQUALVERIFY,
-                    OP_CHECKSIG,
-                OP_ENDIF,
-                OP_1, OP_CHECKSEQUENCEVERIFY, OP_DROP,
-            OP_ENDIF
-            // @formatter:on
+                OP_HASH160, OP_PUSHDATA(paymentHash), OP_EQUALVERIFY,
+                OP_CHECKSIG,
+            OP_ENDIF,
+            OP_1, OP_CHECKSEQUENCEVERIFY, OP_DROP,
+        OP_ENDIF
+        // @formatter:on
     )
 
     /**
      * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
+     * local signature is created with SIGHASH_ALL flag
+     * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
         ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig), paymentPreimage, htlcOfferedScript))
@@ -184,28 +186,30 @@ object Scripts {
 
     fun htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteArray, lockTime: CltvExpiry) = listOf(
         // @formatter:off
-            // To you with revocation key
-            OP_DUP, OP_HASH160, OP_PUSHDATA(revocationPubKey.hash160()), OP_EQUAL,
+        // To you with revocation key
+        OP_DUP, OP_HASH160, OP_PUSHDATA(revocationPubKey.hash160()), OP_EQUAL,
+        OP_IF,
+            OP_CHECKSIG,
+        OP_ELSE,
+            OP_PUSHDATA(remoteHtlcPubkey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
             OP_IF,
-                OP_CHECKSIG,
+                // To me via HTLC-success transaction.
+                OP_HASH160, OP_PUSHDATA(paymentHash), OP_EQUALVERIFY,
+                OP_2, OP_SWAP, OP_PUSHDATA(localHtlcPubkey), OP_2, OP_CHECKMULTISIG,
             OP_ELSE,
-                OP_PUSHDATA(remoteHtlcPubkey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
-                OP_IF,
-                    // To me via HTLC-success transaction.
-                    OP_HASH160, OP_PUSHDATA(paymentHash), OP_EQUALVERIFY,
-                    OP_2, OP_SWAP, OP_PUSHDATA(localHtlcPubkey), OP_2, OP_CHECKMULTISIG,
-                OP_ELSE,
-                    // To you after timeout.
-                    OP_DROP, encodeNumber(lockTime.toLong()), OP_CHECKLOCKTIMEVERIFY, OP_DROP,
-                    OP_CHECKSIG,
-                OP_ENDIF,
-                OP_1, OP_CHECKSEQUENCEVERIFY, OP_DROP,
-            OP_ENDIF
-            // @formatter:on
+                // To you after timeout.
+                OP_DROP, encodeNumber(lockTime.toLong()), OP_CHECKLOCKTIMEVERIFY, OP_DROP,
+                OP_CHECKSIG,
+            OP_ENDIF,
+            OP_1, OP_CHECKSEQUENCEVERIFY, OP_DROP,
+        OP_ENDIF
+        // @formatter:on
     )
 
     /**
      * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcOffered script from commit tx)
+     * local signature is created with SIGHASH_ALL
+     * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
         ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig), ByteVector.empty, htlcOfferedScript))
