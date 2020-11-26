@@ -27,15 +27,15 @@ import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.native.concurrent.ThreadLocal
 
+@ThreadLocal
 object Helpers {
 
-    val logger = LoggerFactory.default.newLogger(Logger.Tag(Helpers::class))
+    val logger by eclairLogger()
 
     /**
      * Returns the number of confirmations needed to safely handle the funding transaction,

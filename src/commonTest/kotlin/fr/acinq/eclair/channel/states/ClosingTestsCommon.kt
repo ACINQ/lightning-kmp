@@ -14,6 +14,7 @@ import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.remoteClose
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.UUID
@@ -22,7 +23,7 @@ import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
-class ClosingTestsCommon {
+class ClosingTestsCommon : EclairTestSuite() {
     @Test
     fun `start fee negotiation from configured block target`() {
         val (alice, bob) = reachNormal()

@@ -57,7 +57,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         fun add(part: PaymentPart): PendingPayment = copy(parts = parts + part)
     }
 
-    private val logger = newEclairLogger()
+    private val logger by eclairLogger()
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 
@@ -82,7 +82,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 )
             )
         )
-        logger.verbose { "h:$paymentHash using routing hints $extraHops" }
+        logger.debug { "h:$paymentHash using routing hints $extraHops" }
         val pr = PaymentRequest.create(
             nodeParams.chainHash,
             amount,

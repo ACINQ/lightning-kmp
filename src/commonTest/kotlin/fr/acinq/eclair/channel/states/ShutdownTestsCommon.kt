@@ -8,6 +8,7 @@ import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
@@ -15,7 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class ShutdownTestsCommon {
+class ShutdownTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC`() {
         val (_, bob) = init()

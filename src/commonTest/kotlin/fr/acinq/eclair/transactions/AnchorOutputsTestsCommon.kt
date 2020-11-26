@@ -24,7 +24,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AnchorOutputsTestsCommon {
-    val logger = EclairLoggerFactory.newEclairLogger()
+    private val logger by eclairLogger()
 
     val channelVersion = ChannelVersion.STANDARD
 

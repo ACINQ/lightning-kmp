@@ -35,7 +35,7 @@ kotlin {
         dependencies {
             api("fr.acinq.bitcoin:bitcoin-kmp:0.6.1")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.5.0")
+            api("org.kodein.log:kodein-log:0.7.0")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9-native-mt-2")
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")

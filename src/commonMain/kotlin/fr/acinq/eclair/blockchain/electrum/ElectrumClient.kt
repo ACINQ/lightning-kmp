@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.Json
-import org.kodein.log.newLogger
+import kotlin.native.concurrent.ThreadLocal
 import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
 
@@ -303,10 +303,11 @@ class ElectrumClient(
         eventChannel.cancel()
     }
 
+    @ThreadLocal
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
-        val logger = EclairLoggerFactory.newLogger<ElectrumClient>()
+        val logger by eclairLogger<ElectrumClient>()
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }

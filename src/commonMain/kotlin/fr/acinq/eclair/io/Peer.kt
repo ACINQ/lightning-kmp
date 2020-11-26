@@ -62,7 +62,7 @@ class Peer(
     private val input = Channel<PeerEvent>(BUFFERED)
     private val output = Channel<ByteArray>(BUFFERED)
 
-    private val logger = newEclairLogger()
+    private val logger by eclairLogger()
 
     private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
     private var _channels by _channelsFlow
@@ -256,7 +256,7 @@ class Peer(
                         }
                         is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
-                        null -> logger.verbose { "non-final error, more partial payments are still pending: $actualChannelId->${action.error.message}" }
+                        null -> logger.debug { "non-final error, more partial payments are still pending: $actualChannelId->${action.error.message}" }
                     }
                 }
                 action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
@@ -268,13 +268,13 @@ class Peer(
                         is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
                         is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
                         is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
-                        null -> logger.verbose { "non-final error, more partial payments are still pending: $actualChannelId->${action.result}" }
+                        null -> logger.debug { "non-final error, more partial payments are still pending: $actualChannelId->${action.result}" }
                     }
                 }
                 action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                     when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                         is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
-                        is OutgoingPaymentHandler.PreimageReceived -> logger.verbose { "payment preimage received: ${result.payment.paymentId}->${result.preimage}" }
+                        is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "payment preimage received: ${result.payment.paymentId}->${result.preimage}" }
                         is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
                     }
                 }
@@ -389,7 +389,7 @@ class Peer(
                         output.send(LightningMessage.encode(pong)!!)
                     }
                     msg is Pong -> {
-                        logger.verbose { "received pong" }
+                        logger.debug { "received pong" }
                     }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "connection error, failing all channels: ${msg.toAscii()}" }

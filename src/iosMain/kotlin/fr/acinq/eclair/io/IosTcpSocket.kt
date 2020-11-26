@@ -3,11 +3,9 @@ package fr.acinq.eclair.io
 import fr.acinq.eclair.io.ios_network_framework.nw_k_connection_receive
 import fr.acinq.eclair.io.ios_network_framework.nw_k_parameters_create_secure_tcp
 import fr.acinq.eclair.io.ios_network_framework.nw_k_parameters_create_secure_tcp_custom
-import fr.acinq.eclair.utils.EclairLoggerFactory
+import fr.acinq.eclair.utils.eclairLogger
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import platform.Network.*
 import platform.Security.sec_protocol_options_set_verify_block
 import platform.darwin.dispatch_data_apply
@@ -19,6 +17,7 @@ import platform.posix.ECONNRESET
 import platform.posix.memcpy
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.native.concurrent.ThreadLocal
 
 @OptIn(ExperimentalUnsignedTypes::class)
 class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
@@ -64,7 +63,10 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
     }
 }
 
+@ThreadLocal
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
+    private val logger by eclairLogger<IosTcpSocket>()
+
     @OptIn(ExperimentalUnsignedTypes::class)
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
         suspendCancellableCoroutine { continuation ->
@@ -75,7 +77,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                     null -> nw_k_parameters_create_secure_tcp(false)
                     TcpSocket.TLS.SAFE -> nw_k_parameters_create_secure_tcp(true)
                     TcpSocket.TLS.UNSAFE_CERTIFICATES -> nw_k_parameters_create_secure_tcp_custom {
-                        EclairLoggerFactory.newLogger<IosTcpSocket>().warning { "Using unsafe TLS!" }
+                        logger.warning { "Using unsafe TLS!" }
                         val sec_options = nw_tls_copy_sec_protocol_options(it)
                         sec_protocol_options_set_verify_block(sec_options, { _, _, handler ->
                             handler!!(true)

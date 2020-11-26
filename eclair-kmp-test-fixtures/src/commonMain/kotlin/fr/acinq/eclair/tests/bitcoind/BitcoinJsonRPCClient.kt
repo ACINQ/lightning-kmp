@@ -1,15 +1,17 @@
 package fr.acinq.eclair.tests.bitcoind
 
 import fr.acinq.eclair.utils.JsonRPCResponse
-import fr.acinq.eclair.utils.newEclairLogger
+import fr.acinq.eclair.utils.eclairLogger
 import io.ktor.client.*
 import io.ktor.client.features.auth.*
 import io.ktor.client.features.auth.providers.*
 import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
+import kotlin.native.concurrent.ThreadLocal
 
 
+@ThreadLocal
 object BitcoinJsonRPCClient {
     private const val user: String = "foo"
     private const val pwd: String = "bar"
@@ -32,14 +34,14 @@ object BitcoinJsonRPCClient {
         }
     }
 
-    private val logger = newEclairLogger()
+    private val logger by eclairLogger()
 
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
-            logger.verbose { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
+            logger.debug { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
             body = request.asJsonRPCRequest()
         }
-        logger.verbose { "Receive bitcoind response: $rpcResponse" }
+        logger.debug { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T
     }
