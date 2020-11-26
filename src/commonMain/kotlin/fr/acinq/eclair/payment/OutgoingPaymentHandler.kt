@@ -219,7 +219,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
         val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFulfill(event.paymentId, preimage)
 
         logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC fulfilled" }
-        val part = payment.pending[event.paymentId]?.first?.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage, currentTimestampMillis()))
+        val part = payment.pending[event.paymentId]?.first?.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage))
         db.updateOutgoingPart(event.paymentId, preimage)
 
         val updated = when (payment) {
@@ -239,7 +239,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
             logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment successfully sent (fees=${updated.fees})" }
             db.updateOutgoingPayment(payment.request.paymentId, preimage)
             val r = payment.request
-            Success(OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Succeeded(preimage, currentTimestampMillis())), preimage, updated.fees)
+            Success(OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Succeeded(preimage)), preimage, updated.fees)
         } else {
             PreimageReceived(payment.request, preimage)
         }
@@ -282,7 +282,6 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
             childId,
             route.amount,
             listOf(HopDesc(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.shortChannelId), HopDesc(route.channel.staticParams.remoteNodeId, request.recipient)),
-            currentTimestampMillis(),
             OutgoingPayment.Part.Status.Pending
         )
         val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
@@ -404,7 +403,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
                 val result = if (updated.isComplete()) {
                     logger.info { "h:${request.paymentHash} p:${request.paymentId} payment successfully sent (fees=${updated.fees})" }
                     db.updateOutgoingPayment(request.paymentId, preimage)
-                    Success(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Succeeded(preimage, currentTimestampMillis())), preimage, updated.fees)
+                    Success(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Succeeded(preimage)), preimage, updated.fees)
                 } else {
                     null
                 }

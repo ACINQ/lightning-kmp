@@ -1,12 +1,13 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.ChannelException
 import fr.acinq.eclair.payment.FinalFailure
-import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
+import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.FailureMessage
 
 class InMemoryPaymentsDb : PaymentsDb {
@@ -14,16 +15,23 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val outgoing = mutableMapOf<UUID, OutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, OutgoingPayment.Part>>()
 
-    override suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, details: IncomingPayment.Details, createdAt: Long) {
-        require(!incoming.contains(pr.paymentHash)) { "an incoming payment for ${pr.paymentHash} already exists" }
-        incoming[pr.paymentHash] = IncomingPayment(pr, preimage, details, createdAt, IncomingPayment.Status.Pending)
+    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long) {
+        val paymentHash = Crypto.sha256(preimage).toByteVector32()
+        require(!incoming.contains(paymentHash)) { "an incoming payment for $paymentHash already exists" }
+        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Status.Pending, createdAt)
     }
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? {
         val payment = incoming[paymentHash]
+        val isExpired = payment?.let {
+            when (val origin = it.origin) {
+                is IncomingPayment.Origin.Invoice -> origin.paymentRequest.isExpired()
+                else -> false
+            }
+        }
         return when {
             payment == null -> null
-            payment.status == IncomingPayment.Status.Pending && payment.paymentRequest.isExpired() -> {
+            payment.status == IncomingPayment.Status.Pending && isExpired == true -> {
                 val expired = payment.copy(status = IncomingPayment.Status.Expired)
                 incoming[paymentHash] = expired
                 expired
@@ -32,17 +40,17 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long) {
+    override suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = payment.copy(status = IncomingPayment.Status.Received(amount, receivedAt))
+            else -> incoming[paymentHash] = payment.copy(status = IncomingPayment.Status.Received(amount, receivedWith, receivedAt))
         }
     }
 
     override suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
         incoming.values
             .asSequence()
-            .filter { it.status is IncomingPayment.Status.Received && it.details.matchesFilters(filters) }
+            .filter { it.status is IncomingPayment.Status.Received && it.origin.matchesFilters(filters) }
             .sortedByDescending { completedAt(it) }
             .drop(skip)
             .take(count)

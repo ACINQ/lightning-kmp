@@ -18,16 +18,16 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, details: IncomingPayment.Details, createdAt: Long = currentTimestampMillis())
+    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis())
 
     /** Get information about an incoming payment (paid or not) for the given payment hash, if any. */
     suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
 
     /**
-     * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
+     * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      */
-    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = currentTimestampMillis())
+    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long = currentTimestampMillis())
 
     /** List received payments (with most recent payments first). */
     suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
@@ -65,36 +65,51 @@ interface OutgoingPaymentsDb {
     suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<OutgoingPayment>
 }
 
-enum class PaymentTypeFilter { Normal, SwapIn, SwapOut, KeySend }
+enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut }
 
 /**
  * An incoming payment received by this node.
- * At first it is in a pending state once the payment request has been generated, then will become either a success (if we receive a valid HTLC)
- * or a failure (if the payment request expires).
+ * At first it is in a pending state, then will become either a success (if we receive a matching payment) or a failure (if the payment request expires).
  *
- * @param paymentRequest Bolt 11 payment request.
- * @param paymentPreimage pre-image associated with the payment request's payment_hash.
- * @param details details specific to the type of payment (normal, swaps, etc).
- * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
+ * @param preimage payment preimage, which acts as a proof-of-payment for the payer.
+ * @param origin origin of a payment (normal, swap, etc).
  * @param status current status of the payment.
+ * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
-data class IncomingPayment(val paymentRequest: PaymentRequest, val paymentPreimage: ByteVector32, val details: Details, val createdAt: Long, val status: Status) {
-    constructor(paymentRequest: PaymentRequest, paymentPreimage: ByteVector32, details: Details = Details.Normal) : this(paymentRequest, paymentPreimage, details, currentTimestampMillis(), Status.Pending)
+data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val status: Status, val createdAt: Long = currentTimestampMillis()) {
+    constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, Status.Pending, currentTimestampMillis())
 
-    sealed class Details {
-        object Normal : Details()
-        data class SwapIn(val address: String) : Details()
+    val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+
+    sealed class Origin {
+        /** A normal, invoice-based lightning payment. */
+        data class Invoice(val paymentRequest: PaymentRequest) : Origin()
+
+        /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
+        object KeySend : Origin()
+
+        /** Swap-in works by sending an on-chain transaction to a swap server, which will pay us in exchange. */
+        data class SwapIn(val amount: MilliSatoshi, val address: String, val paymentRequest: PaymentRequest?) : Origin()
 
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
-            is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
+            is Invoice -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
+            is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
             is SwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
         }
+    }
+
+    sealed class ReceivedWith {
+        /** Payment was received via existing lightning channels. */
+        object LightningPayment : ReceivedWith()
+
+        /** Payment was received via a new channel opened to us. */
+        data class NewChannel(val channelId: ByteVector32?) : ReceivedWith()
     }
 
     sealed class Status {
         object Pending : Status()
         object Expired : Status()
-        data class Received(val amount: MilliSatoshi, val receivedAt: Long) : Status()
+        data class Received(val amount: MilliSatoshi, val receivedWith: ReceivedWith, val receivedAt: Long = currentTimestampMillis()) : Status()
     }
 }
 
@@ -143,8 +158,8 @@ data class OutgoingPayment(val id: UUID, val amount: MilliSatoshi, val recipient
 
     sealed class Status {
         object Pending : Status()
-        data class Succeeded(val preimage: ByteVector32, val completedAt: Long) : Status()
-        data class Failed(val reason: FinalFailure, val completedAt: Long) : Status()
+        data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
+        data class Failed(val reason: FinalFailure, val completedAt: Long = currentTimestampMillis()) : Status()
     }
 
     /**
@@ -153,17 +168,16 @@ data class OutgoingPayment(val id: UUID, val amount: MilliSatoshi, val recipient
      * @param id internal payment identifier.
      * @param amount amount sent, including fees.
      * @param route payment route used.
-     * @param createdAt absolute time in milliseconds since UNIX epoch when the payment was created.
      * @param status current status of the payment.
+     * @param createdAt absolute time in milliseconds since UNIX epoch when the payment was created.
      */
-    data class Part(val id: UUID, val amount: MilliSatoshi, val route: List<HopDesc>, val createdAt: Long, val status: Status) {
+    data class Part(val id: UUID, val amount: MilliSatoshi, val route: List<HopDesc>, val status: Status, val createdAt: Long = currentTimestampMillis()) {
         sealed class Status {
             object Pending : Status()
-            data class Succeeded(val preimage: ByteVector32, val completedAt: Long) : Status()
-            data class Failed(val failure: Either<ChannelException, FailureMessage>, val completedAt: Long) : Status()
+            data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
+            data class Failed(val failure: Either<ChannelException, FailureMessage>, val completedAt: Long = currentTimestampMillis()) : Status()
         }
     }
-
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
