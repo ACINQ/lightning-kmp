@@ -34,9 +34,6 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
     /** The payment was successfully made. */
     data class Success(val payment: OutgoingPayment, val preimage: ByteVector32, val fees: MilliSatoshi) : ProcessFailureResult, ProcessFulfillResult
 
-    /** The payment is unknown. */
-    object UnknownPayment : ProcessFailureResult, ProcessFulfillResult
-
     private val logger by eclairLogger()
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
@@ -88,12 +85,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
 
     suspend fun processAddFailed(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddFailed, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
         val add = event.cmd
-        val payment = getPaymentAttempt(add.paymentId)
-        if (payment == null) {
-            logger.error { "h:${add.paymentHash} i:${add.paymentId} paymentId doesn't match any known payment attempt" }
-            // TODO: check in the DB if we have a matching payment: if so, mark it failed
-            return UnknownPayment
-        }
+        val payment = getPaymentAttempt(add.paymentId) ?: return processPostRestartFailure(add.paymentId, Either.Left(event.error))
 
         logger.debug { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error.message}" }
         db.updateOutgoingPart(add.paymentId, Either.Left(event.error))
@@ -123,12 +115,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
     }
 
     suspend fun processAddSettled(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddSettledFail, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): ProcessFailureResult? {
-        val payment = getPaymentAttempt(event.paymentId)
-        if (payment == null) {
-            logger.error { "i:${event.paymentId} paymentId doesn't match any known payment attempt" }
-            // TODO: check in the DB if we have a matching payment: if so, mark it failed
-            return UnknownPayment
-        }
+        val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFailure(event.paymentId, Either.Right(UnknownFailureMessage(0)))
 
         val failure: FailureMessage = when (event.result) {
             is ChannelAction.HtlcResult.Fail.RemoteFail -> when (val part = payment.pending[event.paymentId]) {
@@ -203,16 +190,35 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
         return result
     }
 
-    suspend fun processAddSettled(event: ChannelAction.ProcessCmdRes.AddSettledFulfill): ProcessFulfillResult {
-        val payment = getPaymentAttempt(event.paymentId)
-        if (payment == null) {
-            logger.error { "i:${event.paymentId} paymentId doesn't match any known payment attempt" }
-            // TODO: check in the DB if we have a matching payment: if so, mark it fulfilled
-            return UnknownPayment
+    private suspend fun processPostRestartFailure(partId: UUID, failure: Either<ChannelException, FailureMessage>): ProcessFailureResult? {
+        when (val payment = db.getOutgoingPart(partId)) {
+            null -> {
+                logger.error { "i:$partId paymentId doesn't match any known payment attempt" }
+                return null
+            }
+            else -> {
+                logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId could not send HTLC (wallet restart): ${failure.fold({ it.message }, { it.message })}" }
+                db.updateOutgoingPart(partId, failure)
+                val hasMorePendingParts = payment.parts.any { it.status == OutgoingPayment.Part.Status.Pending && it.id != partId }
+                return if (!hasMorePendingParts) {
+                    logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted.message}" }
+                    db.updateOutgoingPayment(payment.id, FinalFailure.WalletRestarted)
+                    Failure(
+                        SendPayment(payment.id, payment.amount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
+                        OutgoingPaymentFailure(FinalFailure.WalletRestarted, payment.parts.map { it.status }.filterIsInstance<OutgoingPayment.Part.Status.Failed>().map { it.failure } + failure)
+                    )
+                } else {
+                    null
+                }
+            }
         }
+    }
+
+    suspend fun processAddSettled(event: ChannelAction.ProcessCmdRes.AddSettledFulfill): ProcessFulfillResult? {
+        val preimage = event.result.paymentPreimage
+        val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFulfill(event.paymentId, preimage)
 
         logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC fulfilled" }
-        val preimage = event.result.paymentPreimage
         val part = payment.pending[event.paymentId]?.first?.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage, currentTimestampMillis()))
         db.updateOutgoingPart(event.paymentId, preimage)
 
@@ -236,6 +242,28 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
             Success(OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Succeeded(preimage, currentTimestampMillis())), preimage, updated.fees)
         } else {
             PreimageReceived(payment.request, preimage)
+        }
+    }
+
+    private suspend fun processPostRestartFulfill(partId: UUID, preimage: ByteVector32): ProcessFulfillResult? {
+        when (val payment = db.getOutgoingPart(partId)) {
+            null -> {
+                logger.error { "i:$partId paymentId doesn't match any known payment attempt" }
+                return null
+            }
+            else -> {
+                logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId HTLC succeeded (wallet restart): $preimage" }
+                db.updateOutgoingPart(partId, preimage)
+                val hasMorePendingParts = payment.parts.any { it.status == OutgoingPayment.Part.Status.Pending && it.id != partId }
+                return if (!hasMorePendingParts) {
+                    logger.info { "h:${payment.paymentHash} p:${payment.id} payment successfully sent (wallet restart)" }
+                    db.updateOutgoingPayment(payment.id, preimage)
+                    val succeeded = db.getOutgoingPayment(payment.id)!! //  NB: we reload the payment to ensure all parts status are updated
+                    Success(succeeded, preimage, succeeded.fees)
+                } else {
+                    PreimageReceived(SendPayment(payment.id, payment.amount, payment.recipient, payment.details as OutgoingPayment.Details.Normal), preimage)
+                }
+            }
         }
     }
 

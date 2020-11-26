@@ -639,6 +639,73 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 310_000.msat, fees = (-60_000).msat, partsCount = 1)
     }
 
+    @Test
+    fun `failure after a wallet restart`() = runSuspendTest {
+        val channels = makeChannels()
+        val db = InMemoryPaymentsDb()
+
+        // Step 1: a payment attempt is made.
+        val (adds, attempt) = run {
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val invoice = makeInvoice(amount = null, supportsTrampoline = true)
+            val payment = SendPayment(UUID.randomUUID(), 550_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+
+            val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+            val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
+            val adds = filterAddHtlcCommands(progress)
+            assertEquals(3, adds.size)
+            Pair(adds, attempt)
+        }
+
+        // Step 2: the wallet restarts and payment fails.
+        run {
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            assertNull(outgoingPaymentHandler.processAddFailed(adds[0].first, ChannelAction.ProcessCmdRes.AddFailed(adds[0].second, ChannelUnavailable(adds[0].first), null), channels))
+            assertNull(outgoingPaymentHandler.processAddSettled(adds[1].first, createRemoteFailure(adds[1].second, attempt, TemporaryNodeFailure), channels, TestConstants.defaultBlockHeight))
+            val result = outgoingPaymentHandler.processAddSettled(adds[2].first, createRemoteFailure(adds[2].second, attempt, PermanentNodeFailure), channels, TestConstants.defaultBlockHeight)
+            val failures: List<Either<ChannelException, FailureMessage>> = listOf(
+                Either.Left(ChannelUnavailable(adds[0].first)),
+                // Since we've lost the shared secrets, we can't decrypt remote failures.
+                Either.Right(UnknownFailureMessage(0)),
+                Either.Right(UnknownFailureMessage(0))
+            )
+            assertEquals(OutgoingPaymentHandler.Failure(attempt.request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures)), result)
+        }
+    }
+
+    @Test
+    fun `success after a wallet restart`() = runSuspendTest {
+        val channels = makeChannels()
+        val preimage = randomBytes32()
+        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
+        val payment = SendPayment(UUID.randomUUID(), 550_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+        val db = InMemoryPaymentsDb()
+
+        // Step 1: a payment attempt is made.
+        val adds = run {
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+            val adds = filterAddHtlcCommands(progress)
+            assertEquals(3, adds.size)
+            // A first part is fulfilled before the wallet restarts.
+            val result = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage))
+            assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), result)
+            adds
+        }
+
+        // Step 2: the wallet restarts and payment succeeds.
+        run {
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val result1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[1].first, adds[1].second, preimage))
+            assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), result1)
+            val result2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[2].first, adds[2].second, preimage)) as OutgoingPaymentHandler.Success
+            assertEquals(preimage, result2.preimage)
+            assertEquals(3, result2.payment.parts.size)
+            assertEquals(payment, SendPayment(result2.payment.id, result2.payment.amount, result2.payment.recipient, result2.payment.details as OutgoingPayment.Details.Normal))
+            assertEquals(preimage, (result2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        }
+    }
+
     private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey(), extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>> = listOf()): PaymentRequest {
         val paymentPreimage: ByteVector32 = randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()

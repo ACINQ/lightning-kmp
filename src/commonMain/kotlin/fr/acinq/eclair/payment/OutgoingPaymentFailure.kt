@@ -18,6 +18,7 @@ sealed class FinalFailure {
     object InsufficientBalance : FinalFailure() { override val message: String = "Not enough funds in wallet to afford payment (note that fees may apply)." }
     object NoRouteToRecipient : FinalFailure() { override val message: String = "Unable to route payment to recipient." }
     object RetryExhausted: FinalFailure() { override val message: String = "Payment attempts exhausted without success." }
+    object WalletRestarted: FinalFailure() { override val message: String = "Wallet restarted while a payment was ongoing." }
     object UnknownError : FinalFailure() { override val message: String = "An unknown error occurred." }
     // @formatter:on
 }
@@ -62,6 +63,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<E
         // The general user will see "not enough funds in wallet", and some gobbledygook.
         // It may be a bit confusing, but it leads them toward the solution: add funds, retry payment, success!
         return when {
+            reason == FinalFailure.WalletRestarted -> reason.message
             failures.any { isRejectedByRecipient(it) } -> "Payment rejected by the recipient. This usually occurs when the invoice has already been paid or when it contains an expiration date, and you attempted to send a payment after the expiration."
             failures.any { isRouteError(it) } -> FinalFailure.NoRouteToRecipient.message
             else -> reason.message

@@ -254,7 +254,6 @@ class Peer(
                             result.actions.forEach { input.send(it) }
                         }
                         is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
-                        is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
                         null -> logger.debug { "non-final error, more partial payments are still pending: $actualChannelId->${action.error.message}" }
                     }
                 }
@@ -266,7 +265,6 @@ class Peer(
                         }
                         is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
                         is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
-                        is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
                         null -> logger.debug { "non-final error, more partial payments are still pending: $actualChannelId->${action.result}" }
                     }
                 }
@@ -274,7 +272,7 @@ class Peer(
                     when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                         is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
                         is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "payment preimage received: ${result.payment.paymentId}->${result.preimage}" }
-                        is OutgoingPaymentHandler.UnknownPayment -> logger.error { "unknown payment" }
+                        null -> logger.debug { "unknown payment" }
                     }
                 }
                 action is ChannelAction.Storage.StoreState -> {
