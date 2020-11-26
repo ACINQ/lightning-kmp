@@ -4,12 +4,13 @@ import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.wire.ClosingSigned
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class NegotiatingTestsCommon {
+class NegotiatingTestsCommon : EclairTestSuite() {
     @Test
     fun `recv ClosingSigned (theirCloseFee != ourCloseFee)`() {
         val (alice, bob, aliceCloseSig) = init()

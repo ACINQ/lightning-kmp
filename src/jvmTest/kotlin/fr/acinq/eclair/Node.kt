@@ -34,7 +34,7 @@ import java.sql.DriverManager
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
-    private val logger = newEclairLogger()
+    private val logger by eclairLogger()
 
     @Serializable
     data class Ping(val payload: String)

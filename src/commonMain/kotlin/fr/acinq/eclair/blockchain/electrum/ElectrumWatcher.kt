@@ -12,16 +12,16 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.makeDummySh
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.Connection
-import fr.acinq.eclair.utils.EclairLoggerFactory
+import fr.acinq.eclair.utils.eclairLogger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.flow.collect
-import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 import kotlin.math.max
+import kotlin.native.concurrent.ThreadLocal
 
 sealed class WatcherEvent
 private object StartWatcher : WatcherEvent()
@@ -146,10 +146,10 @@ private data class WatcherRunning(
                             state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
                             actions = buildList {
                                 when {
-                                    existingStatus == status -> logger.verbose { "already have status=$status for scriptHash=$scriptHash" }
-                                    status.isEmpty() -> logger.verbose { "empty status for scriptHash=$scriptHash" }
+                                    existingStatus == status -> logger.debug { "already have status=$status for scriptHash=$scriptHash" }
+                                    status.isEmpty() -> logger.debug { "empty status for scriptHash=$scriptHash" }
                                     else -> {
-                                        logger.verbose { "scriptHash=$scriptHash at height=$height" }
+                                        logger.debug { "scriptHash=$scriptHash at height=$height" }
                                         add(AskForScriptHashHistory(scriptHash))
                                     }
                                 }
@@ -488,9 +488,9 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
         eventChannel.cancel()
     }
 
+    @ThreadLocal
     companion object {
-        // TODO inject
-        val logger = EclairLoggerFactory.newLogger<ElectrumWatcher>()
+        val logger by eclairLogger<ElectrumWatcher>()
 
         internal fun registerToScriptHash(watch: Watch): WatcherAction? = when (watch) {
             is WatchSpent -> {

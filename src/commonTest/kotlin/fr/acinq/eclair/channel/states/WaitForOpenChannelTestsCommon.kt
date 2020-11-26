@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.ChannelTlv
 import fr.acinq.eclair.wire.Error
@@ -13,7 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class WaitForOpenChannelTestsCommon {
+class WaitForOpenChannelTestsCommon : EclairTestSuite() {
     @Test
     fun `recv OpenChannel`() {
         val (_, b, open) = TestsHelper.init(ChannelVersion.STANDARD, 0, 1000000.sat)

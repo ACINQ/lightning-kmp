@@ -2,6 +2,7 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.TestsHelper
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.sat
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -9,7 +10,7 @@ import java.sql.Connection
 import java.sql.DriverManager
 import kotlin.test.assertEquals
 
-class SqliteChannelsDbTestsJvm {
+class SqliteChannelsDbTestsJvm : EclairTestSuite() {
     fun sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     @Test

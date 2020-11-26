@@ -9,6 +9,7 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.AcceptChannel
@@ -18,7 +19,7 @@ import fr.acinq.eclair.wire.FundingSigned
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class WaitForFundingCreatedTestsCommon {
+class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
     @Test
     fun `recv FundingCreated`() {
         val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)

@@ -16,10 +16,13 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import kotlin.math.max
+import kotlin.native.concurrent.ThreadLocal
 
 interface LightningMessage {
+
+    @ThreadLocal
     companion object {
-        val logger = newEclairLogger()
+        val logger by eclairLogger<LightningMessage>()
 
         /**
          * @param input a single, complete message (typically received over the transport layer)
