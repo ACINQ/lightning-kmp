@@ -341,7 +341,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
 
         private fun createExpiredInvoice(preimage: ByteVector32 = randomBytes32()): PaymentRequest {
             val now = currentTimestampSeconds()
-            return PaymentRequest.create(Block.LivenetGenesisBlock.hash, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), "invoice", CltvExpiryDelta(16), defaultFeatures, expirySeconds = 60, timestamp = now - 120)
+            return PaymentRequest.create(Block.LivenetGenesisBlock.hash, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), "invoice", CltvExpiryDelta(16), defaultFeatures, expirySeconds = 60, timestampSeconds = now - 120)
         }
     }
 

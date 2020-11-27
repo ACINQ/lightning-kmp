@@ -56,7 +56,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, null)
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(pr.description, "Please consider supporting this project")
         assertNull(pr.fallbackAddress)
@@ -72,7 +72,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(250000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(pr.description, "1 cup coffee")
         assertNull(pr.fallbackAddress)
@@ -89,7 +89,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(
             pr.descriptionHash,
@@ -110,7 +110,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lntb")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(
             pr.descriptionHash,
@@ -131,7 +131,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(
             pr.descriptionHash,
@@ -162,7 +162,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(
             pr.descriptionHash,
@@ -183,7 +183,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(
             pr.descriptionHash,
@@ -204,7 +204,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(
             pr.descriptionHash,
@@ -226,7 +226,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(2000000000))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(pr.tags.size, 4)
         assertEquals(
@@ -256,7 +256,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
             assertEquals(pr.amount, MilliSatoshi(2500000000L))
             assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
             assertEquals(pr.paymentSecret, ByteVector32("0x1111111111111111111111111111111111111111111111111111111111111111"))
-            assertEquals(pr.timestamp, 1496314658L)
+            assertEquals(pr.timestampSeconds, 1496314658L)
             assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
             assertEquals(pr.description, "coffee beans")
             assertEquals(pr.features, ByteVector("08000000000000000000008200"))
@@ -274,7 +274,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.amount, MilliSatoshi(2500000000L))
         assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
         assertEquals(pr.paymentSecret, ByteVector32("1111111111111111111111111111111111111111111111111111111111111111"))
-        assertEquals(pr.timestamp, 1496314658L)
+        assertEquals(pr.timestampSeconds, 1496314658L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(pr.description, "coffee beans")
         assertNull(pr.fallbackAddress)
@@ -291,11 +291,11 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(967878534))
         assertEquals(pr.paymentHash, ByteVector32("462264ede7e14047e9b249da94fefc47f41f7d02ee9b091815a5506bc8abf75f"))
-        assertEquals(pr.timestamp, 1572468703L)
+        assertEquals(pr.timestampSeconds, 1572468703L)
         assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
         assertEquals(pr.description, "Blockstream Store: 88.85 USD for Blockstream Ledger Nano S x 1, \"Back In My Day\" Sticker x 2, \"I Got Lightning Working\" Sticker x 2 and 1 more items")
         assertNull(pr.fallbackAddress)
-        assertEquals(pr.expiry, 604800)
+        assertEquals(pr.expirySeconds, 604800)
         assertEquals(pr.minFinalExpiryDelta, CltvExpiryDelta(10))
         assertEquals(
             pr.routingInfo,
@@ -343,7 +343,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         val pr = PaymentRequest(
             prefix = "lntb",
             amount = 100000.msat,
-            timestamp = currentTimestampSeconds(),
+            timestampSeconds = currentTimestampSeconds(),
             nodeId = nodeId,
             tags = listOf(
                 PaymentRequest.TaggedField.PaymentHash(ByteVector32.One),

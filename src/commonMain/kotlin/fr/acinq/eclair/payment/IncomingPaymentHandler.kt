@@ -45,9 +45,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
      *
      * @param parts partial payments received.
      * @param totalAmount total amount that should be received.
-     * @param startedAt time at which we received the first partial payment (in seconds).
+     * @param startedAtSeconds time at which we received the first partial payment (in seconds).
      */
-    private data class PendingPayment(val parts: Set<PaymentPart>, val totalAmount: MilliSatoshi, val startedAt: Long) {
+    private data class PendingPayment(val parts: Set<PaymentPart>, val totalAmount: MilliSatoshi, val startedAtSeconds: Long) {
         constructor(firstPart: PaymentPart) : this(setOf(firstPart), firstPart.totalAmount, currentTimestampSeconds())
 
         val amountReceived: MilliSatoshi = parts.map { it.amount }.sum()
@@ -59,13 +59,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 
-    suspend fun createInvoice(
-        paymentPreimage: ByteVector32,
-        amount: MilliSatoshi?,
-        description: String,
-        expirySeconds: Long? = null,
-        timestamp: Long = currentTimestampSeconds()
-    ): PaymentRequest {
+    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: String, expirySeconds: Long? = null, timestampSeconds: Long = currentTimestampSeconds()): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         val invoiceFeatures = PaymentRequest.invoiceFeatures(nodeParams.features)
         // we add one extra hop which uses a virtual channel with a "peer id"
@@ -91,7 +85,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             invoiceFeatures,
             expirySeconds,
             extraHops,
-            timestamp
+            timestampSeconds
         )
         logger.info { "h:$paymentHash generated payment request ${pr.write()}" }
         db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr))
@@ -252,7 +246,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         //   - SHOULD wait for at least 60 seconds after the initial HTLC.
         //   - SHOULD use mpp_timeout for the failure message.
         pending.forEach { (paymentHash, payment) ->
-            val isExpired = currentTimestampSeconds > (payment.startedAt + nodeParams.multiPartPaymentExpiry)
+            val isExpired = currentTimestampSeconds > (payment.startedAtSeconds + nodeParams.multiPartPaymentExpirySeconds)
             if (isExpired) {
                 keysToRemove += paymentHash
                 payment.parts.forEach { part ->

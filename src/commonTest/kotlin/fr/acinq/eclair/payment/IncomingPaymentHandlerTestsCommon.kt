@@ -672,7 +672,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         // Step 2 of 3:
         // - don't expire the multipart htlcs too soon.
         run {
-            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpiry - 2
+            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpirySeconds - 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             assertTrue { actions.isEmpty() }
         }
@@ -680,7 +680,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         // Step 3 of 3:
         // - expire the htlc-set after configured expiration.
         run {
-            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpiry + 2
+            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             val expected = setOf(
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))),
@@ -710,7 +710,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         // Step 2 of 4:
         // - the MPP set times out
         run {
-            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpiry + 2
+            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             val expected = WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true)))
             assertEquals(setOf(expected), actions.toSet())
@@ -786,7 +786,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 signature = ByteVector64.Zeroes,
                 chainHash = ByteVector32.Zeroes,
                 shortChannelId = ShortChannelId(144, 0, 0),
-                timestamp = 0,
+                timestampSeconds = 0,
                 messageFlags = 0,
                 channelFlags = 0,
                 cltvExpiryDelta = CltvExpiryDelta(144),
