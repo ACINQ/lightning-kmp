@@ -167,8 +167,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(setOf(expected), result.actions.toSet())
 
         val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
-        assertEquals(defaultAmount, status.amount)
-        assertEquals(IncomingPayment.ReceivedWith.NewChannel(payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null), status.receivedWith)
+        val expectedFees = defaultAmount * 0.1 // 10% fees
+        assertEquals(defaultAmount - expectedFees, status.amount)
+        assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), status.receivedWith)
 
         checkDbPayment(result.incomingPayment!!, paymentHandler.db)
     }
@@ -386,8 +387,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             )
             assertEquals(setOf(expected), result.actions.toSet())
             val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
-            assertEquals(totalAmount, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.NewChannel(payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null), status.receivedWith)
+            val expectedFees = 15_000.msat // 10% of 150_000 msat
+            assertEquals(totalAmount - expectedFees, status.amount)
+            assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), status.receivedWith)
             checkDbPayment(result.incomingPayment!!, paymentHandler.db)
         }
     }
@@ -424,8 +426,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             )
             assertEquals(expected, result.actions.toSet())
             val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
-            assertEquals(totalAmount, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.NewChannel(payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null), status.receivedWith)
+            val expectedFees = 5_000.msat // 10% of the amount sent via pay-to-open (50 000 msat)
+            assertEquals(totalAmount - expectedFees, status.amount)
+            assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), status.receivedWith)
             checkDbPayment(result.incomingPayment!!, paymentHandler.db)
         }
     }
@@ -829,10 +832,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 chainHash = ByteVector32.Zeroes,
                 fundingSatoshis = 100_000.sat,
                 amountMsat = finalPayload.amount,
-                feeSatoshis = 100.sat,
+                feeSatoshis = finalPayload.amount.truncateToSatoshi() * 0.1, // 10%
                 paymentHash = incomingPayment.paymentHash,
-                feeThresholdSatoshis = 1_000.sat,
-                feeProportionalMillionths = 100,
+                feeThresholdSatoshis = 1.sat,
+                feeProportionalMillionths = 100_000, // 10%
                 expireAt = Long.MAX_VALUE,
                 finalPacket = OutgoingPacket.buildPacket(
                     paymentHash = incomingPayment.paymentHash,

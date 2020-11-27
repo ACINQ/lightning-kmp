@@ -940,6 +940,21 @@ data class ClosingSigned(
     }
 }
 
+/**
+ * When we don't have enough incoming liquidity to receive a payment, our peer may open a channel to us on-the-fly to carry that payment.
+ * This message contains details that allow us to recalculate the fee that our peer will take in exchange for the new channel.
+ * This allows us to combine multiple requests for the same payment and figure out the final fee that will be applied.
+ *
+ * @param chainHash chain we're on.
+ * @param fundingSatoshis total capacity of the channel our peer will open to us (some of the funds may be on their side).
+ * @param amountMsat payment amount covered by this new channel: we will receive push_msat = amountMsat - fees.
+ * @param feeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
+ * @param paymentHash payment hash.
+ * @param feeThresholdSatoshis if amountMsat is below this threshold, feeSatoshis will be 0.
+ * @param feeProportionalMillionths the fee will be amountMsat * feeProportionalMillionths / 1_000_000.
+ * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
+ * @param finalPacket onion packet that we would have received if there had been a channel to forward the payment to.
+ */
 @OptIn(ExperimentalUnsignedTypes::class)
 data class PayToOpenRequest(
     override val chainHash: ByteVector32,
@@ -955,8 +970,7 @@ data class PayToOpenRequest(
     override fun serializer(): LightningSerializer<PayToOpenRequest> = PayToOpenRequest
 
     companion object : LightningSerializer<PayToOpenRequest>() {
-        override val tag: Long
-            get() = 35021L
+        override val tag: Long get() = 35021L
 
         override fun read(input: Input): PayToOpenRequest {
             return PayToOpenRequest(
@@ -975,16 +989,35 @@ data class PayToOpenRequest(
         override fun write(message: PayToOpenRequest, out: Output) {
             TODO("Not yet implemented")
         }
+
+        /**
+         * We use this method for non-trampoline multipart payments.
+         * The aggregation is done by the wallet, which may receive several pay-to-open requests for the same payment.
+         * Combining the requests allows us to create a single channel, and protects us from some edge cases (e.g. since small payments are free,
+         * users could aggressively split their payments to stay below a certain threshold).
+         *
+         * We return the total amount for this set of pay-to-open requests, and the fee that will be deducted when the channel will be opened.
+         */
+        fun combine(requests: List<PayToOpenRequest>): Pair<MilliSatoshi, Satoshi> {
+            require(requests.isNotEmpty()) { "there needs to be at least one pay-to-open request" }
+            require(requests.map { it.chainHash }.toSet().size == 1) { "all pay-to-open chain hash must be equal" }
+            require(requests.map { it.paymentHash }.toSet().size == 1) { "all pay-to-open payment hash must be equal" }
+            require(requests.map { it.feeThresholdSatoshis }.toSet().size == 1) { "all pay-to-open fee rates must be equal" }
+            require(requests.map { it.feeProportionalMillionths }.toSet().size == 1) { "all pay-to-open fee rates must be equal" }
+            val totalAmount = requests.map { it.amountMsat }.sum()
+            val fees = when {
+                // for tiny amounts there is no fee
+                totalAmount < requests.first().feeThresholdSatoshis -> 0.sat
+                // NB: this fee is proportional, which allows us to sum them in case of multipart payments
+                else -> totalAmount.truncateToSatoshi() * requests.first().feeProportionalMillionths / 1_000_000
+            }
+            return Pair(totalAmount, fees)
+        }
     }
 }
 
-
 @OptIn(ExperimentalUnsignedTypes::class)
-data class PayToOpenResponse(
-    override val chainHash: ByteVector32,
-    val paymentHash: ByteVector32,
-    val result: Result
-) : LightningMessage, HasChainHash, LightningSerializable<PayToOpenResponse> {
+data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHash: ByteVector32, val result: Result) : LightningMessage, HasChainHash, LightningSerializable<PayToOpenResponse> {
 
     //@formatter:off
     sealed class Result {
@@ -997,8 +1030,7 @@ data class PayToOpenResponse(
     override fun serializer(): LightningSerializer<PayToOpenResponse> = PayToOpenResponse
 
     companion object : LightningSerializer<PayToOpenResponse>() {
-        override val tag: Long
-            get() = 35003L
+        override val tag: Long get() = 35003L
 
         override fun read(input: Input): PayToOpenResponse {
             TODO("Not yet implemented")
@@ -1008,17 +1040,15 @@ data class PayToOpenResponse(
             writeBytes(message.chainHash, out)
             writeBytes(message.paymentHash, out)
             when (message.result) {
-                is Result.Success ->
-                    writeBytes(message.result.paymentPreimage, out)
+                is Result.Success -> writeBytes(message.result.paymentPreimage, out)
                 is Result.Failure -> {
                     writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
                     message.result.reason?.let {
                         writeU16(it.size(), out)
                         writeBytes(it, out)
-                     }
+                    }
                 }
             }
-
         }
     }
 }

@@ -171,12 +171,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             }
                         }
                         pending.remove(paymentPart.paymentHash)
-                        val receivedWith = when (val payToOpenPart = payment.parts.filterIsInstance<PayToOpenPart>().firstOrNull()) {
-                            null -> IncomingPayment.ReceivedWith.LightningPayment
-                            else -> IncomingPayment.ReceivedWith.NewChannel(payToOpenPart.payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null)
+                        val payToOpenRequests = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest }
+                        val (amountReceived, receivedWith) = when {
+                            payToOpenRequests.isEmpty() -> Pair(payment.amountReceived, IncomingPayment.ReceivedWith.LightningPayment)
+                            else -> {
+                                val (_, fees) = PayToOpenRequest.combine(payToOpenRequests)
+                                Pair(payment.amountReceived - fees.toMilliSatoshi(), IncomingPayment.ReceivedWith.NewChannel(fees.toMilliSatoshi(), channelId = null))
+                            }
                         }
-                        db.receivePayment(paymentPart.paymentHash, payment.amountReceived, receivedWith)
-                        return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment.copy(status = IncomingPayment.Status.Received(payment.amountReceived, receivedWith)))
+                        db.receivePayment(paymentPart.paymentHash, amountReceived, receivedWith)
+                        return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment.copy(status = IncomingPayment.Status.Received(amountReceived, receivedWith)))
                     }
                 }
             }
