@@ -12,10 +12,9 @@ import kotlin.experimental.or
 object Announcements {
     @Suppress("UNUSED_PARAMETER")
     fun channelUpdateWitnessEncode(
-        chainHash
-        : ByteVector32,
+        chainHash: ByteVector32,
         shortChannelId: ShortChannelId,
-        timestamp: Long,
+        timestampSeconds: Long,
         messageFlags: Byte,
         channelFlags: Byte,
         cltvExpiryDelta: CltvExpiryDelta,
@@ -80,23 +79,21 @@ object Announcements {
         feeProportionalMillionths: Long,
         htlcMaximumMsat: MilliSatoshi,
         enable: Boolean = true,
-        timestamp: Long = currentTimestampSeconds()
+        timestampSeconds: Long = currentTimestampSeconds()
     ): ChannelUpdate {
         val messageFlags = makeMessageFlags(hasOptionChannelHtlcMax = true) // NB: we always support option_channel_htlc_max
         val channelFlags = makeChannelFlags(isNode1 = isNode1(nodeSecret.publicKey(), remoteNodeId), enable = enable)
-        val htlcMaximumMsatOpt = htlcMaximumMsat
-
         val witness = channelUpdateWitnessEncode(
             chainHash,
             shortChannelId,
-            timestamp,
+            timestampSeconds,
             messageFlags,
             channelFlags,
             cltvExpiryDelta,
             htlcMinimumMsat,
             feeBaseMsat,
             feeProportionalMillionths,
-            htlcMaximumMsatOpt,
+            htlcMaximumMsat,
             unknownFields = ByteVector.empty
         )
         val sig = Crypto.sign(witness, nodeSecret)
@@ -104,14 +101,14 @@ object Announcements {
             signature = sig,
             chainHash = chainHash,
             shortChannelId = shortChannelId,
-            timestamp = timestamp,
+            timestampSeconds = timestampSeconds,
             messageFlags = messageFlags,
             channelFlags = channelFlags,
             cltvExpiryDelta = cltvExpiryDelta,
             htlcMinimumMsat = htlcMinimumMsat,
             feeBaseMsat = feeBaseMsat,
             feeProportionalMillionths = feeProportionalMillionths,
-            htlcMaximumMsat = htlcMaximumMsatOpt
+            htlcMaximumMsat = htlcMaximumMsat
         )
     }
 

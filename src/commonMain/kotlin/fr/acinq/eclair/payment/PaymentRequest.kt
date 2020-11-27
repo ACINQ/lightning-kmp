@@ -19,7 +19,7 @@ import kotlin.experimental.and
 data class PaymentRequest(
     val prefix: String,
     val amount: MilliSatoshi?,
-    val timestamp: Long,
+    val timestampSeconds: Long,
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     val tags: List<TaggedField>,
     @Serializable(with = ByteVectorKSerializer::class) val signature: ByteVector
@@ -37,7 +37,7 @@ data class PaymentRequest(
     val descriptionHash: ByteVector32? = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
 
     @Transient
-    val expiry: Long? = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expiry }
+    val expirySeconds: Long? = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
 
     @Transient
     val minFinalExpiryDelta: CltvExpiryDelta? = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiry.toInt()) }
@@ -64,16 +64,16 @@ data class PaymentRequest(
         }
     }
 
-    fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean = when (expiry) {
-        null -> timestamp + DEFAULT_EXPIRY_SECONDS <= currentTimestampSeconds
-        else -> timestamp + expiry <= currentTimestampSeconds
+    fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean = when (expirySeconds) {
+        null -> timestampSeconds + DEFAULT_EXPIRY_SECONDS <= currentTimestampSeconds
+        else -> timestampSeconds + expirySeconds <= currentTimestampSeconds
     }
 
     private fun hrp() = prefix + encodeAmount(amount)
 
     private fun rawData(): List<Int5> {
         val data5 = ArrayList<Int5>()
-        data5.addAll(encodeTimestamp(timestamp))
+        data5.addAll(encodeTimestamp(timestampSeconds))
         tags.forEach {
             val encoded = it.encode()
             val len = encoded.size
@@ -163,7 +163,7 @@ data class PaymentRequest(
             features: Features,
             expirySeconds: Long? = null,
             extraHops: List<List<TaggedField.ExtraHop>> = listOf(),
-            timestamp: Long = currentTimestampSeconds()
+            timestampSeconds: Long = currentTimestampSeconds()
         ): PaymentRequest {
             val prefix = prefixes[chainHash] ?: error("unknown chain hash")
             val tags = mutableListOf(
@@ -185,7 +185,7 @@ data class PaymentRequest(
             return PaymentRequest(
                 prefix = prefix,
                 amount = amount,
-                timestamp = timestamp,
+                timestampSeconds = timestampSeconds,
                 nodeId = privateKey.publicKey(),
                 tags = tags,
                 signature = ByteVector.empty
@@ -352,15 +352,15 @@ data class PaymentRequest(
             }
         }
 
-        /** @param expiry payment expiry (in seconds) */
+        /** @param expirySeconds payment expiry (in seconds) */
         @Serializable
-        data class Expiry(val expiry: Long) : TaggedField() {
+        data class Expiry(val expirySeconds: Long) : TaggedField() {
             override val tag: Int5 = Expiry.tag
             override fun encode(): List<Int5> {
                 tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
                     loop(value / 32, acc + (value.rem(32)).toByte())
                 }
-                return loop(expiry, listOf())
+                return loop(expirySeconds, listOf())
             }
 
             companion object {

@@ -88,7 +88,7 @@ interface SetupMessage : LightningMessage
 interface RoutingMessage : LightningMessage
 interface AnnouncementMessage : RoutingMessage // <- not in the spec
 interface HasTimestamp : LightningMessage {
-    val timestamp: Long
+    val timestampSeconds: Long
 }
 
 interface UpdateMessage : LightningMessage {
@@ -808,7 +808,7 @@ data class ChannelUpdate(
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
     @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
     val shortChannelId: ShortChannelId,
-    override val timestamp: Long,
+    override val timestampSeconds: Long,
     val messageFlags: Byte,
     val channelFlags: Byte,
     val cltvExpiryDelta: CltvExpiryDelta,
@@ -832,7 +832,7 @@ data class ChannelUpdate(
             val signature = ByteVector64(bytes(input, 64))
             val chainHash = ByteVector32(bytes(input, 32))
             val shortChannelId = ShortChannelId(u64(input))
-            val timestamp = u32(input).toLong()
+            val timestampSeconds = u32(input).toLong()
             val messageFlags = byte(input).toByte()
             val channelFlags = byte(input).toByte()
             val cltvExpiryDelta = CltvExpiryDelta(u16(input))
@@ -845,7 +845,7 @@ data class ChannelUpdate(
                 signature,
                 chainHash,
                 shortChannelId,
-                timestamp,
+                timestampSeconds,
                 messageFlags,
                 channelFlags,
                 cltvExpiryDelta,
@@ -861,7 +861,7 @@ data class ChannelUpdate(
             writeBytes(message.signature, out)
             writeBytes(message.chainHash, out)
             writeU64(message.shortChannelId.toLong(), out)
-            writeU32(message.timestamp.toInt(), out)
+            writeU32(message.timestampSeconds.toInt(), out)
             writeByte(message.messageFlags.toInt(), out)
             writeByte(message.channelFlags.toInt(), out)
             writeU16(message.cltvExpiryDelta.toInt(), out)
@@ -978,7 +978,6 @@ data class PayToOpenRequest(
     }
 }
 
-
 @OptIn(ExperimentalUnsignedTypes::class)
 data class PayToOpenResponse(
     override val chainHash: ByteVector32,
@@ -1015,7 +1014,7 @@ data class PayToOpenResponse(
                     message.result.reason?.let {
                         writeU16(it.size(), out)
                         writeBytes(it, out)
-                     }
+                    }
                 }
             }
 

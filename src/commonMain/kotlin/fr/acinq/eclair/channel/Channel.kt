@@ -680,7 +680,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                             currentOnChainFeerates,
                             state.commitments,
                             null,
-                            currentTimestampSeconds(),
+                            currentTimestampMillis(),
                             state.closingTxProposed.flatten().map { it.unsignedTx },
                             listOf(watch.tx)
                         )
@@ -1423,7 +1423,6 @@ data class WaitForFundingSigned(
                             remoteNextCommitInfo = Either.Right(Eclair.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                             commitInput, ShaChain.init, channelId, event.message.channelData
                         )
-                        val now = currentTimestampSeconds()
                         logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
                         val watchSpent = WatchSpent(
                             this.channelId,
@@ -1443,7 +1442,7 @@ data class WaitForFundingSigned(
                         )
                         logger.info { "committing txid=${fundingTx.txid}" }
 
-                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, now, null, Either.Left(lastSent))
+                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentTimestampMillis(), null, Either.Left(lastSent))
                         val actions = listOf(
                             ChannelAction.Blockchain.SendWatch(watchSpent),
                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -2109,7 +2108,7 @@ data class Negotiating(
                             currentOnChainFeerates,
                             commitments,
                             null,
-                            currentTimestampSeconds(),
+                            currentTimestampMillis(),
                             this.closingTxProposed.flatten().map { it.unsignedTx },
                             listOf(signedClosingTx)
                         )
@@ -2135,7 +2134,7 @@ data class Negotiating(
                                     currentOnChainFeerates,
                                     commitments,
                                     null,
-                                    currentTimestampSeconds(),
+                                    currentTimestampMillis(),
                                     this.closingTxProposed.flatten().map { it.unsignedTx },
                                     listOf(signedClosingTx)
                                 )
@@ -2156,7 +2155,7 @@ data class Negotiating(
                                     currentOnChainFeerates,
                                     commitments,
                                     null,
-                                    currentTimestampSeconds(),
+                                    currentTimestampMillis(),
                                     this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(closingTx.tx),
                                     listOf(closingTx.tx)
                                 )
@@ -2199,7 +2198,7 @@ data class Negotiating(
                     currentOnChainFeerates,
                     commitments,
                     null,
-                    currentTimestampSeconds(),
+                    currentTimestampMillis(),
                     this.closingTxProposed.flatten().map { it.unsignedTx },
                     listOf(event.watch.tx)
                 )
@@ -2229,7 +2228,7 @@ data class Negotiating(
                     currentOnChainFeerates,
                     commitments,
                     null,
-                    currentTimestampSeconds(),
+                    currentTimestampMillis(),
                     this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
                     listOf(bestUnpublishedClosingTx)
                 )

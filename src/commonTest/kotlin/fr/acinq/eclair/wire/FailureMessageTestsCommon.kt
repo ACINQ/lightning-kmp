@@ -17,7 +17,7 @@ class FailureMessageTestsCommon : EclairTestSuite() {
         signature = Eclair.randomBytes64(),
         chainHash = Block.RegtestGenesisBlock.hash,
         shortChannelId = ShortChannelId(12345),
-        timestamp = 1234567,
+        timestampSeconds = 1234567,
         cltvExpiryDelta = CltvExpiryDelta(100),
         messageFlags = 0,
         channelFlags = 1,
