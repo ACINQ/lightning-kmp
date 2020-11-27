@@ -74,7 +74,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         val preimage2 = randomBytes32()
         val received2 = createInvoice(preimage2)
         db.addIncomingPayment(preimage2, IncomingPayment.Origin.SwapIn(150_000.msat, "1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", received2))
-        db.receivePayment(received2.paymentHash, 180_000.msat, IncomingPayment.ReceivedWith.NewChannel(channelId = null), 60)
+        db.receivePayment(received2.paymentHash, 180_000.msat, IncomingPayment.ReceivedWith.NewChannel(100.msat, channelId = null), 60)
         val payment2 = db.getIncomingPayment(received2.paymentHash)!!
 
         val preimage3 = randomBytes32()
@@ -301,8 +301,8 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         val outFinal1 = db.getOutgoingPayment(outgoing1.id)!!
         db.updateOutgoingPayment(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
-        db.receivePayment(incoming2.paymentHash, 25_000.msat, IncomingPayment.ReceivedWith.NewChannel(channelId = null), receivedAt = 105)
-        val inFinal2 = incoming2.copy(status = IncomingPayment.Status.Received(25_000.msat, IncomingPayment.ReceivedWith.NewChannel(channelId = null), 105))
+        db.receivePayment(incoming2.paymentHash, 25_000.msat, IncomingPayment.ReceivedWith.NewChannel(250.msat, channelId = null), receivedAt = 105)
+        val inFinal2 = incoming2.copy(status = IncomingPayment.Status.Received(25_000.msat, IncomingPayment.ReceivedWith.NewChannel(250.msat, channelId = null), 105))
         db.updateOutgoingPayment(outgoing3.id, randomBytes32(), completedAt = 106)
         val outFinal3 = db.getOutgoingPayment(outgoing3.id)!!
         db.receivePayment(incoming4.paymentHash, 10_000.msat, IncomingPayment.ReceivedWith.LightningPayment, receivedAt = 110)

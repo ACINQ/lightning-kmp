@@ -171,10 +171,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             }
                         }
                         pending.remove(paymentPart.paymentHash)
-                        val receivedWith = if (actions.any { it is PayToOpenResponseEvent }) {
-                            IncomingPayment.ReceivedWith.NewChannel(channelId = null)
-                        } else {
-                            IncomingPayment.ReceivedWith.LightningPayment
+                        val receivedWith = when (val payToOpenPart = payment.parts.filterIsInstance<PayToOpenPart>().firstOrNull()) {
+                            null -> IncomingPayment.ReceivedWith.LightningPayment
+                            else -> IncomingPayment.ReceivedWith.NewChannel(payToOpenPart.payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null)
                         }
                         db.receivePayment(paymentPart.paymentHash, payment.amountReceived, receivedWith)
                         return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment.copy(status = IncomingPayment.Status.Received(payment.amountReceived, receivedWith)))

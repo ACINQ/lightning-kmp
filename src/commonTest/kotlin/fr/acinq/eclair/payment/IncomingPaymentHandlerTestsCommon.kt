@@ -168,7 +168,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
         assertEquals(defaultAmount, status.amount)
-        assertEquals(IncomingPayment.ReceivedWith.NewChannel(channelId = null), status.receivedWith)
+        assertEquals(IncomingPayment.ReceivedWith.NewChannel(payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null), status.receivedWith)
 
         checkDbPayment(result.incomingPayment!!, paymentHandler.db)
     }
@@ -387,7 +387,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(setOf(expected), result.actions.toSet())
             val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
             assertEquals(totalAmount, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.NewChannel(channelId = null), status.receivedWith)
+            assertEquals(IncomingPayment.ReceivedWith.NewChannel(payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null), status.receivedWith)
             checkDbPayment(result.incomingPayment!!, paymentHandler.db)
         }
     }
@@ -425,7 +425,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(expected, result.actions.toSet())
             val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
             assertEquals(totalAmount, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.NewChannel(channelId = null), status.receivedWith)
+            assertEquals(IncomingPayment.ReceivedWith.NewChannel(payToOpenRequest.feeSatoshis.toMilliSatoshi(), channelId = null), status.receivedWith)
             checkDbPayment(result.incomingPayment!!, paymentHandler.db)
         }
     }
