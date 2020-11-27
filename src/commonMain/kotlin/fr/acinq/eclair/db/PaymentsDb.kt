@@ -82,6 +82,21 @@ sealed class WalletPayment {
                 else -> 0
             }
         }
+
+        /** Amount sent or received. */
+        fun amount(payment: WalletPayment): MilliSatoshi = when (payment) {
+            is IncomingPayment -> when (val status = payment.status) {
+                is IncomingPayment.Status.Received -> status.amount
+                else -> 0.msat
+            }
+            is OutgoingPayment -> payment.recipientAmount + payment.fees
+        }
+
+        /** Fees that applied to the payment. */
+        fun fees(payment: WalletPayment): MilliSatoshi = when (payment) {
+            is IncomingPayment -> 0.msat // TODO: swap-in and pay-to-open may incur a fee, that needs to be implemented
+            is OutgoingPayment -> payment.fees
+        }
     }
 }
 
