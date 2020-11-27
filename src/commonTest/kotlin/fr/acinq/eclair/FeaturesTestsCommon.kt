@@ -1,11 +1,9 @@
 package fr.acinq.eclair
 
-import fr.acinq.eclair.Feature.InitialRoutingSync
-import fr.acinq.eclair.Features.Companion.areSupported
+import fr.acinq.eclair.Feature.*
 import fr.acinq.eclair.Features.Companion.validateFeatureGraph
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.BitField
-import fr.acinq.eclair.utils.Try
 import kotlin.test.*
 
 class FeaturesTestsCommon : EclairTestSuite() {
@@ -18,8 +16,8 @@ class FeaturesTestsCommon : EclairTestSuite() {
 
     @Test
     fun `'data_loss_protect' feature`() {
-        assertTrue(Features(byteArrayOf(0x01)).hasFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory))
-        assertTrue(Features(byteArrayOf(0x02)).hasFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional))
+        assertTrue(Features(byteArrayOf(0x01)).hasFeature(OptionDataLossProtect, FeatureSupport.Mandatory))
+        assertTrue(Features(byteArrayOf(0x02)).hasFeature(OptionDataLossProtect, FeatureSupport.Optional))
     }
 
     @Test
@@ -27,23 +25,22 @@ class FeaturesTestsCommon : EclairTestSuite() {
         val features = Features(
             setOf(
                 ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional),
-                ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)
+                ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional),
+                ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory)
             )
         )
         assertTrue(features.toByteArray().contentEquals(byteArrayOf(0x01, 0x0a)))
-        assertTrue(areSupported(features))
-        assertTrue(features.hasFeature(Feature.OptionDataLossProtect))
+        assertTrue(features.hasFeature(OptionDataLossProtect))
         assertTrue(features.hasFeature(InitialRoutingSync))
-        assertTrue(features.hasFeature(Feature.VariableLengthOnion))
+        assertTrue(features.hasFeature(VariableLengthOnion))
     }
 
     @Test
     fun `'variable_length_onion' feature`() {
-        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(Feature.VariableLengthOnion))
-        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))
-        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(Feature.VariableLengthOnion))
-        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))
+        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(VariableLengthOnion))
+        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(VariableLengthOnion, FeatureSupport.Mandatory))
+        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(VariableLengthOnion))
+        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(VariableLengthOnion, FeatureSupport.Optional))
     }
 
     @Test
@@ -122,16 +119,16 @@ class FeaturesTestsCommon : EclairTestSuite() {
                 Features(
                     setOf(
                         ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional),
-                        ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                        ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
-                        ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional)
+                        ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                        ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional),
+                        ActivatedFeature(PaymentSecret, FeatureSupport.Optional)
                     )
                 ),
                 Features(
                     setOf(
-                        ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                        ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
-                        ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional)
+                        ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                        ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional),
+                        ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional)
                     )
                 ),
                 oursSupportTheirs = true,
@@ -140,48 +137,48 @@ class FeaturesTestsCommon : EclairTestSuite() {
             ),
             // We support their mandatory features
             TestCase(
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))),
-                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
                 oursSupportTheirs = true,
                 theirsSupportOurs = true,
                 compatible = true
             ),
             // They support our mandatory features
             TestCase(
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
-                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
                 oursSupportTheirs = true,
                 theirsSupportOurs = true,
                 compatible = true
             ),
             // They have unknown optional features
             TestCase(
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))),
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)), setOf(UnknownFeature(141))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional)), setOf(UnknownFeature(141))),
                 oursSupportTheirs = true,
                 theirsSupportOurs = true,
                 compatible = true
             ),
             // They have unknown mandatory features
             TestCase(
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))),
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)), setOf(UnknownFeature(142))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional)), setOf(UnknownFeature(142))),
                 oursSupportTheirs = false,
                 theirsSupportOurs = true,
                 compatible = false
             ),
             // We don't support one of their mandatory features
             TestCase(
-                Features(setOf(ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional))),
-                Features(setOf(ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Mandatory), ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory), ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
                 oursSupportTheirs = false,
                 theirsSupportOurs = true,
                 compatible = false
             ),
             // They don't support one of our mandatory features
             TestCase(
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory))),
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory), ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
                 oursSupportTheirs = true,
                 theirsSupportOurs = false,
                 compatible = false
@@ -204,22 +201,22 @@ class FeaturesTestsCommon : EclairTestSuite() {
     fun `features to bytes`() {
         val testCases = mapOf(
             byteArrayOf() to Features.empty,
-            byteArrayOf(0x01, 0x00) to Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
+            byteArrayOf(0x01, 0x00) to Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
             byteArrayOf(0x02, 0x8a.toByte(), 0x8a.toByte()) to Features(
                 setOf(
-                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
+                    ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional),
                     ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
+                    ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional),
+                    ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional),
+                    ActivatedFeature(PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional)
                 )
             ),
             byteArrayOf(0x09, 0x00, 0x42, 0x00) to Features(
                 setOf(
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)
+                    ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory)
                 ),
                 setOf(UnknownFeature(24), UnknownFeature(27))
             ),

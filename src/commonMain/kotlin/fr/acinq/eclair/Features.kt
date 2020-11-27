@@ -161,17 +161,6 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             Feature.TrampolinePayment
         )
 
-        private val supportedMandatoryFeatures: Set<Feature> = setOf(
-            Feature.OptionDataLossProtect,
-            Feature.ChannelRangeQueries,
-            Feature.VariableLengthOnion,
-            Feature.ChannelRangeQueriesExtended,
-            Feature.PaymentSecret,
-            Feature.BasicMultiPartPayment,
-            Feature.Wumbo,
-            Feature.AnchorOutputs
-        )
-
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
 
         operator fun invoke(bytes: ByteArray): Features = invoke(BitField.from(bytes))
@@ -240,22 +229,9 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
 
         fun areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
 
-        /**
-         * A feature set is supported if all even bits are supported.
-         * We just ignore unknown odd bits.
-         */
-        fun areSupported(features: Features): Boolean =
-            !features.unknown.any { it.bitIndex % 2 == 0 } && features.activated.all {
-                when (it.support) {
-                    FeatureSupport.Optional -> true
-                    FeatureSupport.Mandatory -> supportedMandatoryFeatures.contains(it.feature)
-                }
-            }
 
         /** returns true if both have at least optional support */
         fun canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean =
             localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
-
     }
-
 }

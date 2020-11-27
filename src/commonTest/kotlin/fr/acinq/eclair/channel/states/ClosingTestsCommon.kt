@@ -462,7 +462,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
-        val (alice7, _) = alice5.process(
+        val (alice6, _) = alice5.process(
             ChannelEvent.WatchReceived(
                 WatchEventConfirmed(
                     ByteVector32.Zeroes,
@@ -471,7 +471,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
-        val (alice8, _) = alice7.process(
+        val (alice7, _) = alice6.process(
             ChannelEvent.WatchReceived(
                 WatchEventConfirmed(
                     ByteVector32.Zeroes,
@@ -480,7 +480,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
-        val (alice9, _) = alice8.process(
+        val (alice8, _) = alice7.process(
             ChannelEvent.WatchReceived(
                 WatchEventConfirmed(
                     ByteVector32.Zeroes,
@@ -490,7 +490,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             )
         )
 
-        assertTrue { alice9 is Closed }
+        assertTrue { alice8 is Closed }
     }
 
     @Test
@@ -540,7 +540,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
-        val (alice8, _) = alice6.process(
+        val (alice7, _) = alice6.process(
             ChannelEvent.WatchReceived(
                 WatchEventConfirmed(
                     ByteVector32.Zeroes,
@@ -549,7 +549,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             )
         )
 
-        assertTrue { alice8 is Closed }
+        assertTrue { alice7 is Closed }
     }
 
     @Test
@@ -581,7 +581,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs.size)
 
         val (alice6, _) = aliceClosing.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 0, bobCommitTx)))
-        val (alice8, _) = alice6.process(
+        val (alice7, _) = alice6.process(
             ChannelEvent.WatchReceived(
                 WatchEventConfirmed(
                     ByteVector32.Zeroes,
@@ -592,10 +592,10 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
-        val (alice9, _) = alice8.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1])))
-        val (alice10, _) = alice9.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]), 203, 1, remoteCommitPublished.claimHtlcTimeoutTxs[2])))
+        val (alice8, _) = alice7.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1])))
+        val (alice9, _) = alice8.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]), 203, 1, remoteCommitPublished.claimHtlcTimeoutTxs[2])))
 
-        assertTrue { alice10 is Closed }
+        assertTrue { alice9 is Closed }
     }
 
     @Test

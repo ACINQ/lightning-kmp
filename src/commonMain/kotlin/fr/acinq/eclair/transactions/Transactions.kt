@@ -188,10 +188,7 @@ object Transactions {
         return weight2feeMsat(spec.feeratePerKw, weight) + (Commitments.ANCHOR_AMOUNT * 2).toMilliSatoshi()
     }
 
-    fun commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi {
-        val base = commitTxFeeMsat(dustLimit, spec).truncateToSatoshi()
-        return base
-    }
+    fun commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = commitTxFeeMsat(dustLimit, spec).truncateToSatoshi()
 
     /**
      *

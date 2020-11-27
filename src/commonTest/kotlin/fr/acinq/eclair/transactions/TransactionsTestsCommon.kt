@@ -193,7 +193,6 @@ class TransactionsTestsCommon : EclairTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            //val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash))))
             val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcSuccessTx =
                 makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)

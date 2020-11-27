@@ -166,8 +166,8 @@ class Peer(
                     logger.warning { ex.message }
                 }
             }
-            logger.info { "sending init $ourInit!!" }
-            send(LightningMessage.encode(ourInit)!!)
+            logger.info { "sending init $ourInit" }
+            send(LightningMessage.encode(ourInit) ?: error("cannot serialize $ourInit"))
 
             suspend fun doPing() {
                 val ping = Hex.decode("0012000a0004deadbeef")
