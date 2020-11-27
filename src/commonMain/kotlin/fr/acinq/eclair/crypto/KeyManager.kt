@@ -70,7 +70,7 @@ interface KeyManager {
      * @return a signature generated with a private key generated from the input keys's matching
      *         private key and the remote point.
      */
-    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sigHhash: Int = SigHash.SIGHASH_ALL): ByteVector64
+    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sigHhash: Int): ByteVector64
 
     /**
      * Ths method is used to spend revoked transactions, with the corresponding revocation key

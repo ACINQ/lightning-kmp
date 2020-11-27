@@ -790,7 +790,7 @@ object Transactions {
      * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
      */
     val PlaceHolderSig = ByteVector64(ByteArray(64) { 0xaa.toByte() })
-        .also { check(Scripts.der(it).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it).size()} bytes" } }
+        .also { check(Scripts.der(it, SigHash.SIGHASH_ALL).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it, SigHash.SIGHASH_ALL).size()} bytes" } }
 
     fun sign(tx: Transaction, inputIndex: Int, redeemScript: ByteArray, amount: Satoshi, key: PrivateKey, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
         val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sigHash, amount, SigVersion.SIGVERSION_WITNESS_V0, key)
@@ -844,7 +844,7 @@ object Transactions {
     }
 
     fun addSigs(claimP2WPKHOutputTx: TransactionWithInputInfo.ClaimP2WPKHOutputTx, localPaymentPubkey: PublicKey, localSig: ByteVector64): TransactionWithInputInfo.ClaimP2WPKHOutputTx {
-        val witness = ScriptWitness(listOf(Scripts.der(localSig), localPaymentPubkey.value))
+        val witness = ScriptWitness(listOf(Scripts.der(localSig, SigHash.SIGHASH_ALL), localPaymentPubkey.value))
         return claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
     }
 

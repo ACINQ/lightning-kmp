@@ -80,8 +80,8 @@ data class Commitments(
     @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector = ByteVector.empty
 ) {
     init {
-        // either we use static remote key and have a static point or we don't and we don't have a static point
         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
+        require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
     }
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
@@ -536,7 +536,7 @@ data class Commitments(
         if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
             return Either.Left(HtlcSigCountMismatch(channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint) }
+        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
         val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
         // combine the sigs to make signed txs
         val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().mapNotNull { (htlcTx, localSig, remoteSig) ->

@@ -12,7 +12,7 @@ import fr.acinq.eclair.utils.sat
  */
 object Scripts {
 
-    fun der(sig: ByteVector64, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector = Crypto.compact2der(sig).concat(sigHash.toByte())
+    fun der(sig: ByteVector64, sigHash: Int): ByteVector = Crypto.compact2der(sig).concat(sigHash.toByte())
 
     fun multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): List<ScriptElt> =
         if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
@@ -26,9 +26,9 @@ object Scripts {
      */
     fun witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness =
         if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
-            ScriptWitness(listOf(ByteVector.empty, der(sig1), der(sig2), ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))))
+            ScriptWitness(listOf(ByteVector.empty, der(sig1, SigHash.SIGHASH_ALL), der(sig2, SigHash.SIGHASH_ALL), ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))))
         } else {
-            ScriptWitness(listOf(ByteVector.empty, der(sig2), der(sig1), ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))))
+            ScriptWitness(listOf(ByteVector.empty, der(sig2, SigHash.SIGHASH_ALL), der(sig1, SigHash.SIGHASH_ALL), ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))))
         }
 
     /**
@@ -118,20 +118,20 @@ object Scripts {
      * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
      */
     fun witnessToRemoteDelayedAfterDelay(localSig: ByteVector64, toRemoteDelayedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig), toRemoteDelayedScript))
+        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), toRemoteDelayedScript))
 
     /**
      * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
      */
     fun witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig), ByteVector.empty, toLocalDelayedScript))
+        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, toLocalDelayedScript))
 
     /**
      * This witness script spends (steals) a [[toLocalDelayed]] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
     fun witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig), ByteVector(byteArrayOf(1)), toLocalScript))
+        ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), ByteVector(byteArrayOf(1)), toLocalScript))
 
     fun htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteArray): List<ScriptElt> = listOf(
         // @formatter:off
@@ -159,7 +159,7 @@ object Scripts {
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig), paymentPreimage, htlcOfferedScript))
+        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), paymentPreimage, htlcOfferedScript))
 
     /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
     fun extractPreimageFromHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@{
@@ -174,7 +174,7 @@ object Scripts {
      * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
      */
     fun witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
-        ScriptWitness(listOf(der(localSig), paymentPreimage, htlcOffered))
+        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), paymentPreimage, htlcOffered))
 
     /** Extract the payment preimage from from a fulfilled offered htlc. */
     fun extractPreimageFromClaimHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@{
@@ -212,7 +212,7 @@ object Scripts {
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig), ByteVector.empty, htlcOfferedScript))
+        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, htlcOfferedScript))
 
     /** Extract the payment hash from a 2nd-stage HTLC Timeout transaction's witness script */
     fun extractPaymentHashFromHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@{
@@ -226,7 +226,7 @@ object Scripts {
      * claim its funds after timeout (consumes htlcReceived script from commit tx)
      */
     fun witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig), ByteVector.empty, htlcReceivedScript))
+        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, htlcReceivedScript))
 
     /** Extract the payment hash from a timed-out received htlc. */
     fun extractPaymentHashFromClaimHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@{
@@ -240,6 +240,6 @@ object Scripts {
      * for having published a revoked transaction
      */
     fun witnessHtlcWithRevocationSig(revocationSig: ByteVector64, revocationPubkey: PublicKey, htlcScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig), revocationPubkey.value, htlcScript))
+        ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), revocationPubkey.value, htlcScript))
 
 }

@@ -445,7 +445,7 @@ object Helpers {
                     feeratePerKwDelayed
                 )
             }?.let {
-                val sig = keyManager.sign(it, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint)
+                val sig = keyManager.sign(it, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, SigHash.SIGHASH_ALL)
                 Transactions.addSigs(it, sig).tx
             }
 
@@ -482,7 +482,7 @@ object Helpers {
                         feeratePerKwDelayed
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint)
+                    val sig = keyManager.sign(it, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, SigHash.SIGHASH_ALL)
                     Transactions.addSigs(it, sig).tx
                 }
             }
@@ -567,7 +567,7 @@ object Helpers {
                             feeratePerKwHtlc
                         )
                     }?.let {
-                        val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+                        val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
                         Transactions.addSigs(it, sig, preimage).tx
                     }
                 }
@@ -589,7 +589,7 @@ object Helpers {
                         feeratePerKwHtlc
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint)
+                    val sig = keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
                     Transactions.addSigs(it, sig).tx
                 }
             }
@@ -627,7 +627,7 @@ object Helpers {
                     claimMainFeeratePerKw
                 )
             }?.let {
-                val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+                val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
                 Transactions.addSigs(it, sig).tx
             }
 
@@ -691,7 +691,7 @@ object Helpers {
                         feeratePerKwMain
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+                    val sig = keyManager.sign(it, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
                     Transactions.addSigs(it, localPaymentPubkey, sig).tx
                 }
             }

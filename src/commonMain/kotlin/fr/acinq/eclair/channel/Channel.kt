@@ -47,6 +47,7 @@ sealed class ChannelEvent {
     ) : ChannelEvent() {
         init {
             require(channelVersion.hasStaticRemotekey) { "channel version $channelVersion is invalid (static_remote_key is not set)" }
+            require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
         }
     }
 
@@ -1020,6 +1021,7 @@ data class WaitForOpenChannel(
                         }
                         val channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
+                        require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
                         when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeeratePerKw)) {
                             is Either.Left -> {
                                 logger.error(err.value) { "invalid ${event.message} in state $this" }
