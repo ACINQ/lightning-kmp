@@ -618,7 +618,7 @@ object Helpers {
             val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
             val localPaymentPoint = keyManager.paymentPoint(channelKeyPath).publicKey
 
-            val mainTx = generateTx("claim-remote-delayed-outpu") {
+            val mainTx = generateTx("claim-remote-delayed-output") {
                 Transactions.makeClaimRemoteDelayedOutputTx(
                     tx,
                     commitments.localParams.dustLimit,
