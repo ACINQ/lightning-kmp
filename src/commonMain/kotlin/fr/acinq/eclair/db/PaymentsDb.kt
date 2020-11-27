@@ -82,6 +82,24 @@ sealed class WalletPayment {
                 else -> 0
             }
         }
+
+        /** Amount sent or received. */
+        fun amount(payment: WalletPayment): MilliSatoshi = when (payment) {
+            is IncomingPayment -> when (val status = payment.status) {
+                is IncomingPayment.Status.Received -> status.amount
+                else -> 0.msat
+            }
+            is OutgoingPayment -> payment.recipientAmount + payment.fees
+        }
+
+        /** Fees that applied to the payment. */
+        fun fees(payment: WalletPayment): MilliSatoshi = when (payment) {
+            is IncomingPayment -> when (val status = payment.status) {
+                is IncomingPayment.Status.Received -> status.receivedWith.fees
+                else -> 0.msat
+            }
+            is OutgoingPayment -> payment.fees
+        }
     }
 }
 
@@ -117,11 +135,15 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val s
     }
 
     sealed class ReceivedWith {
+        abstract val fees: MilliSatoshi
+
         /** Payment was received via existing lightning channels. */
-        object LightningPayment : ReceivedWith()
+        object LightningPayment : ReceivedWith() {
+            override val fees: MilliSatoshi = 0.msat
+        }
 
         /** Payment was received via a new channel opened to us. */
-        data class NewChannel(val channelId: ByteVector32?) : ReceivedWith()
+        data class NewChannel(override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
     }
 
     sealed class Status {
