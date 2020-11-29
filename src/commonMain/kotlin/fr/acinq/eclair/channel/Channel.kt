@@ -1016,9 +1016,6 @@ data class WaitForOpenChannel(
                         require(Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.StaticRemoteKey)) {
                             "static_remote_key is not set"
                         }
-                        require(Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.AnchorOutputs)) {
-                            "anchor_outputs is not set"
-                        }
                         val channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
                         require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }

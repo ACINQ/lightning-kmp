@@ -34,6 +34,9 @@ import java.io.File
 import java.nio.file.Files
 import java.sql.DriverManager
 
+/**
+ * this is a very simple Phoenix node that can be used to "test" Phoenix without the actual apps
+ */
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
     private val logger by eclairLogger()
@@ -128,6 +131,9 @@ object Node {
             override val channels = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
             override val payments = InMemoryPaymentsDb()
         }
+        // We only support anchor_outputs commitments, so we should anchor_outputs to mandatory.
+        // However we're currently only connecting to the Acinq node, which will reject mandatory anchors but will always use anchor_outputs when opening channels to us.
+        // We will change that and set this feature to mandatory once the Acinq node is ready to publicly activate anchor_outputs.
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "phoenix",
@@ -138,8 +144,8 @@ object Node {
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
                     ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
                     ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
-                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Mandatory),
+                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Optional),
                     ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
                 )
             ),
