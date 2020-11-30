@@ -40,9 +40,9 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
-data class PaymentProgress(val payment: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
-data class PaymentSent(val payment: OutgoingPayment, val fees: MilliSatoshi) : PeerListenerEvent()
-data class PaymentNotSent(val payment: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
+data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
+data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
+data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
 class Peer(
@@ -241,28 +241,28 @@ class Peer(
                 action is ChannelAction.ProcessCmdRes.AddFailed -> {
                     when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
                         is OutgoingPaymentHandler.Progress -> {
-                            listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
+                            listenerEventChannel.send(PaymentProgress(result.request, result.fees))
                             result.actions.forEach { input.send(it) }
                         }
-                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
+                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
                         null -> logger.debug { "non-final error, more partial payments are still pending: $actualChannelId->${action.error.message}" }
                     }
                 }
                 action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                     when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
                         is OutgoingPaymentHandler.Progress -> {
-                            listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
+                            listenerEventChannel.send(PaymentProgress(result.request, result.fees))
                             result.actions.forEach { input.send(it) }
                         }
-                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
-                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
+                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.request, result.payment))
+                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
                         null -> logger.debug { "non-final error, more partial payments are still pending: $actualChannelId->${action.result}" }
                     }
                 }
                 action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                     when (val result = outgoingPaymentHandler.processAddSettled(action)) {
-                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.payment, result.fees))
-                        is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "payment preimage received: ${result.payment.paymentId}->${result.preimage}" }
+                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.request, result.payment))
+                        is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "payment preimage received: ${result.request.paymentId}->${result.preimage}" }
                         null -> logger.debug { "unknown payment" }
                     }
                 }
@@ -508,10 +508,10 @@ class Peer(
             event is SendPayment -> {
                 when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
-                        listenerEventChannel.send(PaymentProgress(result.payment, result.fees))
+                        listenerEventChannel.send(PaymentProgress(result.request, result.fees))
                         result.actions.forEach { input.send(it) }
                     }
-                    is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.payment, result.failure))
+                    is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
                 }
             }
             event is CheckPaymentsTimeout -> {
