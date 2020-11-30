@@ -1,19 +1,12 @@
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.io.SatoshiKSerializer
 import fr.acinq.eclair.utils.sat
 import kotlinx.serialization.Serializable
 
 interface FeeEstimator {
-    fun getFeeratePerKb(target: Int): Long
-    fun getFeeratePerKw(target: Int): Long
-}
-
-interface FeeProvider {
-    fun getFeerates(): FeeratesPerKB
+    fun getFeerate(target: Int): FeeratePerKw
 }
 
 @Serializable
@@ -82,75 +75,5 @@ data class FeeratePerKw(@Serializable(with = SatoshiKSerializer::class) val feer
          * hence feerate-per-kw >= 253
          */
         val MinimumFeeratePerKw = FeeratePerKw(253.sat)
-    }
-}
-
-/** Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes). */
-data class FeeratesPerKB(
-    val block1: FeeratePerKB,
-    val blocks2: FeeratePerKB,
-    val blocks6: FeeratePerKB,
-    val blocks12: FeeratePerKB,
-    val blocks36: FeeratePerKB,
-    val blocks72: FeeratePerKB,
-    val blocks144: FeeratePerKB,
-    val blocks1008: FeeratePerKB
-) {
-    init {
-        require(block1.feerate > 0.sat && blocks2.feerate > 0.sat && blocks6.feerate > 0.sat && blocks12.feerate > 0.sat && blocks36.feerate > 0.sat && blocks72.feerate > 0.sat && blocks144.feerate > 0.sat && blocks1008.feerate > 0.sat) { "all feerates must be strictly greater than 0" }
-    }
-
-    fun feePerBlock(target: Int): FeeratePerKB = when {
-        target == 1 -> block1
-        target == 2 -> blocks2
-        target <= 6 -> blocks6
-        target <= 12 -> blocks12
-        target <= 36 -> blocks36
-        target <= 72 -> blocks72
-        target <= 144 -> blocks144
-        else -> blocks1008
-    }
-}
-
-/** Fee rates in satoshi/kw (1 kw = 1000 weight units). */
-data class FeeratesPerKw(
-    val block1: FeeratePerKw,
-    val blocks2: FeeratePerKw,
-    val blocks6: FeeratePerKw,
-    val blocks12: FeeratePerKw,
-    val blocks36: FeeratePerKw,
-    val blocks72: FeeratePerKw,
-    val blocks144: FeeratePerKw,
-    val blocks1008: FeeratePerKw
-) {
-    init {
-        require(block1.feerate > 0.sat && blocks2.feerate > 0.sat && blocks6.feerate > 0.sat && blocks12.feerate > 0.sat && blocks36.feerate > 0.sat && blocks72.feerate > 0.sat && blocks144.feerate > 0.sat && blocks1008.feerate > 0.sat) { "all feerates must be strictly greater than 0" }
-    }
-
-    constructor(feerates: FeeratesPerKB) : this(
-        FeeratePerKw(feerates.block1),
-        FeeratePerKw(feerates.blocks2),
-        FeeratePerKw(feerates.blocks6),
-        FeeratePerKw(feerates.blocks12),
-        FeeratePerKw(feerates.blocks36),
-        FeeratePerKw(feerates.blocks72),
-        FeeratePerKw(feerates.blocks144),
-        FeeratePerKw(feerates.blocks1008)
-    )
-
-    fun feePerBlock(target: Int): FeeratePerKw = when {
-        target == 1 -> block1
-        target == 2 -> blocks2
-        target <= 6 -> blocks6
-        target <= 12 -> blocks12
-        target <= 36 -> blocks36
-        target <= 72 -> blocks72
-        target <= 144 -> blocks144
-        else -> blocks1008
-    }
-
-    companion object {
-        /** Used in tests. */
-        fun single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(feeratePerKw, feeratePerKw, feeratePerKw, feeratePerKw, feeratePerKw, feeratePerKw, feeratePerKw, feeratePerKw)
     }
 }
