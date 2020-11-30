@@ -19,6 +19,7 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
@@ -53,7 +54,7 @@ sealed class ChannelEvent {
     }
 
     data class InitFundee(val temporaryChannelId: ByteVector32, val localParams: LocalParams, val remoteInit: Init) : ChannelEvent()
-    data class Restore(val state: ChannelState) : ChannelEvent()
+    data class Restore(val state: ChannelState, @Transient val postRestartCommands: List<HtlcSettlementCommand>) : ChannelEvent()
     data class MessageReceived(val message: LightningMessage) : ChannelEvent()
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
@@ -606,9 +607,9 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     staticParams.nodeParams.minDepthBlocks.toLong(),
                     BITCOIN_FUNDING_DEPTHOK
                 )
-                val actions = listOf(ChannelAction.Blockchain.SendWatch(watchSpent), ChannelAction.Blockchain.SendWatch(watchConfirmed))
                 // TODO: ask watcher for the funding tx when restoring WaitForFundingConfirmed
-                Pair(Offline(event.state), actions)
+                val actions = listOf(ChannelAction.Blockchain.SendWatch(watchSpent), ChannelAction.Blockchain.SendWatch(watchConfirmed))
+                Pair(Offline(event.state, event.postRestartCommands), actions)
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -624,7 +625,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
 }
 
 @Serializable
-data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCommitments() {
+data class Offline(val state: ChannelStateWithCommitments, @Transient val postRestartCommands: List<HtlcSettlementCommand> = listOf()) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
@@ -656,7 +657,6 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
                         val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
                         val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
-
                         val channelReestablish = ChannelReestablish(
                             channelId = state.channelId,
                             nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
@@ -667,7 +667,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                         )
                         logger.info { "syncing $state" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
-                        Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
+                        Pair(Syncing(nextState, false, postRestartCommands), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
                 }
             }
@@ -715,7 +715,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
             is ChannelEvent.NewBlock -> {
                 // TODO: is this the right thing to do ?
                 val (newState, _) = state.process(event)
-                Pair(Offline(newState as ChannelStateWithCommitments), listOf())
+                Pair(Offline(newState as ChannelStateWithCommitments, postRestartCommands), listOf())
             }
             else -> unhandled(event)
         }
@@ -733,7 +733,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
 @Serializable
-data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelStateWithCommitments() {
+data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean, @Transient val postRestartCommands: List<HtlcSettlementCommand> = listOf()) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
@@ -863,6 +863,10 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 }
                                 val (commitments1, sendQueue1) = handleSync(event.message, state, keyManager, logger)
                                 actions.addAll(sendQueue1)
+                                if (postRestartCommands.isNotEmpty()) {
+                                    actions.addAll(postRestartCommands.map { ChannelAction.Message.SendToSelf(it) })
+                                    actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                                }
 
                                 // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
                                 state.localShutdown?.let {

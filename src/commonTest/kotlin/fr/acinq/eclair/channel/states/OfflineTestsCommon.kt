@@ -4,9 +4,15 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.blockchain.WatchConfirmed
+import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.db.InMemoryPaymentsDb
+import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
@@ -15,6 +21,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class OfflineTestsCommon : EclairTestSuite() {
+
     @Test
     fun `handle disconnect - connect events (no messages sent yet)`() {
         val (alice, bob) = TestsHelper.reachNormal()
@@ -166,4 +173,74 @@ class OfflineTestsCommon : EclairTestSuite() {
 
         assertEquals(1, alice.commitments.localNextHtlcId)
     }
+
+    @Test
+    fun `find pending htlcs after wallet restarts`() = runSuspendTest {
+        val preimage = randomBytes32()
+        val (alice, bob, htlcs) = run {
+            val (alice, bob) = TestsHelper.reachNormal()
+            // MPP payment alice -> bob that will be fulfilled (2 htlcs).
+            val (alice1, bob1, htlc1) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(75_000.msat, alice.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong(), preimage).second, alice, bob)
+            val (alice2, bob2, htlc2) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(50_000.msat, alice.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong(), preimage).second, alice1, bob1)
+            // htlcs alice -> bob that will be failed.
+            val (alice3, bob3, htlc3) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(60_000.msat, alice.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong(), randomBytes32()).second, alice2, bob2)
+            val (alice4, bob4, htlc4) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(65_000.msat, alice.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong(), randomBytes32()).second, alice3, bob3)
+            // htlcs bob -> alice that will be failed.
+            val (bob5, alice5, htlc5) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(65_000.msat, alice.staticParams.nodeParams.nodeId, alice.currentBlockHeight.toLong(), randomBytes32()).second, bob4, alice4)
+            val (alice6, bob6) = TestsHelper.crossSign(alice5, bob5)
+            Triple(alice6 as Normal, bob6 as Normal, listOf(htlc1, htlc2, htlc3, htlc4, htlc5))
+        }
+
+        val postRestartAlice = Commitments.makePostRestartCommands(alice.commitments, InMemoryPaymentsDb())
+        assertEquals(listOf(CMD_FAIL_HTLC(htlcs[4].id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), false)), postRestartAlice)
+
+        // Bob has received one of the payments but restarted before he could fulfill it.
+        val paymentsDb = InMemoryPaymentsDb()
+        paymentsDb.addIncomingPayment(preimage, IncomingPayment.Origin.KeySend)
+        paymentsDb.receivePayment(htlcs[0].paymentHash, 125_000.msat, IncomingPayment.ReceivedWith.LightningPayment)
+        val postRestartBob = Commitments.makePostRestartCommands(bob.commitments, paymentsDb)
+        val expected = setOf(
+            CMD_FULFILL_HTLC(htlcs[0].id, preimage, false),
+            CMD_FULFILL_HTLC(htlcs[1].id, preimage, false),
+            CMD_FAIL_HTLC(htlcs[2].id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), false),
+            CMD_FAIL_HTLC(htlcs[3].id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), false),
+        )
+        assertEquals(expected, postRestartBob.toSet())
+    }
+
+    @Test
+    fun `execute commands after wallet restarts`() {
+        val (alice, bob) = TestsHelper.reachNormal()
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline }
+
+        val initState = WaitForInit(alice.staticParams, alice.currentTip, alice.currentOnChainFeerates)
+        val postRestartCommands = listOf(
+            CMD_FULFILL_HTLC(3, randomBytes32(), false),
+            CMD_FAIL_HTLC(5, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), false),
+            CMD_FAIL_HTLC(6, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), false),
+        )
+        val (alice1, actions1) = initState.process(ChannelEvent.Restore(alice, postRestartCommands))
+        assertEquals(2, actions1.size)
+        actions1.hasWatch<WatchSpent>()
+        actions1.hasWatch<WatchConfirmed>()
+        assertTrue { alice1 is Offline }
+
+        val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
+        val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.Connected(localInit, remoteInit))
+        actionsAlice2.hasOutgoingMessage<ChannelReestablish>()
+        assertTrue { alice2 is Syncing }
+        val (_, actionsBob2) = bob1.process(ChannelEvent.Connected(localInit, remoteInit))
+        val channelReestablishBob = actionsBob2.hasOutgoingMessage<ChannelReestablish>()
+
+        val (alice3, actions3) = alice2.process(ChannelEvent.MessageReceived(channelReestablishBob))
+        assertEquals(alice, alice3)
+        assertEquals(6, actions3.size)
+        actions3.hasOutgoingMessage<FundingLocked>()
+        assertEquals(postRestartCommands, actions3.findCommands<HtlcSettlementCommand>())
+        actions3.hasCommand<CMD_SIGN>()
+        actions3.hasWatch<WatchConfirmed>()
+    }
+
 }

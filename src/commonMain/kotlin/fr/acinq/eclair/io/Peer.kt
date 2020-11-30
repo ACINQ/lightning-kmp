@@ -121,9 +121,8 @@ class Peer(
         launch {
             // we don't restore closed channels
             db.channels.listLocalChannels().filterNot { it is Closed }.forEach {
-                logger.info { "restoring $it" }
                 val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onChainFeerates)
-                val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState))
+                val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState, Commitments.makePostRestartCommands(it.commitments, db.payments)))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
             }
@@ -435,7 +434,7 @@ class Peer(
                                     logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
                                     val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onChainFeerates)
-                                    val event1 = ChannelEvent.Restore(backup as ChannelState)
+                                    val event1 = ChannelEvent.Restore(backup as ChannelState, Commitments.makePostRestartCommands(backup.commitments, db.payments))
                                     val (state1, actions1) = state.process(event1)
                                     processActions(msg.channelId, actions1)
 

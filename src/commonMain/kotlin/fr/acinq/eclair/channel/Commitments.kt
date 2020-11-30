@@ -10,6 +10,8 @@ import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.IncomingPayment
+import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
@@ -636,6 +638,24 @@ data class Commitments(
         fun revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index)
 
         fun revocationHash(seed: ByteVector32, index: Long): ByteVector32 = ByteVector32(sha256(revocationPreimage(seed, index)))
+
+        /**
+         * When a channel is restored after a wallet restart, we need to settle incoming HTLCs that haven't been forwarded to the payment handler,
+         * otherwise they will stay in our commitment until they timeout and our peer closes the channel.
+         */
+        suspend fun makePostRestartCommands(commitments: Commitments, paymentsDb: IncomingPaymentsDb): List<HtlcSettlementCommand> {
+            // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been forwarded to the payment handler).
+            // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when we subsequently sign it.
+            // That's why we need to look in *their* commitment with direction=OUT.
+            return commitments.remoteCommit.spec.htlcs.outgoings().map { htlc ->
+                val payment = paymentsDb.getIncomingPayment(htlc.paymentHash)
+                if (payment?.status is IncomingPayment.Status.Received) {
+                    CMD_FULFILL_HTLC(htlc.id, payment.preimage, commit = false)
+                } else {
+                    CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), commit = false)
+                }
+            }
+        }
 
         fun makeLocalTxs(
             keyManager: KeyManager,
