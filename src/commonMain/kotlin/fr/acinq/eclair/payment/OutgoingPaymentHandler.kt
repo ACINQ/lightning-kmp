@@ -23,16 +23,16 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
     interface ProcessFulfillResult
 
     /** A payment attempt has been made: we provide information about the fees we're paying, which may increase as we re-try our payment. */
-    data class Progress(val payment: SendPayment, val fees: MilliSatoshi, val actions: List<WrappedChannelEvent>) : SendPaymentResult, ProcessFailureResult
+    data class Progress(val request: SendPayment, val fees: MilliSatoshi, val actions: List<WrappedChannelEvent>) : SendPaymentResult, ProcessFailureResult
 
     /** The payment could not be sent. */
-    data class Failure(val payment: SendPayment, val failure: OutgoingPaymentFailure) : SendPaymentResult, ProcessFailureResult
+    data class Failure(val request: SendPayment, val failure: OutgoingPaymentFailure) : SendPaymentResult, ProcessFailureResult
 
     /** The recipient released the preimage, but we are still waiting for some partial payments to settle. */
-    data class PreimageReceived(val payment: SendPayment, val preimage: ByteVector32) : ProcessFulfillResult
+    data class PreimageReceived(val request: SendPayment, val preimage: ByteVector32) : ProcessFulfillResult
 
     /** The payment was successfully made. */
-    data class Success(val payment: OutgoingPayment, val preimage: ByteVector32, val fees: MilliSatoshi) : ProcessFailureResult, ProcessFulfillResult
+    data class Success(val request: SendPayment, val payment: OutgoingPayment, val preimage: ByteVector32) : ProcessFailureResult, ProcessFulfillResult
 
     private val logger by eclairLogger()
     private val childToParentId = mutableMapOf<UUID, UUID>()
@@ -239,7 +239,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
             logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment successfully sent (fees=${updated.fees})" }
             db.updateOutgoingPayment(payment.request.paymentId, preimage)
             val r = payment.request
-            Success(OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Succeeded(preimage)), preimage, updated.fees)
+            Success(r, OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Succeeded(preimage)), preimage)
         } else {
             PreimageReceived(payment.request, preimage)
         }
@@ -254,14 +254,16 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
             else -> {
                 logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId HTLC succeeded (wallet restart): $preimage" }
                 db.updateOutgoingPart(partId, preimage)
+                // We can re-create the request from what we have in the DB.
+                val request = SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal)
                 val hasMorePendingParts = payment.parts.any { it.status == OutgoingPayment.Part.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
                     logger.info { "h:${payment.paymentHash} p:${payment.id} payment successfully sent (wallet restart)" }
                     db.updateOutgoingPayment(payment.id, preimage)
                     val succeeded = db.getOutgoingPayment(payment.id)!! //  NB: we reload the payment to ensure all parts status are updated
-                    Success(succeeded, preimage, succeeded.fees)
+                    Success(request, succeeded, preimage)
                 } else {
-                    PreimageReceived(SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal), preimage)
+                    PreimageReceived(request, preimage)
                 }
             }
         }
@@ -403,7 +405,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
                 val result = if (updated.isComplete()) {
                     logger.info { "h:${request.paymentHash} p:${request.paymentId} payment successfully sent (fees=${updated.fees})" }
                     db.updateOutgoingPayment(request.paymentId, preimage)
-                    Success(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Succeeded(preimage)), preimage, updated.fees)
+                    Success(request, OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Succeeded(preimage)), preimage)
                 } else {
                     null
                 }
