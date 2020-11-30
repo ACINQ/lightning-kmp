@@ -85,6 +85,12 @@ sealed class Feature {
         override val mandatory get() = 18
     }
 
+    @Serializable
+    object AnchorOutputs : Feature() {
+        override val rfcName get() = "option_anchor_outputs"
+        override val mandatory get() = 20
+    }
+
     // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
     // We're not advertising these bits yet in our announcements, clients have to assume support.
     // This is why we haven't added them yet to `areSupported`.
@@ -107,6 +113,20 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
     fun hasFeature(feature: Feature, support: FeatureSupport? = null): Boolean =
         if (support != null) activated.contains(ActivatedFeature(feature, support))
         else hasFeature(feature, FeatureSupport.Optional) || hasFeature(feature, FeatureSupport.Mandatory)
+
+    /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
+    fun areSupported(remoteFeatures: Features): Boolean {
+        // we allow unknown odd features (it's ok to be odd)
+        val unknownFeaturesOk = remoteFeatures.unknown.all { it.bitIndex % 2 == 1 }
+        // we verify that we activated every mandatory feature they require
+        val knownFeaturesOk = remoteFeatures.activated.all {
+            when (it.support) {
+                FeatureSupport.Optional -> true
+                FeatureSupport.Mandatory -> hasFeature(it.feature)
+            }
+        }
+        return unknownFeaturesOk && knownFeaturesOk
+    }
 
     fun toByteArray(): ByteArray {
         val activatedFeatureBytes =
@@ -137,17 +157,8 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             Feature.PaymentSecret,
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
+            Feature.AnchorOutputs,
             Feature.TrampolinePayment
-        )
-
-        private val supportedMandatoryFeatures: Set<Feature> = setOf(
-            Feature.OptionDataLossProtect,
-            Feature.ChannelRangeQueries,
-            Feature.VariableLengthOnion,
-            Feature.ChannelRangeQueriesExtended,
-            Feature.PaymentSecret,
-            Feature.BasicMultiPartPayment,
-            Feature.Wumbo
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
@@ -198,6 +209,7 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             Feature.ChannelRangeQueriesExtended to listOf(Feature.ChannelRangeQueries),
             Feature.PaymentSecret to listOf(Feature.VariableLengthOnion),
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
+            Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.TrampolinePayment to listOf(Feature.PaymentSecret)
         )
 
@@ -215,22 +227,11 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             return null
         }
 
-        /**
-         * A feature set is supported if all even bits are supported.
-         * We just ignore unknown odd bits.
-         */
-        fun areSupported(features: Features): Boolean =
-            !features.unknown.any { it.bitIndex % 2 == 0 } && features.activated.all {
-                when (it.support) {
-                    FeatureSupport.Optional -> true
-                    FeatureSupport.Mandatory -> supportedMandatoryFeatures.contains(it.feature)
-                }
-            }
+        fun areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
+
 
         /** returns true if both have at least optional support */
         fun canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean =
             localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
-
     }
-
 }

@@ -364,7 +364,7 @@ data class LocalParams constructor(
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
     @Serializable(with = ByteVectorKSerializer::class) val defaultFinalScriptPubKey: ByteVector,
-    @Serializable(with = PublicKeyKSerializer::class) val walletStaticPaymentBasepoint: PublicKey?,
+    @Serializable(with = PublicKeyKSerializer::class) val walletStaticPaymentBasepoint: PublicKey,
     val features: Features
 )
 
@@ -417,10 +417,10 @@ data class ChannelVersion(val bits: BitField) {
 
         val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
         val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
+        val USE_ANCHOR_OUTPUTS = fromBit(USE_ANCHOR_OUTPUTS_BIT)
         val ZERO_RESERVE = fromBit(ZERO_RESERVE_BIT)
-
-        val STANDARD = ZEROES or USE_PUBKEY_KEYPATH
-        val STATIC_REMOTEKEY = STANDARD or USE_STATIC_REMOTEKEY // USE_PUBKEY_KEYPATH + USE_STATIC_REMOTEKEY
+        
+        val STANDARD = ZEROES or USE_PUBKEY_KEYPATH or USE_STATIC_REMOTEKEY or USE_ANCHOR_OUTPUTS
     }
 }
 

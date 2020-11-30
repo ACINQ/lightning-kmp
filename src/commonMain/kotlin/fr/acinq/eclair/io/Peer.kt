@@ -82,16 +82,7 @@ class Peer(
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, db.payments, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
 
-    private val features = Features(
-        setOf(
-            ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-            ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
-            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-            ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-        )
-    )
+    private val features = nodeParams.features
 
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
@@ -174,8 +165,8 @@ class Peer(
                     logger.warning { ex.message }
                 }
             }
-            logger.info { "sending init ${LightningMessage.encode(ourInit)!!}" }
-            send(LightningMessage.encode(ourInit)!!)
+            logger.info { "sending init $ourInit" }
+            send(LightningMessage.encode(ourInit) ?: error("cannot serialize $ourInit"))
 
             suspend fun doPing() {
                 val ping = Hex.decode("0012000a0004deadbeef")
@@ -361,16 +352,25 @@ class Peer(
                 when {
                     msg is Init -> {
                         logger.info { "received $msg" }
-                        logger.info { "peer is using features ${Features(msg.features)}" }
-                        theirInit = msg
-                        _connectionState.value = Connection.ESTABLISHED
-                        logger.info { "before channels: $_channels" }
-                        _channels = _channels.mapValues { entry ->
-                            val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))
-                            processActions(entry.key, actions)
-                            state1
+                        val theirFeatures = Features(msg.features)
+                        logger.info { "peer is using features $theirFeatures" }
+                        when (val error = Features.validateFeatureGraph(features)) {
+                            is Features.Companion.FeatureException -> {
+                                logger.error(error)
+                                // TODO: disconnect peer
+                            }
+                            null -> {
+                                theirInit = msg
+                                _connectionState.value = Connection.ESTABLISHED
+                                logger.info { "before channels: $_channels" }
+                                _channels = _channels.mapValues { entry ->
+                                    val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))
+                                    processActions(entry.key, actions)
+                                    state1
+                                }
+                                logger.info { "after channels: $_channels" }
+                            }
                         }
-                        logger.info { "after channels: $_channels" }
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
@@ -392,9 +392,7 @@ class Peer(
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
                         val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                        val walletStaticPaymentBasepoint: PublicKey? = if (Features.canUseFeature(features, Features(theirInit!!.features), Feature.StaticRemoteKey)) {
-                            closingPubkey
-                        } else null
+                        val walletStaticPaymentBasepoint: PublicKey = closingPubkey
                         val localParams = LocalParams(
                             nodeParams.nodeId,
                             fundingKeyPath,

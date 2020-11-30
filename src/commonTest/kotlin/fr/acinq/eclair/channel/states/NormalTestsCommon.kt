@@ -19,7 +19,6 @@ import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.tests.utils.EclairTestSuite
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.weight2fee
 import fr.acinq.eclair.transactions.incomings
 import fr.acinq.eclair.transactions.outgoings
@@ -157,9 +156,9 @@ class NormalTestsCommon : EclairTestSuite() {
         val expectError = InsufficientFunds(
             alice0.channelId,
             amount = Int.MAX_VALUE.msat,
-            missing = 1388_843.sat,
+            missing = 1397503.sat,
             reserve = 20_000.sat,
-            fees = 8960.sat
+            fees = 13620.sat
         )
         assertEquals(expectError, actualError)
         assertEquals(alice0, alice1)
@@ -184,12 +183,12 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)`() {
         val (alice0, bob0) = reachNormal()
-        val (alice1, bob1) = addHtlc(758_640_000.msat, alice0, bob0).first
+        val (alice1, bob1) = addHtlc(749980000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
         assertEquals(0.msat, (alice2 as ChannelStateWithCommitments).commitments.availableBalanceForSend())
 
         tailrec fun loop(bob: ChannelState, count: Int): ChannelState = if (count == 0) bob else {
-            val (newbob, actions1) = bob.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 12_000_000.msat)))
+            val (newbob, actions1) = bob.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 16_000_000.msat)))
             actions1.hasOutgoingMessage<UpdateAddHtlc>()
             loop(newbob, count - 1)
         }
@@ -197,8 +196,8 @@ class NormalTestsCommon : EclairTestSuite() {
         // actual test begins
         // at this point alice has the minimal amount to sustain a channel
         // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first two HTLCs should be allowed
-        val bob3 = loop(bob2, 7)
-
+        val bob3 = loop(bob2, 9)
+        // 2640 000 2640 000 msat
         // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
         val (_, actionsBob4) = bob3.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 12_500_000.msat)))
         actionsBob4.findCommandError<RemoteCannotAffordFeesForNewHtlc>()
@@ -211,11 +210,11 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 200_000_000.msat)))
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
-        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 51_760_000.msat)))
+        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 43_000_000.msat)))
         actionsAlice3.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsAlice4) = alice3.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1000_000.msat)))
         val actualError = actionsAlice4.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1000.sat, reserve = 20_000.sat, fees = 12_400.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 900.sat, reserve = 20_000.sat, fees = 17_060.sat)
         assertEquals(expectedError, actualError)
     }
 
@@ -228,7 +227,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 500_000_000.msat)))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 348240.sat, reserve = 20_000.sat, fees = 12_400.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 356900.sat, reserve = 20_000.sat, fees = 17060.sat)
         assertEquals(expectError, actualError)
     }
 
@@ -285,7 +284,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val failAdd = defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(failAdd))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 578_133.sat, 20_000.sat, 10_680.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 586_793.sat, 20_000.sat, 15_340.sat)
         assertEquals(expectedError, actualError)
     }
 
@@ -376,13 +375,13 @@ class NormalTestsCommon : EclairTestSuite() {
         // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
         // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
         val aliceMinReceive =
-            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcSuccessWeight)
+            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_SUCCESS_WEIGHT)
         val aliceMinOffer =
-            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcTimeoutWeight)
+            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_TIMEOUT_WEIGHT)
         val bobMinReceive =
-            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcSuccessWeight)
+            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_SUCCESS_WEIGHT)
         val bobMinOffer =
-            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Transactions.htlcTimeoutWeight)
+            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_TIMEOUT_WEIGHT)
         val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
         val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
         val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx
@@ -1271,7 +1270,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 71620000.sat, reserve = 20000.sat, fees = 72400000.sat).message)
+        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 111620660.sat, reserve = 20000.sat, fees = 112400660.sat).message)
     }
 
     @Test
@@ -1319,7 +1318,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         alice8 as ChannelStateWithCommitments; bob8 as ChannelStateWithCommitments
         val bobCommitTx = bob8.commitments.localCommit.publishableTxs.commitTx.tx
-        assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs and 4 pending htlcs
+        assertEquals(8, bobCommitTx.txOut.size) // 2 main outputs and 4 pending htlcs
 
         val (aliceClosing, actions) = alice8.process(
             ChannelEvent.WatchReceived(
@@ -1335,8 +1334,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(actions.isNotEmpty())
         // in response to that, alice publishes its claim txes
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        assertEquals(4, claimTxes.size)
-        val claimMain = claimTxes.first()
+        assertEquals(3, claimTxes.size)
         // in addition to its main output, alice can only claim 3 out of 4 htlcs,
         // she can't do anything regarding the htlc sent by bob for which she does not have the preimage
         val amountClaimed = claimTxes.map { claimHtlcTx ->
@@ -1346,25 +1344,13 @@ class NormalTestsCommon : EclairTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(815220.sat, amountClaimed) // TODO formerly 814880.sat ?
+        assertEquals(383640.sat, amountClaimed) // TODO formerly 814880.sat ?
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.findWatches<WatchConfirmed>()[1].event)
         assertEquals(3, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
 
         assertEquals(1, aliceClosing.remoteCommitPublished?.claimHtlcSuccessTxs?.size)
         assertEquals(2, aliceClosing.remoteCommitPublished?.claimHtlcTimeoutTxs?.size)
-
-        // assert the feerate of the claim main is what we expect
-        aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
-            val feerates = aliceClosing.currentOnChainFeerates
-            val expectedFeeRate = feerates.claimMainFeeratePerKw
-            val expectedFee = weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
-            val claimFee = claimMain.txIn.map {
-                bobCommitTx.txOut[it.outPoint.index.toInt()].amount
-            }.sum() - claimMain.txOut.map { it.amount }.sum()
-            assertEquals(expectedFee, claimFee)
-        }
     }
 
     @Test
@@ -1407,7 +1393,7 @@ class NormalTestsCommon : EclairTestSuite() {
         alice9 as ChannelStateWithCommitments; bob9 as ChannelStateWithCommitments
         // bob publishes his current commit tx
         val bobCommitTx = bob9.commitments.localCommit.publishableTxs.commitTx.tx
-        assertEquals(5, bobCommitTx.txOut.size) // 2 main outputs and 3 pending htlcs
+        assertEquals(7, bobCommitTx.txOut.size) // 2 main outputs and 3 pending htlcs
 
         val (aliceClosing, actions) = alice9.process(
             ChannelEvent.WatchReceived(
@@ -1424,9 +1410,8 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // in response to that, alice publishes its claim txes
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        assertEquals(3, claimTxes.size)
-        val claimMain = claimTxes.first()
-        // in addition to its main output, alice can only claim 2 out of 3 htlcs,
+        assertEquals(2, claimTxes.size)
+        // alice can only claim 2 out of 3 htlcs,
         // she can't do anything regarding the htlc sent by bob for which she does not have the preimage
         val amountClaimed = claimTxes.map { claimHtlcTx ->
             assertEquals(1, claimHtlcTx.txIn.size)
@@ -1435,25 +1420,13 @@ class NormalTestsCommon : EclairTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(822330.sat, amountClaimed) // TODO formerly 822310.sat ?
+        assertEquals(339060.sat, amountClaimed) // TODO formerly 822310.sat ?
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(claimMain), actions.findWatches<WatchConfirmed>()[1].event)
         assertEquals(2, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
 
         assertEquals(0, aliceClosing.nextRemoteCommitPublished?.claimHtlcSuccessTxs?.size)
         assertEquals(2, aliceClosing.nextRemoteCommitPublished?.claimHtlcTimeoutTxs?.size)
-
-        // assert the feerate of the claim main is what we expect
-        aliceClosing.staticParams.nodeParams.onChainFeeConf.run {
-            val feerates = aliceClosing.currentOnChainFeerates
-            val expectedFeeRate = feerates.claimMainFeeratePerKw
-            val expectedFee = weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
-            val claimFee = claimMain.txIn.map {
-                bobCommitTx.txOut[it.outPoint.index.toInt()].amount
-            }.sum() - claimMain.txOut.map { it.amount }.sum()
-            assertEquals(expectedFee, claimFee)
-        }
     }
 
     @Test
@@ -1484,8 +1457,8 @@ class NormalTestsCommon : EclairTestSuite() {
         //  a->b =  10 000
         //  a->b =  10 000
         //  a->b =  10 000
-        // 2 main outputs + 4 htlc
-        assertEquals(6, revokedTx.txOut.size)
+        // 2 anchor outputs + 2 main outputs + 4 htlc
+        assertEquals(8, revokedTx.txOut.size)
 
         val (aliceClosing, actions) = alice.process(
             ChannelEvent.WatchReceived(
@@ -1503,8 +1476,8 @@ class NormalTestsCommon : EclairTestSuite() {
         actions.hasOutgoingMessage<Error>()
 
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainTx = claimTxes[0]
-        val mainPenaltyTx = claimTxes[1]
+        // we don't need to claim our output since we use static_remote_key
+        val mainPenaltyTx = claimTxes[0]
         // TODO business code is disabled for now
         //      val htlcPenaltyTxs = claimTxes.drop(2)
         //      assertEquals(2, htlcPenaltyTxs.size)
@@ -1512,13 +1485,11 @@ class NormalTestsCommon : EclairTestSuite() {
         //      assertEquals(htlcPenaltyTxs.map { it.txIn.first().outPoint.index }.toSet().size, htlcPenaltyTxs.size)
 
         assertEquals(BITCOIN_TX_CONFIRMED(revokedTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(mainTx), actions.findWatches<WatchConfirmed>()[1].event)
         assertTrue(actions.findWatches<WatchSpent>().all { it.event is BITCOIN_OUTPUT_SPENT })
         // TODO business code is disabled for now
         //        assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
         //        htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
 
-        Transaction.correctlySpends(mainTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         Transaction.correctlySpends(mainPenaltyTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // TODO business code is disabled for now
 //            htlcPenaltyTxs.forEach {
@@ -1526,7 +1497,6 @@ class NormalTestsCommon : EclairTestSuite() {
 //            }
 
         // two main outputs are 760 000 and 200 000
-        assertEquals(741500.sat, mainTx.txOut[0].amount)
         assertEquals(195160.sat, mainPenaltyTx.txOut[0].amount)
         // TODO business code is disabled for now
         //        assertEquals(4540.sat, htlcPenaltyTxs[0].txOut[0].amount)
@@ -1563,7 +1533,7 @@ class NormalTestsCommon : EclairTestSuite() {
         //   bob = 200 000
         //  a->b =  10 000
         //  a->b =  10 000
-        assertEquals(4, revokedTx.txOut.size)
+        assertEquals(6, revokedTx.txOut.size)
 
         val (aliceClosing, actions) = alice5.process(
             ChannelEvent.WatchReceived(
@@ -1580,8 +1550,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actions.hasOutgoingMessage<Error>()
 
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainTx = claimTxes[0]
-        val mainPenaltyTx = claimTxes[1]
+        val mainPenaltyTx = claimTxes[0]
         // TODO business code is disabled for now
         //      val htlcPenaltyTxs = claimTxes.drop(2)
         //      assertEquals(2, htlcPenaltyTxs.size)
@@ -1589,13 +1558,11 @@ class NormalTestsCommon : EclairTestSuite() {
         //      assertEquals(htlcPenaltyTxs.map { it.txIn.first().outPoint.index }.toSet().size, htlcPenaltyTxs.size)
 
         assertEquals(BITCOIN_TX_CONFIRMED(revokedTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(mainTx), actions.findWatches<WatchConfirmed>()[1].event)
         assertTrue(actions.findWatches<WatchSpent>().all { it.event is BITCOIN_OUTPUT_SPENT })
         // TODO business code is disabled for now
         //        assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
         //        htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
 
-        Transaction.correctlySpends(mainTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         Transaction.correctlySpends(mainPenaltyTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // TODO business code is disabled for now
 //            htlcPenaltyTxs.forEach {

@@ -8,13 +8,13 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.LocalParams
 
 object PeerChannels {
-    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: PublicKey?, isFunder: Boolean, fundingAmount: Satoshi): LocalParams {
+    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: PublicKey, isFunder: Boolean, fundingAmount: Satoshi): LocalParams {
         // we make sure that funder and fundee key path end differently
         val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)
         return makeChannelParams(nodeParams, defaultFinalScriptPubkey, localPaymentBasepoint, isFunder, fundingAmount, fundingKeyPath)
     }
 
-    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: PublicKey?, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: KeyPath): LocalParams {
+    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: PublicKey, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: KeyPath): LocalParams {
         return LocalParams(
             nodeParams.nodeId,
             fundingKeyPath,

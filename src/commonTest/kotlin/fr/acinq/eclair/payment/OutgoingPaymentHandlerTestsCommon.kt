@@ -747,7 +747,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
                 shortChannelId = it.first,
                 commitments = alice.commitments.copy(
                     channelId = channelId,
-                    remoteCommit = alice.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), 0, 50_000.msat, it.second + reserve.toMilliSatoshi()))
+                    remoteCommit = alice.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), 0, 50_000.msat, (it.second + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi())))
                 )
             )
             channelId to channel

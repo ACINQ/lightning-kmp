@@ -9,8 +9,6 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.crypto.sphinx.FailurePacket
-import fr.acinq.eclair.crypto.sphinx.Sphinx
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVector64KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
@@ -42,7 +40,6 @@ data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<Upda
 
 @Serializable
 data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
-data class Changes(val ourChanges: LocalChanges, val theirChanges: RemoteChanges)
 @Serializable
 data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64)
 @Serializable
@@ -83,8 +80,8 @@ data class Commitments(
     @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector = ByteVector.empty
 ) {
     init {
-        // either we use static remote key and have a static point or we don't and we don't have a static point
-        require(channelVersion.hasStaticRemotekey == (localParams.walletStaticPaymentBasepoint != null)) { "localParams.localPaymentBasepoint does not match channel version $channelVersion" }
+        require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
+        require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
     }
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
@@ -472,7 +469,8 @@ data class Commitments(
 
         val sortedHtlcTxs: List<TransactionWithInputInfo> = (htlcTimeoutTxs + htlcSuccessTxs).sortedBy { it.input.outPoint.index }
         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint) }
+        // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
+        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info {
@@ -538,7 +536,7 @@ data class Commitments(
         if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
             return Either.Left(HtlcSigCountMismatch(channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint) }
+        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
         val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
         // combine the sigs to make signed txs
         val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().mapNotNull { (htlcTx, localSig, remoteSig) ->
@@ -551,7 +549,8 @@ data class Commitments(
                 }
                 is HtlcSuccessTx -> {
                     // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-                    if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey)) {
+                    // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
+                    if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
                         return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx))
                     }
                     HtlcTxAndSigs(htlcTx, localSig, remoteSig)
@@ -618,6 +617,12 @@ data class Commitments(
 
     companion object {
 
+        val ANCHOR_AMOUNT = 330.sat
+        val COMMIT_WEIGHT = 1124
+        val HTLC_OUTPUT_WEIGHT = 172
+        val HTLC_TIMEOUT_WEIGHT = 666
+        val HTLC_SUCCESS_WEIGHT = 706
+
         fun alreadyProposed(changes: List<UpdateMessage>, id: Long): Boolean = changes.any {
             when (it) {
                 is UpdateFulfillHtlc -> id == it.id
@@ -647,8 +652,20 @@ data class Commitments(
             val remotePaymentPubkey = if (channelVersion.hasStaticRemotekey) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
             val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-            val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
-            val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
+            val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint
+            val outputs = makeCommitTxOutputs(
+                keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey,
+                remoteParams.fundingPubKey,
+                localParams.isFunder,
+                localParams.dustLimit,
+                localRevocationPubkey,
+                remoteParams.toSelfDelay,
+                localDelayedPaymentPubkey,
+                remotePaymentPubkey,
+                localHtlcPubkey,
+                remoteHtlcPubkey,
+                spec
+            )
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feeratePerKw, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
@@ -663,13 +680,25 @@ data class Commitments(
             spec: CommitmentSpec
         ): Triple<CommitTx, List<HtlcTimeoutTx>, List<HtlcSuccessTx>> {
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-            val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint ?: keyManager.paymentPoint(channelKeyPath).publicKey
+            val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint
             val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
             val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-            val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
+            val outputs = makeCommitTxOutputs(
+                remoteParams.fundingPubKey,
+                keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey,
+                !localParams.isFunder,
+                remoteParams.dustLimit,
+                remoteRevocationPubkey,
+                localParams.toSelfDelay,
+                remoteDelayedPaymentPubkey,
+                localPaymentPubkey,
+                remoteHtlcPubkey,
+                localHtlcPubkey,
+                spec
+            )
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feeratePerKw, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)

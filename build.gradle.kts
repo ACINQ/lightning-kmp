@@ -16,6 +16,7 @@ allprojects {
         maven("https://dl.bintray.com/kotlin/kotlinx")
         maven("https://dl.bintray.com/kotlin/ktor")
         maven("https://dl.bintray.com/kodein-framework/kodein-dev")
+        maven("https://dl.bintray.com/kodein-framework/Kodein-Memory")
         maven("https://dl.bintray.com/acinq/libs")
         google()
         jcenter()
@@ -45,6 +46,7 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
+            implementation("org.kodein.memory:kodein-memory-files:0.4.1")
             implementation(project(":eclair-kmp-test-fixtures"))
         }
     }
@@ -155,6 +157,17 @@ afterEvaluate {
             showExceptions = true
             showStackTraces = true
         }
+    }
+    tasks.withType<org.jetbrains.kotlin.gradle.targets.jvm.tasks.KotlinJvmTest> {
+        environment("TEST_RESOURCES_PATH", projectDir.resolve("src/commonTest/resources"))
+    }
+
+    tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeHostTest> {
+        environment("TEST_RESOURCES_PATH", projectDir.resolve("src/commonTest/resources"))
+    }
+
+    tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest> {
+        environment("SIMCTL_CHILD_TEST_RESOURCES_PATH", projectDir.resolve("src/commonTest/resources"))
     }
 }
 

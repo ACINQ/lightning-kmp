@@ -1,6 +1,6 @@
 package fr.acinq.eclair
 
-import fr.acinq.eclair.Features.Companion.areSupported
+import fr.acinq.eclair.Feature.*
 import fr.acinq.eclair.Features.Companion.validateFeatureGraph
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.BitField
@@ -10,38 +10,37 @@ class FeaturesTestsCommon : EclairTestSuite() {
 
     @Test
     fun `'initial_routing_sync' feature`() {
-        assertTrue(Features(byteArrayOf(0x08)).hasFeature(Feature.InitialRoutingSync, FeatureSupport.Optional))
-        assertTrue(!Features(byteArrayOf(0x08)).hasFeature(Feature.InitialRoutingSync, FeatureSupport.Mandatory))
+        assertTrue(Features(byteArrayOf(0x08)).hasFeature(InitialRoutingSync, FeatureSupport.Optional))
+        assertTrue(!Features(byteArrayOf(0x08)).hasFeature(InitialRoutingSync, FeatureSupport.Mandatory))
     }
 
     @Test
     fun `'data_loss_protect' feature`() {
-        assertTrue(Features(byteArrayOf(0x01)).hasFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory))
-        assertTrue(Features(byteArrayOf(0x02)).hasFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional))
+        assertTrue(Features(byteArrayOf(0x01)).hasFeature(OptionDataLossProtect, FeatureSupport.Mandatory))
+        assertTrue(Features(byteArrayOf(0x02)).hasFeature(OptionDataLossProtect, FeatureSupport.Optional))
     }
 
     @Test
     fun `'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features`() {
         val features = Features(
             setOf(
-                ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
-                ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)
+                ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional),
+                ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional),
+                ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory)
             )
         )
         assertTrue(features.toByteArray().contentEquals(byteArrayOf(0x01, 0x0a)))
-        assertTrue(areSupported(features))
-        assertTrue(features.hasFeature(Feature.OptionDataLossProtect))
-        assertTrue(features.hasFeature(Feature.InitialRoutingSync))
-        assertTrue(features.hasFeature(Feature.VariableLengthOnion))
+        assertTrue(features.hasFeature(OptionDataLossProtect))
+        assertTrue(features.hasFeature(InitialRoutingSync))
+        assertTrue(features.hasFeature(VariableLengthOnion))
     }
 
     @Test
     fun `'variable_length_onion' feature`() {
-        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(Feature.VariableLengthOnion))
-        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))
-        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(Feature.VariableLengthOnion))
-        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))
+        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(VariableLengthOnion))
+        assertTrue(Features(byteArrayOf(0x01, 0x00)).hasFeature(VariableLengthOnion, FeatureSupport.Mandatory))
+        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(VariableLengthOnion))
+        assertTrue(Features(byteArrayOf(0x02, 0x00)).hasFeature(VariableLengthOnion, FeatureSupport.Optional))
     }
 
     @Test
@@ -81,45 +80,120 @@ class FeaturesTestsCommon : EclairTestSuite() {
 
     @Test
     fun `features compatibility`() {
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.Wumbo, FeatureSupport.Mandatory)))))
-        assertTrue(areSupported(Features(setOf(ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional)))))
 
-        val testCases = mapOf(
-            BitField.fromBin("            00000000000000001011") to true,
-            BitField.fromBin("            00010000100001000000") to true,
-            BitField.fromBin("            00100000100000100000") to true,
-            BitField.fromBin("            00010100000000001000") to true,
-            BitField.fromBin("            00011000001000000000") to true,
-            BitField.fromBin("            00101000000000000000") to true,
-            BitField.fromBin("            00000000010001000000") to true,
-            BitField.fromBin("            01000000000000000000") to true,
-            BitField.fromBin("            10000000000000000000") to true,
-            // unknown optional feature bits
-            BitField.fromBin("        001000000000000000000000") to true,
-            BitField.fromBin("        100000000000000000000000") to true,
-            // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-            BitField.fromBin("        000100000000000000000000") to false,
-            BitField.fromBin("        010000000000000000000000") to false,
-            BitField.fromBin("    0001000000000000000000000000") to false,
-            BitField.fromBin("    0100000000000000000000000000") to false,
-            BitField.fromBin("00010000000000000000000000000000") to false,
-            BitField.fromBin("01000000000000000000000000000000") to false
+        data class TestCase(val ours: Features, val theirs: Features, val oursSupportTheirs: Boolean, val theirsSupportOurs: Boolean, val compatible: Boolean)
+
+        val testCases = listOf(
+            // Empty features
+            TestCase(
+                Features.empty,
+                Features.empty,
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            TestCase(
+                Features.empty,
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            TestCase(
+                Features.empty,
+                Features(setOf(), setOf(UnknownFeature(101), UnknownFeature(103))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            // Same feature set
+            TestCase(
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            // Many optional features
+            TestCase(
+                Features(
+                    setOf(
+                        ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional),
+                        ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                        ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional),
+                        ActivatedFeature(PaymentSecret, FeatureSupport.Optional)
+                    )
+                ),
+                Features(
+                    setOf(
+                        ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                        ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional),
+                        ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional)
+                    )
+                ),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            // We support their mandatory features
+            TestCase(
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            // They support our mandatory features
+            TestCase(
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional), ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            // They have unknown optional features
+            TestCase(
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional)), setOf(UnknownFeature(141))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = true,
+                compatible = true
+            ),
+            // They have unknown mandatory features
+            TestCase(
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional)), setOf(UnknownFeature(142))),
+                oursSupportTheirs = false,
+                theirsSupportOurs = true,
+                compatible = false
+            ),
+            // We don't support one of their mandatory features
+            TestCase(
+                Features(setOf(ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional))),
+                Features(setOf(ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory), ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
+                oursSupportTheirs = false,
+                theirsSupportOurs = true,
+                compatible = false
+            ),
+            // They don't support one of our mandatory features
+            TestCase(
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory), ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory))),
+                Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional))),
+                oursSupportTheirs = true,
+                theirsSupportOurs = false,
+                compatible = false
+            ),
+            // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
+            TestCase(Features.empty, Features(setOf(), setOf(UnknownFeature(22))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+            TestCase(Features.empty, Features(setOf(), setOf(UnknownFeature(23))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+            TestCase(Features.empty, Features(setOf(), setOf(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+            TestCase(Features.empty, Features(setOf(), setOf(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true)
         )
-        for ((testCase, expected) in testCases) {
-            assertEquals(expected, areSupported(Features(testCase)), testCase.toBinaryString())
+
+        testCases.forEach { testCase ->
+            assertEquals(Features.areCompatible(testCase.ours, testCase.theirs), testCase.compatible, testCase.toString())
+            assertEquals(testCase.ours.areSupported(testCase.theirs), testCase.oursSupportTheirs, testCase.toString())
+            assertEquals(testCase.theirs.areSupported(testCase.ours), testCase.theirsSupportOurs, testCase.toString())
         }
     }
 
@@ -127,22 +201,22 @@ class FeaturesTestsCommon : EclairTestSuite() {
     fun `features to bytes`() {
         val testCases = mapOf(
             byteArrayOf() to Features.empty,
-            byteArrayOf(0x01, 0x00) to Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory))),
+            byteArrayOf(0x01, 0x00) to Features(setOf(ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory))),
             byteArrayOf(0x02, 0x8a.toByte(), 0x8a.toByte()) to Features(
                 setOf(
-                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
+                    ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional),
+                    ActivatedFeature(InitialRoutingSync, FeatureSupport.Optional),
+                    ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional),
+                    ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional),
+                    ActivatedFeature(PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional)
                 )
             ),
             byteArrayOf(0x09, 0x00, 0x42, 0x00) to Features(
                 setOf(
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)
+                    ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+                    ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory)
                 ),
                 setOf(UnknownFeature(24), UnknownFeature(27))
             ),

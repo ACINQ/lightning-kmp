@@ -26,6 +26,10 @@ sealed class Try<T> {
         @Suppress("UNCHECKED_CAST")
         override fun <R> map(f: (T) -> R): Try<R> = this as Try<R>
     }
+
+    companion object {
+        operator fun <T> invoke(block: () -> T): Try<T> = runTrying(block)
+    }
 }
 
 inline fun <R> runTrying(block: () -> R): Try<R> =

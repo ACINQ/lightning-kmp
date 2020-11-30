@@ -7,9 +7,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.wire.AnnouncementSignatures
-import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
 

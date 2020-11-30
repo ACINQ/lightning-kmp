@@ -28,7 +28,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `correct values for availableForSend - availableForReceive (success case)`() {
         val (alice, bob) = reachNormal()
 
-        val a = 758640000.msat // initial balance alice
+        val a = 749980000.msat // initial balance alice
         val b = 190000000.msat // initial balance bob
         val p = 42000000.msat // a->b payment
         val htlcOutputFee = (2 * 1720000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
@@ -114,7 +114,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `correct values for availableForSend - availableForReceive (failure case)`() {
         val (alice, bob) = reachNormal()
 
-        val a = 758640000.msat // initial balance alice
+        val a = 749980000.msat // initial balance alice
         val b = 190000000.msat // initial balance bob
         val p = 42000000.msat // a->b payment
         val htlcOutputFee = (2 * 1720000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
@@ -200,7 +200,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `correct values for availableForSend - availableForReceive (multiple htlcs)`() {
         val (alice, bob) = reachNormal()
 
-        val a = 758640000.msat // initial balance alice
+        val a = 749980000.msat // initial balance alice
         val b = 190000000.msat // initial balance bob
         val p1 = 18000000.msat // a->b payment
         val p2 = 20000000.msat // a->b payment
@@ -392,7 +392,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     companion object {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: Long = 0, dustLimit: Satoshi = 0.sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments {
             val localParams = LocalParams(
-                randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, null, Features.empty
+                randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, randomKey().publicKey(), Features.empty
             )
             val remoteParams = RemoteParams(
                 randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50,
@@ -430,7 +430,7 @@ class CommitmentsTestsCommon : EclairTestSuite() {
 
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments {
             val localParams = LocalParams(
-                localNodeId, KeyPath("42L"), 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, null, Features.empty
+                localNodeId, KeyPath("42L"), 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, randomKey().publicKey(), Features.empty
             )
             val remoteParams = RemoteParams(
                 remoteNodeId, 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty

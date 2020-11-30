@@ -1,6 +1,9 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Script
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -31,6 +34,8 @@ object TestConstants {
                     ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
+                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Mandatory),
                     ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
@@ -75,7 +80,7 @@ object TestConstants {
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            null,
+            Eclair.randomKey().publicKey(),
             true,
             fundingSatoshis
         ).copy(channelReserve = 10000.sat) // Bob will need to keep that much satoshis as direct payment
@@ -95,6 +100,8 @@ object TestConstants {
                     ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
                     ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
                     ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
+                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Mandatory),
                     ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
                 )
             ),
@@ -139,7 +146,7 @@ object TestConstants {
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            null,
+            Eclair.randomKey().publicKey(),
             false,
             fundingSatoshis
         ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment

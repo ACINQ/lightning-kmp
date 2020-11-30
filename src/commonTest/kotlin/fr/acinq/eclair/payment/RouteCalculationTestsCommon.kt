@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Offline
 import fr.acinq.eclair.channel.Syncing
@@ -28,7 +29,7 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
         val reserve = defaultChannel.commitments.remoteParams.channelReserve
         val commitments = defaultChannel.commitments.copy(
             channelId = channelId,
-            remoteCommit = defaultChannel.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), 0, 50_000.msat, balance + reserve.toMilliSatoshi()))
+            remoteCommit = defaultChannel.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), 0, 50_000.msat, balance + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))
         )
         val channelUpdate = defaultChannel.channelUpdate.copy(htlcMinimumMsat = htlcMin)
         return defaultChannel.copy(shortChannelId = shortChannelId, commitments = commitments, channelUpdate = channelUpdate)
