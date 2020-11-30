@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Normal
@@ -20,7 +21,7 @@ import kotlin.test.assertTrue
 
 class RouteCalculationTestsCommon : EclairTestSuite() {
 
-    private val defaultChannel = fr.acinq.eclair.channel.TestsHelper.reachNormal().first
+    private val defaultChannel = TestConstants.createNormalChannel()
 
     private fun makeChannel(channelId: ByteVector32, balance: MilliSatoshi, htlcMin: MilliSatoshi): Normal {
         val shortChannelId = ShortChannelId(Random.nextLong())
