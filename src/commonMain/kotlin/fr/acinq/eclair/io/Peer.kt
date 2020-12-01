@@ -23,11 +23,17 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
+import kotlin.math.min
+import kotlin.time.ExperimentalTime
+import kotlin.time.milliseconds
+import kotlin.time.seconds
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
+object Connected : PeerEvent()
+object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
@@ -44,7 +50,7 @@ data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : P
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 
-@OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
@@ -122,6 +128,36 @@ class Peer(
             }
             logger.info { "restored channels: $_channels" }
             run()
+        }
+
+        /*
+            Handle connection changes:
+                - CLOSED
+                    + Move all relevant channels to Offline
+                    + Retry connection periodically
+                - ESTABLISHED
+                    + Try to reestablish all Offline channels
+         */
+        launch {
+            var previousState = connectionState.value
+            var delay = 0.5
+            connectionState.filter { it != previousState }.collect {
+                when(it) {
+                    Connection.CLOSED -> {
+                        if (previousState == Connection.ESTABLISHED) send(Disconnected)
+                        delay(delay.seconds) ; delay = min((delay * 2), 30.0)
+                        connect()
+                    }
+                    Connection.ESTABLISHED -> {
+                        logger.info { "connected to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
+                        send(Connected)
+                        delay = 0.5
+                    }
+                    else -> {}
+                }
+
+                previousState = it
+            }
         }
 
         watcher.client.sendMessage(AskForStatusUpdate)
@@ -533,6 +569,23 @@ class Peer(
                     val (state1, actions) = state.process(event.channelEvent)
                     processActions(event.channelId, actions)
                     _channels = _channels + (event.channelId to state1)
+                }
+            }
+            event is Connected -> {
+                // We try to reestablish the Offline channels
+                _channels.filter { it.value is Offline }.forEach { (key, value) ->
+                    val (state1, actions) = value.process(ChannelEvent.Connected(ourInit, theirInit!!))
+                    processActions(key, actions)
+                    _channels = _channels + (key to state1)
+                }
+            }
+            event is Disconnected -> {
+                // We set all relevant channels as Offline
+                logger.warning { "Set channels as Offline." }
+                _channels.forEach { (key, value) ->
+                    val (state1, actions) = value.process(ChannelEvent.Disconnected)
+                    processActions(key, actions)
+                    _channels = _channels + (key to state1)
                 }
             }
         }
