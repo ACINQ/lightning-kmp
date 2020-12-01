@@ -48,7 +48,6 @@ data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) :
 class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
-    val remoteNodeId: PublicKey,
     val watcher: ElectrumWatcher,
     val db: Databases,
     scope: CoroutineScope
@@ -57,6 +56,8 @@ class Peer(
         private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
     }
+
+    public val remoteNodeId: PublicKey = nodeParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
     private val output = Channel<ByteArray>(BUFFERED)
@@ -126,12 +127,12 @@ class Peer(
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
-    fun connect(address: String, port: Int) {
+    fun connect() {
         launch {
-            logger.info { "connecting to {$remoteNodeId}@{$address}" }
+            logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
             _connectionState.value = Connection.ESTABLISHING
             val socket = try {
-                socketBuilder.connect(address, port)
+                socketBuilder.connect(nodeParams.trampolineNode.host, nodeParams.trampolineNode.port)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { ex.message }
                 _connectionState.value = Connection.CLOSED

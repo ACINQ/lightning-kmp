@@ -202,7 +202,7 @@ object Node {
         runBlocking {
             val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
-            val peer = Peer(TcpSocket.Builder(), nodeParams, nodeId, watcher, db, this)
+            val peer = Peer(TcpSocket.Builder(), nodeParams, watcher, db, this)
 
             launch { connectLoop(peer) }
 
@@ -257,7 +257,7 @@ object Node {
                 }
             }.start(wait = false)
 
-            launch { peer.connect(nodeAddress, nodePort) }
+            launch { peer.connect() }
         }
     }
 }
