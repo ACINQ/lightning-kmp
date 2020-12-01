@@ -59,7 +59,7 @@ sealed class ChannelEvent {
     data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
     data class SetOnChainFeerates(val feerates: OnchainFeerates) : ChannelEvent()
-    object Disconnected : ChannelEvent()
+    object Disconnected : ChannelEvent() // All states exclude: WaitForInit [aborted], Closed
     data class Connected(val localInit: Init, val remoteInit: Init) : ChannelEvent()
 }
 
@@ -926,6 +926,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 val (newState, _) = state.process(event)
                 Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), listOf())
             }
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -950,6 +951,7 @@ data class WaitForRemotePublishFutureComitment(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT -> handleRemoteSpentFuture(event.watch.tx)
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -2051,6 +2053,7 @@ data class ShuttingDown(
             }
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -2212,6 +2215,7 @@ data class Negotiating(
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -2431,6 +2435,7 @@ data class Closing(
             }
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
