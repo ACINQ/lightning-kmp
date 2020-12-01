@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Offline
@@ -11,10 +12,7 @@ import fr.acinq.eclair.channel.Syncing
 import fr.acinq.eclair.payment.RouteCalculation.findRoutes
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.utils.Either
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.sum
-import fr.acinq.eclair.utils.toMilliSatoshi
+import fr.acinq.eclair.utils.*
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,7 +27,7 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
         val reserve = defaultChannel.commitments.remoteParams.channelReserve
         val commitments = defaultChannel.commitments.copy(
             channelId = channelId,
-            remoteCommit = defaultChannel.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), 0, 50_000.msat, balance + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))
+            remoteCommit = defaultChannel.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, balance + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))
         )
         val channelUpdate = defaultChannel.channelUpdate.copy(htlcMinimumMsat = htlcMin)
         return defaultChannel.copy(shortChannelId = shortChannelId, commitments = commitments, channelUpdate = channelUpdate)

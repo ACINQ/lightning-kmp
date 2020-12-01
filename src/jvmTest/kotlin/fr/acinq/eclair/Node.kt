@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
+import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.CMD_CLOSE
 import fr.acinq.eclair.channel.ChannelEvent
@@ -152,9 +153,9 @@ object Node {
             ),
             dustLimit = 546.sat,
             onChainFeeConf = OnChainFeeConf(
-                maxFeerateMismatch = 1000.0,
                 closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1
+                updateFeeMinDiffRatio = 0.1,
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
             ),
             maxHtlcValueInFlightMsat = 5000000000L,
             maxAcceptedHtlcs = 30,

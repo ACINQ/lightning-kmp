@@ -4,6 +4,8 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -14,10 +16,10 @@ import fr.acinq.eclair.wire.OnionRoutingPacket
 
 @OptIn(ExperimentalUnsignedTypes::class)
 object TestConstants {
-    val defaultBlockHeight = 400000
-    val fundingSatoshis = 1000000.sat
-    val pushMsat = 200000000.msat
-    val feeratePerKw = 10000L
+    const val defaultBlockHeight = 400_000
+    val fundingSatoshis = 1_000_000.sat
+    val pushMsat = 200_000_000.msat
+    val feeratePerKw = FeeratePerKw(10_000.sat)
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
     object Alice {
@@ -41,9 +43,9 @@ object TestConstants {
             ),
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
-                maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1
+                updateFeeMinDiffRatio = 0.1,
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
             ),
             maxHtlcValueInFlightMsat = 150000000L,
             maxAcceptedHtlcs = 100,
@@ -107,9 +109,9 @@ object TestConstants {
             ),
             dustLimit = 1000.sat,
             onChainFeeConf = OnChainFeeConf(
-                maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1
+                updateFeeMinDiffRatio = 0.1,
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
             ),
             maxHtlcValueInFlightMsat = Long.MAX_VALUE,
             maxAcceptedHtlcs = 100,

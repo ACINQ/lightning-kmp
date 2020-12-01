@@ -7,9 +7,9 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.AnnouncementSignatures
 import fr.acinq.eclair.wire.UpdateAddHtlc
-
 
 open class ChannelException(open val channelId: ByteVector32, message: String) : RuntimeException(message)
 
@@ -37,8 +37,8 @@ data class FundingTxSpent                      (override val channelId: ByteVect
 data class HtlcsTimedoutDownstream             (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs timed out downstream: ids=${htlcs.take(10).map { it.id } .joinToString(",")}") // we only display the first 10 ids
 data class HtlcsWillTimeoutUpstream            (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map { it.id }.joinToString()}") // we only display the first 10 ids
 data class HtlcOverriddenByLocalCommit         (override val channelId: ByteVector32, val htlc: UpdateAddHtlc) : ChannelException(channelId, "htlc ${htlc.id} was overridden by local commit")
-data class FeerateTooSmall                     (override val channelId: ByteVector32, val remoteFeeratePerKw: Long) : ChannelException(channelId, "remote fee rate is too small: remoteFeeratePerKw=$remoteFeeratePerKw")
-data class FeerateTooDifferent                 (override val channelId: ByteVector32, val localFeeratePerKw: Long, val remoteFeeratePerKw: Long) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
+data class FeerateTooSmall                     (override val channelId: ByteVector32, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "remote fee rate is too small: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()}")
+data class FeerateTooDifferent                 (override val channelId: ByteVector32, val localFeeratePerKw: FeeratePerKw, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()} localFeeratePerKw=${localFeeratePerKw.toLong()}")
 data class InvalidAnnouncementSignatures       (override val channelId: ByteVector32, val annSigs: AnnouncementSignatures) : ChannelException(channelId, "invalid announcement signatures: $annSigs")
 data class InvalidCommitmentSignature          (override val channelId: ByteVector32, val tx: Transaction) : ChannelException(channelId, "invalid commitment signature: tx=$tx")
 data class InvalidHtlcSignature                (override val channelId: ByteVector32, val tx: Transaction) : ChannelException(channelId, "invalid htlc signature: tx=$tx")

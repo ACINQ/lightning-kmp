@@ -5,6 +5,7 @@ import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
@@ -19,6 +20,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
@@ -37,7 +39,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             (alice2 as Negotiating).commitments,
             alice2.localShutdown.scriptPubKey.toByteArray(),
             alice2.remoteShutdown.scriptPubKey.toByteArray(),
-            alice2.currentOnChainFeerates.mutualCloseFeeratePerKw
+            alice2.currentOnChainFeerates.mutualCloseFeerate
         )
         assertEquals(closingSigned.feeSatoshis, expectedProposedFee)
     }
@@ -70,7 +72,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         // agreeing on a closing fee
         val closingSigned0 = aliceActions2.findOutgoingMessage<ClosingSigned>()
         val aliceCloseFee = closingSigned0.feeSatoshis
-        val bob2 = (bob1 as Negotiating).updateFeerate(5000)
+        val bob2 = (bob1 as Negotiating).updateFeerate(FeeratePerKw(5_000.sat))
         val (_, bobActions3) = bob2.process(ChannelEvent.MessageReceived(closingSigned0))
         val closingSigned1 = bobActions3.findOutgoingMessage<ClosingSigned>()
         val bobCloseFee = closingSigned1.feeSatoshis
@@ -674,9 +676,9 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertNotEquals(bob0, bob3)
 
         // alice then realizes it has an old state...
-        assertTrue { alice9 is WaitForRemotePublishFutureComitment }
+        assertTrue { alice9 is WaitForRemotePublishFutureCommitment }
         val error = aliceActions9.findOutgoingMessage<Error>()
-        assertEquals(PleasePublishYourCommitment((alice9 as WaitForRemotePublishFutureComitment).channelId).message, error.toAscii())
+        assertEquals(PleasePublishYourCommitment((alice9 as WaitForRemotePublishFutureCommitment).channelId).message, error.toAscii())
         // ... and ask bob to publish its current commitment
         val (bob10, _) = bob9.process(ChannelEvent.MessageReceived(error))
         // bob is nice and publishes its commitment

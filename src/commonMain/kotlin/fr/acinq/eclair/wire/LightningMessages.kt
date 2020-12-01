@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.*
@@ -234,7 +235,7 @@ data class OpenChannel(
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
     @Serializable(with = SatoshiKSerializer::class) val channelReserveSatoshis: Satoshi,
     val htlcMinimumMsat: MilliSatoshi,
-    val feeratePerKw: Long,
+    val feeratePerKw: FeeratePerKw,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
     @Serializable(with = PublicKeyKSerializer::class) val fundingPubkey: PublicKey,
@@ -246,15 +247,14 @@ data class OpenChannel(
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash, LightningSerializable<OpenChannel> {
-    val channelVersion: ChannelVersion?
-        get() = tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion
+    val channelVersion: ChannelVersion? get() =
+        tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion
             ?: tlvStream.get<ChannelTlv.ChannelVersionTlvLegacy>()?.channelVersion
 
     override fun serializer(): LightningSerializer<OpenChannel> = OpenChannel
 
     companion object : LightningSerializer<OpenChannel>() {
-        override val tag: Long
-            get() = 32L
+        override val tag: Long get() = 32L
 
         override fun read(input: Input): OpenChannel {
             val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
@@ -274,7 +274,7 @@ data class OpenChannel(
                 u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                 Satoshi(u64(input)),
                 MilliSatoshi(u64(input)),
-                u32(input).toLong(),
+                FeeratePerKw(u32(input).toLong().sat),
                 CltvExpiryDelta(u16(input)),
                 u16(input),
                 PublicKey(bytes(input, 33)),
@@ -303,7 +303,7 @@ data class OpenChannel(
             writeU64(message.maxHtlcValueInFlightMsat.toLong(), out)
             writeU64(message.channelReserveSatoshis.toLong(), out)
             writeU64(message.htlcMinimumMsat.toLong(), out)
-            writeU32(message.feeratePerKw.toInt(), out)
+            writeU32(message.feeratePerKw.toLong().toInt(), out)
             writeU16(message.toSelfDelay.toInt(), out)
             writeU16(message.maxAcceptedHtlcs, out)
             writeBytes(message.fundingPubkey.value, out)
@@ -679,24 +679,23 @@ data class RevokeAndAck(
 @Serializable
 data class UpdateFee(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    val feeratePerKw: Long
+    val feeratePerKw: FeeratePerKw
 ) : ChannelMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFee> {
     override fun serializer(): LightningSerializer<UpdateFee> = UpdateFee
 
     companion object : LightningSerializer<UpdateFee>() {
-        override val tag: Long
-            get() = 134L
+        override val tag: Long get() = 134L
 
         override fun read(input: Input): UpdateFee {
             return UpdateFee(
                 ByteVector32(bytes(input, 32)),
-                u32(input).toLong()
+                FeeratePerKw(u32(input).toLong().sat)
             )
         }
 
         override fun write(message: UpdateFee, out: Output) {
             writeBytes(message.channelId, out)
-            writeU32(message.feeratePerKw.toInt(), out)
+            writeU32(message.feeratePerKw.feerate.toLong().toInt(), out)
         }
     }
 }

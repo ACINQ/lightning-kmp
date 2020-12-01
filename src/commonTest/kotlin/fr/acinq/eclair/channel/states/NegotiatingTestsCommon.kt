@@ -11,6 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class NegotiatingTestsCommon : EclairTestSuite() {
+
     @Test
     fun `recv ClosingSigned (theirCloseFee != ourCloseFee)`() {
         val (alice, bob, aliceCloseSig) = init()
@@ -24,7 +25,6 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         assertTrue { aliceCloseSig1.feeSatoshis < aliceCloseSig.feeSatoshis && aliceCloseSig1.feeSatoshis > bobCloseSig.feeSatoshis }
         assertEquals((alice1 as Negotiating).closingTxProposed.last().map { it.localClosingSigned }, alice.closingTxProposed.last().map { it.localClosingSigned } + listOf(aliceCloseSig1))
     }
-
 
     @Test
     fun `recv ClosingSigned (theirCloseFee == ourCloseFee)`() {
@@ -40,7 +40,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
 
     companion object {
         fun init(tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
+            val (alice, bob) = TestsHelper.reachNormal()
             return mutualClose(alice, bob, tweakFees)
         }
 
