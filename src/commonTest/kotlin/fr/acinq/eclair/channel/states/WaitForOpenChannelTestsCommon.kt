@@ -78,4 +78,11 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
         val (bob1, _) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
         assertTrue { bob1 is Aborted }
     }
+
+    @Test
+    fun `recv Disconnected`() {
+        val (_, bob, _) = TestsHelper.init(ChannelVersion.STANDARD, 0, 100.sat)
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is WaitForOpenChannel }
+    }
 }

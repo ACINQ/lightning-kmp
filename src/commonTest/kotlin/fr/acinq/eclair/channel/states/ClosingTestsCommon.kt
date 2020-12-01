@@ -801,6 +801,13 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertEquals(ClosingAlreadyInProgress(alice0.channelId), commandError.t)
     }
 
+    @Test
+    fun `recv Disconnected`() {
+        val (alice0, _, _) = init()
+        val (alice1, _) = alice0.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+    }
+
     companion object {
         fun init(withPayments: Boolean = false): Triple<Closing, Closing, List<PublishableTxs>> {
             val (aliceInit, bobInit) = reachNormal(ChannelVersion.STANDARD)

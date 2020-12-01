@@ -123,6 +123,13 @@ class ShutdownTestsCommon : EclairTestSuite() {
         assertTrue { actions1.isEmpty() }
     }
 
+    @Test
+    fun `recv Disconnected`() {
+        val (alice, _) = init()
+        val (alice1, _) = alice.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+    }
+
     companion object {
         val r1 = randomBytes32()
         val r2 = randomBytes32()

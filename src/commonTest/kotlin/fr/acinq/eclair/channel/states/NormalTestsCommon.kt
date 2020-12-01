@@ -1569,4 +1569,11 @@ class NormalTestsCommon : EclairTestSuite() {
 //                Transaction.correctlySpends(it, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 //            }
     }
+
+    @Test
+    fun `recv Disconnected`() {
+        val (alice0, _) = reachNormal()
+        val (alice1, _) = alice0.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+    }
 }
