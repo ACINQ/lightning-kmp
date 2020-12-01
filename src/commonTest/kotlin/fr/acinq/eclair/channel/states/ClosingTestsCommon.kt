@@ -676,9 +676,9 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertNotEquals(bob0, bob3)
 
         // alice then realizes it has an old state...
-        assertTrue { alice9 is WaitForRemotePublishFutureComitment }
+        assertTrue { alice9 is WaitForRemotePublishFutureCommitment }
         val error = aliceActions9.findOutgoingMessage<Error>()
-        assertEquals(PleasePublishYourCommitment((alice9 as WaitForRemotePublishFutureComitment).channelId).message, error.toAscii())
+        assertEquals(PleasePublishYourCommitment((alice9 as WaitForRemotePublishFutureCommitment).channelId).message, error.toAscii())
         // ... and ask bob to publish its current commitment
         val (bob10, _) = bob9.process(ChannelEvent.MessageReceived(error))
         // bob is nice and publishes its commitment

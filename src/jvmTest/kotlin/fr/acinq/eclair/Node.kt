@@ -153,10 +153,9 @@ object Node {
             ),
             dustLimit = 546.sat,
             onChainFeeConf = OnChainFeeConf(
-                maxFeerateMismatch = 1000.0,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.25, ratioHigh = 2.0)
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
             ),
             maxHtlcValueInFlightMsat = 5000000000L,
             maxAcceptedHtlcs = 30,

@@ -46,8 +46,8 @@ internal inline fun <reified T : ChannelException> List<ChannelAction>.hasComman
 
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
-fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
-fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate, feerate))
+fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
+fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
 
 object TestsHelper {
     fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
@@ -55,13 +55,13 @@ object TestsHelper {
             WaitForInit(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             )
         var bob: ChannelState =
             WaitForInit(
                 StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
                 currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             )
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams
@@ -76,7 +76,7 @@ object TestsHelper {
                 ByteVector32.Zeroes,
                 fundingAmount,
                 TestConstants.pushMsat,
-                TestConstants.feeratePerKw,
+                FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
                 bobInit,

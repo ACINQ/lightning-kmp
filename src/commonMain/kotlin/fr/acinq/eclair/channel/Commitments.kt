@@ -430,10 +430,10 @@ data class Commitments(
         return Either.Right(Pair(commitments1, fee))
     }
 
-    fun receiveFee(localCommitmentFeerate: FeeratePerKw, fee: UpdateFee, feerateTolerance: FeerateTolerance): Either<ChannelException, Commitments> {
+    fun receiveFee(fee: UpdateFee, feerateTolerance: FeerateTolerance): Either<ChannelException, Commitments> {
         if (localParams.isFunder) return Either.Left(FundeeCannotSendUpdateFee(channelId))
         if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) return Either.Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
-        if (Helpers.isFeeDiffTooHigh(localCommitmentFeerate, fee.feeratePerKw, feerateTolerance)) return Either.Left(FeerateTooDifferent(channelId, localCommitmentFeerate, fee.feeratePerKw))
+        if (Helpers.isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, fee.feeratePerKw, feerateTolerance)) return Either.Left(FeerateTooDifferent(channelId, FeeratePerKw.CommitmentFeerate, fee.feeratePerKw))
         // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
         // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
         // and it would be tricky to check if the conditions are met at signing

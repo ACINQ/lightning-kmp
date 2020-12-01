@@ -29,10 +29,10 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `correct values for availableForSend - availableForReceive (success case)`() {
         val (alice, bob) = reachNormal()
 
-        val a = 749980000.msat // initial balance alice
-        val b = 190000000.msat // initial balance bob
-        val p = 42000000.msat // a->b payment
-        val htlcOutputFee = (2 * 1720000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+        val a = 764_660_000.msat // initial balance alice
+        val b = 190_000_000.msat // initial balance bob
+        val p = 42_000_000.msat // a->b payment
+        val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
         val ac0 = alice.commitments
         val bc0 = bob.commitments
@@ -115,10 +115,10 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `correct values for availableForSend - availableForReceive (failure case)`() {
         val (alice, bob) = reachNormal()
 
-        val a = 749980000.msat // initial balance alice
-        val b = 190000000.msat // initial balance bob
-        val p = 42000000.msat // a->b payment
-        val htlcOutputFee = (2 * 1720000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+        val a = 764_660_000.msat // initial balance alice
+        val b = 190_000_000.msat // initial balance bob
+        val p = 42_000_000.msat // a->b payment
+        val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
         val ac0 = alice.commitments
         val bc0 = bob.commitments
@@ -201,14 +201,14 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     fun `correct values for availableForSend - availableForReceive (multiple htlcs)`() {
         val (alice, bob) = reachNormal()
 
-        val a = 749980000.msat // initial balance alice
-        val b = 190000000.msat // initial balance bob
-        val p1 = 18000000.msat // a->b payment
-        val p2 = 20000000.msat // a->b payment
-        val p3 = 40000000.msat // b->a payment
+        val a = 764_660_000.msat // initial balance alice
+        val b = 190_000_000.msat // initial balance bob
+        val p1 = 18_000_000.msat // a->b payment
+        val p2 = 20_000_000.msat // a->b payment
+        val p3 = 40_000_000.msat // b->a payment
         val ac0 = alice.commitments
         val bc0 = bob.commitments
-        val htlcOutputFee = (2 * 1720000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+        val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
         assertTrue(ac0.availableBalanceForSend() > p1 + p2) // alice can afford the payment
         assertTrue(bc0.availableBalanceForSend() > p3) // alice can afford the payment

@@ -55,7 +55,7 @@ object Helpers {
         }
 
     /** Called by the fundee. */
-    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion, localFeerate: FeeratePerKw): Either<ChannelException, Unit> {
+    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion): Either<ChannelException, Unit> {
         // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
         // MUST reject the channel.
         if (nodeParams.chainHash != open.chainHash) {
@@ -107,8 +107,8 @@ object Helpers {
             return Either.Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
         }
 
-        if (isFeeDiffTooHigh(localFeerate, open.feeratePerKw, nodeParams.onChainFeeConf.feerateTolerance)) {
-            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, localFeerate, open.feeratePerKw))
+        if (isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, open.feeratePerKw, nodeParams.onChainFeeConf.feerateTolerance)) {
+            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.feeratePerKw))
         }
 
         // only enforce dust limit check on mainnet
@@ -355,8 +355,7 @@ object Helpers {
             // this is just to estimate the weight, it depends on size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
-            val feerate = requestedFeerate.min(commitments.localCommit.spec.feerate)
-            return Transactions.weight2fee(feerate, closingWeight)
+            return Transactions.weight2fee(requestedFeerate, closingWeight)
         }
 
         fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
@@ -396,10 +395,6 @@ object Helpers {
             remoteClosingFee: Satoshi,
             remoteClosingSig: ByteVector64
         ): Either<ChannelException, Transaction> {
-            val lastCommitFee = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map { it.amount }.sum()
-            if (remoteClosingFee > lastCommitFee) {
-                return Either.Left(InvalidCloseFee(commitments.channelId, remoteClosingFee))
-            }
             val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
             val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
             return when (Transactions.checkSpendable(signedClosingTx)) {
@@ -535,7 +530,7 @@ object Helpers {
                 )
 
             // we need to use a rather high fee for htlc-claim because we compete with the counterparty
-            val feerateClaimHtlc = feerates.commitmentFeerate
+            val feerateClaimHtlc = feerates.fastFeerate
 
             // those are the preimages to existing received htlcs
             val preimages = commitments.localChanges.all.filterIsInstance<UpdateFulfillHtlc>().map { it.paymentPreimage }

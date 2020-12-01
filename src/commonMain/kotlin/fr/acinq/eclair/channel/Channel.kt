@@ -382,7 +382,7 @@ sealed class ChannelState {
 
     internal fun ChannelStateWithCommitments.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
         val outdatedCommitment = when (this) {
-            is WaitForRemotePublishFutureComitment -> true
+            is WaitForRemotePublishFutureCommitment -> true
             is Closing -> this.futureRemoteCommitPublished != null
             else -> false
         }
@@ -451,7 +451,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 subclass(Normal::class)
                 subclass(WaitForFundingConfirmed::class)
                 subclass(WaitForFundingLocked::class)
-                subclass(WaitForRemotePublishFutureComitment::class)
+                subclass(WaitForRemotePublishFutureCommitment::class)
                 subclass(ShuttingDown::class)
                 subclass(Negotiating::class)
                 subclass(Closing::class)
@@ -639,7 +639,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
         return when (event) {
             is ChannelEvent.Connected -> {
                 when {
-                    state is WaitForRemotePublishFutureComitment -> {
+                    state is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
                         // there isn't much to do except asking them again to publish their current commitment by sending an error
                         val exc = PleasePublishYourCommitment(state.channelId)
@@ -699,7 +699,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     watch is WatchEventSpent && watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> {
                         state.handleRemoteSpentNext(watch.tx)
                     }
-                    watch is WatchEventSpent && state is WaitForRemotePublishFutureComitment -> {
+                    watch is WatchEventSpent && state is WaitForRemotePublishFutureCommitment -> {
                         state.handleRemoteSpentFuture(watch.tx)
                     }
                     watch is WatchEventSpent -> {
@@ -823,7 +823,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     // would punish us by taking all the funds in the channel
                                     val exc = PleasePublishYourCommitment(state.channelId)
                                     val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
-                                    val nextState = WaitForRemotePublishFutureComitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
+                                    val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
                                     val actions = listOf(
                                         ChannelAction.Storage.StoreState(nextState),
                                         ChannelAction.Message.Send(error)
@@ -844,7 +844,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
                                 val exc = PleasePublishYourCommitment(state.channelId)
                                 val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
-                                val nextState = WaitForRemotePublishFutureComitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
+                                val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreState(nextState),
                                     ChannelAction.Message.Send(error)
@@ -939,7 +939,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
 }
 
 @Serializable
-data class WaitForRemotePublishFutureComitment(
+data class WaitForRemotePublishFutureCommitment(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -1020,7 +1020,7 @@ data class WaitForOpenChannel(
                         val channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
                         require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
-                        when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion, currentOnChainFeerates.commitmentFeerate)) {
+                        when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion)) {
                             is Either.Left -> {
                                 logger.error(err.value) { "invalid ${event.message} in state $this" }
                                 return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, err.value.message))))
@@ -1732,7 +1732,7 @@ data class Normal(
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }
@@ -1809,7 +1809,7 @@ data class Normal(
                                             commitments1,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             event.message.scriptPubKey.toByteArray(),
-                                            currentOnChainFeerates.commitmentFeerate,
+                                            currentOnChainFeerates.mutualCloseFeerate,
                                         )
                                         val nextState = Negotiating(
                                             staticParams,
@@ -1920,7 +1920,7 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(this.currentOnChainFeerates.commitmentFeerate, event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }

@@ -7,6 +7,7 @@ import fr.acinq.eclair.blockchain.electrum.AskForHeaderSubscriptionUpdate
 import fr.acinq.eclair.blockchain.electrum.AskForStatusUpdate
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
@@ -88,8 +89,13 @@ class Peer(
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
     private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
+
     // TODO: connect to fee providers (can we get fee estimation from electrum?)
-    private var onChainFeerates = OnChainFeerates(FeeratePerKw(750.sat), FeeratePerKw(750.sat), FeeratePerKw(750.sat), FeeratePerKw(750.sat), FeeratePerKw(750.sat))
+    private var onChainFeerates = OnChainFeerates(
+        mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
+        claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
+        fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
+    )
 
     init {
         val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()

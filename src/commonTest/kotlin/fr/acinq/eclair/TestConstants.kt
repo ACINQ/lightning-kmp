@@ -43,10 +43,9 @@ object TestConstants {
             ),
             dustLimit = 1100.sat,
             onChainFeeConf = OnChainFeeConf(
-                maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
             ),
             maxHtlcValueInFlightMsat = 150000000L,
             maxAcceptedHtlcs = 100,
@@ -110,10 +109,9 @@ object TestConstants {
             ),
             dustLimit = 1000.sat,
             onChainFeeConf = OnChainFeeConf(
-                maxFeerateMismatch = 1.5,
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
+                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
             ),
             maxHtlcValueInFlightMsat = Long.MAX_VALUE,
             maxAcceptedHtlcs = 100,

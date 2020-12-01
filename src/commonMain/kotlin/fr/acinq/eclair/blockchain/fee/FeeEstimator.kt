@@ -9,14 +9,21 @@ interface FeeEstimator {
     fun getFeerate(target: Int): FeeratePerKw
 }
 
+/**
+ * Preferences regarding on-chain feerates that will be applied to various transactions.
+ *
+ * @param mutualCloseFeerate feerate used in mutual close scenarios (typically configured by the user, based on their preference).
+ * @param claimMainFeerate feerate used to claim our main output when a channel is force-closed (typically configured by the user, based on their preference).
+ * @param fastFeerate feerate used to claim outputs quickly to avoid loss of funds: this one should not be set by the user (we should look at current on-chain fees).
+ */
 @Serializable
-data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val commitmentFeerate: FeeratePerKw, val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
+data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
 
 @Serializable
 data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)
 
 @Serializable
-data class OnChainFeeConf(val maxFeerateMismatch: Double, val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double, val feerateTolerance: FeerateTolerance)
+data class OnChainFeeConf(val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double, val feerateTolerance: FeerateTolerance)
 
 @Serializable
 /** Fee rate in satoshi-per-bytes. */
@@ -75,5 +82,12 @@ data class FeeratePerKw(@Serializable(with = SatoshiKSerializer::class) val feer
          * hence feerate-per-kw >= 253
          */
         val MinimumFeeratePerKw = FeeratePerKw(253.sat)
+
+        /**
+         * Since we're using anchor outputs, we don't need to constantly adjust the feerate of the commitment tx to match current on-chain feerates.
+         * We can instead set it to a low-enough value, that still ensures the transaction will relay through the bitcoin network, and then use CPFP to make it confirm.
+         * TODO: we should regularly get fee estimations from various sources to ensure this default value remains relay-able, and otherwise raise it dynamically.
+         */
+        val CommitmentFeerate = FeeratePerKw(FeeratePerByte(20.sat))
     }
 }
