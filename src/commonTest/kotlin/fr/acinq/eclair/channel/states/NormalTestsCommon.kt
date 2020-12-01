@@ -1595,9 +1595,6 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue { addSettledFailList.all { it.result is ChannelAction.HtlcResult.Fail.Disconnected } }
         assertEquals(htlc1.paymentHash, addSettledFailList.first().htlc.paymentHash)
         assertEquals(htlc2.paymentHash, addSettledFailList.last().htlc.paymentHash)
-
-        val wrappedState = alice3.state
-        assertTrue { wrappedState is Normal } ; wrappedState as Normal // force type inference
-        assertNotEquals(alice0.channelUpdate, wrappedState.channelUpdate)
+        assertEquals(alice2, alice3.state)
     }
 }
