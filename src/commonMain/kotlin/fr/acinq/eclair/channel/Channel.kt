@@ -1853,7 +1853,6 @@ data class Normal(
                 logger.info { "using on-chain fee rates ${event.feerates}" }
                 Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             }
-            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
                 is WatchEventSpent -> when {
                     watch.tx.txid == commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
@@ -1861,6 +1860,41 @@ data class Normal(
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(event)
+            }
+            is ChannelEvent.Disconnected -> {
+                // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
+                val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
+
+                if (proposedHtlcs.isNotEmpty()) {
+                    logger.info { "updating channel_update announcement (reason=disabled)" }
+                    val channelUpdate = Announcements.makeChannelUpdate(
+                        staticParams.nodeParams.chainHash,
+                        staticParams.nodeParams.nodePrivateKey,
+                        staticParams.remoteNodeId,
+                        shortChannelId,
+                        channelUpdate.cltvExpiryDelta,
+                        channelUpdate.htlcMinimumMsat,
+                        channelUpdate.feeBaseMsat,
+                        channelUpdate.feeProportionalMillionths,
+                        commitments.commitInput.txOut.amount.toMilliSatoshi(),
+                        enable = false)
+
+                    val failedHtlcs = buildList {
+                        proposedHtlcs.forEach {
+                            commitments.payments[it.id]?.let { uuid ->
+                                add(
+                                    ChannelAction.ProcessCmdRes.AddSettledFail(
+                                        paymentId = uuid,
+                                        htlc = it,
+                                        result = ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)
+                                    )
+                                )
+                            } ?: logger.warning { "cannot find payment UUID for $it" }
+                        }
+                    }
+
+                    Pair(Offline(this.copy(channelUpdate = channelUpdate)), failedHtlcs)
+                } else Pair(Offline(this), emptyList())
             }
             else -> unhandled(event)
         }

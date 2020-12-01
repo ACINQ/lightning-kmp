@@ -1574,6 +1574,30 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv Disconnected`() {
         val (alice0, _) = reachNormal()
         val (alice1, _) = alice0.process(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
+        assertTrue { alice1 is Offline } ; alice1 as Offline // force type inference
+        val previousState = alice1.state
+        assertTrue { previousState is Normal } ; previousState as Normal // force type inference
+        assertEquals(alice0.channelUpdate, previousState.channelUpdate)
+    }
+
+    @Test
+    fun `recv Disconnected (with htlcs)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes0, _, htlc1) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+        val (alice1, bob1) = nodes0
+        val (nodes1, _, htlc2) = addHtlc(250_000_000.msat, payer = alice1, payee = bob1)
+        val (alice2, _) = nodes1
+
+        val (alice3, actions) = alice2.process(ChannelEvent.Disconnected)
+        assertTrue { alice3 is Offline } ; alice3 as Offline // force type inference
+        val addSettledFailList = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
+        assertEquals(2, addSettledFailList.size)
+        assertTrue { addSettledFailList.all { it.result is ChannelAction.HtlcResult.Fail.Disconnected } }
+        assertEquals(htlc1.paymentHash, addSettledFailList.first().htlc.paymentHash)
+        assertEquals(htlc2.paymentHash, addSettledFailList.last().htlc.paymentHash)
+
+        val wrappedState = alice3.state
+        assertTrue { wrappedState is Normal } ; wrappedState as Normal // force type inference
+        assertNotEquals(alice0.channelUpdate, wrappedState.channelUpdate)
     }
 }
