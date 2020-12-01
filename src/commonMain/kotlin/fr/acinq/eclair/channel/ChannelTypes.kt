@@ -5,6 +5,7 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.publishIfNeeded
 import fr.acinq.eclair.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.eclair.channel.Helpers.watchSpentIfNeeded
@@ -45,7 +46,7 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
 }
 
 object CMD_SIGN : Command()
-data class CMD_UPDATE_FEE(val feeratePerKw: Long, val commit: Boolean = false) : Command()
+data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command()
 data class CMD_UPDATE_RELAY_FEE(val feeBase: MilliSatoshi, val feeProportionalMillionths: Long) : Command()
 
 sealed class CloseCommand : Command()

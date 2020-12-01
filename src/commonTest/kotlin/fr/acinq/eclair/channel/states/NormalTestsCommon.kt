@@ -9,7 +9,8 @@ import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.fee.OnchainFeerates
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
@@ -156,17 +157,12 @@ class NormalTestsCommon : EclairTestSuite() {
         val expectError = InsufficientFunds(
             alice0.channelId,
             amount = Int.MAX_VALUE.msat,
-            missing = 1397503.sat,
+            missing = 1_382_823.sat,
             reserve = 20_000.sat,
-            fees = 13620.sat
+            fees = 7_140.sat
         )
         assertEquals(expectError, actualError)
         assertEquals(alice0, alice1)
-    }
-
-    @Ignore
-    fun `recv CMD_ADD_HTLC (insufficient funds) (anchor outputs)`() {
-        TODO("tag anchor outputs -> ChannelVersion.ANCHOR_OUTPUTS not available")
     }
 
     @Test
@@ -183,7 +179,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)`() {
         val (alice0, bob0) = reachNormal()
-        val (alice1, bob1) = addHtlc(749980000.msat, alice0, bob0).first
+        val (alice1, bob1) = addHtlc(764_660_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
         assertEquals(0.msat, (alice2 as ChannelStateWithCommitments).commitments.availableBalanceForSend())
 
@@ -210,11 +206,11 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 200_000_000.msat)))
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
-        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 43_000_000.msat)))
+        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 61_120_000.msat)))
         actionsAlice3.hasOutgoingMessage<UpdateAddHtlc>()
-        val (_, actionsAlice4) = alice3.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1000_000.msat)))
+        val (_, actionsAlice4) = alice3.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
         val actualError = actionsAlice4.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 900.sat, reserve = 20_000.sat, fees = 17_060.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 900.sat, reserve = 20_000.sat, fees = 8_860.sat)
         assertEquals(expectedError, actualError)
     }
 
@@ -227,7 +223,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 500_000_000.msat)))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 356900.sat, reserve = 20_000.sat, fees = 17060.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 338_780.sat, reserve = 20_000.sat, fees = 8_860.sat)
         assertEquals(expectError, actualError)
     }
 
@@ -255,10 +251,10 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CMD_ADD_HTLC (over max accepted htlcs)`() {
         val (alice0, _) = reachNormal()
 
-        // Bob accepts a maximum of 30 htlcs
+        // Bob accepts a maximum of 100 htlcs
         val alice1 = kotlin.run {
             var alice = alice0
-            for (i in 0 until 100) { // TODO 30 ?
+            for (i in 0 until 100) {
                 val (tempAlice, actions) = alice.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
                 actions.hasOutgoingMessage<UpdateAddHtlc>()
                 alice = tempAlice as Normal
@@ -275,7 +271,6 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (over capacity)`() {
         val (alice0, _) = reachNormal()
-
         val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)))
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
@@ -284,13 +279,8 @@ class NormalTestsCommon : EclairTestSuite() {
         val failAdd = defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(failAdd))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 586_793.sat, 20_000.sat, 15_340.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 570_393.sat, 20_000.sat, 8_000.sat)
         assertEquals(expectedError, actualError)
-    }
-
-    @Ignore
-    fun `recv CMD_ADD_HTLC (channel feerate mismatch)`() {
-        TODO("later")
     }
 
     @Test
@@ -374,14 +364,10 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue { alice0.staticParams.nodeParams.dustLimit > bob0.staticParams.nodeParams.dustLimit }
         // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
         // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
-        val aliceMinReceive =
-            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_SUCCESS_WEIGHT)
-        val aliceMinOffer =
-            Alice.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_TIMEOUT_WEIGHT)
-        val bobMinReceive =
-            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_SUCCESS_WEIGHT)
-        val bobMinOffer =
-            Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, Commitments.HTLC_TIMEOUT_WEIGHT)
+        val aliceMinReceive = Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_SUCCESS_WEIGHT)
+        val aliceMinOffer = Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_TIMEOUT_WEIGHT)
+        val bobMinReceive = Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_SUCCESS_WEIGHT)
+        val bobMinOffer = Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_TIMEOUT_WEIGHT)
         val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
         val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
         val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx
@@ -521,7 +507,7 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
         val (alice, _) = reachNormal()
-        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000)))
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat))))
         actions1.hasOutgoingMessage<UpdateFee>()
         val (_, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         actions2.hasOutgoingMessage<CommitSig>()
@@ -613,9 +599,9 @@ class NormalTestsCommon : EclairTestSuite() {
     fun `recv CommitSig (only fee update)`() {
         val (alice0, bob0) = reachNormal()
         println(bob0)
-        val (alice1, actions1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, false)))
+        val (alice1, actions1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), false)))
         val updateFee = actions1.findOutgoingMessage<UpdateFee>()
-        assertEquals(TestConstants.feeratePerKw + 1000, updateFee.feeratePerKw)
+        assertEquals(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), updateFee.feeratePerKw)
         val (bob1, _) = bob0.process(ChannelEvent.MessageReceived(updateFee))
         val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
@@ -1238,23 +1224,18 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFee`() {
         val (_, bob) = reachNormal()
-        val fee = UpdateFee(ByteVector32.Zeroes, 12000)
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
         val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fee))
         bob1 as Normal
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee)), bob1.commitments)
     }
 
-    @Ignore
-    fun `recv UpdateFee (anchor outputs)`() {
-        TODO("implement anchor outputs")
-    }
-
     @Test
     fun `recv UpdateFee (2 in a row)`() {
         val (_, bob) = reachNormal()
-        val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
+        val fee1 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
         val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fee1))
-        val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
+        val fee2 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(9_000.sat))
         val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(fee2))
         bob2 as Normal
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee2)), bob2.commitments)
@@ -1262,23 +1243,26 @@ class NormalTestsCommon : EclairTestSuite() {
 
     @Test
     fun `recv UpdateFee (sender cannot afford it)`() {
-        val (_, bob) = reachNormal()
-        val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
-        val (bob1, _) = bob.process(ChannelEvent.SetOnChainFeerates(OnchainFeerates(fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw, fee.feeratePerKw)))
+        val (alice, bob) = reachNormal()
+        // We put all the balance on Bob's side, so that Alice cannot afford a feerate increase.
+        val (nodes, _, _) = addHtlc(alice.commitments.availableBalanceForSend(), alice, bob)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+        val commitTx = (bob1 as Normal).commitments.localCommit.publishableTxs.commitTx.tx
+
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw.CommitmentFeerate * 4)
         val (bob2, actions) = bob1.process(ChannelEvent.MessageReceived(fee))
         assertTrue { bob2 is Closing }
-        assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
+        assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(commitTx)) }
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 111620660.sat, reserve = 20000.sat, fees = 112400660.sat).message)
+        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 11_240.sat, reserve = 20_000.sat, fees = 26_580.sat).message)
     }
 
     @Test
     fun `recv UpdateFee (remote feerate is too small)`() {
         val (_, bob) = reachNormal()
-        val expectedFeeratePerKw = bob.currentOnChainFeerates.commitmentFeeratePerKw
-        assertEquals(expectedFeeratePerKw, bob.commitments.localCommit.spec.feeratePerKw)
-        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(UpdateFee(bob.channelId, 252)))
+        assertEquals(FeeratePerKw.CommitmentFeerate, bob.commitments.localCommit.spec.feerate)
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
         assertTrue { bob1 is Closing }
         assertTrue { actions.contains(ChannelAction.Blockchain.PublishTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)) }
         actions.hasWatch<WatchConfirmed>()

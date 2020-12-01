@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.FailurePacket
 import fr.acinq.eclair.crypto.sphinx.Sphinx
@@ -743,7 +744,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
                 shortChannelId = it.first,
                 commitments = alice.commitments.copy(
                     channelId = channelId,
-                    remoteCommit = alice.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), 0, 50_000.msat, (it.second + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi())))
+                    remoteCommit = alice.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, (it.second + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi())))
                 )
             )
             channelId to channel

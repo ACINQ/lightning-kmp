@@ -10,6 +10,7 @@ import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomBytes64
 import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.assertArrayEquals
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
@@ -236,7 +237,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
 
     @Test
     fun `encode - decode open_channel`() {
-        val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1.sat, 1.msat, 1.sat, 1L, 1.sat, 1.msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte())
+        val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1.sat, 1.msat, 1.sat, 1L, 1.sat, 1.msat, FeeratePerKw(1.sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte())
         // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
         // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
         // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -332,7 +333,6 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             assertEquals(it.key, ByteVector(reEncoded))
         }
     }
-
 
     @Test
     fun `encode - decode funding_signed (no channel data)`() {
