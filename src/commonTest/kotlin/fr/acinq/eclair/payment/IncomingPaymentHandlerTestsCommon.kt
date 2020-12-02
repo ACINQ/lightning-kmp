@@ -511,6 +511,71 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `reprocess duplicate htlcs`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+
+        // We receive a first multipart htlc.
+        val add1 = makeUpdateAddHtlc(3, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret))
+        val result1 = paymentHandler.process(add1, TestConstants.defaultBlockHeight)
+        assertTrue { result1.status == IncomingPaymentHandler.Status.PENDING }
+        assertTrue { result1.actions.isEmpty() }
+
+        // This htlc is reprocessed (e.g. because the wallet restarted).
+        val result1b = paymentHandler.process(add1, TestConstants.defaultBlockHeight)
+        assertTrue { result1b.status == IncomingPaymentHandler.Status.PENDING }
+        assertTrue { result1b.actions.isEmpty() }
+
+        // We receive the second multipart htlc.
+        val add2 = makeUpdateAddHtlc(5, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret))
+        val result2 = paymentHandler.process(add2, TestConstants.defaultBlockHeight)
+        assertTrue { result2.status == IncomingPaymentHandler.Status.ACCEPTED }
+        assertEquals(defaultAmount, (result2.incomingPayment?.status as? IncomingPayment.Status.Received)?.amount)
+        val expected = setOf(
+            WrappedChannelEvent(add1.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add1.id, incomingPayment.preimage, commit = true))),
+            WrappedChannelEvent(add2.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true)))
+        )
+        assertEquals(expected, result2.actions.toSet())
+
+        // The second htlc is reprocessed (e.g. because our peer disconnected before we could send them the preimage).
+        val result2b = paymentHandler.process(add2, TestConstants.defaultBlockHeight)
+        assertTrue { result2b.status == IncomingPaymentHandler.Status.ACCEPTED }
+        assertEquals(defaultAmount, (result2b.incomingPayment?.status as? IncomingPayment.Status.Received)?.amount)
+        assertEquals(listOf(WrappedChannelEvent(add2.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true)))), result2b.actions)
+    }
+
+    @Test
+    fun `reprocess failed htlcs`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+
+        // We receive a first multipart htlc.
+        val add = makeUpdateAddHtlc(1, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret))
+        val result1 = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+        assertTrue { result1.status == IncomingPaymentHandler.Status.PENDING }
+        assertTrue { result1.actions.isEmpty() }
+
+        // It expires after a while.
+        val actions1 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2)
+        val addTimeout = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+        assertEquals(listOf(WrappedChannelEvent(add.channelId, addTimeout)), actions1)
+
+        // For some reason, the channel was offline, didn't process the failure and retransmits the htlc.
+        val result2 = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+        assertTrue { result2.status == IncomingPaymentHandler.Status.PENDING }
+        assertTrue { result2.actions.isEmpty() }
+
+        // It expires again.
+        val actions2 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2)
+        assertEquals(listOf(WrappedChannelEvent(add.channelId, addTimeout)), actions2)
+
+        // The channel was offline again, didn't process the failure and retransmits the htlc, but it is now close to its expiry.
+        val currentBlockHeight = add.cltvExpiry.toLong().toInt() - 3
+        val result3 = paymentHandler.process(add, currentBlockHeight)
+        assertTrue { result3.status == IncomingPaymentHandler.Status.REJECTED }
+        val addExpired = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, currentBlockHeight.toLong())), commit = true))
+        assertEquals(listOf(WrappedChannelEvent(add.channelId, addExpired)), result3.actions)
+    }
+
+    @Test
     fun `invoice expired`() = runSuspendTest {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val (incomingPayment, paymentSecret) = makeIncomingPayment(
@@ -768,12 +833,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         // Step 2 of 2:
-        // - Alice receives and additional htlc for the invoice, which she already completed
+        // - Alice receives an additional htlc for the invoice, which she already completed
         run {
             val add = makeUpdateAddHtlc(3, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(1_500.msat, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
-            val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            val expected = ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true))
             assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
         }
     }
