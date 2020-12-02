@@ -1863,31 +1863,19 @@ data class Normal(
                 else -> unhandled(event)
             }
             is ChannelEvent.Disconnected -> {
-                // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
-                val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
+                // if we have pending unsigned outgoing htlcs, then we cancel them and advertise the fact that the channel is now disabled.
                 val failedHtlcs = mutableListOf<ChannelAction>()
-
+                val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
                 if (proposedHtlcs.isNotEmpty()) {
                     logger.info { "updating channel_update announcement (reason=disabled)" }
-
-                    val channelUpdate =channelUpdate.copy(channelFlags = Announcements.makeChannelFlags(
-                        isNode1 = Announcements.isNode1(staticParams.nodeParams.nodePrivateKey.publicKey(), staticParams.remoteNodeId),
-                        enable = false)
-                    )
-
-                    proposedHtlcs.forEach {
-                        commitments.payments[it.id]?.let { uuid ->
-                            failedHtlcs.add(
-                                ChannelAction.ProcessCmdRes.AddSettledFail(
-                                    paymentId = uuid,
-                                    htlc = it,
-                                    result = ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)
-                                )
-                            )
-                        } ?: logger.warning { "cannot find payment UUID for $it" }
+                    val disabledFlags = Announcements.makeChannelFlags(Announcements.isNode1(staticParams.nodeParams.nodePrivateKey.publicKey(), staticParams.remoteNodeId), enable = false)
+                    val channelUpdate = channelUpdate.copy(channelFlags = disabledFlags)
+                    proposedHtlcs.forEach { htlc ->
+                        commitments.payments[htlc.id]?.let { paymentId ->
+                            failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)))
+                        } ?: logger.warning { "cannot find payment for $htlc" }
                     }
                 }
-
                 Pair(Offline(this), failedHtlcs)
             }
             else -> unhandled(event)

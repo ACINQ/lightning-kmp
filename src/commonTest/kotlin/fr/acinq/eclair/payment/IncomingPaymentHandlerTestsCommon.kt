@@ -848,7 +848,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, "unit test", expirySeconds, timestamp)
-            return Pair(IncomingPayment(defaultPreimage, IncomingPayment.Origin.Invoice(paymentRequest)), paymentRequest.paymentSecret!!)
+            return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret!!)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

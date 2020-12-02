@@ -27,7 +27,6 @@ import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlin.math.min
 import kotlin.time.ExperimentalTime
-import kotlin.time.milliseconds
 import kotlin.time.seconds
 
 sealed class PeerEvent
@@ -150,10 +149,10 @@ class Peer(
             var previousState = connectionState.value
             var delay = 0.5
             connectionState.filter { it != previousState }.collect {
-                when(it) {
+                when (it) {
                     Connection.CLOSED -> {
                         if (previousState == Connection.ESTABLISHED) send(Disconnected)
-                        delay(delay.seconds) ; delay = min((delay * 2), 30.0)
+                        delay(delay.seconds); delay = min((delay * 2), 30.0)
                         connect()
                     }
                     Connection.ESTABLISHED -> {
@@ -161,7 +160,7 @@ class Peer(
                         send(Connected)
                         delay = 0.5
                     }
-                    else -> {}
+                    else -> Unit
                 }
 
                 previousState = it

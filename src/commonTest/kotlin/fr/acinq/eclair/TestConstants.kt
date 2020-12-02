@@ -1,17 +1,22 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
+import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
-import fr.acinq.eclair.channel.LocalParams
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.PeerChannels
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.wire.OnionRoutingPacket
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -75,15 +80,15 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "alice.com", 9735),
+            trampolineNode = NodeUri(randomKey().publicKey(), "alice.com", 9735),
             enableTrampolinePayment = true
         )
 
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            Eclair.randomKey().publicKey(),
-            true,
+            ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+            randomKey().publicKey(),
+            isFunder = true,
             fundingSatoshis
         ).copy(channelReserve = 10000.sat) // Bob will need to keep that much satoshis as direct payment
     }
@@ -141,16 +146,77 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "bob.com", 9735),
+            trampolineNode = NodeUri(randomKey().publicKey(), "bob.com", 9735),
             enableTrampolinePayment = true
         )
 
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            Eclair.randomKey().publicKey(),
-            false,
+            ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+            randomKey().publicKey(),
+            isFunder = false,
             fundingSatoshis
         ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment
     }
+
+    fun createNormalChannel(): Normal = Normal(
+        StaticParams(Alice.nodeParams, Bob.nodeParams.nodeId),
+        Pair(defaultBlockHeight, Block.RegtestGenesisBlock.header),
+        OnChainFeerates(feeratePerKw, feeratePerKw, feeratePerKw),
+        Commitments(
+            ChannelVersion.STANDARD,
+            LocalParams(
+                Alice.nodeParams.nodeId,
+                Alice.nodeParams.keyManager.newFundingKeyPath(isFunder = true),
+                Alice.nodeParams.dustLimit,
+                Alice.nodeParams.maxHtlcValueInFlightMsat,
+                10_000.sat,
+                Alice.nodeParams.htlcMinimum,
+                Alice.nodeParams.toRemoteDelayBlocks,
+                Alice.nodeParams.maxAcceptedHtlcs,
+                true,
+                ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+                randomKey().publicKey(),
+                Alice.nodeParams.features
+            ),
+            RemoteParams(
+                Bob.nodeParams.nodeId,
+                Bob.nodeParams.dustLimit,
+                Bob.nodeParams.maxHtlcValueInFlightMsat,
+                10_000.sat,
+                Bob.nodeParams.htlcMinimum,
+                Bob.nodeParams.toRemoteDelayBlocks,
+                Bob.nodeParams.maxAcceptedHtlcs,
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                Bob.nodeParams.features
+            ),
+            0,
+            LocalCommit(
+                0,
+                CommitmentSpec(setOf(), feeratePerKw, 100_000_000.msat, 100_000_000.msat),
+                PublishableTxs(Transactions.TransactionWithInputInfo.CommitTx(Transactions.InputInfo(OutPoint(randomBytes32(), 0), TxOut(250_000.sat, listOf()), listOf()), Transaction(2, listOf(), listOf(), 0)), listOf())
+            ),
+            RemoteCommit(0, CommitmentSpec(setOf(), feeratePerKw, 100_000_000.msat, 100_000_000.msat), randomBytes32(), randomKey().publicKey()),
+            LocalChanges(listOf(), listOf(), listOf()),
+            RemoteChanges(listOf(), listOf(), listOf()),
+            0,
+            0,
+            mapOf(),
+            Either.Right(randomKey().publicKey()),
+            Transactions.InputInfo(OutPoint(randomBytes32(), 0), TxOut(250_000.sat, listOf()), listOf()),
+            ShaChain.empty,
+            randomBytes32()
+        ),
+        ShortChannelId(0),
+        buried = true,
+        channelAnnouncement = null,
+        ChannelUpdate(Eclair.randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, CltvExpiryDelta(0), 42000.msat, 0.msat, 0, 500000000.msat),
+        localShutdown = null,
+        remoteShutdown = null
+    )
+
 }
