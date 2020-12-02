@@ -1,4 +1,4 @@
-package fr.acinq.eclair.tests.db
+package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
@@ -8,8 +8,6 @@ import fr.acinq.eclair.channel.ChannelException
 import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.db.*
 import fr.acinq.eclair.payment.FinalFailure
-import fr.acinq.eclair.tests.db.InMemoryChannelsDb
-import fr.acinq.eclair.tests.db.InMemoryPaymentsDb
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.toByteVector32

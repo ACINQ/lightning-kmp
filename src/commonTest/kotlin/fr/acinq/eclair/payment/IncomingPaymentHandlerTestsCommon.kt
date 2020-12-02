@@ -5,7 +5,7 @@ import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.Sphinx
-import fr.acinq.eclair.tests.db.InMemoryPaymentsDb
+import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.io.PayToOpenResponseEvent
