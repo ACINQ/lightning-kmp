@@ -9,6 +9,7 @@ import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.channel.TooManyAcceptedHtlcs
 import fr.acinq.eclair.payment.FinalFailure
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.tests.db.InMemoryPaymentsDb
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.*

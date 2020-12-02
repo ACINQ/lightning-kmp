@@ -1,14 +1,55 @@
-package fr.acinq.eclair.db
+package fr.acinq.eclair.tests.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.ChannelException
+import fr.acinq.eclair.channel.ChannelStateWithCommitments
+import fr.acinq.eclair.db.*
 import fr.acinq.eclair.payment.FinalFailure
+import fr.acinq.eclair.tests.db.InMemoryChannelsDb
+import fr.acinq.eclair.tests.db.InMemoryPaymentsDb
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.FailureMessage
+
+data class InMemoryDatabases(
+    override val channels: InMemoryChannelsDb = InMemoryChannelsDb(),
+    override val payments: InMemoryPaymentsDb = InMemoryPaymentsDb()
+) : Databases
+
+class InMemoryChannelsDb : ChannelsDb {
+    private val channels = mutableMapOf<ByteVector32, ChannelStateWithCommitments>()
+
+    override suspend fun addOrUpdateChannel(state: ChannelStateWithCommitments) { channels[state.channelId] = state }
+
+    override suspend fun removeChannel(channelId: ByteVector32) { channels.remove(channelId) }
+
+    override suspend fun listLocalChannels(): List<ChannelStateWithCommitments> = channels.values.toList()
+
+    override suspend fun addHtlcInfo(
+        channelId: ByteVector32,
+        commitmentNumber: Long,
+        paymentHash: ByteVector32,
+        cltvExpiry: CltvExpiry,
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun listHtlcInfos(
+        channelId: ByteVector32,
+        commitmentNumber: Long,
+    ): List<Pair<ByteVector32, CltvExpiry>> {
+        TODO("Not yet implemented")
+    }
+
+    override fun close() {
+        TODO("Not yet implemented")
+    }
+}
+
 
 class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
@@ -43,7 +84,9 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = payment.copy(status = IncomingPayment.Status.Received(amount, receivedWith, receivedAt))
+            else -> incoming[paymentHash] = payment.copy(status = IncomingPayment.Status.Received(amount,
+                receivedWith,
+                receivedAt))
         }
     }
 
@@ -94,13 +137,15 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun updateOutgoingPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Failed(failure, completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Failed(failure,
+            completedAt)))
     }
 
     override suspend fun updateOutgoingPart(partId: UUID, preimage: ByteVector32, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage, completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage,
+            completedAt)))
     }
 
     override suspend fun getOutgoingPart(partId: UUID): OutgoingPayment? {

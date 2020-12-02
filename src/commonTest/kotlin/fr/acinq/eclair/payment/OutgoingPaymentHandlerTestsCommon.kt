@@ -11,7 +11,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.FailurePacket
 import fr.acinq.eclair.crypto.sphinx.Sphinx
-import fr.acinq.eclair.db.InMemoryPaymentsDb
+import fr.acinq.eclair.tests.db.InMemoryPaymentsDb
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.OutgoingPaymentsDb
 import fr.acinq.eclair.io.SendPayment

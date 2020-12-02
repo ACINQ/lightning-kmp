@@ -13,7 +13,7 @@ import fr.acinq.eclair.channel.CMD_CLOSE
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases
-import fr.acinq.eclair.db.InMemoryPaymentsDb
+import fr.acinq.eclair.tests.db.InMemoryPaymentsDb
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
