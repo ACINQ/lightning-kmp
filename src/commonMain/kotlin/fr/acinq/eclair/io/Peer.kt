@@ -34,7 +34,6 @@ sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object Connected : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -156,11 +155,7 @@ class Peer(
                         delay(delay.seconds) ; delay = min((delay * 2), 30.0)
                         connect()
                     }
-                    Connection.ESTABLISHED -> {
-                        logger.info { "connected to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
-                        send(Connected)
-                        delay = 0.5
-                    }
+                    Connection.ESTABLISHED -> delay = 0.5
                     else -> {}
                 }
 
@@ -577,14 +572,6 @@ class Peer(
                     val (state1, actions) = state.process(event.channelEvent)
                     processActions(event.channelId, actions)
                     _channels = _channels + (event.channelId to state1)
-                }
-            }
-            event is Connected -> {
-                // We try to reestablish the Offline channels
-                _channels.filter { it.value is Offline }.forEach { (key, value) ->
-                    val (state1, actions) = value.process(ChannelEvent.Connected(ourInit, theirInit!!))
-                    processActions(key, actions)
-                    _channels = _channels + (key to state1)
                 }
             }
             event is Disconnected -> {
