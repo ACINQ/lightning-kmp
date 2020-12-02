@@ -927,6 +927,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 val (newState, _) = state.process(event)
                 Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), listOf())
             }
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -951,6 +952,7 @@ data class WaitForRemotePublishFutureCommitment(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT -> handleRemoteSpentFuture(event.watch.tx)
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -1852,7 +1854,6 @@ data class Normal(
                 logger.info { "using on-chain fee rates ${event.feerates}" }
                 Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             }
-            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
                 is WatchEventSpent -> when {
                     watch.tx.txid == commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
@@ -1860,6 +1861,34 @@ data class Normal(
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(event)
+            }
+            is ChannelEvent.Disconnected -> {
+                // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
+                val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
+                val failedHtlcs = mutableListOf<ChannelAction>()
+
+                if (proposedHtlcs.isNotEmpty()) {
+                    logger.info { "updating channel_update announcement (reason=disabled)" }
+
+                    val channelUpdate =channelUpdate.copy(channelFlags = Announcements.makeChannelFlags(
+                        isNode1 = Announcements.isNode1(staticParams.nodeParams.nodePrivateKey.publicKey(), staticParams.remoteNodeId),
+                        enable = false)
+                    )
+
+                    proposedHtlcs.forEach {
+                        commitments.payments[it.id]?.let { uuid ->
+                            failedHtlcs.add(
+                                ChannelAction.ProcessCmdRes.AddSettledFail(
+                                    paymentId = uuid,
+                                    htlc = it,
+                                    result = ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)
+                                )
+                            )
+                        } ?: logger.warning { "cannot find payment UUID for $it" }
+                    }
+                }
+
+                Pair(Offline(this), failedHtlcs)
             }
             else -> unhandled(event)
         }
@@ -2052,6 +2081,7 @@ data class ShuttingDown(
             }
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -2213,6 +2243,7 @@ data class Negotiating(
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }
@@ -2432,6 +2463,7 @@ data class Closing(
             }
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }

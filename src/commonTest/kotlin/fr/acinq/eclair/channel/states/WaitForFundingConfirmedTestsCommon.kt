@@ -57,6 +57,14 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertTrue { bob1 is Aborted }
     }
 
+
+    @Test
+    fun `recv Disconnected`() {
+        val (alice, _) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
+        val (alice1, _) = alice.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+    }
+
     companion object {
         fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
             val (alice, bob, fundingCreated) = WaitForFundingCreatedTestsCommon.init(channelVersion, fundingAmount, pushAmount)

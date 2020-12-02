@@ -66,4 +66,13 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
             return Triple(a2 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)
         }
     }
+
+    @Test
+    fun `recv Disconnected`() {
+        val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
+        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
+        assertTrue { bob1 is WaitForFundingConfirmed }
+        val (bob2, _) = bob1.process(ChannelEvent.Disconnected)
+        assertTrue { bob2 is Offline }
+    }
 }
