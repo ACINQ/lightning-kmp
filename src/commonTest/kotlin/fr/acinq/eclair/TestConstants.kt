@@ -82,7 +82,6 @@ object TestConstants {
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            Eclair.randomKey().publicKey(),
             true,
             fundingSatoshis
         ).copy(channelReserve = 10000.sat) // Bob will need to keep that much satoshis as direct payment
@@ -148,7 +147,6 @@ object TestConstants {
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            Eclair.randomKey().publicKey(),
             false,
             fundingSatoshis
         ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment

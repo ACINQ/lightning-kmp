@@ -404,6 +404,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         val bobCommitTx = bobCommitTxes.last().commitTx.tx
         assertEquals(4, bobCommitTx.txOut.size)
         val (aliceClosing, remoteCommitPublished) = remoteClose(bobCommitTx, alice)
+        assertNotNull(remoteCommitPublished.claimMainOutputTx)
         assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
         assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs.isEmpty())
         assertEquals(alice, aliceClosing.copy(remoteCommitPublished = null))
@@ -419,6 +420,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (aliceClosing, remoteCommitPublished) = remoteClose(bobCommitTx, alice0)
 
         // actual test starts here
+        assertNotNull(remoteCommitPublished.claimMainOutputTx)
         assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
         assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs.isEmpty())
         assertEquals(alice0, aliceClosing.copy(remoteCommitPublished = null))
@@ -432,8 +434,17 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
+        val (alice2, _) = alice1.process(
+            ChannelEvent.WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),
+                    0, 0, remoteCommitPublished.claimMainOutputTx!!
+                )
+            )
+        )
 
-        assertTrue { alice1 is Closed }
+        assertTrue { alice2 is Closed }
     }
 
     @Test
@@ -491,8 +502,17 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
+        val (alice9, _) = alice8.process(
+            ChannelEvent.WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!),
+                    204, 1, remoteCommitPublished.claimMainOutputTx!!
+                )
+            )
+        )
 
-        assertTrue { alice8 is Closed }
+        assertTrue { alice9 is Closed }
     }
 
     @Test
@@ -522,10 +542,15 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (alice5, aliceActions5) = aliceClosing.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc1.id, r1, commit = true)))
         val publishTxs = aliceActions5.filterIsInstance<ChannelAction.Blockchain.PublishTx>()
 
-        val claimHtlcSuccessTx = (alice5 as Closing).remoteCommitPublished?.claimHtlcSuccessTxs?.first()
+        val claimMainTx = (alice5 as Closing).remoteCommitPublished?.claimMainOutputTx
+        assertNotNull(claimMainTx)
+        Transaction.correctlySpends(claimMainTx, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(ChannelAction.Blockchain.PublishTx(claimMainTx), publishTxs[0])
+
+        val claimHtlcSuccessTx = alice5.remoteCommitPublished?.claimHtlcSuccessTxs?.first()
         assertNotNull(claimHtlcSuccessTx)
         Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcSuccessTx), publishTxs[0])
+        assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcSuccessTx), publishTxs[1])
 
         // Alice resets watches on all relevant transactions.
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), aliceActions5.findWatches<WatchConfirmed>()[0].event)
@@ -550,8 +575,16 @@ class ClosingTestsCommon : EclairTestSuite() {
                 )
             )
         )
+        val (alice8, _) = alice7.process(
+            ChannelEvent.WatchReceived(
+                WatchEventConfirmed(
+                    ByteVector32.Zeroes,
+                    BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0, claimMainTx
+                )
+            )
+        )
 
-        assertTrue { alice7 is Closed }
+        assertTrue { alice8 is Closed }
     }
 
     @Test
@@ -596,8 +629,9 @@ class ClosingTestsCommon : EclairTestSuite() {
         )
         val (alice8, _) = alice7.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1])))
         val (alice9, _) = alice8.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]), 203, 1, remoteCommitPublished.claimHtlcTimeoutTxs[2])))
+        val (alice10, _) = alice9.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 203, 2, remoteCommitPublished.claimMainOutputTx!!)))
 
-        assertTrue { alice9 is Closed }
+        assertTrue { alice10 is Closed }
     }
 
     @Test
@@ -634,8 +668,9 @@ class ClosingTestsCommon : EclairTestSuite() {
         val claimHtlcSuccessTx = (alice5 as Closing).nextRemoteCommitPublished?.claimHtlcSuccessTxs?.first()
         assertNotNull(claimHtlcSuccessTx)
         Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcSuccessTx), publishTxs[0])
-        assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcTimeoutTx), publishTxs[1])
+        assertEquals(ChannelAction.Blockchain.PublishTx(alice5.nextRemoteCommitPublished?.claimMainOutputTx!!), publishTxs[0])
+        assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcSuccessTx), publishTxs[1])
+        assertEquals(ChannelAction.Blockchain.PublishTx(claimHtlcTimeoutTx), publishTxs[2])
     }
 
     @Test
@@ -688,11 +723,13 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (alice10, aliceActions10) = alice9.process(ChannelEvent.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, bobCommitTx)))
         // alice is able to claim its main output
         assertEquals(bobCommitTx.txid, aliceActions10.findWatches<WatchConfirmed>()[0].txId)
+        val mainClaimTx = aliceActions10.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx
 
         // actual test starts here
         val (alice11, _) = alice10.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)))
+        val (alice12, _) = alice11.process(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mainClaimTx), 0, 0, mainClaimTx)))
 
-        assertTrue { alice11 is Closed }
+        assertTrue { alice12 is Closed }
     }
 
     @Test
@@ -710,7 +747,7 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         // alice publishes and watches the penalty tx
         val penalties = aliceActions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainPenalty = penalties[0]
+        val mainPenalty = penalties[1]
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        val htlcPenalty = penalties[2]
 
@@ -738,7 +775,7 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         // alice publishes and watches the penalty tx
         val penalties1 = aliceActions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainPenalty1 = penalties1[0]
+        val mainPenalty1 = penalties1[1] // first tx claims our output, 2nd tx is our penalty tx
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        val htlcPenalty1 = penalties[2]
 
@@ -755,7 +792,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue { alice2 is Closing }; alice2 as Closing
         // alice publishes and watches the penalty tx (no HTLC in that commitment)
         val penalties2 = aliceActions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainPenalty2 = penalties2[0]
+        val mainPenalty2 = penalties2[1]
         penalties2.forEach { penaltyTx ->
             Transaction.correctlySpends(penaltyTx, bobCommitTxes[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
@@ -767,7 +804,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue { alice3 is Closing }; alice3 as Closing
         // alice publishes and watches the penalty tx (no HTLC in that commitment)
         val penalties3 = aliceActions3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainPenalty3 = penalties3[0]
+        val mainPenalty3 = penalties3[1]
         // TODO need to implement business logic about HTLC penalties in [Helpers.claimRevokedRemoteCommitTxOutputs]
         //        val htlcPenalty3 = penalties3[2]
 
