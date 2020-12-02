@@ -1574,6 +1574,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val (alice3, actions) = alice2.process(ChannelEvent.Disconnected)
         assertTrue { alice3 is Offline } ; alice3 as Offline // force type inference
+
         val addSettledFailList = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         assertEquals(2, addSettledFailList.size)
         assertTrue { addSettledFailList.all { it.result is ChannelAction.HtlcResult.Fail.Disconnected } }
