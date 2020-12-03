@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.eclair.CltvExpiryDelta
-import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.Eclair.randomBytes
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomBytes64
@@ -345,7 +344,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
                 ByteVector.empty
             )
             assertEquals(expected, decoded)
-            val reencoded = LightningMessage.encode(decoded)!!
+            val reencoded = LightningMessage.encode(decoded)
             assertArrayEquals(bin, reencoded)
         }
     }
@@ -362,7 +361,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
                 ByteVector("0101010101010101")
             )
             assertEquals(expected, decoded)
-            val reencoded = LightningMessage.encode(decoded)!!
+            val reencoded = LightningMessage.encode(decoded)
             assertArrayEquals(bin, reencoded)
         }
     }
@@ -380,7 +379,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
                 ByteArray(1300) { 1.toByte() }.toByteVector()
             )
             assertEquals(expected, decoded)
-            val reencoded = LightningMessage.encode(decoded)!!
+            val reencoded = LightningMessage.encode(decoded)
             assertArrayEquals(bin, reencoded)
         }
     }
@@ -394,7 +393,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             PrivateKey.fromHex("34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55"),
             PublicKey.fromHex("02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867")
         )
-        val encoded = LightningMessage.encode(channelReestablish)!!
+        val encoded = LightningMessage.encode(channelReestablish)
         val expected =
             "0088c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c000000000003b49a000000000000002a34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b5502bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867"
         assertEquals(expected, Hex.encode(encoded))
@@ -403,8 +402,8 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
     @Test
     fun `encode - decode channel_update`() {
         val channelUpdate = ChannelUpdate(
-            Eclair.randomBytes64(),
-            Eclair.randomBytes32(),
+            randomBytes64(),
+            randomBytes32(),
             ShortChannelId(561),
             1105,
             0,
@@ -415,7 +414,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             10,
             null
         )
-        val encoded = LightningMessage.encode(channelUpdate)!!
+        val encoded = LightningMessage.encode(channelUpdate)
         val decoded = LightningMessage.decode(encoded)
         assertEquals(channelUpdate, decoded)
     }
@@ -440,15 +439,15 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             980000000.msat
         )
         assertEquals(expected, decoded)
-        val reEncoded = LightningMessage.encode(decoded)!!.toByteVector()
+        val reEncoded = LightningMessage.encode(decoded).toByteVector()
         assertEquals(encoded, reEncoded)
     }
 
     @Test
     fun `encode - decode channel_update with unknown trailing bytes`() {
         val channelUpdate = ChannelUpdate(
-            Eclair.randomBytes64(),
-            Eclair.randomBytes32(),
+            randomBytes64(),
+            randomBytes32(),
             ShortChannelId(561),
             1105,
             0,
@@ -460,7 +459,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             null,
             ByteVector("010203")
         )
-        val encoded = LightningMessage.encode(channelUpdate)!!
+        val encoded = LightningMessage.encode(channelUpdate)
         val decoded = LightningMessage.decode(encoded)
         assertEquals(channelUpdate, decoded)
     }
@@ -521,7 +520,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
         refs.forEach {
             val decoded = LightningMessage.decode(it.key.first + it.key.second)
             assertEquals(it.value, decoded)
-            val encoded = LightningMessage.encode(it.value)!!
+            val encoded = LightningMessage.encode(it.value)
             assertArrayEquals(it.key.first, encoded)
         }
     }

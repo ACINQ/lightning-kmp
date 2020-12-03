@@ -69,14 +69,11 @@ interface LightningMessage {
                     @Suppress("UNCHECKED_CAST")
                     (LightningSerializer.writeBytes((input.serializer() as LightningSerializer<LightningSerializable<*>>).write(input), out))
                 }
-                else -> {
-                    logger.warning { "cannot encode $input" }
-                    Unit
-                }
+                else -> logger.warning { "cannot encode $input" }
             }
         }
 
-        fun encode(input: LightningMessage): ByteArray? {
+        fun encode(input: LightningMessage): ByteArray {
             val out = ByteArrayOutput()
             encode(input, out)
             return out.toByteArray()
@@ -158,7 +155,7 @@ data class Init(@Serializable(with = ByteVectorKSerializer::class) val features:
             writeBytes(message.features, out)
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
-            serializers.put(InitTlv.Networks.tag.toLong(), InitTlv.Networks.Companion as LightningSerializer<InitTlv>)
+            serializers.put(InitTlv.Networks.tag, InitTlv.Networks.Companion as LightningSerializer<InitTlv>)
             val serializer = TlvStreamSerializer<InitTlv>(false, serializers)
             serializer.write(message.tlvs, out)
         }
@@ -305,7 +302,7 @@ data class OpenChannel(
             writeU64(message.fundingSatoshis.toLong(), out)
             writeU64(message.pushMsat.toLong(), out)
             writeU64(message.dustLimitSatoshis.toLong(), out)
-            writeU64(message.maxHtlcValueInFlightMsat.toLong(), out)
+            writeU64(message.maxHtlcValueInFlightMsat, out)
             writeU64(message.channelReserveSatoshis.toLong(), out)
             writeU64(message.htlcMinimumMsat.toLong(), out)
             writeU32(message.feeratePerKw.toLong().toInt(), out)
@@ -381,7 +378,7 @@ data class AcceptChannel(
 
             writeBytes(message.temporaryChannelId, out)
             writeU64(message.dustLimitSatoshis.toLong(), out)
-            writeU64(message.maxHtlcValueInFlightMsat.toLong(), out)
+            writeU64(message.maxHtlcValueInFlightMsat, out)
             writeU64(message.channelReserveSatoshis.toLong(), out)
             writeU64(message.htlcMinimumMsat.toLong(), out)
             writeU32(message.minimumDepth.toInt(), out)

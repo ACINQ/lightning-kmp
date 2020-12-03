@@ -210,7 +210,7 @@ class Peer(
                 }
             }
             logger.info { "sending init $ourInit" }
-            send(LightningMessage.encode(ourInit) ?: error("cannot serialize $ourInit"))
+            send(LightningMessage.encode(ourInit))
 
             suspend fun doPing() {
                 val ping = Hex.decode("0012000a0004deadbeef")
@@ -265,10 +265,8 @@ class Peer(
 
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        encoded?.let { bin ->
-            logger.info { "sending $msg encoded as ${Hex.encode(bin)}" }
-            output.send(bin)
-        }
+        logger.info { "sending $msg encoded as ${Hex.encode(encoded)}" }
+        output.send(encoded)
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
@@ -418,7 +416,7 @@ class Peer(
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                        output.send(LightningMessage.encode(pong)!!)
+                        output.send(LightningMessage.encode(pong))
                     }
                     msg is Pong -> {
                         logger.debug { "received pong" }
