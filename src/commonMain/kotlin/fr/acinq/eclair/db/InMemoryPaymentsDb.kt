@@ -94,15 +94,13 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun updateOutgoingPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Failed(failure,
-            completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Failed(failure, completedAt)))
     }
 
     override suspend fun updateOutgoingPart(partId: UUID, preimage: ByteVector32, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage,
-            completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPayment.Part.Status.Succeeded(preimage, completedAt)))
     }
 
     override suspend fun getOutgoingPart(partId: UUID): OutgoingPayment? {

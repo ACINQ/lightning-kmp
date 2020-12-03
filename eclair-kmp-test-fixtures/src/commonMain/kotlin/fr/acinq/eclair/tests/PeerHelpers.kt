@@ -14,9 +14,9 @@ import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Syncing
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.InMemoryChannelsDb
+import fr.acinq.eclair.db.InMemoryDatabases
 import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.io.*
-import fr.acinq.eclair.db.InMemoryDatabases
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.ChannelReestablish
 import fr.acinq.eclair.wire.Init
