@@ -496,7 +496,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             event is ChannelEvent.InitFunder -> {
                 val fundingPubKey = keyManager.fundingPublicKey(event.localParams.fundingKeyPath).publicKey
                 val channelKeyPath = keyManager.channelKeyPath(event.localParams, event.channelVersion)
-                val paymentBasepoint = event.localParams.walletStaticPaymentBasepoint
+                val paymentBasepoint = keyManager.paymentPoint(channelKeyPath)
                 val open = OpenChannel(
                     staticParams.nodeParams.chainHash,
                     temporaryChannelId = event.temporaryChannelId,
@@ -511,7 +511,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
                     fundingPubkey = fundingPubKey,
                     revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-                    paymentBasepoint = paymentBasepoint,
+                    paymentBasepoint = paymentBasepoint.publicKey,
                     delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
                     htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
                     firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
@@ -966,40 +966,24 @@ data class WaitForRemotePublishFutureCommitment(
 
     internal fun handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
-        return if (commitments.channelVersion.paysDirectlyToWallet) {
-            val remoteCommitPublished = RemoteCommitPublished(tx, null, listOf(), listOf(), mapOf())
-            val nextState = Closing(
-                staticParams = staticParams,
-                currentTip = currentTip,
-                commitments = commitments,
-                currentOnChainFeerates = currentOnChainFeerates,
-                fundingTx = null,
-                waitingSince = currentTimestampMillis(),
-                remoteCommitPublished = remoteCommitPublished
-            )
-            Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
-        } else {
-            val remotePerCommitmentPoint = remoteChannelReestablish.myCurrentPerCommitmentPoint
-            val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(
-                keyManager,
-                commitments,
-                remotePerCommitmentPoint,
-                tx,
-                currentOnChainFeerates.claimMainFeerate
-            )
-            val nextState = Closing(
-                staticParams = staticParams,
-                currentTip = currentTip,
-                commitments = commitments,
-                currentOnChainFeerates = currentOnChainFeerates,
-                fundingTx = null,
-                waitingSince = currentTimestampMillis(),
-                futureRemoteCommitPublished = remoteCommitPublished
-            )
-            val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
-            actions.addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
-            Pair(nextState, actions)
-        }
+        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(
+            keyManager,
+            commitments,
+            tx,
+            currentOnChainFeerates.claimMainFeerate
+        )
+        val nextState = Closing(
+            staticParams = staticParams,
+            currentTip = currentTip,
+            commitments = commitments,
+            currentOnChainFeerates = currentOnChainFeerates,
+            fundingTx = null,
+            waitingSince = currentTimestampMillis(),
+            futureRemoteCommitPublished = remoteCommitPublished
+        )
+        val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
+        actions.addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+        return Pair(nextState, actions)
     }
 }
 
@@ -1034,7 +1018,7 @@ data class WaitForOpenChannel(
                         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
                         // TODO: maybe also check uniqueness of temporary channel id
                         val minimumDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
-                        val paymentBasepoint = localParams.walletStaticPaymentBasepoint
+                        val paymentBasepoint = keyManager.paymentPoint(channelKeyPath)
                         val accept = AcceptChannel(
                             temporaryChannelId = event.message.temporaryChannelId,
                             dustLimitSatoshis = localParams.dustLimit,
@@ -1046,7 +1030,7 @@ data class WaitForOpenChannel(
                             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
                             fundingPubkey = fundingPubkey,
                             revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-                            paymentBasepoint = paymentBasepoint,
+                            paymentBasepoint = paymentBasepoint.publicKey,
                             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
                             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
                             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),

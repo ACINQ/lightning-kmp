@@ -365,7 +365,6 @@ data class LocalParams constructor(
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
     @Serializable(with = ByteVectorKSerializer::class) val defaultFinalScriptPubKey: ByteVector,
-    @Serializable(with = PublicKeyKSerializer::class) val walletStaticPaymentBasepoint: PublicKey,
     val features: Features
 )
 
@@ -399,12 +398,8 @@ data class ChannelVersion(val bits: BitField) {
 
     fun isSet(bit: Int) = bits.getRight(bit)
 
-    val hasPubkeyKeyPath: Boolean by lazy { isSet(USE_PUBKEY_KEYPATH_BIT) }
     val hasStaticRemotekey: Boolean by lazy { isSet(USE_STATIC_REMOTEKEY_BIT) }
     val hasAnchorOutputs: Boolean by lazy { isSet(USE_ANCHOR_OUTPUTS_BIT) }
-
-    //  True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses.
-    val paysDirectlyToWallet: Boolean by lazy { hasStaticRemotekey && !hasAnchorOutputs }
 
     companion object {
         const val SIZE_BYTE = 4

@@ -435,8 +435,7 @@ class Peer(
                     msg is OpenChannel -> {
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                        val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                        val walletStaticPaymentBasepoint: PublicKey = closingPubkey
+                        val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
                         val localParams = LocalParams(
                             nodeParams.nodeId,
                             fundingKeyPath,
@@ -448,7 +447,6 @@ class Peer(
                             nodeParams.maxAcceptedHtlcs,
                             false,
                             closingPubkeyScript.toByteVector(),
-                            walletStaticPaymentBasepoint,
                             features
                         )
                         val state = WaitForInit(
