@@ -23,9 +23,12 @@ import fr.acinq.eclair.wire.ChannelReestablish
 import fr.acinq.eclair.wire.Init
 import fr.acinq.eclair.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.launch
 
 
 val activatedFeatures = Features(
@@ -44,6 +47,47 @@ val activatedFeatures = Features(
 
 private val remoteNodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 private val emptyNodeUri = NodeUri(remoteNodeId, "empty", 8080)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+public suspend fun newPeers(scope: CoroutineScope, initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList()): Pair<Peer, Peer> {
+    val alice = buildPeer(scope, "alice", databases = newDatabases().apply {
+        initChannels.forEach { channels.addOrUpdateChannel(it.first) }
+    })
+    val bob = buildPeer(scope, "bob", databases = newDatabases().apply {
+        initChannels.forEach { channels.addOrUpdateChannel(it.second) }
+    })
+
+    scope.launch {
+        alice.output.consumeEach {
+            val msg = LightningMessage.decode(it)
+            println("Alice forwards to Bob $msg")
+            bob.send(BytesReceived(it)) }
+    }
+    scope.launch {
+        bob.output.consumeEach {
+            val msg = LightningMessage.decode(it)
+            println("Bob forwards to Alice $msg")
+            alice.send(BytesReceived(it))
+        }
+    }
+
+    val init = LightningMessage.encode(Init(features = activatedFeatures.toByteArray().toByteVector()))
+        ?: error("LN message `Init` encoding failed")
+    // Initialize Alice
+    alice.send(BytesReceived(init))
+    // Initialize Bob
+    bob.send(BytesReceived(init))
+
+    // Wait until the Peers are ready
+    alice.waitForStatus(Connection.ESTABLISHED)
+    bob.waitForStatus(Connection.ESTABLISHED)
+
+    // Wait until the [Channels] are synchronised
+    alice.channelsFlow.first { it.size == initChannels.size && it.values.all { state -> state is Normal } }
+    bob.channelsFlow.first { it.size == initChannels.size && it.values.all { state -> state is Normal } }
+
+    return alice to bob
+}
 
 public suspend fun CoroutineScope.newPeer(
     remotedNodeChannelState: ChannelStateWithCommitments? = null,
@@ -93,6 +137,7 @@ public suspend fun CoroutineScope.newPeer(
 
 public fun buildPeer(
     scope: CoroutineScope,
+    alias: String = "phoenix",
     nodeUri: NodeUri = emptyNodeUri,
     databases: InMemoryDatabases = InMemoryDatabases(),
 ): Peer {
@@ -101,7 +146,7 @@ public fun buildPeer(
 
     val params = NodeParams(
         keyManager = keyManager,
-        alias = "phoenix",
+        alias = alias,
         features = activatedFeatures,
         dustLimit = 546.sat,
         onChainFeeConf = OnChainFeeConf(

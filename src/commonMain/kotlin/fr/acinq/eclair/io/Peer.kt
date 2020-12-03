@@ -67,7 +67,7 @@ class Peer(
     public val remoteNodeId: PublicKey = nodeParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    private val output = Channel<ByteArray>(BUFFERED)
+    internal val output = Channel<ByteArray>(BUFFERED)
 
     private val logger by eclairLogger()
 
@@ -149,6 +149,7 @@ class Peer(
             var previousState = connectionState.value
             var delay = 0.5
             connectionState.filter { it != previousState }.collect {
+                logger.info { "New connection state: $it" }
                 when(it) {
                     Connection.CLOSED -> {
                         if (previousState == Connection.ESTABLISHED) send(Disconnected)
@@ -193,7 +194,6 @@ class Peer(
                 return@launch
             }
             val session = LightningSession(enc, dec, ck)
-            _connectionState.value = Connection.ESTABLISHED
 
             suspend fun receive(): ByteArray {
                 return session.receive { size -> socket.receiveFully(size) }
@@ -402,6 +402,7 @@ class Peer(
                             }
                             null -> {
                                 theirInit = msg
+                                _connectionState.value = Connection.ESTABLISHED
                                 logger.info { "before channels: $_channels" }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))

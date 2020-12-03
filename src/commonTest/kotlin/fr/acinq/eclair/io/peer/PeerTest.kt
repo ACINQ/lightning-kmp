@@ -7,7 +7,6 @@ import fr.acinq.eclair.channel.Offline
 import fr.acinq.eclair.channel.Syncing
 import fr.acinq.eclair.channel.TestsHelper
 import fr.acinq.eclair.io.BytesReceived
-import fr.acinq.eclair.io.Disconnected
 import fr.acinq.eclair.tests.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
@@ -28,18 +27,23 @@ class PeerTest : EclairTestSuite() {
 
     @Test
     fun `init peer`() = runSuspendTest {
-        val peer = buildPeer(this)
+        val alice = buildPeer(this, "alice")
+        val bob = buildPeer(this, "bob")
 
-        // send Init from remote node
-        val theirInit = Init(features = activatedFeatures.toByteArray().toByteVector())
-        val initMsg = LightningMessage.encode(theirInit) ?: error("LN message `Init` encoding failed")
-        peer.send(BytesReceived(initMsg))
+        val init = LightningMessage.encode(Init(features = activatedFeatures.toByteArray().toByteVector()))
+            ?: error("LN message `Init` encoding failed")
+        // start Init for Alice
+        alice.send(BytesReceived(init))
+        // start Init for Bob
+        bob.send(BytesReceived(init))
+
         // Wait until the Peer is ready
-        peer.waitForStatus(Connection.ESTABLISHED)
+        alice.waitForStatus(Connection.ESTABLISHED)
+        bob.waitForStatus(Connection.ESTABLISHED)
     }
 
     @Test
-    fun `init peer (bundled)`() = runSuspendTest { newPeer() }
+    fun `init peer (bundled)`() = runSuspendTest { newPeers(this) }
 
     @Test
     fun `restore channel`() = runSuspendTest {
@@ -90,7 +94,7 @@ class PeerTest : EclairTestSuite() {
 
     @Test
     fun `restore channel (bundled)`() = runSuspendTest {
-        val (alice0, _) = TestsHelper.reachNormal()
-        newPeer { channels.addOrUpdateChannel(alice0) }
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        newPeers(this, listOf(alice0 to bob0))
     }
 }
