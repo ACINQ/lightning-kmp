@@ -193,6 +193,7 @@ class Peer(
                 return@launch
             }
             val session = LightningSession(enc, dec, ck)
+            _connectionState.value = Connection.ESTABLISHED
 
             suspend fun receive(): ByteArray {
                 return session.receive { size -> socket.receiveFully(size) }
@@ -401,7 +402,6 @@ class Peer(
                             }
                             null -> {
                                 theirInit = msg
-                                _connectionState.value = Connection.ESTABLISHED
                                 logger.info { "before channels: $_channels" }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))

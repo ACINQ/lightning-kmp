@@ -10,6 +10,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.ChannelState
+import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Syncing
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -45,6 +46,7 @@ private val remoteNodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e
 private val emptyNodeUri = NodeUri(remoteNodeId, "empty", 8080)
 
 public suspend fun CoroutineScope.newPeer(
+    remotedNodeChannelState: ChannelStateWithCommitments? = null,
     setupDatabases: suspend InMemoryDatabases.() -> Unit = {},
 ): Peer {
     val db = newDatabases().apply { setupDatabases(this) }
@@ -63,7 +65,7 @@ public suspend fun CoroutineScope.newPeer(
             && it.values.all { channelState -> channelState is Syncing }
     }
 
-    peer.db.channels.listLocalChannels().forEach { state ->
+    remotedNodeChannelState?.let { state ->
         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
         val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
         val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
