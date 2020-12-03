@@ -9,6 +9,7 @@ import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Offline
 import fr.acinq.eclair.channel.Syncing
+import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.payment.RouteCalculation.findRoutes
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -20,7 +21,7 @@ import kotlin.test.assertTrue
 
 class RouteCalculationTestsCommon : EclairTestSuite() {
 
-    private val defaultChannel = fr.acinq.eclair.channel.TestsHelper.reachNormal().first
+    private val defaultChannel = reachNormal().first
 
     private fun makeChannel(channelId: ByteVector32, balance: MilliSatoshi, htlcMin: MilliSatoshi): Normal {
         val shortChannelId = ShortChannelId(Random.nextLong())

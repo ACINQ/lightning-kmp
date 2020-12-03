@@ -15,6 +15,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -1863,31 +1864,19 @@ data class Normal(
                 else -> unhandled(event)
             }
             is ChannelEvent.Disconnected -> {
-                // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
-                val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
+                // if we have pending unsigned outgoing htlcs, then we cancel them and advertise the fact that the channel is now disabled.
                 val failedHtlcs = mutableListOf<ChannelAction>()
-
+                val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
                 if (proposedHtlcs.isNotEmpty()) {
                     logger.info { "updating channel_update announcement (reason=disabled)" }
-
-                    val channelUpdate =channelUpdate.copy(channelFlags = Announcements.makeChannelFlags(
-                        isNode1 = Announcements.isNode1(staticParams.nodeParams.nodePrivateKey.publicKey(), staticParams.remoteNodeId),
-                        enable = false)
-                    )
-
-                    proposedHtlcs.forEach {
-                        commitments.payments[it.id]?.let { uuid ->
-                            failedHtlcs.add(
-                                ChannelAction.ProcessCmdRes.AddSettledFail(
-                                    paymentId = uuid,
-                                    htlc = it,
-                                    result = ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)
-                                )
-                            )
-                        } ?: logger.warning { "cannot find payment UUID for $it" }
+                    val disabledFlags = Announcements.makeChannelFlags(Announcements.isNode1(staticParams.nodeParams.nodePrivateKey.publicKey(), staticParams.remoteNodeId), enable = false)
+                    val channelUpdate = channelUpdate.copy(channelFlags = disabledFlags)
+                    proposedHtlcs.forEach { htlc ->
+                        commitments.payments[htlc.id]?.let { paymentId ->
+                            failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)))
+                        } ?: logger.warning { "cannot find payment for $htlc" }
                     }
                 }
-
                 Pair(Offline(this), failedHtlcs)
             }
             else -> unhandled(event)
@@ -2716,6 +2705,20 @@ object Channel {
         if (commitments1.localHasChanges()) {
             sendQueue.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
         }
+
+        // When a channel is reestablished after a wallet restarts, we need to reprocess incoming HTLCs that may have been only partially processed
+        // (either because they didn't reach the payment handler, or because the payment handler response didn't reach the channel).
+        // Otherwise these HTLCs will stay in our commitment until they timeout and our peer closes the channel.
+        //
+        // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been forwarded to the payment handler).
+        // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when we subsequently sign it.
+        // That's why we need to look in *their* commitment with direction=OUT.
+        //
+        // We also need to filter out htlcs that we already settled and signed (the settlement messages are being retransmitted).
+        val alreadySettled = commitments1.localChanges.signed.filterIsInstance<HtlcSettlementMessage>().map { it.id }.toSet()
+        val htlcsToReprocess = commitments1.remoteCommit.spec.htlcs.outgoings().filter { !alreadySettled.contains(it.id) }
+        log.debug { "re-processing signed IN: $htlcsToReprocess" }
+        sendQueue.addAll(htlcsToReprocess.map { ChannelAction.ProcessIncomingHtlc(it) })
 
         return Pair(commitments1, sendQueue)
     }

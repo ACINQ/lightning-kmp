@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
+import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
@@ -75,15 +76,15 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "alice.com", 9735),
+            trampolineNode = NodeUri(randomKey().publicKey(), "alice.com", 9735),
             enableTrampolinePayment = true
         )
 
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            Eclair.randomKey().publicKey(),
-            true,
+            ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+            randomKey().publicKey(),
+            isFunder = true,
             fundingSatoshis
         ).copy(channelReserve = 10000.sat) // Bob will need to keep that much satoshis as direct payment
     }
@@ -141,16 +142,17 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(Eclair.randomKey().publicKey(), "bob.com", 9735),
+            trampolineNode = NodeUri(randomKey().publicKey(), "bob.com", 9735),
             enableTrampolinePayment = true
         )
 
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            ByteVector(Script.write(Script.pay2wpkh(Eclair.randomKey().publicKey()))),
-            Eclair.randomKey().publicKey(),
-            false,
+            ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+            randomKey().publicKey(),
+            isFunder = false,
             fundingSatoshis
         ).copy(channelReserve = 20000.sat) // Alice will need to keep that much satoshis as direct payment
     }
+
 }
