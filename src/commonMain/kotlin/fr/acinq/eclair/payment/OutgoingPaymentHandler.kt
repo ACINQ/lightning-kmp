@@ -292,10 +292,16 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
     }
 
     private fun createTrampolinePayload(request: SendPayment, fees: RouteCalculation.TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
-        val trampolineRoute = listOf(
-            NodeHop(nodeParams.nodeId, trampolineParams.nodeId, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat),
-            NodeHop(trampolineParams.nodeId, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
-        )
+        // We are either directly paying our peer (the trampoline node) or a remote node via our peer (using trampoline).
+        val trampolineRoute = when (request.recipient) {
+            trampolineParams.nodeId -> listOf(
+                NodeHop(nodeParams.nodeId, request.recipient, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat)
+            )
+            else -> listOf(
+                NodeHop(nodeParams.nodeId, trampolineParams.nodeId, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat),
+                NodeHop(trampolineParams.nodeId, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
+            )
+        }
 
         val finalExpiryDelta = request.details.paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
         val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())

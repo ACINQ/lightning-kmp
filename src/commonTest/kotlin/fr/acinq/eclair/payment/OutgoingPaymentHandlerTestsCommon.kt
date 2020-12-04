@@ -15,6 +15,7 @@ import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.OutgoingPaymentsDb
 import fr.acinq.eclair.io.SendPayment
+import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -358,6 +359,61 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `successful first attempt (multiple parts, recipient is our peer)`() = runSuspendTest {
+        val channels = makeChannels()
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        // The invoice comes from Bob, our direct peer (and trampoline node).
+        val preimage = randomBytes32()
+        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix")
+        val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+
+        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val adds = filterAddHtlcCommands(result)
+        assertEquals(2, adds.size)
+        assertEquals(300_000.msat, adds.map { it.second.amount }.sum())
+        adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
+        adds.forEach { (channelId, add) ->
+            // Bob should receive the right final information.
+            val payloadB = IncomingPacket.decrypt(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey).right!!
+            assertEquals(add.amount, payloadB.amount)
+            assertEquals(300_000.msat, payloadB.totalAmount)
+            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadB.expiry)
+            assertEquals(invoice.paymentSecret, payloadB.paymentSecret)
+        }
+
+        // Bob receives these 2 HTLCs.
+        val process1 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[0].first, adds[0].second, 3), TestConstants.defaultBlockHeight)
+        assertTrue(process1 is IncomingPaymentHandler.ProcessAddResult.Pending)
+        val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), TestConstants.defaultBlockHeight)
+        assertTrue(process2 is IncomingPaymentHandler.ProcessAddResult.Accepted)
+        val fulfills = process2.actions.filterIsInstance<WrappedChannelEvent>().mapNotNull { (it.channelEvent as? ChannelEvent.ExecuteCommand)?.command as? CMD_FULFILL_HTLC }
+        assertEquals(2, fulfills.size)
+
+        // Alice receives the fulfill for these 2 HTLCs.
+        val (channelId1, add1) = adds[0]
+        val fulfill1 = createRemoteFulfill(channelId1, add1, preimage)
+        val success1 = outgoingPaymentHandler.processAddSettled(fulfill1)
+        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
+        val (channelId2, add2) = adds[1]
+        val fulfill2 = ChannelAction.ProcessCmdRes.AddSettledFulfill(add2.paymentId, makeUpdateAddHtlc(channelId2, add2), ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
+        val success2 = outgoingPaymentHandler.processAddSettled(fulfill2) as OutgoingPaymentHandler.Success
+        assertEquals(preimage, success2.preimage)
+        assertEquals(0.msat, success2.payment.fees)
+        assertEquals(300_000.msat, success2.payment.recipientAmount)
+        assertEquals(TestConstants.Bob.nodeParams.nodeId, success2.payment.recipient)
+        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
+        assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(2, success2.payment.parts.size)
+        assertEquals(300_000.msat, success2.payment.parts.map { it.amount }.sum())
+        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
+
+        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
+        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 0.msat, partsCount = 2)
+    }
+
+    @Test
     fun `successful second attempt`() = runSuspendTest {
         val channels = makeChannels()
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
@@ -430,6 +486,48 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue(dbPayment2.status is OutgoingPayment.Status.Succeeded)
         assertEquals(2, dbPayment2.parts.size)
         assertTrue(dbPayment2.parts.all { it.status is OutgoingPayment.Part.Status.Succeeded })
+    }
+
+    @Test
+    fun `successful second attempt (recipient is our peer)`() = runSuspendTest {
+        val channels = makeChannels()
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        // The invoice comes from Bob, our direct peer (and trampoline node).
+        val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = TestConstants.Bob.nodeParams.nodePrivateKey)
+        val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+
+        val result1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val adds1 = filterAddHtlcCommands(result1)
+        assertEquals(2, adds1.size)
+
+        // The first attempt fails because of a local channel error.
+        val result2 = outgoingPaymentHandler.processAddFailed(adds1[1].first, ChannelAction.ProcessCmdRes.AddFailed(adds1[1].second, TooManyAcceptedHtlcs(adds1[1].first, 10), null), channels) as OutgoingPaymentHandler.Progress
+        val adds2 = filterAddHtlcCommands(result2)
+        assertEquals(1, adds2.size)
+
+        // The other HTLCs succeed.
+        val preimage = randomBytes32()
+        val (channelId1, add1) = adds1[0]
+        val fulfill1 = createRemoteFulfill(channelId1, add1, preimage)
+        val success1 = outgoingPaymentHandler.processAddSettled(fulfill1)
+        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
+
+        val (channelId2, add2) = adds2[0]
+        val fulfill2 = createRemoteFulfill(channelId2, add2, preimage)
+        val success2 = outgoingPaymentHandler.processAddSettled(fulfill2) as OutgoingPaymentHandler.Success
+        assertEquals(preimage, success2.preimage)
+        assertEquals(0.msat, success2.payment.fees)
+        assertEquals(300_000.msat, success2.payment.recipientAmount)
+        assertEquals(TestConstants.Bob.nodeParams.nodeId, success2.payment.recipient)
+        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
+        assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(2, success2.payment.parts.size)
+        assertEquals(300_000.msat, success2.payment.parts.map { it.amount }.sum())
+        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
+
+        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
+        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 0.msat, partsCount = 2)
     }
 
     @Test
@@ -518,11 +616,9 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Test
-    fun `local channel failures`() = runSuspendTest {
+    private suspend fun testLocalChannelFailures(invoice: PaymentRequest) {
         val channels = makeChannels()
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
-        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = SendPayment(UUID.randomUUID(), 5_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
         var progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
@@ -549,6 +645,17 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 4)
+    }
+
+    @Test
+    fun `local channel failures`() = runSuspendTest {
+        testLocalChannelFailures(makeInvoice(amount = null, supportsTrampoline = true))
+    }
+
+    @Test
+    fun `local channel failures (recipient is our peer)`() = runSuspendTest {
+        // The invoice comes from Bob, our direct peer (and trampoline node).
+        testLocalChannelFailures(makeInvoice(amount = null, supportsTrampoline = true, privKey = TestConstants.Bob.nodeParams.nodePrivateKey))
     }
 
     @Test
