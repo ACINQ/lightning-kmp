@@ -2,6 +2,7 @@ package fr.acinq.eclair.io.peer
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Offline
 import fr.acinq.eclair.channel.Syncing
@@ -27,8 +28,8 @@ class PeerTest : EclairTestSuite() {
 
     @Test
     fun `init peer`() = runSuspendTest {
-        val alice = buildPeer(this, "alice")
-        val bob = buildPeer(this, "bob")
+        val alice = buildPeer(this, TestConstants.Alice.nodeParams)
+        val bob = buildPeer(this, TestConstants.Bob.nodeParams)
 
         val init = LightningMessage.encode(Init(features = activatedFeatures.toByteArray().toByteVector()))
         // start Init for Alice
@@ -42,14 +43,14 @@ class PeerTest : EclairTestSuite() {
     }
 
     @Test
-    fun `init peer (bundled)`() = runSuspendTest { newPeers(this) }
+    fun `init peer (bundled)`() = runSuspendTest { newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)) }
 
     @Test
     fun `restore channel`() = runSuspendTest {
         val (alice0, _) = TestsHelper.reachNormal()
 
         val db = newDatabases().also { it.channels.addOrUpdateChannel(alice0) }
-        val peer = buildPeer(scope = this, databases = db)
+        val peer = buildPeer(scope = this, nodeParams = alice0.staticParams.nodeParams, databases = db)
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }
         assertEquals(1, initChannels.size)
@@ -94,6 +95,6 @@ class PeerTest : EclairTestSuite() {
     @Test
     fun `restore channel (bundled)`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
-        newPeers(this, listOf(alice0 to bob0))
+        newPeers(this, Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams), listOf(alice0 to bob0))
     }
 }
