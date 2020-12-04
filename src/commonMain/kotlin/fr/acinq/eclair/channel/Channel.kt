@@ -1853,8 +1853,7 @@ data class Normal(
                 val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
                 if (proposedHtlcs.isNotEmpty()) {
                     logger.info { "updating channel_update announcement (reason=disabled)" }
-                    val disabledFlags = Announcements.makeChannelFlags(Announcements.isNode1(staticParams.nodeParams.nodePrivateKey.publicKey(), staticParams.remoteNodeId), enable = false)
-                    val channelUpdate = channelUpdate.copy(channelFlags = disabledFlags)
+                    val channelUpdate = Announcements.disableChannel(channelUpdate, staticParams.nodeParams.nodePrivateKey, staticParams.remoteNodeId)
                     proposedHtlcs.forEach { htlc ->
                         commitments.payments[htlc.id]?.let { paymentId ->
                             failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)))
