@@ -207,7 +207,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         }
     }
 
-    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult, IncomingPayment> {
+    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, IncomingPayment> {
         val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
         return when {
             incomingPayment == null -> {
@@ -289,7 +289,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
-        private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult, HtlcPart> {
+        private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult.Rejected, HtlcPart> {
             // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
             return when (val decrypted = IncomingPacket.decrypt(htlc, privateKey)) {
                 is Either.Left -> { // Unable to decrypt onion
@@ -305,7 +305,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
          * Convert a incoming pay-to-open request to a payment part abstraction.
          * This is very similar to the processing of a htlc, except that we only have a packet, to decrypt into a final payload.
          */
-        private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult, PayToOpenPart> {
+        private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
             return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
                 is Either.Left -> {
                     val failureMsg = decrypted.value
@@ -316,7 +316,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             }
         }
 
-        private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult {
+        private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
             val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
             val rejectedAction = when (paymentPart) {
                 is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
