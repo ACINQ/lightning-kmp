@@ -69,14 +69,11 @@ interface LightningMessage {
                     @Suppress("UNCHECKED_CAST")
                     (LightningSerializer.writeBytes((input.serializer() as LightningSerializer<LightningSerializable<*>>).write(input), out))
                 }
-                else -> {
-                    logger.warning { "cannot encode $input" }
-                    Unit
-                }
+                else -> logger.warning { "cannot encode $input" }
             }
         }
 
-        fun encode(input: LightningMessage): ByteArray? {
+        fun encode(input: LightningMessage): ByteArray {
             val out = ByteArrayOutput()
             encode(input, out)
             return out.toByteArray()
@@ -105,6 +102,10 @@ interface UpdateMessage : LightningMessage {
         }
     }
 }
+
+interface HtlcSettlementMessage : UpdateMessage {
+    val id: Long
+} // <- not in the spec
 
 interface HasTemporaryChannelId : LightningMessage {
     val temporaryChannelId: ByteVector32
@@ -154,7 +155,7 @@ data class Init(@Serializable(with = ByteVectorKSerializer::class) val features:
             writeBytes(message.features, out)
             val serializers = HashMap<Long, LightningSerializer<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
-            serializers.put(InitTlv.Networks.tag.toLong(), InitTlv.Networks.Companion as LightningSerializer<InitTlv>)
+            serializers.put(InitTlv.Networks.tag, InitTlv.Networks.Companion as LightningSerializer<InitTlv>)
             val serializer = TlvStreamSerializer<InitTlv>(false, serializers)
             serializer.write(message.tlvs, out)
         }
@@ -247,9 +248,10 @@ data class OpenChannel(
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash, LightningSerializable<OpenChannel> {
-    val channelVersion: ChannelVersion? get() =
-        tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion
-            ?: tlvStream.get<ChannelTlv.ChannelVersionTlvLegacy>()?.channelVersion
+    val channelVersion: ChannelVersion?
+        get() =
+            tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion
+                ?: tlvStream.get<ChannelTlv.ChannelVersionTlvLegacy>()?.channelVersion
 
     override fun serializer(): LightningSerializer<OpenChannel> = OpenChannel
 
@@ -300,7 +302,7 @@ data class OpenChannel(
             writeU64(message.fundingSatoshis.toLong(), out)
             writeU64(message.pushMsat.toLong(), out)
             writeU64(message.dustLimitSatoshis.toLong(), out)
-            writeU64(message.maxHtlcValueInFlightMsat.toLong(), out)
+            writeU64(message.maxHtlcValueInFlightMsat, out)
             writeU64(message.channelReserveSatoshis.toLong(), out)
             writeU64(message.htlcMinimumMsat.toLong(), out)
             writeU32(message.feeratePerKw.toLong().toInt(), out)
@@ -376,7 +378,7 @@ data class AcceptChannel(
 
             writeBytes(message.temporaryChannelId, out)
             writeU64(message.dustLimitSatoshis.toLong(), out)
-            writeU64(message.maxHtlcValueInFlightMsat.toLong(), out)
+            writeU64(message.maxHtlcValueInFlightMsat, out)
             writeU64(message.channelReserveSatoshis.toLong(), out)
             writeU64(message.htlcMinimumMsat.toLong(), out)
             writeU32(message.minimumDepth.toInt(), out)
@@ -522,14 +524,13 @@ data class UpdateAddHtlc(
 @Serializable
 data class UpdateFulfillHtlc(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    val id: Long,
+    override val id: Long,
     @Serializable(with = ByteVector32KSerializer::class) val paymentPreimage: ByteVector32
-) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFulfillHtlc> {
+) : HtlcMessage, HtlcSettlementMessage, HasChannelId, LightningSerializable<UpdateFulfillHtlc> {
     override fun serializer(): LightningSerializer<UpdateFulfillHtlc> = UpdateFulfillHtlc
 
     companion object : LightningSerializer<UpdateFulfillHtlc>() {
-        override val tag: Long
-            get() = 130L
+        override val tag: Long get() = 130L
 
         override fun read(input: Input): UpdateFulfillHtlc {
             return UpdateFulfillHtlc(
@@ -551,14 +552,13 @@ data class UpdateFulfillHtlc(
 @Serializable
 data class UpdateFailHtlc(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    val id: Long,
+    override val id: Long,
     @Serializable(with = ByteVectorKSerializer::class) val reason: ByteVector
-) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFailHtlc> {
+) : HtlcMessage, HtlcSettlementMessage, HasChannelId, LightningSerializable<UpdateFailHtlc> {
     override fun serializer(): LightningSerializer<UpdateFailHtlc> = UpdateFailHtlc
 
     companion object : LightningSerializer<UpdateFailHtlc>() {
-        override val tag: Long
-            get() = 131L
+        override val tag: Long get() = 131L
 
         override fun read(input: Input): UpdateFailHtlc {
             return UpdateFailHtlc(
@@ -581,15 +581,14 @@ data class UpdateFailHtlc(
 @Serializable
 data class UpdateFailMalformedHtlc(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    val id: Long,
+    override val id: Long,
     @Serializable(with = ByteVector32KSerializer::class) val onionHash: ByteVector32,
     val failureCode: Int
-) : HtlcMessage, UpdateMessage, HasChannelId, LightningSerializable<UpdateFailMalformedHtlc> {
+) : HtlcMessage, HtlcSettlementMessage, HasChannelId, LightningSerializable<UpdateFailMalformedHtlc> {
     override fun serializer(): LightningSerializer<UpdateFailMalformedHtlc> = UpdateFailMalformedHtlc
 
     companion object : LightningSerializer<UpdateFailMalformedHtlc>() {
-        override val tag: Long
-            get() = 135L
+        override val tag: Long get() = 135L
 
         override fun read(input: Input): UpdateFailMalformedHtlc {
             return UpdateFailMalformedHtlc(

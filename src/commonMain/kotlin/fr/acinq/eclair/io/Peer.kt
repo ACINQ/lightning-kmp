@@ -27,7 +27,6 @@ import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlin.math.min
 import kotlin.time.ExperimentalTime
-import kotlin.time.milliseconds
 import kotlin.time.seconds
 
 sealed class PeerEvent
@@ -46,7 +45,7 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
-data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
+data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Status.Received) : PeerListenerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
@@ -150,14 +149,14 @@ class Peer(
             var delay = 0.5
             connectionState.filter { it != previousState }.collect {
                 logger.info { "New connection state: $it" }
-                when(it) {
+                when (it) {
                     Connection.CLOSED -> {
                         if (previousState == Connection.ESTABLISHED) send(Disconnected)
-                        delay(delay.seconds) ; delay = min((delay * 2), 30.0)
+                        delay(delay.seconds); delay = min((delay * 2), 30.0)
                         connect()
                     }
                     Connection.ESTABLISHED -> delay = 0.5
-                    else -> {}
+                    else -> Unit
                 }
 
                 previousState = it
@@ -207,7 +206,7 @@ class Peer(
                 }
             }
             logger.info { "sending init $ourInit" }
-            send(LightningMessage.encode(ourInit) ?: error("cannot serialize $ourInit"))
+            send(LightningMessage.encode(ourInit))
 
             suspend fun doPing() {
                 val ping = Hex.decode("0012000a0004deadbeef")
@@ -262,10 +261,8 @@ class Peer(
 
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        encoded?.let { bin ->
-            logger.info { "sending $msg encoded as ${Hex.encode(bin)}" }
-            output.send(bin)
-        }
+        logger.info { "sending $msg encoded as ${Hex.encode(encoded)}" }
+        output.send(encoded)
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
@@ -328,8 +325,9 @@ class Peer(
             is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
         }
-        if (result.status == IncomingPaymentHandler.Status.ACCEPTED && result.incomingPayment != null) {
-            listenerEventChannel.send(PaymentReceived(result.incomingPayment))
+        when (result) {
+            is IncomingPaymentHandler.ProcessAddResult.Accepted -> listenerEventChannel.send(PaymentReceived(result.incomingPayment, result.received))
+            else -> Unit
         }
         result.actions.forEach { input.send(it) }
     }
@@ -415,7 +413,7 @@ class Peer(
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                        output.send(LightningMessage.encode(pong)!!)
+                        output.send(LightningMessage.encode(pong))
                     }
                     msg is Pong -> {
                         logger.debug { "received pong" }
@@ -432,8 +430,7 @@ class Peer(
                     msg is OpenChannel -> {
                         val fundingKeyPath = KeyPath("/1/2/3")
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                        val (closingPubkey, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                        val walletStaticPaymentBasepoint: PublicKey = closingPubkey
+                        val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
                         val localParams = LocalParams(
                             nodeParams.nodeId,
                             fundingKeyPath,
@@ -445,7 +442,6 @@ class Peer(
                             nodeParams.maxAcceptedHtlcs,
                             false,
                             closingPubkeyScript.toByteVector(),
-                            walletStaticPaymentBasepoint,
                             features
                         )
                         val state = WaitForInit(

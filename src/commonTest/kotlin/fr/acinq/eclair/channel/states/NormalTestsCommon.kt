@@ -1318,7 +1318,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(actions.isNotEmpty())
         // in response to that, alice publishes its claim txes
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        assertEquals(3, claimTxes.size)
+        assertEquals(4, claimTxes.size)
         // in addition to its main output, alice can only claim 3 out of 4 htlcs,
         // she can't do anything regarding the htlc sent by bob for which she does not have the preimage
         val amountClaimed = claimTxes.map { claimHtlcTx ->
@@ -1328,7 +1328,7 @@ class NormalTestsCommon : EclairTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(383640.sat, amountClaimed) // TODO formerly 814880.sat ?
+        assertEquals(819490.sat, amountClaimed)
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.findWatches<WatchConfirmed>()[0].event)
         assertEquals(3, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
@@ -1394,7 +1394,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         // in response to that, alice publishes its claim txes
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        assertEquals(2, claimTxes.size)
+        assertEquals(3, claimTxes.size)
         // alice can only claim 2 out of 3 htlcs,
         // she can't do anything regarding the htlc sent by bob for which she does not have the preimage
         val amountClaimed = claimTxes.map { claimHtlcTx ->
@@ -1404,7 +1404,7 @@ class NormalTestsCommon : EclairTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(339060.sat, amountClaimed) // TODO formerly 822310.sat ?
+        assertEquals(825770.sat, amountClaimed)
 
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.findWatches<WatchConfirmed>()[0].event)
         assertEquals(2, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
@@ -1461,7 +1461,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         // we don't need to claim our output since we use static_remote_key
-        val mainPenaltyTx = claimTxes[0]
+        val mainPenaltyTx = claimTxes[1]
         // TODO business code is disabled for now
         //      val htlcPenaltyTxs = claimTxes.drop(2)
         //      assertEquals(2, htlcPenaltyTxs.size)

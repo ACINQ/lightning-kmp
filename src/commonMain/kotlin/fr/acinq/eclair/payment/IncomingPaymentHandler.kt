@@ -34,9 +34,15 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
 
 class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
 
-    enum class Status { ACCEPTED, REJECTED, PENDING }
+    sealed class ProcessAddResult {
+        abstract val actions: List<PeerEvent>
 
-    data class ProcessAddResult(val status: Status, val actions: List<PeerEvent>, val incomingPayment: IncomingPayment?)
+        data class Accepted(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Status.Received) : ProcessAddResult()
+        data class Rejected(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
+        data class Pending(val incomingPayment: IncomingPayment) : ProcessAddResult() {
+            override val actions: List<PeerEvent> = listOf()
+        }
+    }
 
     /**
      * We support receiving multipart payments, where an incoming payment will be split across multiple partial payments.
@@ -131,57 +137,77 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             is Either.Left -> validationResult.value
             is Either.Right -> {
                 val incomingPayment = validationResult.value
-                val payment = pending[paymentPart.paymentHash]?.add(paymentPart) ?: PendingPayment(paymentPart)
-                when {
-                    paymentPart.totalAmount != payment.totalAmount -> {
-                        // Bolt 04:
-                        // - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
-                        logger.warning { "h:${paymentPart.paymentHash} invalid total_amount_msat, failing payment (expected ${payment.totalAmount}, received ${paymentPart.totalAmount})" }
-                        val actions = payment.parts.map { part ->
-                            val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
-                            when (part) {
-                                is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
-                                is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
-                            }
+                if (incomingPayment.status is IncomingPayment.Status.Received) {
+                    logger.warning { "h:${paymentPart.paymentHash} received payment for an invoice that has already been paid" }
+                    return when (paymentPart) {
+                        is HtlcPart -> {
+                            // We must fulfill this htlc, because it could be a retransmission from the channel.
+                            // Here is how this kind of htlc retransmission may happen:
+                            //  - we receive an htlc that correctly pays one of our invoices
+                            //  - we mark the payment as received and tell the channel to fulfill it
+                            //  - but we may restart the wallet or lose the connection to our peer, so the fulfill doesn't reach them
+                            //  - when we reconnect, the channel will ask us to reprocess this htlc, so we must fulfill it again
+                            val action = WrappedChannelEvent(paymentPart.htlc.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(paymentPart.htlc.id, incomingPayment.preimage, true)))
+                            ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.status)
                         }
-                        pending.remove(paymentPart.paymentHash)
-                        return ProcessAddResult(Status.REJECTED, actions, incomingPayment)
+                        is PayToOpenPart -> {
+                            val action = actionForPayToOpenFailure(privateKey, IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.payToOpenRequest)
+                            ProcessAddResult.Rejected(listOf(action), incomingPayment)
+                        }
                     }
-                    payment.amountReceived < payment.totalAmount -> {
-                        // Still waiting for more payments.
-                        pending[paymentPart.paymentHash] = payment
-                        return ProcessAddResult(Status.PENDING, listOf(), incomingPayment)
-                    }
-                    else -> {
-                        logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived})" }
-                        val actions = payment.parts.map { part ->
-                            when (part) {
-                                is HtlcPart -> {
-                                    val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.preimage, true)
-                                    val channelEvent = ChannelEvent.ExecuteCommand(cmd)
-                                    WrappedChannelEvent(part.htlc.channelId, channelEvent)
+                } else {
+                    val payment = pending[paymentPart.paymentHash]?.add(paymentPart) ?: PendingPayment(paymentPart)
+                    when {
+                        paymentPart.totalAmount != payment.totalAmount -> {
+                            // Bolt 04:
+                            // - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
+                            logger.warning { "h:${paymentPart.paymentHash} invalid total_amount_msat, failing payment (expected ${payment.totalAmount}, received ${paymentPart.totalAmount})" }
+                            val actions = payment.parts.map { part ->
+                                val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
+                                when (part) {
+                                    is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
+                                    is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
                                 }
-                                is PayToOpenPart -> PayToOpenResponseEvent(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
                             }
+                            pending.remove(paymentPart.paymentHash)
+                            return ProcessAddResult.Rejected(actions, incomingPayment)
                         }
-                        pending.remove(paymentPart.paymentHash)
-                        val payToOpenRequests = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest }
-                        val (amountReceived, receivedWith) = when {
-                            payToOpenRequests.isEmpty() -> Pair(payment.amountReceived, IncomingPayment.ReceivedWith.LightningPayment)
-                            else -> {
-                                val (_, fees) = PayToOpenRequest.combine(payToOpenRequests)
-                                Pair(payment.amountReceived - fees.toMilliSatoshi(), IncomingPayment.ReceivedWith.NewChannel(fees.toMilliSatoshi(), channelId = null))
+                        payment.amountReceived < payment.totalAmount -> {
+                            // Still waiting for more payments.
+                            pending[paymentPart.paymentHash] = payment
+                            return ProcessAddResult.Pending(incomingPayment)
+                        }
+                        else -> {
+                            logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived})" }
+                            val actions = payment.parts.map { part ->
+                                when (part) {
+                                    is HtlcPart -> {
+                                        val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.preimage, true)
+                                        val channelEvent = ChannelEvent.ExecuteCommand(cmd)
+                                        WrappedChannelEvent(part.htlc.channelId, channelEvent)
+                                    }
+                                    is PayToOpenPart -> PayToOpenResponseEvent(PayToOpenResponse(part.payToOpenRequest.chainHash, paymentPart.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
+                                }
                             }
+                            pending.remove(paymentPart.paymentHash)
+                            val payToOpenRequests = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest }
+                            val received = when {
+                                payToOpenRequests.isEmpty() -> IncomingPayment.Status.Received(payment.amountReceived, IncomingPayment.ReceivedWith.LightningPayment)
+                                else -> {
+                                    val (_, fees) = PayToOpenRequest.combine(payToOpenRequests)
+                                    IncomingPayment.Status.Received(payment.amountReceived - fees.toMilliSatoshi(), IncomingPayment.ReceivedWith.NewChannel(fees.toMilliSatoshi(), channelId = null))
+                                }
+                            }
+                            db.receivePayment(paymentPart.paymentHash, received.amount, received.receivedWith)
+                            return ProcessAddResult.Accepted(actions, incomingPayment.copy(status = received), received)
                         }
-                        db.receivePayment(paymentPart.paymentHash, amountReceived, receivedWith)
-                        return ProcessAddResult(Status.ACCEPTED, actions, incomingPayment.copy(status = IncomingPayment.Status.Received(amountReceived, receivedWith)))
                     }
                 }
             }
         }
     }
 
-    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult, IncomingPayment> {
+    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, IncomingPayment> {
         val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
         return when {
             incomingPayment == null -> {
@@ -190,10 +216,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             }
             incomingPayment.status is IncomingPayment.Status.Expired -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for expired invoice" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            incomingPayment.status is IncomingPayment.Status.Received -> {
-                logger.warning { "h:${paymentPart.paymentHash} received payment for an invoice that has already been paid" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             incomingPayment.origin !is IncomingPayment.Origin.Invoice -> {
@@ -267,13 +289,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
-        private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult, HtlcPart> {
+        private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult.Rejected, HtlcPart> {
             // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
             return when (val decrypted = IncomingPacket.decrypt(htlc, privateKey)) {
                 is Either.Left -> { // Unable to decrypt onion
                     val failureMsg = decrypted.value
                     val action = actionForFailureMessage(failureMsg, htlc)
-                    Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
+                    Either.Left(ProcessAddResult.Rejected(listOf(action), null))
                 }
                 is Either.Right -> Either.Right(HtlcPart(htlc, decrypted.value))
             }
@@ -283,24 +305,24 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
          * Convert a incoming pay-to-open request to a payment part abstraction.
          * This is very similar to the processing of a htlc, except that we only have a packet, to decrypt into a final payload.
          */
-        private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult, PayToOpenPart> {
+        private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
             return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
                 is Either.Left -> {
                     val failureMsg = decrypted.value
                     val action = actionForPayToOpenFailure(privateKey, failureMsg, payToOpenRequest)
-                    Either.Left(ProcessAddResult(status = Status.REJECTED, actions = listOf(action), incomingPayment = null))
+                    Either.Left(ProcessAddResult.Rejected(listOf(action), null))
                 }
                 is Either.Right -> Either.Right(PayToOpenPart(payToOpenRequest, decrypted.value))
             }
         }
 
-        private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult {
+        private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
             val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
             val rejectedAction = when (paymentPart) {
                 is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
                 is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, paymentPart.payToOpenRequest)
             }
-            return ProcessAddResult(Status.REJECTED, listOf(rejectedAction), incomingPayment)
+            return ProcessAddResult.Rejected(listOf(rejectedAction), incomingPayment)
         }
 
         private fun actionForFailureMessage(msg: FailureMessage, htlc: UpdateAddHtlc, commit: Boolean = true): WrappedChannelEvent {

@@ -132,7 +132,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeLegacyPayload(defaultAmount))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
         val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
         assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
     }
@@ -144,15 +144,16 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+        result as IncomingPaymentHandler.ProcessAddResult.Accepted
         val expected = ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true))
         assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
 
-        val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
-        assertEquals(defaultAmount, status.amount)
-        assertEquals(IncomingPayment.ReceivedWith.LightningPayment, status.receivedWith)
+        assertEquals(result.incomingPayment.status, result.received)
+        assertEquals(defaultAmount, result.received.amount)
+        assertEquals(IncomingPayment.ReceivedWith.LightningPayment, result.received.receivedWith)
 
-        checkDbPayment(result.incomingPayment!!, paymentHandler.db)
+        checkDbPayment(result.incomingPayment, paymentHandler.db)
     }
 
     @Test
@@ -162,16 +163,16 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+        result as IncomingPaymentHandler.ProcessAddResult.Accepted
         val expected = PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
         assertEquals(setOf(expected), result.actions.toSet())
 
-        val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
         val expectedFees = defaultAmount * 0.1 // 10% fees
-        assertEquals(defaultAmount - expectedFees, status.amount)
-        assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), status.receivedWith)
+        assertEquals(defaultAmount - expectedFees, result.received.amount)
+        assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), result.received.receivedWith)
 
-        checkDbPayment(result.incomingPayment!!, paymentHandler.db)
+        checkDbPayment(result.incomingPayment, paymentHandler.db)
     }
 
     @Test
@@ -195,7 +196,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+        result as IncomingPaymentHandler.ProcessAddResult.Rejected
         assertNull(result.incomingPayment)
         val expected = PayToOpenResponseEvent(
             PayToOpenResponse(
@@ -220,7 +222,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret.reversed())) // <--- wrong secret
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+        result as IncomingPaymentHandler.ProcessAddResult.Rejected
         assertEquals(incomingPayment, result.incomingPayment)
         val expected = PayToOpenResponseEvent(
             PayToOpenResponse(
@@ -263,7 +266,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+        result as IncomingPaymentHandler.ProcessAddResult.Rejected
         assertEquals(incomingPayment, result.incomingPayment)
         val expected = PayToOpenResponseEvent(
             PayToOpenResponse(
@@ -295,8 +299,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
-            assertTrue { result.incomingPayment!!.status == IncomingPayment.Status.Pending }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
+            result as IncomingPaymentHandler.ProcessAddResult.Pending
+            assertTrue { result.incomingPayment.status == IncomingPayment.Status.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -306,16 +311,16 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(1, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+            result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val expected = setOf(
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, defaultPreimage, commit = true))),
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(1, defaultPreimage, commit = true))),
             )
             assertEquals(expected, result.actions.toSet())
-            val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
-            assertEquals(totalAmount, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.LightningPayment, status.receivedWith)
-            checkDbPayment(result.incomingPayment!!, paymentHandler.db)
+            assertEquals(totalAmount, result.received.amount)
+            assertEquals(IncomingPayment.ReceivedWith.LightningPayment, result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
 
@@ -332,7 +337,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(7, channelId1, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -342,16 +347,16 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(5, channelId2, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+            result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val expected = setOf(
                 WrappedChannelEvent(channelId1, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(7, defaultPreimage, commit = true))),
                 WrappedChannelEvent(channelId2, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(5, defaultPreimage, commit = true))),
             )
             assertEquals(expected, result.actions.toSet())
-            val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
-            assertEquals(totalAmount, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.LightningPayment, status.receivedWith)
-            checkDbPayment(result.incomingPayment!!, paymentHandler.db)
+            assertEquals(totalAmount, result.received.amount)
+            assertEquals(IncomingPayment.ReceivedWith.LightningPayment, result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
 
@@ -367,7 +372,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -377,7 +382,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+            result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val expected = PayToOpenResponseEvent(
                 PayToOpenResponse(
                     payToOpenRequest.chainHash,
@@ -386,11 +392,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 )
             )
             assertEquals(setOf(expected), result.actions.toSet())
-            val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
             val expectedFees = 15_000.msat // 10% of 150_000 msat
-            assertEquals(totalAmount - expectedFees, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), status.receivedWith)
-            checkDbPayment(result.incomingPayment!!, paymentHandler.db)
+            assertEquals(totalAmount - expectedFees, result.received.amount)
+            assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
 
@@ -407,7 +412,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -417,7 +422,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+            result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val expected = setOf(
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true))),
                 PayToOpenResponseEvent(
@@ -425,11 +431,10 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
                 ),
             )
             assertEquals(expected, result.actions.toSet())
-            val status = result.incomingPayment!!.status as IncomingPayment.Status.Received
             val expectedFees = 5_000.msat // 10% of the amount sent via pay-to-open (50 000 msat)
-            assertEquals(totalAmount - expectedFees, status.amount)
-            assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), status.receivedWith)
-            checkDbPayment(result.incomingPayment!!, paymentHandler.db)
+            assertEquals(totalAmount - expectedFees, result.received.amount)
+            assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
 
@@ -439,7 +444,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
         val expected = WrappedChannelEvent(add.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true)))
         assertEquals(setOf(expected), result.actions.toSet())
     }
@@ -457,7 +462,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(7, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -467,7 +472,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(11, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(7, incomingPayment.preimage, commit = true))),
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(11, incomingPayment.preimage, commit = true))),
@@ -490,7 +495,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         listOf(Pair(3L, amount1), Pair(5L, amount2)).forEach { (id, amount) ->
             val add = makeUpdateAddHtlc(id, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -500,7 +505,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(6L, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount3, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(3, incomingPayment.preimage, commit = true))),
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(5, incomingPayment.preimage, commit = true))),
@@ -508,6 +513,73 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             )
             assertEquals(expected, result.actions.toSet())
         }
+    }
+
+    @Test
+    fun `reprocess duplicate htlcs`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+
+        // We receive a first multipart htlc.
+        val add1 = makeUpdateAddHtlc(3, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret))
+        val result1 = paymentHandler.process(add1, TestConstants.defaultBlockHeight)
+        assertTrue { result1 is IncomingPaymentHandler.ProcessAddResult.Pending }
+        assertTrue { result1.actions.isEmpty() }
+
+        // This htlc is reprocessed (e.g. because the wallet restarted).
+        val result1b = paymentHandler.process(add1, TestConstants.defaultBlockHeight)
+        assertTrue { result1b is IncomingPaymentHandler.ProcessAddResult.Pending }
+        assertTrue { result1b.actions.isEmpty() }
+
+        // We receive the second multipart htlc.
+        val add2 = makeUpdateAddHtlc(5, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret))
+        val result2 = paymentHandler.process(add2, TestConstants.defaultBlockHeight)
+        assertTrue { result2 is IncomingPaymentHandler.ProcessAddResult.Accepted }
+        result2 as IncomingPaymentHandler.ProcessAddResult.Accepted
+        assertEquals(defaultAmount, result2.received.amount)
+        val expected = setOf(
+            WrappedChannelEvent(add1.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add1.id, incomingPayment.preimage, commit = true))),
+            WrappedChannelEvent(add2.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true)))
+        )
+        assertEquals(expected, result2.actions.toSet())
+
+        // The second htlc is reprocessed (e.g. because our peer disconnected before we could send them the preimage).
+        val result2b = paymentHandler.process(add2, TestConstants.defaultBlockHeight)
+        assertTrue { result2b is IncomingPaymentHandler.ProcessAddResult.Accepted }
+        result2b as IncomingPaymentHandler.ProcessAddResult.Accepted
+        assertEquals(defaultAmount, result2b.received.amount)
+        assertEquals(listOf(WrappedChannelEvent(add2.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true)))), result2b.actions)
+    }
+
+    @Test
+    fun `reprocess failed htlcs`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+
+        // We receive a first multipart htlc.
+        val add = makeUpdateAddHtlc(1, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret))
+        val result1 = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+        assertTrue { result1 is IncomingPaymentHandler.ProcessAddResult.Pending }
+        assertTrue { result1.actions.isEmpty() }
+
+        // It expires after a while.
+        val actions1 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2)
+        val addTimeout = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+        assertEquals(listOf(WrappedChannelEvent(add.channelId, addTimeout)), actions1)
+
+        // For some reason, the channel was offline, didn't process the failure and retransmits the htlc.
+        val result2 = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+        assertTrue { result2 is IncomingPaymentHandler.ProcessAddResult.Pending }
+        assertTrue { result2.actions.isEmpty() }
+
+        // It expires again.
+        val actions2 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2)
+        assertEquals(listOf(WrappedChannelEvent(add.channelId, addTimeout)), actions2)
+
+        // The channel was offline again, didn't process the failure and retransmits the htlc, but it is now close to its expiry.
+        val currentBlockHeight = add.cltvExpiry.toLong().toInt() - 3
+        val result3 = paymentHandler.process(add, currentBlockHeight)
+        assertTrue { result3 is IncomingPaymentHandler.ProcessAddResult.Rejected }
+        val addExpired = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, currentBlockHeight.toLong())), commit = true))
+        assertEquals(listOf(WrappedChannelEvent(add.channelId, addExpired)), result3.actions)
     }
 
     @Test
@@ -522,7 +594,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(10_000.msat, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
         val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
         assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
     }
@@ -533,7 +605,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, randomBytes32(), makeMppPayload(defaultAmount, defaultAmount, randomBytes32()))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
         val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
         assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
     }
@@ -546,7 +618,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = UpdateAddHtlc(randomBytes32(), 0, defaultAmount, incomingPayment.paymentHash, cltvExpiry, badOnion)
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
         // The current flow of error checking within the codebase would be:
         // 1. InvalidOnionKey
         // 2. InvalidOnionHmac
@@ -563,7 +635,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount / 2, defaultAmount, paymentSecret, lowExpiry))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
-        assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
         val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
         assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
     }
@@ -580,7 +652,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         payloads.forEach { payload ->
             val add = makeUpdateAddHtlc(3, randomBytes32(), paymentHandler, incomingPayment.paymentHash, payload)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
             val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payload.totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
             assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
         }
@@ -599,7 +671,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(1, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -611,7 +683,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             val payload = makeMppPayload(amount2, totalAmount + MilliSatoshi(1), paymentSecret)
             val add = makeUpdateAddHtlc(2, channelId, paymentHandler, incomingPayment.paymentHash, payload)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
             val expected = setOf(
                 WrappedChannelEvent(
                     channelId,
@@ -638,7 +710,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(1, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -649,7 +721,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             val payload = makeMppPayload(amount2, totalAmount, randomBytes32()) // <--- invalid payment secret
             val add = makeUpdateAddHtlc(1, randomBytes32(), paymentHandler, incomingPayment.paymentHash, payload)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
             val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
             assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
         }
@@ -667,7 +739,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             listOf(1L, 2L).forEach { id ->
                 val add = makeUpdateAddHtlc(id, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(10_000.msat, defaultAmount, paymentSecret))
                 val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-                assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+                assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
                 assertTrue { result.actions.isEmpty() }
             }
         }
@@ -706,7 +778,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(1, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -724,7 +796,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(3, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -734,7 +806,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add = makeUpdateAddHtlc(4, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(3, incomingPayment.preimage, commit = true))),
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(4, incomingPayment.preimage, commit = true))),
@@ -754,12 +826,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         run {
             val add1 = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
             val result1 = paymentHandler.process(add1, TestConstants.defaultBlockHeight)
-            assertTrue { result1.status == IncomingPaymentHandler.Status.PENDING }
+            assertTrue { result1 is IncomingPaymentHandler.ProcessAddResult.Pending }
             assertTrue { result1.actions.isEmpty() }
 
             val add2 = makeUpdateAddHtlc(4, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result2 = paymentHandler.process(add2, TestConstants.defaultBlockHeight)
-            assertTrue { result2.status == IncomingPaymentHandler.Status.ACCEPTED }
+            assertTrue { result2 is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
                 WrappedChannelEvent(add1.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add1.id, incomingPayment.preimage, commit = true))),
                 WrappedChannelEvent(add2.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true))),
@@ -768,12 +840,12 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         }
 
         // Step 2 of 2:
-        // - Alice receives and additional htlc for the invoice, which she already completed
+        // - Alice receives an additional htlc for the invoice, which she already completed
         run {
             val add = makeUpdateAddHtlc(3, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(1_500.msat, totalAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-            assertTrue { result.status == IncomingPaymentHandler.Status.REJECTED }
-            val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+            val expected = ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true))
             assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
         }
     }
@@ -848,7 +920,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, "unit test", expirySeconds, timestamp)
-            return Pair(IncomingPayment(defaultPreimage, IncomingPayment.Origin.Invoice(paymentRequest)), paymentRequest.paymentSecret!!)
+            return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret!!)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

@@ -26,7 +26,8 @@ internal inline fun <reified T : Watch> List<ChannelAction>.findWatch(): T = fin
 internal inline fun <reified T : Watch> List<ChannelAction>.hasWatch() = assertNotNull(findWatches<T>().firstOrNull())
 
 // Commands
-internal inline fun <reified T : Command> List<ChannelAction>.findCommandOpt(): T? = filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.filterIsInstance<T>().firstOrNull()
+internal inline fun <reified T : Command> List<ChannelAction>.findCommands(): List<T> = filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.filterIsInstance<T>()
+internal inline fun <reified T : Command> List<ChannelAction>.findCommandOpt(): T? = findCommands<T>().firstOrNull()
 internal inline fun <reified T : Command> List<ChannelAction>.findCommand(): T = findCommandOpt<T>() ?: fail("cannot find command ${T::class}")
 internal inline fun <reified T : Command> List<ChannelAction>.hasCommand() = assertNotNull(findCommandOpt<T>())
 
