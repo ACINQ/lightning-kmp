@@ -44,18 +44,14 @@ class ConnectionTest : EclairTestSuite() {
     @Test
     fun `payment test between two phoenix nodes`() = runSuspendTest {
         val (alice0, bob0) = reachNormal()
-//        val (bob1, alice1) = reachNormal()
-//        val (alice2, bob2) = reachNormal()
         val (alice, bob) = newPeers(this, listOf(alice0 to bob0))
 
-        val msg = alice.output.consumeAsFlow().first { LightningMessage.decode(it) is UpdateAddHtlc }
-        bob.send(BytesReceived(msg))
-
-        val paymentPreimage = Eclair.randomBytes32()
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(paymentPreimage, 15_000_000.msat,"test invoice", deferredInvoice))
+        bob.send(ReceivePayment(Eclair.randomBytes32(), 15_000_000.msat,"test invoice", deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
+
+        delay(10.seconds)
     }
 }

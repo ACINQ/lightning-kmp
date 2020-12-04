@@ -31,7 +31,6 @@ class PeerTest : EclairTestSuite() {
         val bob = buildPeer(this, "bob")
 
         val init = LightningMessage.encode(Init(features = activatedFeatures.toByteArray().toByteVector()))
-            ?: error("LN message `Init` encoding failed")
         // start Init for Alice
         alice.send(BytesReceived(init))
         // start Init for Bob
@@ -59,7 +58,7 @@ class PeerTest : EclairTestSuite() {
 
         // send Init from remote node
         val theirInit = Init(features = activatedFeatures.toByteArray().toByteVector())
-        val initMsg = LightningMessage.encode(theirInit) ?: error("LN message `Init` encoding failed")
+        val initMsg = LightningMessage.encode(theirInit)
         peer.send(BytesReceived(initMsg))
         // Wait until the Peer is ready
         peer.waitForStatus(Connection.ESTABLISHED)
@@ -84,7 +83,7 @@ class PeerTest : EclairTestSuite() {
             syncState.commitments.remoteChannelData
         )
 
-        val reestablishMsg = LightningMessage.encode(channelReestablish) ?: error("LN message `ChannelReestablish` encoding failed")
+        val reestablishMsg = LightningMessage.encode(channelReestablish)
         peer.send(BytesReceived(reestablishMsg))
 
         // Wait until the channels are Reestablished(=Normal)

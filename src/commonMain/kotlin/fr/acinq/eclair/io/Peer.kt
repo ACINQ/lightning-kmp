@@ -66,7 +66,7 @@ class Peer(
     public val remoteNodeId: PublicKey = nodeParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    internal val output = Channel<ByteArray>(BUFFERED)
+    public val output = Channel<ByteArray>(BUFFERED)
 
     private val logger by eclairLogger()
 
