@@ -46,7 +46,7 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
-data class PaymentReceived(val incomingPayment: IncomingPayment) : PeerListenerEvent()
+data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Status.Received) : PeerListenerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
@@ -329,8 +329,9 @@ class Peer(
             is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
         }
-        if (result.status == IncomingPaymentHandler.Status.ACCEPTED && result.incomingPayment != null) {
-            listenerEventChannel.send(PaymentReceived(result.incomingPayment))
+        when (result) {
+            is IncomingPaymentHandler.ProcessAddResult.Accepted -> listenerEventChannel.send(PaymentReceived(result.incomingPayment, result.received))
+            else -> Unit
         }
         result.actions.forEach { input.send(it) }
     }
