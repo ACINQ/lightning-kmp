@@ -482,7 +482,8 @@ class Peer(
                                     _channels = _channels + (msg.channelId to state3)
                                 }
                                 is Try.Failure -> {
-                                    logger.error(decrypted.error) { "failed to restore channelId=${msg.channelId}" }
+                                    logger.error(decrypted.error) { "failed to restore channelId=${msg.channelId} from peer backup" }
+                                    sendToPeer(Error(msg.channelId, "unknown channel"))
                                 }
                             }
                         }
