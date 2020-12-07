@@ -22,8 +22,11 @@ import fr.acinq.eclair.wire.Init
 import fr.acinq.eclair.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -32,7 +35,8 @@ public suspend fun newPeers(
     nodeParams: Pair<NodeParams, NodeParams>,
     initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList(),
     automateMessaging: Boolean = true
-): Pair<Peer, Peer> {
+): PeerTuple {
+    // Create Alice and Bob peers
     val alice = buildPeer(scope, nodeParams.first, databases = newDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.first) }
     })
@@ -40,23 +44,42 @@ public suspend fun newPeers(
         initChannels.forEach { channels.addOrUpdateChannel(it.second) }
     })
 
+    // Create collectors for Alice and Bob output messages
+    val bob2alice = flow {
+        while (scope.isActive) {
+            val bytes = bob.output.receive()
+            val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
+            println("Bob sends $msg")
+            emit(msg)
+        }
+    }
+    val alice2bob = flow {
+        while (scope.isActive) {
+            val bytes = alice.output.receive()
+            val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
+            println("Alice sends $msg")
+            emit(msg)
+        }
+    }
+
     // Initialize Bob with Alice's features
     bob.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.first.features.toByteArray().toByteVector()))))
     // Initialize Alice with Bob's features
     alice.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.second.features.toByteArray().toByteVector()))))
 
+    // TODO update to depend on the initChannels size
     if (initChannels.isNotEmpty()) {
         val bobInit = scope.launch {
-            val bobChannelReestablish = bob.expectMessage<ChannelReestablish>()
-            alice.forwardMessage(bobChannelReestablish)
-            val bobFundingLocked = bob.expectMessage<FundingLocked>()
-            alice.forwardMessage(bobFundingLocked)
+            val bobChannelReestablish = bob2alice.expect<ChannelReestablish>()
+            alice.forward(bobChannelReestablish)
+            val bobFundingLocked = bob2alice.expect<FundingLocked>()
+            alice.forward(bobFundingLocked)
         }
         val aliceInit = scope.launch {
-            val aliceChannelReestablish = alice.expectMessage<ChannelReestablish>()
-            bob.forwardMessage(aliceChannelReestablish)
-            val aliceFundingLocked = alice.expectMessage<FundingLocked>()
-            bob.forwardMessage(aliceFundingLocked)
+            val aliceChannelReestablish = alice2bob.expect<ChannelReestablish>()
+            bob.forward(aliceChannelReestablish)
+            val aliceFundingLocked = alice2bob.expect<FundingLocked>()
+            bob.forward(aliceFundingLocked)
         }
         bobInit.join()
         aliceInit.join()
@@ -72,22 +95,18 @@ public suspend fun newPeers(
 
     if (automateMessaging) {
         scope.launch {
-            alice.output.consumeEach {
-                val msg = LightningMessage.decode(it) ?: error("cannot decode lightning message $it")
-                println("Alice forwards to Bob $msg")
-                bob.send(BytesReceived(it))
+            bob2alice.collect {
+                alice.send(BytesReceived(LightningMessage.encode(it)))
             }
         }
         scope.launch {
-            bob.output.consumeEach {
-                val msg = LightningMessage.decode(it) ?: error("cannot decode lightning message $it")
-                println("Bob forwards to Alice $msg")
-                alice.send(BytesReceived(it))
+            alice2bob.collect {
+                bob.send(BytesReceived(LightningMessage.encode(it)))
             }
         }
     }
 
-    return alice to bob
+    return PeerTuple(alice, bob, alice2bob, bob2alice)
 }
 
 public suspend fun CoroutineScope.newPeer(
@@ -151,6 +170,8 @@ public fun newDatabases(
     channels: InMemoryChannelsDb = InMemoryChannelsDb(),
     payments: InMemoryPaymentsDb = InMemoryPaymentsDb(),
 ) = InMemoryDatabases(channels, payments)
+
+data class PeerTuple(val alice: Peer, val bob: Peer, val alice2bob: Flow<LightningMessage>, val bob2alice: Flow<LightningMessage>)
 
 val activatedFeatures = Features(
     setOf(

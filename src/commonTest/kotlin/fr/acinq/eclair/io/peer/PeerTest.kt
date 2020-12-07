@@ -112,7 +112,7 @@ class PeerTest : EclairTestSuite() {
             alice0.staticParams.nodeParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)),
             bob0.staticParams.nodeParams
         )
-        val (alice, bob) = newPeers(this, nodeParams, listOf(alice0 to bob0), automateMessaging = false)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, listOf(alice0 to bob0), automateMessaging = false)
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
         bob.send(ReceivePayment(Eclair.randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
@@ -120,31 +120,31 @@ class PeerTest : EclairTestSuite() {
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
 
-        val updateHtlc = alice.expectMessage<UpdateAddHtlc>()
-        val aliceCommitSig = alice.expectMessage<CommitSig>()
-        bob.forwardMessage(updateHtlc)
-        bob.forwardMessage(aliceCommitSig)
+        val updateHtlc = alice2bob.expect<UpdateAddHtlc>()
+        val aliceCommitSig = alice2bob.expect<CommitSig>()
+        bob.forward(updateHtlc)
+        bob.forward(aliceCommitSig)
 
-        val bobRevokeAndAck = bob.expectMessage<RevokeAndAck>()
-        val bobCommitSig = bob.expectMessage<CommitSig>()
-        alice.forwardMessage(bobRevokeAndAck)
-        alice.forwardMessage(bobCommitSig)
+        val bobRevokeAndAck = bob2alice.expect<RevokeAndAck>()
+        val bobCommitSig = bob2alice.expect<CommitSig>()
+        alice.forward(bobRevokeAndAck)
+        alice.forward(bobCommitSig)
 
-        val aliceRevokeAndAck = alice.expectMessage<RevokeAndAck>()
-        bob.forwardMessage(aliceRevokeAndAck)
+        val aliceRevokeAndAck = alice2bob.expect<RevokeAndAck>()
+        bob.forward(aliceRevokeAndAck)
 
-        val updateFulfillHtlc = bob.expectMessage<UpdateFulfillHtlc>()
-        val bobCommitSig2 = bob.expectMessage<CommitSig>()
-        alice.forwardMessage(updateFulfillHtlc)
-        alice.forwardMessage(bobCommitSig2)
+        val updateFulfillHtlc = bob2alice.expect<UpdateFulfillHtlc>()
+        val bobCommitSig2 = bob2alice.expect<CommitSig>()
+        alice.forward(updateFulfillHtlc)
+        alice.forward(bobCommitSig2)
 
-        val aliceRevokeAndAck2 = alice.expectMessage<RevokeAndAck>()
-        val aliceCommitSig2 = alice.expectMessage<CommitSig>()
-        bob.forwardMessage(aliceRevokeAndAck2)
-        bob.forwardMessage(aliceCommitSig2)
+        val aliceRevokeAndAck2 = alice2bob.expect<RevokeAndAck>()
+        val aliceCommitSig2 = alice2bob.expect<CommitSig>()
+        bob.forward(aliceRevokeAndAck2)
+        bob.forward(aliceCommitSig2)
 
-        val bobRevokeAndAck2 = bob.expectMessage<RevokeAndAck>()
-        alice.forwardMessage(bobRevokeAndAck2)
+        val bobRevokeAndAck2 = bob2alice.expect<RevokeAndAck>()
+        alice.forward(bobRevokeAndAck2)
 
         alice.expectState<Normal> { commitments.availableBalanceForReceive() > alice0.commitments.availableBalanceForReceive() }
     }
