@@ -1,8 +1,10 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.*
-import fr.acinq.eclair.*
+import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.Commitments
@@ -166,15 +168,11 @@ class AnchorOutputsTestsCommon {
                 return Transactions.sign(tx, privateKey)
             }
 
-            override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHhash: Int): ByteVector64 {
+            override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
                 TODO("Not yet implemented")
             }
 
             override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 {
-                TODO("Not yet implemented")
-            }
-
-            override fun signChannelAnnouncement(fundingKeyPath: KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): Pair<ByteVector64, ByteVector64> {
                 TODO("Not yet implemented")
             }
         }

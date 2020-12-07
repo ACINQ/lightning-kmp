@@ -4,8 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.eclair.Eclair.secureRandom
-import fr.acinq.eclair.Features
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.transactions.Transactions
@@ -62,7 +60,7 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
     }
 
     override fun newFundingKeyPath(isFunder: Boolean): KeyPath {
-        val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
+        val last = hardened(if (isFunder) 1 else 0)
         fun next() = secureRandom.nextInt().toLong() and 0xFFFFFFFF
         return KeyPath(listOf(next(), next(), next(), next(), next(), next(), next(), next(), last))
     }
@@ -86,10 +84,10 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
         return Transactions.sign(tx, privateKey.privateKey)
     }
 
-    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHhash: Int): ByteVector64 {
+    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
         val privateKey = privateKey(publicKey.path)
         val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-        return Transactions.sign(tx, currentKey, sigHhash)
+        return Transactions.sign(tx, currentKey, sigHash)
     }
 
     override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 {
@@ -98,24 +96,19 @@ data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) va
         return Transactions.sign(tx, currentKey)
     }
 
-    override fun signChannelAnnouncement(fundingKeyPath: KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): Pair<ByteVector64, ByteVector64> {
-        TODO("Not yet implemented")
-    }
-
     companion object {
         fun channelKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
-            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(46), DeterministicWallet.hardened(1))
-            Block.LivenetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(47), DeterministicWallet.hardened(1))
+            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(46), hardened(1))
+            Block.LivenetGenesisBlock.hash -> listOf(hardened(47), hardened(1))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")
         }
-
 
         // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
         // Note that the node path and the above channel path are on different branches so even if the
         // node key is compromised there is no way to retrieve the wallet keys
         fun nodeKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
-            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(46), DeterministicWallet.hardened(0))
-            Block.LivenetGenesisBlock.hash -> listOf(DeterministicWallet.hardened(47), DeterministicWallet.hardened(0))
+            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(46), hardened(0))
+            Block.LivenetGenesisBlock.hash -> listOf(hardened(47), hardened(0))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")
         }
     }
