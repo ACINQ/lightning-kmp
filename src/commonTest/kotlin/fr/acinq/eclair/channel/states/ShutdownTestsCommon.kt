@@ -136,12 +136,12 @@ class ShutdownTestsCommon : EclairTestSuite() {
 
         fun init(currentBlockHeight: Long = 0L): Pair<ShuttingDown, ShuttingDown> {
             val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
-            val (_, cmdAdd1) = TestsHelper.makeCmdAdd(300000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight, r1)
+            val (_, cmdAdd1) = TestsHelper.makeCmdAdd(300000000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight, r1)
             val (alice1, actions) = alice.process(ChannelEvent.ExecuteCommand(cmdAdd1))
             val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()
             val (bob1, _) = bob.process(ChannelEvent.MessageReceived(htlc1))
 
-            val (_, cmdAdd2) = TestsHelper.makeCmdAdd(200000000.msat, alice.staticParams.nodeParams.nodeId, currentBlockHeight, r2)
+            val (_, cmdAdd2) = TestsHelper.makeCmdAdd(200000000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight, r2)
             val (alice2, actions3) = alice1.process(ChannelEvent.ExecuteCommand(cmdAdd2))
             val htlc2 = actions3.findOutgoingMessage<UpdateAddHtlc>()
             val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(htlc2))

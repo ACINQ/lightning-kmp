@@ -90,7 +90,7 @@ object TestConstants {
 
     object Bob {
         val seed = ByteVector32("0202020202020202020202020202020202020202020202020202020202020202")
-        val keyManager = LocalKeyManager(Alice.seed, Block.RegtestGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "bob",

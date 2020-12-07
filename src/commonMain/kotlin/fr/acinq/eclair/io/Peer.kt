@@ -33,7 +33,6 @@ sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object Connected : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -67,7 +66,7 @@ class Peer(
     public val remoteNodeId: PublicKey = nodeParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    private val output = Channel<ByteArray>(BUFFERED)
+    public val output = Channel<ByteArray>(BUFFERED)
 
     private val logger by eclairLogger()
 
@@ -149,17 +148,14 @@ class Peer(
             var previousState = connectionState.value
             var delay = 0.5
             connectionState.filter { it != previousState }.collect {
+                logger.info { "New connection state: $it" }
                 when (it) {
                     Connection.CLOSED -> {
                         if (previousState == Connection.ESTABLISHED) send(Disconnected)
                         delay(delay.seconds); delay = min((delay * 2), 30.0)
                         connect()
                     }
-                    Connection.ESTABLISHED -> {
-                        logger.info { "connected to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
-                        send(Connected)
-                        delay = 0.5
-                    }
+                    Connection.ESTABLISHED -> delay = 0.5
                     else -> Unit
                 }
 
@@ -574,14 +570,6 @@ class Peer(
                     val (state1, actions) = state.process(event.channelEvent)
                     processActions(event.channelId, actions)
                     _channels = _channels + (event.channelId to state1)
-                }
-            }
-            event is Connected -> {
-                // We try to reestablish the Offline channels
-                _channels.filter { it.value is Offline }.forEach { (key, value) ->
-                    val (state1, actions) = value.process(ChannelEvent.Connected(ourInit, theirInit!!))
-                    processActions(key, actions)
-                    _channels = _channels + (key to state1)
                 }
             }
             event is Disconnected -> {

@@ -10,10 +10,10 @@ interface Databases {
  * This should only be used in tests: applications should inject their own implementations depending on the database backend available on the platform.
  */
 data class InMemoryDatabases(
-    override val channels: ChannelsDb,
+    override val channels: InMemoryChannelsDb,
     override val payments: InMemoryPaymentsDb
 ) : Databases {
     companion object {
-        fun create(): InMemoryDatabases = InMemoryDatabases(InMemoryChannelsDb(), InMemoryPaymentsDb())
+        operator fun invoke() = InMemoryDatabases(InMemoryChannelsDb(), InMemoryPaymentsDb())
     }
 }
