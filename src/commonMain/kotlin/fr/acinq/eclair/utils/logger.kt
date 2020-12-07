@@ -3,6 +3,7 @@ package fr.acinq.eclair.utils
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty
 
 
 @Suppress("ObjectPropertyName")
