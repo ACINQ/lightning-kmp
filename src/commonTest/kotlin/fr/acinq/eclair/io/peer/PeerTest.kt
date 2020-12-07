@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.db.InMemoryDatabases
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
@@ -43,7 +44,7 @@ class PeerTest : EclairTestSuite() {
     fun `restore channel`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
 
-        val db = newDatabases().also { it.channels.addOrUpdateChannel(alice0) }
+        val db = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice0) }
         val peer = buildPeer(scope = this, nodeParams = alice0.staticParams.nodeParams, databases = db)
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }

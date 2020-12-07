@@ -37,10 +37,10 @@ public suspend fun newPeers(
     automateMessaging: Boolean = true
 ): PeerTuple {
     // Create Alice and Bob peers
-    val alice = buildPeer(scope, nodeParams.first, databases = newDatabases().apply {
+    val alice = buildPeer(scope, nodeParams.first, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.first) }
     })
-    val bob = buildPeer(scope, nodeParams.second, databases = newDatabases().apply {
+    val bob = buildPeer(scope, nodeParams.second, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.second) }
     })
 
@@ -114,7 +114,7 @@ public suspend fun CoroutineScope.newPeer(
     remotedNodeChannelState: ChannelStateWithCommitments? = null,
     setupDatabases: suspend InMemoryDatabases.() -> Unit = {},
 ): Peer {
-    val db = newDatabases().apply { setupDatabases(this) }
+    val db = InMemoryDatabases().apply { setupDatabases(this) }
 
     val peer = buildPeer(this, nodeParams, db)
 
@@ -165,10 +165,5 @@ public fun buildPeer(
     val watcher = ElectrumWatcher(electrum, scope)
     return Peer(TcpSocket.Builder(), nodeParams, watcher, databases, scope)
 }
-
-public fun newDatabases(
-    channels: InMemoryChannelsDb = InMemoryChannelsDb(),
-    payments: InMemoryPaymentsDb = InMemoryPaymentsDb(),
-) = InMemoryDatabases(channels, payments)
 
 data class PeerTuple(val alice: Peer, val bob: Peer, val alice2bob: Flow<LightningMessage>, val bob2alice: Flow<LightningMessage>)

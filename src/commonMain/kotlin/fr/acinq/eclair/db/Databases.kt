@@ -12,4 +12,8 @@ interface Databases {
 data class InMemoryDatabases(
     override val channels: InMemoryChannelsDb,
     override val payments: InMemoryPaymentsDb
-) : Databases
+) : Databases {
+    companion object {
+        operator fun invoke() = InMemoryDatabases(InMemoryChannelsDb(), InMemoryPaymentsDb())
+    }
+}
