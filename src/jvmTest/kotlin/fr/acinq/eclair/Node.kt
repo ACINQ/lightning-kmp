@@ -155,7 +155,7 @@ object Node {
             onChainFeeConf = OnChainFeeConf(
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
+                feerateTolerance = FeerateTolerance(ratioLow = 0.3, ratioHigh = 3.0)
             ),
             maxHtlcValueInFlightMsat = 5000000000L,
             maxAcceptedHtlcs = 30,
