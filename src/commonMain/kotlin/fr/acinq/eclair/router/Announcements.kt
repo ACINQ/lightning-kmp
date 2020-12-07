@@ -1,32 +1,17 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.utils.currentTimestampSeconds
+import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.ChannelUpdate
-import kotlin.experimental.and
+import fr.acinq.eclair.wire.LightningSerializer
 import kotlin.experimental.or
 
 object Announcements {
-    @Suppress("UNUSED_PARAMETER")
-    fun channelUpdateWitnessEncode(
-        chainHash: ByteVector32,
-        shortChannelId: ShortChannelId,
-        timestampSeconds: Long,
-        messageFlags: Byte,
-        channelFlags: Byte,
-        cltvExpiryDelta: CltvExpiryDelta,
-        htlcMinimumMsat: MilliSatoshi,
-        feeBaseMsat: MilliSatoshi,
-        feeProportionalMillionths: Long,
-        htlcMaximumMsat: MilliSatoshi?,
-        unknownFields: ByteVector
-    ): ByteVector32 {
-        // TODO: implement channel update witness serialization
-        return ByteVector32.Zeroes
-    }
 
     /**
      * BOLT 7:
@@ -38,29 +23,6 @@ object Announcements {
      */
     fun isNode1(localNodeId: PublicKey, remoteNodeId: PublicKey) = LexicographicalOrdering.isLessThan(localNodeId.value, remoteNodeId.value)
 
-    /**
-     * BOLT 7:
-     * The creating node [...] MUST set the direction bit of flags to 0 if
-     * the creating node is node-id-1 in that message, otherwise 1.
-     *
-     * @return true if the node who sent these flags is node1
-     */
-    fun isNode1(channelFlags: Byte): Boolean = (channelFlags and 1) == 0.toByte()
-
-    /**
-     * A node MAY create and send a channel_update with the disable bit set to
-     * signal the temporary unavailability of a channel
-     *
-     * @return
-     */
-    fun isEnabled(channelFlags: Byte): Boolean = (channelFlags and 2) == 0.toByte()
-
-    fun makeMessageFlags(hasOptionChannelHtlcMax: Boolean): Byte {
-        var result: Byte = 0
-        if (hasOptionChannelHtlcMax) result = result or 1
-        return result
-    }
-
     fun makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte {
         var result: Byte = 0
         if (!isNode1) result = result or 1
@@ -70,48 +32,86 @@ object Announcements {
 
     fun makeChannelUpdate(
         chainHash: ByteVector32,
-        nodeSecret: PrivateKey,
+        nodePrivateKey: PrivateKey,
         remoteNodeId: PublicKey,
         shortChannelId: ShortChannelId,
         cltvExpiryDelta: CltvExpiryDelta,
-        htlcMinimumMsat: MilliSatoshi,
-        feeBaseMsat: MilliSatoshi,
+        htlcMinimum: MilliSatoshi,
+        feeBase: MilliSatoshi,
         feeProportionalMillionths: Long,
-        htlcMaximumMsat: MilliSatoshi,
+        htlcMaximum: MilliSatoshi,
         enable: Boolean = true,
         timestampSeconds: Long = currentTimestampSeconds()
     ): ChannelUpdate {
-        val messageFlags = makeMessageFlags(hasOptionChannelHtlcMax = true) // NB: we always support option_channel_htlc_max
-        val channelFlags = makeChannelFlags(isNode1 = isNode1(nodeSecret.publicKey(), remoteNodeId), enable = enable)
-        val witness = channelUpdateWitnessEncode(
-            chainHash,
-            shortChannelId,
-            timestampSeconds,
-            messageFlags,
-            channelFlags,
-            cltvExpiryDelta,
-            htlcMinimumMsat,
-            feeBaseMsat,
-            feeProportionalMillionths,
-            htlcMaximumMsat,
-            unknownFields = ByteVector.empty
-        )
-        val sig = Crypto.sign(witness, nodeSecret)
-        return ChannelUpdate(
-            signature = sig,
-            chainHash = chainHash,
-            shortChannelId = shortChannelId,
-            timestampSeconds = timestampSeconds,
-            messageFlags = messageFlags,
-            channelFlags = channelFlags,
-            cltvExpiryDelta = cltvExpiryDelta,
-            htlcMinimumMsat = htlcMinimumMsat,
-            feeBaseMsat = feeBaseMsat,
-            feeProportionalMillionths = feeProportionalMillionths,
-            htlcMaximumMsat = htlcMaximumMsat
-        )
+        val messageFlags = 1.toByte() // NB: we always support option_channel_htlc_max
+        val channelFlags = makeChannelFlags(isNode1(nodePrivateKey.publicKey(), remoteNodeId), enable)
+        val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestampSeconds, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimum, feeBase, feeProportionalMillionths, htlcMaximum, ByteVector.empty)
+        val sig = Crypto.sign(witness, nodePrivateKey)
+        return ChannelUpdate(sig, chainHash, shortChannelId, timestampSeconds, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimum, feeBase, feeProportionalMillionths, htlcMaximum)
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    fun checkSig(upd: ChannelUpdate, nodeId: PublicKey): Boolean = true
+    fun disableChannel(channelUpdate: ChannelUpdate, nodePrivateKey: PrivateKey, remoteNodeId: PublicKey): ChannelUpdate {
+        return when (channelUpdate.isEnabled()) {
+            true -> makeChannelUpdate(
+                channelUpdate.chainHash,
+                nodePrivateKey,
+                remoteNodeId,
+                channelUpdate.shortChannelId,
+                channelUpdate.cltvExpiryDelta,
+                channelUpdate.htlcMinimumMsat,
+                channelUpdate.feeBaseMsat,
+                channelUpdate.feeProportionalMillionths,
+                channelUpdate.htlcMaximumMsat!!,
+                enable = false
+            )
+            false -> channelUpdate // channel is already disabled
+        }
+    }
+
+    fun enableChannel(channelUpdate: ChannelUpdate, nodePrivateKey: PrivateKey, remoteNodeId: PublicKey): ChannelUpdate {
+        return when (channelUpdate.isEnabled()) {
+            true -> channelUpdate // channel is already enabled
+            false -> makeChannelUpdate(
+                channelUpdate.chainHash,
+                nodePrivateKey,
+                remoteNodeId,
+                channelUpdate.shortChannelId,
+                channelUpdate.cltvExpiryDelta,
+                channelUpdate.htlcMinimumMsat,
+                channelUpdate.feeBaseMsat,
+                channelUpdate.feeProportionalMillionths,
+                channelUpdate.htlcMaximumMsat!!,
+                enable = true
+            )
+        }
+    }
+
+    private fun channelUpdateWitnessEncode(
+        chainHash: ByteVector32,
+        shortChannelId: ShortChannelId,
+        timestampSeconds: Long,
+        messageFlags: Byte,
+        channelFlags: Byte,
+        cltvExpiryDelta: CltvExpiryDelta,
+        htlcMinimum: MilliSatoshi,
+        feeBase: MilliSatoshi,
+        feeProportionalMillionths: Long,
+        htlcMaximum: MilliSatoshi,
+        unknownFields: ByteVector
+    ): ByteVector32 {
+        val out = ByteArrayOutput()
+        LightningSerializer.writeBytes(chainHash, out)
+        LightningSerializer.writeU64(shortChannelId.toLong(), out)
+        LightningSerializer.writeU32(timestampSeconds.toInt(), out)
+        LightningSerializer.writeByte(messageFlags.toInt(), out)
+        LightningSerializer.writeByte(channelFlags.toInt(), out)
+        LightningSerializer.writeU16(cltvExpiryDelta.toInt(), out)
+        LightningSerializer.writeU64(htlcMinimum.toLong(), out)
+        LightningSerializer.writeU32(feeBase.toLong().toInt(), out)
+        LightningSerializer.writeU32(feeProportionalMillionths.toInt(), out)
+        LightningSerializer.writeU64(htlcMaximum.toLong(), out)
+        LightningSerializer.writeBytes(unknownFields, out)
+        return Crypto.sha256(Crypto.sha256(out.toByteArray())).toByteVector32()
+    }
+
 }

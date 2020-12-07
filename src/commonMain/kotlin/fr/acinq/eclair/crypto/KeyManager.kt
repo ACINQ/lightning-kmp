@@ -4,8 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.eclair.Features
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
@@ -70,7 +68,7 @@ interface KeyManager {
      * @return a signature generated with a private key generated from the input keys's matching
      *         private key and the remote point.
      */
-    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sigHhash: Int): ByteVector64
+    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sigHash: Int): ByteVector64
 
     /**
      * Ths method is used to spend revoked transactions, with the corresponding revocation key
@@ -82,20 +80,6 @@ interface KeyManager {
      *         private key and the remote secret.
      */
     fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64
-
-    /**
-     * Sign a channel announcement message
-     *
-     * @param fundingKeyPath BIP32 path of the funding public key
-     * @param chainHash chain hash
-     * @param shortChannelId short channel id
-     * @param remoteNodeId remote node id
-     * @param remoteFundingKey remote funding pubkey
-     * @param features channel features
-     * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
-     *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
-     */
-    fun signChannelAnnouncement(fundingKeyPath: KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): Pair<ByteVector64, ByteVector64>
 
     companion object {
         /**
@@ -122,7 +106,7 @@ interface KeyManager {
             return KeyPath(path.take(8).toList())
         }
 
-        fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
+        fun channelKeyPath(fundingPubKey: ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
 
         val serializersModule = SerializersModule {
             polymorphic(KeyManager::class) {

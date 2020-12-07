@@ -823,8 +823,7 @@ data class ChannelUpdate(
     override fun serializer(): LightningSerializer<ChannelUpdate> = ChannelUpdate
 
     companion object : LightningSerializer<ChannelUpdate>() {
-        override val tag: Long
-            get() = 258L
+        override val tag: Long get() = 258L
 
         override fun read(input: Input): ChannelUpdate {
             val signature = ByteVector64(bytes(input, 64))
@@ -873,7 +872,11 @@ data class ChannelUpdate(
         }
     }
 
+    /** BOLT 7: The creating node [...] MUST set the direction bit of flags to 0 if the creating node is node-id-1 in that message, otherwise 1. */
     fun isNode1(): Boolean = (channelFlags.toInt() and 1) == 0
+
+    /** BOLT 7: A node MAY create and send a channel_update with the disable bit set to signal the temporary unavailability of a channel */
+    fun isEnabled(): Boolean = (channelFlags.toInt() and 2) == 0
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
