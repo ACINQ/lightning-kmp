@@ -2,32 +2,20 @@ package fr.acinq.eclair.io.peer
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.eclair.Eclair
-import fr.acinq.eclair.NodeUri
-import fr.acinq.eclair.TestConstants
-import fr.acinq.eclair.channel.Normal
-import fr.acinq.eclair.channel.Offline
-import fr.acinq.eclair.channel.Syncing
-import fr.acinq.eclair.channel.TestsHelper
+import fr.acinq.eclair.*
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.OutgoingPayment
-import fr.acinq.eclair.io.BytesReceived
-import fr.acinq.eclair.io.ReceivePayment
-import fr.acinq.eclair.io.SendPayment
+import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.tests.io.peer.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
-import fr.acinq.eclair.utils.Connection
-import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.toByteVector
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
@@ -53,7 +41,7 @@ class PeerTest : EclairTestSuite() {
 
     @Test
     fun `restore channel`() = runSuspendTest {
-        val (alice0, _) = TestsHelper.reachNormal()
+        val (alice0, bob0) = TestsHelper.reachNormal()
 
         val db = newDatabases().also { it.channels.addOrUpdateChannel(alice0) }
         val peer = buildPeer(scope = this, nodeParams = alice0.staticParams.nodeParams, databases = db)
@@ -64,7 +52,7 @@ class PeerTest : EclairTestSuite() {
         assertTrue(initChannels.values.first() is Offline)
 
         // send Init from remote node
-        val theirInit = Init(features = activatedFeatures.toByteArray().toByteVector())
+        val theirInit = Init(features = bob0.staticParams.nodeParams.features.toByteArray().toByteVector())
         val initMsg = LightningMessage.encode(theirInit)
         peer.send(BytesReceived(initMsg))
         // Wait until the Peer is ready

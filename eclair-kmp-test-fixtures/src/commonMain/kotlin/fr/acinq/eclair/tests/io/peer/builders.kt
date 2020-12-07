@@ -118,19 +118,19 @@ public suspend fun CoroutineScope.newPeer(
 
     val peer = buildPeer(this, nodeParams, db)
 
-    // send Init from remote node
-    val theirInit = Init(features = activatedFeatures.toByteArray().toByteVector())
-
-    val initMsg = LightningMessage.encode(theirInit)
-    peer.send(BytesReceived(initMsg))
-    peer.expectStatus(Connection.ESTABLISHED)
-
-    peer.channelsFlow.first {
-        it.values.size == peer.db.channels.listLocalChannels().size
-                && it.values.all { channelState -> channelState is Syncing }
-    }
-
     remotedNodeChannelState?.let { state ->
+        // send Init from remote node
+        val theirInit = Init(features = state.staticParams.nodeParams.features.toByteArray().toByteVector())
+
+        val initMsg = LightningMessage.encode(theirInit)
+        peer.send(BytesReceived(initMsg))
+        peer.expectStatus(Connection.ESTABLISHED)
+
+        peer.channelsFlow.first {
+            it.values.size == peer.db.channels.listLocalChannels().size
+                    && it.values.all { channelState -> channelState is Syncing }
+        }
+
         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
         val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
         val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
@@ -172,16 +172,3 @@ public fun newDatabases(
 ) = InMemoryDatabases(channels, payments)
 
 data class PeerTuple(val alice: Peer, val bob: Peer, val alice2bob: Flow<LightningMessage>, val bob2alice: Flow<LightningMessage>)
-
-val activatedFeatures = Features(
-    setOf(
-        ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory),
-        ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-        ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-        ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-        ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-        ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
-        ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
-        ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Optional),
-    )
-)
