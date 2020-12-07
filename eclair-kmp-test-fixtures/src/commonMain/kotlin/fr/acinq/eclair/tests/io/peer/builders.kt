@@ -1,12 +1,10 @@
-package fr.acinq.eclair.tests
+package fr.acinq.eclair.tests.io.peer
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Syncing
@@ -19,34 +17,22 @@ import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.utils.Connection
 import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.ChannelReestablish
+import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.Init
 import fr.acinq.eclair.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
-val activatedFeatures = Features(
-    setOf(
-        ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory),
-        ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-        ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-        ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-        ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-        ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
-        ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
-        ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Optional),
-    )
-)
-
-private val remoteNodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
-private val emptyNodeUri = NodeUri(remoteNodeId, "empty", 8080)
-
 @OptIn(ExperimentalCoroutinesApi::class)
-public suspend fun newPeers(scope: CoroutineScope, nodeParams: Pair<NodeParams, NodeParams>, initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList()): Pair<Peer, Peer> {
+public suspend fun newPeers(
+    scope: CoroutineScope,
+    nodeParams: Pair<NodeParams, NodeParams>,
+    initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList(),
+    automateMessaging: Boolean = true
+): Pair<Peer, Peer> {
     val alice = buildPeer(scope, nodeParams.first, databases = newDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.first) }
     })
@@ -54,35 +40,52 @@ public suspend fun newPeers(scope: CoroutineScope, nodeParams: Pair<NodeParams, 
         initChannels.forEach { channels.addOrUpdateChannel(it.second) }
     })
 
-    scope.launch {
-        alice.output.consumeEach {
-            val msg = LightningMessage.decode(it)
-            println("Alice forwards to Bob $msg")
-            bob.send(BytesReceived(it))
-        }
-    }
-    scope.launch {
-        bob.output.consumeEach {
-            val msg = LightningMessage.decode(it)
-            println("Bob forwards to Alice $msg")
-            alice.send(BytesReceived(it))
-        }
-    }
+    // Initialize Bob with Alice's features
+    bob.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.first.features.toByteArray().toByteVector()))))
+    // Initialize Alice with Bob's features
+    alice.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.second.features.toByteArray().toByteVector()))))
 
-    val init = LightningMessage.encode(Init(features = activatedFeatures.toByteArray().toByteVector()))
-        ?: error("LN message `Init` encoding failed")
-    // Initialize Alice
-    alice.send(BytesReceived(init))
-    // Initialize Bob
-    bob.send(BytesReceived(init))
+    if (initChannels.isNotEmpty()) {
+        val bobInit = scope.launch {
+            val bobChannelReestablish = bob.expectMessage<ChannelReestablish>()
+            alice.forwardMessage(bobChannelReestablish)
+            val bobFundingLocked = bob.expectMessage<FundingLocked>()
+            alice.forwardMessage(bobFundingLocked)
+        }
+        val aliceInit = scope.launch {
+            val aliceChannelReestablish = alice.expectMessage<ChannelReestablish>()
+            bob.forwardMessage(aliceChannelReestablish)
+            val aliceFundingLocked = alice.expectMessage<FundingLocked>()
+            bob.forwardMessage(aliceFundingLocked)
+        }
+        bobInit.join()
+        aliceInit.join()
+    }
 
     // Wait until the Peers are ready
-    alice.waitForStatus(Connection.ESTABLISHED)
-    bob.waitForStatus(Connection.ESTABLISHED)
+    alice.expectStatus(Connection.ESTABLISHED)
+    bob.expectStatus(Connection.ESTABLISHED)
 
     // Wait until the [Channels] are synchronised
     alice.channelsFlow.first { it.size == initChannels.size && it.values.all { state -> state is Normal } }
     bob.channelsFlow.first { it.size == initChannels.size && it.values.all { state -> state is Normal } }
+
+    if (automateMessaging) {
+        scope.launch {
+            alice.output.consumeEach {
+                val msg = LightningMessage.decode(it) ?: error("cannot decode lightning message $it")
+                println("Alice forwards to Bob $msg")
+                bob.send(BytesReceived(it))
+            }
+        }
+        scope.launch {
+            bob.output.consumeEach {
+                val msg = LightningMessage.decode(it) ?: error("cannot decode lightning message $it")
+                println("Bob forwards to Alice $msg")
+                alice.send(BytesReceived(it))
+            }
+        }
+    }
 
     return alice to bob
 }
@@ -99,9 +102,9 @@ public suspend fun CoroutineScope.newPeer(
     // send Init from remote node
     val theirInit = Init(features = activatedFeatures.toByteArray().toByteVector())
 
-    val initMsg = LightningMessage.encode(theirInit) ?: error("LN message `Init` encoding failed")
+    val initMsg = LightningMessage.encode(theirInit)
     peer.send(BytesReceived(initMsg))
-    peer.waitForStatus(Connection.ESTABLISHED)
+    peer.expectStatus(Connection.ESTABLISHED)
 
     peer.channelsFlow.first {
         it.values.size == peer.db.channels.listLocalChannels().size
@@ -122,7 +125,7 @@ public suspend fun CoroutineScope.newPeer(
             state.commitments.remoteChannelData
         )
 
-        val msg = LightningMessage.encode(channelReestablish) ?: error("LN message `ChannelReestablish` encoding failed")
+        val msg = LightningMessage.encode(channelReestablish)
         peer.send(BytesReceived(msg))
     }
 
@@ -149,19 +152,15 @@ public fun newDatabases(
     payments: InMemoryPaymentsDb = InMemoryPaymentsDb(),
 ) = InMemoryDatabases(channels, payments)
 
-suspend fun Peer.waitForStatus(await: Connection) = connectionState.first { it == await }
-
-suspend inline fun <reified Status : ChannelState> Peer.waitForChannel(
-    id: ByteVector32? = null,
-    noinline waitCondition: (suspend Status.() -> Boolean)? = null,
-): Pair<ByteVector32, Status> =
-    channelsFlow
-        .mapNotNull { map ->
-            map.entries.find {
-                (id == null || it.key == id) &&
-                        it.value is Status &&
-                        waitCondition?.invoke(it.value as Status) ?: true
-            }
-        }
-        .map { it.key to it.value as Status }
-        .first()
+val activatedFeatures = Features(
+    setOf(
+        ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Mandatory),
+        ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
+        ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
+        ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
+        ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
+        ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Optional),
+        ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
+        ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Optional),
+    )
+)
