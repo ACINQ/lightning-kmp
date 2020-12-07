@@ -3,6 +3,7 @@ package fr.acinq.eclair.utils
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty
 
 
 @Suppress("ObjectPropertyName")
@@ -22,3 +23,9 @@ fun eclairLogger(of: KClass<*>) = lazy {
 inline fun <reified T> T.eclairLogger() = eclairLogger(T::class)
 
 inline fun <reified T> eclairLogger() = eclairLogger(T::class)
+
+/*
+    Workaround for "MPP: Can't stop on breakpoint anywhere in file if it contains lazy"
+    https://youtrack.jetbrains.com/issue/KT-41471
+ */
+operator fun <T> Lazy<T>.getValue(thisRef: Any?, property: KProperty<*>) = value
