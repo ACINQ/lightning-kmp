@@ -55,7 +55,7 @@ object Helpers {
         }
 
     /** Called by the fundee. */
-    fun validateParamsFundee(nodeParams: NodeParams, localFeerate: FeeratePerKw, open: OpenChannel, channelVersion: ChannelVersion): Either<ChannelException, Unit> {
+    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion): Either<ChannelException, Unit> {
         // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
         // MUST reject the channel.
         if (nodeParams.chainHash != open.chainHash) {
@@ -107,8 +107,8 @@ object Helpers {
             return Either.Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
         }
 
-        if (isFeeDiffTooHigh(localFeerate, open.feeratePerKw, nodeParams.onChainFeeConf.feerateTolerance)) {
-            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, localFeerate, open.feeratePerKw))
+        if (isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, open.feeratePerKw, nodeParams.onChainFeeConf.feerateTolerance)) {
+            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.feeratePerKw))
         }
 
         // only enforce dust limit check on mainnet

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.FeeratePerKB
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
@@ -17,6 +18,7 @@ import kotlinx.serialization.json.*
 
 /**
  * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
+ * See the documentation for the ElectrumX protocol there: https://github.com/spesmilo/electrumx/
  */
 sealed class ElectrumMessage
 sealed class ElectrumSubscription : ElectrumMessage()
@@ -312,8 +314,8 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         }
         is EstimateFees -> {
             val btcperkb: Double? = if (rpcResponse.result.jsonPrimitive.intOrNull == -1) null else rpcResponse.result.jsonPrimitive.double
-            val feeratePerByte = btcperkb?.let { FeeratePerByte(Satoshi((it * 100000).toLong())) }
-            val feeratePerKw = feeratePerByte?.let { FeeratePerKw(it) }
+            val feeratePerKb = btcperkb?.let { FeeratePerKB(Satoshi((it * 100_000_000).toLong())) }
+            val feeratePerKw = feeratePerKb?.let { FeeratePerKw(it) }
             EstimateFeeResponse(request.confirmations, feeratePerKw)
         }
         HeaderSubscription -> {
