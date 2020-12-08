@@ -31,10 +31,22 @@ object BitcoindService {
         return transaction.tx
     }
 
-    suspend fun generateBlocks(blockCount: Int) {
+    suspend fun generateBlocks(blockCount: Int, splitGeneration: Boolean = false) {
         val (address, _) = getNewAddress()
-        val response: GenerateToAddressResponse = client.sendRequest(GenerateToAddress(blockCount, address))
-        check(blockCount == response.blocks.size)
+
+        if (splitGeneration) {
+            var generatedBlockCount = 0
+
+            for (i in 0 until blockCount) {
+                val response: GenerateToAddressResponse = client.sendRequest(GenerateToAddress(1, address))
+                generatedBlockCount += response.blocks.size
+            }
+
+            check(blockCount == generatedBlockCount)
+        } else {
+            val response: GenerateToAddressResponse = client.sendRequest(GenerateToAddress(blockCount, address))
+            check(blockCount == response.blocks.size)
+        }
     }
 
     suspend fun sendRawTransaction(rawTx: String): Transaction {
