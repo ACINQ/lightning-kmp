@@ -42,9 +42,9 @@ class ElectrumClientIntegrationTest : EclairTestSuite() {
     )
         .map { it.toByteVector32() }
 
-    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
+    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClientImpl {
         val client =
-            ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
+            ElectrumClientImpl(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
         client.sendMessage(AskForStatusUpdate)
 
         client.connectionState.first { it == Connection.CLOSED }

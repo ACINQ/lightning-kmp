@@ -49,8 +49,8 @@ sealed class ElectrumRequest(vararg params: Any) {
 sealed class ElectrumResponse : ElectrumMessage()
 
 data class ServerVersion(
-    private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
-    private val protocolVersion: String = ElectrumClient.ELECTRUM_PROTOCOL_VERSION
+    private val clientName: String = ElectrumClientImpl.ELECTRUM_CLIENT_NAME,
+    private val protocolVersion: String = ElectrumClientImpl.ELECTRUM_PROTOCOL_VERSION
 ) : ElectrumRequest(clientName, protocolVersion) {
     override val method: String = "server.version"
 }

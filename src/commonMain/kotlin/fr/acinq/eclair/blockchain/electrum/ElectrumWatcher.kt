@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxIn
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eclair.blockchain.*
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientImpl.Companion.computeScriptHash
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
@@ -391,7 +391,7 @@ private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList())
 private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : CoroutineScope by scope {
+class ElectrumWatcher(val client: ElectrumClientImpl, val scope: CoroutineScope) : CoroutineScope by scope {
     private val notificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 

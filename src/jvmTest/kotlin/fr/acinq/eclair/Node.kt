@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.Eclair.randomBytes32
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientImpl
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
@@ -201,7 +201,7 @@ object Node {
         }
 
         runBlocking {
-            val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
+            val electrum = ElectrumClientImpl(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
             val peer = Peer(TcpSocket.Builder(), nodeParams, watcher, db, this)
 
