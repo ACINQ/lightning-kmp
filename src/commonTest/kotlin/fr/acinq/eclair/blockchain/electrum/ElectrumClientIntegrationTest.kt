@@ -1,8 +1,10 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
@@ -56,6 +58,20 @@ class ElectrumClientIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
+
+    @Test
+    fun `estimate fees`() = runSuspendTest(timeout = 15.seconds) {
+        val client = connectToMainnetServer()
+        val notifications = client.openNotificationsSubscription()
+
+        client.sendElectrumRequest(EstimateFees(3))
+
+        notifications.consumerCheck<EstimateFeeResponse> { message ->
+            assertTrue { message.feerate!!.feerate >= Satoshi(FeeratePerKw.MinimumRelayFeeRate.toLong()) }
+        }
+
+        client.stop()
+    }
 
     @Test
     fun `get transaction id from position`() = runSuspendTest(timeout = 15.seconds) {
@@ -212,5 +228,4 @@ class ElectrumClientIntegrationTest : EclairTestSuite() {
         assertNotNull(msg)
         assertion(msg)
     }
-
 }
