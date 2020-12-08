@@ -188,7 +188,7 @@ class Peer(
         launch {
             // onchain fees are retrieved once, when the app starts
             // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
-            // (for a node that is online most fo the time things would be different and we would need to re-evaluate onchain fee etimates on a regular basis)
+            // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
             onChainFeerates = estimateFees()
 
             logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
