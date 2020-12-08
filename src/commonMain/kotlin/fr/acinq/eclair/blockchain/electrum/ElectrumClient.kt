@@ -4,12 +4,14 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.eclair.blockchain.electrum.ElectrumClientImpl.Companion.version
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.io.linesFlow
 import fr.acinq.eclair.utils.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.channels.BroadcastChannel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
@@ -44,7 +46,7 @@ internal object StartPing : ElectrumClientAction()
 internal object Shutdown : ElectrumClientAction()
 
 /**
- * [ElectrumClientImpl] State
+ * [ElectrumClient] State
  *
  * +--> ClientClosed ----> WaitingForConnection ----+
  * |                                                |
@@ -172,19 +174,11 @@ private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder()
 private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
 private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(action)
 
-@OptIn(ExperimentalCoroutinesApi::class)
-interface ElectrumClient {
-    fun openNotificationsSubscription(): ReceiveChannel<ElectrumMessage>
-    val connectionState: StateFlow<Connection>
-    fun sendElectrumRequest(request: ElectrumRequest)
-    fun sendMessage(message: ElectrumMessage)
-}
-
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
-class ElectrumClientImpl(
+class ElectrumClient(
     private val socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
-) : ElectrumClient, CoroutineScope by scope {
+) : CoroutineScope by scope {
 
     private lateinit var socket: TcpSocket
     private val json = Json { ignoreUnknownKeys = true }
@@ -192,11 +186,11 @@ class ElectrumClientImpl(
     private val eventChannel: Channel<ClientEvent> = Channel(Channel.BUFFERED)
 
     private val _connectionState = MutableStateFlow(Connection.CLOSED)
-    override val connectionState: StateFlow<Connection> get() = _connectionState
+    val connectionState: StateFlow<Connection> get() = _connectionState
 
     private val notificationsChannel = BroadcastChannel<ElectrumMessage>(Channel.BUFFERED)
 
-    override fun openNotificationsSubscription() = notificationsChannel.openSubscription()
+    fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
     private var state: ClientState = ClientClosed
         set(value) {
@@ -277,9 +271,9 @@ class ElectrumClientImpl(
         }
     }
 
-    override fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
+    fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
 
-    override fun sendMessage(message: ElectrumMessage) {
+    fun sendMessage(message: ElectrumMessage) {
         launch {
             when (message) {
 //                is AskForStatusUpdate -> eventChannel.send(AskForStatus)
@@ -313,7 +307,7 @@ class ElectrumClientImpl(
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
-        val logger by eclairLogger<ElectrumClientImpl>()
+        val logger by eclairLogger<ElectrumClient>()
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }

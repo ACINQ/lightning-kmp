@@ -3,12 +3,14 @@ package fr.acinq.eclair.tests.io.peer
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.*
-import fr.acinq.eclair.blockchain.electrum.ElectrumClientImpl
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Syncing
+import fr.acinq.eclair.db.InMemoryChannelsDb
 import fr.acinq.eclair.db.InMemoryDatabases
+import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.io.BytesReceived
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.TcpSocket
@@ -154,12 +156,12 @@ public suspend fun CoroutineScope.newPeer(
     return peer
 }
 
-public fun buildPeer(
+ public fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
     databases: InMemoryDatabases = InMemoryDatabases()
 ): Peer {
-    val electrum = ElectrumClientImpl(TcpSocket.Builder(), scope)
+    val electrum = ElectrumClient(TcpSocket.Builder(), scope)
     val watcher = ElectrumWatcher(electrum, scope)
     return Peer(TcpSocket.Builder(), nodeParams, watcher, databases, scope)
 }
