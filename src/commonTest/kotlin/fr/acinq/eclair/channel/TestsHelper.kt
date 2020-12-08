@@ -227,7 +227,7 @@ object TestsHelper {
         assertNull(s1.localCommitPublished)
 
         // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-        remoteCommitPublished.claimMainOutputTx?.let { tx ->
+        remoteCommitPublished.claimMainDelayedOutputTx?.let { tx ->
             Transaction.correctlySpends(tx, listOf(rCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             assertEquals(ChannelAction.Blockchain.PublishTx(tx), actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first())
         }
@@ -241,7 +241,7 @@ object TestsHelper {
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
         assertEquals(BITCOIN_TX_CONFIRMED(rCommitTx), watchConfirmedList.first().event)
-        remoteCommitPublished.claimMainOutputTx?.let { tx ->
+        remoteCommitPublished.claimMainDelayedOutputTx?.let { tx ->
             assertEquals(BITCOIN_TX_CONFIRMED(tx), watchConfirmedList.drop(1).first().event)
         }
 

@@ -615,7 +615,7 @@ object Helpers {
                 Transactions.addSigs(it, sig).tx
             }
 
-            return RemoteCommitPublished(commitTx = tx, claimMainOutputTx = mainTx)
+            return RemoteCommitPublished(commitTx = tx, claimMainDelayedOutputTx = mainTx)
         }
 
         /**
