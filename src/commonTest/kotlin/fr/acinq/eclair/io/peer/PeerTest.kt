@@ -8,6 +8,7 @@ import fr.acinq.eclair.db.InMemoryDatabases
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.io.peer.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest

@@ -5,10 +5,10 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat

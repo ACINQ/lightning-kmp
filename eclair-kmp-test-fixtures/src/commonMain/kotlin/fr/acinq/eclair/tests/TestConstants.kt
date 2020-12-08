@@ -1,9 +1,10 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.tests
 
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
+import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance

@@ -5,12 +5,8 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Feature
-import fr.acinq.eclair.TestConstants
-import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.crossSign
@@ -19,6 +15,7 @@ import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.crypto.sphinx.Sphinx
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Transactions.weight2fee
 import fr.acinq.eclair.transactions.incomings
@@ -364,10 +361,10 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue { alice0.staticParams.nodeParams.dustLimit > bob0.staticParams.nodeParams.dustLimit }
         // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
         // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
-        val aliceMinReceive = Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_SUCCESS_WEIGHT)
-        val aliceMinOffer = Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_TIMEOUT_WEIGHT)
-        val bobMinReceive = Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_SUCCESS_WEIGHT)
-        val bobMinOffer = Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_TIMEOUT_WEIGHT)
+        val aliceMinReceive = TestConstants.Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_SUCCESS_WEIGHT)
+        val aliceMinOffer = TestConstants.Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_TIMEOUT_WEIGHT)
+        val bobMinReceive = TestConstants.Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_SUCCESS_WEIGHT)
+        val bobMinOffer = TestConstants.Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Commitments.HTLC_TIMEOUT_WEIGHT)
         val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
         val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
         val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx

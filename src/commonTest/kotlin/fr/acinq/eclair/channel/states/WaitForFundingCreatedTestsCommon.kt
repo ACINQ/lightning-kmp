@@ -5,10 +5,10 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxOut
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toMilliSatoshi

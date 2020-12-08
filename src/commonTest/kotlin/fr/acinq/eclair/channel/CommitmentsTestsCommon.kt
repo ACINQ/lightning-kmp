@@ -7,6 +7,7 @@ import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions

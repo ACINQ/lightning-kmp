@@ -16,6 +16,7 @@ import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.OutgoingPaymentsDb
 import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.io.WrappedChannelEvent
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.transactions.CommitmentSpec

@@ -2,8 +2,8 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals

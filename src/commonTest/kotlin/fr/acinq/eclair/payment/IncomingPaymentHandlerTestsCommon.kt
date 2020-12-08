@@ -12,6 +12,7 @@ import fr.acinq.eclair.io.PayToOpenResponseEvent
 import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.router.NodeHop
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.*
