@@ -28,7 +28,7 @@ internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
 internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest) : ClientEvent()
-internal object AskForStatus : ClientEvent()
+//internal object AskForStatus : ClientEvent()
 internal object AskForHeader : ClientEvent()
 
 /*
@@ -109,7 +109,7 @@ internal object WaitingForTip : ClientState() {
 
 internal data class ClientRunning(val height: Int, val tip: BlockHeader, val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()) : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
-        is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
+//        is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
         is AskForHeader -> returnState(SendHeader(height, tip))
         is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
         is ReceivedResponse -> when (val response = event.response) {
@@ -157,7 +157,7 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
             state = ClientClosed
             actions = listOf(BroadcastStatus(Connection.CLOSED), Shutdown)
         }
-        AskForStatus, AskForHeader -> returnState() // TODO something else ?
+//        AskForStatus, AskForHeader -> returnState() // TODO something else ?
         else -> error("The state $this cannot process the event $event")
     }
 
@@ -282,7 +282,7 @@ class ElectrumClientImpl(
     override fun sendMessage(message: ElectrumMessage) {
         launch {
             when (message) {
-                is AskForStatusUpdate -> eventChannel.send(AskForStatus)
+//                is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
                 else -> error("sendMessage does not support message: $message")

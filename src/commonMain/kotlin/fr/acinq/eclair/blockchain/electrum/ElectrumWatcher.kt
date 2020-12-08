@@ -24,7 +24,6 @@ import kotlin.math.max
 import kotlin.native.concurrent.ThreadLocal
 
 sealed class WatcherEvent
-private object StartWatcher : WatcherEvent()
 class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
 data class GetTxWithMetaEvent(val request: GetTxWithMeta) : WatcherEvent()
 class ReceiveWatch(val watch: Watch) : WatcherEvent()
@@ -33,7 +32,6 @@ class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
 class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
 internal sealed class WatcherAction
-private object AskForClientStatusUpdate : WatcherAction()
 private object AskForHeaderUpdate : WatcherAction()
 internal data class RegisterToScriptHashNotification(val scriptHash: ByteVector32) : WatcherAction()
 private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : WatcherAction()
@@ -73,7 +71,6 @@ private data class WatcherDisconnected(
 ) : WatcherState() {
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
-            is StartWatcher -> returnState(action = AskForClientStatusUpdate)
             is ClientStateUpdate -> {
                 if (event.connection == Connection.ESTABLISHED) returnState(AskForHeaderUpdate)
                 else returnState()
@@ -362,7 +359,6 @@ private data class WatcherRunning(
                     )
                 ) else returnState()
             }
-            else -> unhandled(event)
         }
 
     private fun setupWatch(watch: Watch) = when (watch) {
@@ -391,7 +387,7 @@ private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList())
 private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ElectrumWatcher(val client: ElectrumClientImpl, val scope: CoroutineScope) : CoroutineScope by scope {
+class ElectrumWatcher(val client: ElectrumClient, scope: CoroutineScope) : CoroutineScope by scope {
     private val notificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
@@ -420,7 +416,7 @@ class ElectrumWatcher(val client: ElectrumClientImpl, val scope: CoroutineScope)
     init {
         logger.info { "Init Electrum Watcher" }
         runJob = launch { run() }
-        launch { eventChannel.send(StartWatcher) }
+        launch { eventChannel.send(ClientStateUpdate(client.connectionState.value)) }
     }
 
     private suspend fun run() {
@@ -432,7 +428,6 @@ class ElectrumWatcher(val client: ElectrumClientImpl, val scope: CoroutineScope)
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is AskForClientStatusUpdate -> client.sendMessage(AskForStatusUpdate)
                     is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
                     is RegisterToScriptHashNotification -> client.sendElectrumRequest(
                         ScriptHashSubscription(action.scriptHash)

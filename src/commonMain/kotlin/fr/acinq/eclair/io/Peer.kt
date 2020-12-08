@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchEvent
 import fr.acinq.eclair.blockchain.electrum.AskForHeaderSubscriptionUpdate
-import fr.acinq.eclair.blockchain.electrum.AskForStatusUpdate
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
 import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
@@ -162,8 +161,6 @@ class Peer(
                 previousState = it
             }
         }
-
-        watcher.client.sendMessage(AskForStatusUpdate)
     }
 
     fun connect() {
