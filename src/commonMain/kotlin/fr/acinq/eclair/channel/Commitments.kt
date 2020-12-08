@@ -31,7 +31,6 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
 import org.kodein.log.Logger
-import kotlin.experimental.and
 
 // @formatter:off
 @Serializable
@@ -122,11 +121,9 @@ data class Commitments(
     fun almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> =
         localCommit.spec.htlcs.incomings().filter { blockheight >= (it.cltvExpiry - fulfillSafety).toLong() }.toSet()
 
-    fun addLocalProposal(proposal: UpdateMessage): Commitments = copy(localChanges = localChanges.copy(proposed = localChanges.proposed + proposal))
+    private fun addLocalProposal(proposal: UpdateMessage): Commitments = copy(localChanges = localChanges.copy(proposed = localChanges.proposed + proposal))
 
-    fun addRemoteProposal(proposal: UpdateMessage): Commitments = copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed + proposal))
-
-    val announceChannel: Boolean get() = (channelFlags and 0x01).toInt() != 0
+    private fun addRemoteProposal(proposal: UpdateMessage): Commitments = copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed + proposal))
 
     // NB: when computing availableBalanceForSend and availableBalanceForReceive, the funder keeps an extra buffer on top
     // of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
@@ -619,10 +616,10 @@ data class Commitments(
     companion object {
 
         val ANCHOR_AMOUNT = 330.sat
-        val COMMIT_WEIGHT = 1124
-        val HTLC_OUTPUT_WEIGHT = 172
-        val HTLC_TIMEOUT_WEIGHT = 666
-        val HTLC_SUCCESS_WEIGHT = 706
+        const val COMMIT_WEIGHT = 1124
+        const val HTLC_OUTPUT_WEIGHT = 172
+        const val HTLC_TIMEOUT_WEIGHT = 666
+        const val HTLC_SUCCESS_WEIGHT = 706
 
         fun alreadyProposed(changes: List<UpdateMessage>, id: Long): Boolean = changes.any {
             when (it) {
@@ -681,8 +678,7 @@ data class Commitments(
             spec: CommitmentSpec
         ): Triple<CommitTx, List<HtlcTimeoutTx>, List<HtlcSuccessTx>> {
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-            val localPaymentBasepoint = keyManager.paymentPoint(channelKeyPath).publicKey
-            val localPaymentPubkey = localPaymentBasepoint
+            val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
@@ -700,7 +696,8 @@ data class Commitments(
                 localHtlcPubkey,
                 spec
             )
-            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
+            // NB: we are creating the remote commit tx, so local/remote parameters are inverted.
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentPubkey, !localParams.isFunder, outputs)
             val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feerate, outputs)
             return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
         }

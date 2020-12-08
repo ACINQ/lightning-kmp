@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
+import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Feature
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
@@ -40,16 +41,16 @@ object Helpers {
      * Returns the number of confirmations needed to safely handle the funding transaction,
      * we make sure the cumulative block reward largely exceeds the channel size.
      *
-     * @param fundingSatoshis funding amount of the channel
+     * @param fundingAmount funding amount of the channel
      * @return number of confirmations needed
      */
-    fun minDepthForFunding(nodeParams: NodeParams, fundingSatoshis: Satoshi): Int =
-        if (fundingSatoshis <= Channel.MAX_FUNDING) {
+    fun minDepthForFunding(nodeParams: NodeParams, fundingAmount: Satoshi): Int =
+        if (fundingAmount <= Channel.MAX_FUNDING) {
             nodeParams.minDepthBlocks
         } else {
             val blockReward = 6.25f // this is true as of ~May 2020, but will be too large after 2024
             val scalingFactor = 15
-            val btc = fundingSatoshis.toLong().toDouble() / 100_000_000L
+            val btc = fundingAmount.toLong().toDouble() / 100_000_000L
             val blocksToReachFunding: Int = (((scalingFactor * btc) / blockReward) + 1).toInt()
             max(nodeParams.minDepthBlocks, blocksToReachFunding)
         }
@@ -352,7 +353,7 @@ object Helpers {
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
 
         fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: FeeratePerKw): Satoshi {
-            // this is just to estimate the weight, it depends on size of the pubkey scripts
+            // this is just to estimate the weight which depends on the size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
             return Transactions.weight2fee(requestedFeerate, closingWeight)
@@ -404,10 +405,10 @@ object Helpers {
         }
 
         /**
-         * Claim all the HTLCs that we've received from our current commit tx. This will be done using 2nd stage HTLC transactions.
+         * Claim all the outputs that we've received from our current commit tx. This will be done using 2nd stage HTLC transactions.
          *
-         * @param commitments our commitment data, which include payment preimages
-         * @return a list of transactions (one per HTLC that we can claim)
+         * @param commitments our commitment data, which include payment preimages.
+         * @return a list of transactions (one per output that we can claim).
          */
         fun claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): LocalCommitPublished {
             val localCommit = commitments.localCommit
@@ -439,16 +440,15 @@ object Helpers {
             // those are the preimages to existing received htlcs
             val preimages = commitments.localChanges.all.filterIsInstance<UpdateFulfillHtlc>().map { it.paymentPreimage }
 
-            val htlcTxs = localCommit.publishableTxs.htlcTxsAndSigs.mapNotNull {
-                val (txInfo, localSig, remoteSig) = it
+            val htlcTxs = localCommit.publishableTxs.htlcTxsAndSigs.mapNotNull { (txInfo, localSig, remoteSig) ->
                 when (txInfo) {
                     // incoming htlc for which we have the preimage: we spend it directly
+                    // incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
                     is HtlcSuccessTx -> {
                         preimages.firstOrNull { r ->
                             sha256(r).toByteVector() == txInfo.paymentHash
                         }?.let { preimage -> Transactions.addSigs(txInfo, localSig, remoteSig, preimage) }
                     }
-                    // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
                     // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
                     is HtlcTimeoutTx -> Transactions.addSigs(txInfo, localSig, remoteSig)
@@ -484,13 +484,12 @@ object Helpers {
         }
 
         /**
-         * Claim all the HTLCs that we've received from their current commit tx, if the channel used option_static_remotekey
-         * we don't need to claim our main output because it directly pays to one of our wallet's p2wpkh addresses.
+         * Claim all the outputs that we've received from their current commit tx.
          *
-         * @param commitments  our commitment data, which include payment preimages
-         * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
-         * @param tx           the remote commitment transaction that has just been published
-         * @return a list of transactions (one per HTLC that we can claim)
+         * @param commitments our commitment data, which include payment preimages.
+         * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment).
+         * @param tx the remote commitment transaction that has just been published.
+         * @return a list of transactions (one per output that we can claim).
          */
         fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
             val channelVersion = commitments.channelVersion
@@ -510,8 +509,7 @@ object Helpers {
             require(remoteCommitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
 
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-            val localPaymentBasepoint = keyManager.paymentPoint(channelKeyPath).publicKey
-            val localPaymentPubkey = localPaymentBasepoint
+            val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
@@ -540,6 +538,7 @@ object Helpers {
 
             val claimHtlcSuccessTxs = remoteCommit.spec.htlcs.filterIsInstance<OutgoingHtlc>().map { it.add }.mapNotNull { add ->
                 // incoming htlc for which we have the preimage: we spend it directly.
+                // incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back.
                 // NB: we are looking at the remote's commitment, from its point of view it's an outgoing htlc.
                 preimages.firstOrNull { r -> sha256(r).toByteVector() == add.paymentHash }?.let { preimage ->
                     generateTx("claim-htlc-success") {
@@ -562,7 +561,6 @@ object Helpers {
             }
 
             val claimHtlcTimeoutTxs = remoteCommit.spec.htlcs.filterIsInstance<IncomingHtlc>().map { it.add }.mapNotNull { add ->
-                // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
                 // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
                 generateTx("claim-htlc-timeout") {
                     Transactions.makeClaimHtlcTimeoutTx(
@@ -590,13 +588,12 @@ object Helpers {
         }
 
         /**
-         * Claim our main output only, not used if option_static_remotekey was negotiated
+         * Claim our main output only from their commit tx.
          *
-         * @param commitments              either our current commitment data in case of usual remote uncooperative closing
-         *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
-         *                                 to get some constant parameters, not commitment data
-         * @param tx                       the remote commitment transaction that has just been published
-         * @return a list of transactions (one per HTLC that we can claim)
+         * @param commitments either our current commitment data in case of usual remote uncooperative closing or our outdated commitment data
+         * in case of data loss protection procedure; in any case it is used only to get some constant parameters, not commitment data.
+         * @param tx the remote commitment transaction that has just been published.
+         * @return a transaction to claim our main output.
          */
         internal fun claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, tx: Transaction, claimMainFeerate: FeeratePerKw): RemoteCommitPublished {
             val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
@@ -619,42 +616,45 @@ object Helpers {
         }
 
         /**
-         * When an unexpected transaction spending the funding tx is detected:
-         * 1) we find out if the published transaction is one of remote's revoked txs
-         * 2) and then:
-         * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
-         * b) otherwise there is nothing we can do
-         *
-         * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
+         * When an unexpected transaction spending the funding tx is detected, we can use our secrets to identify the commitment number.
+         * This can then be used to find the necessary information to build penalty txs for every htlc output.
          */
-        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): RevokedCommitPublished? {
-            val channelVersion = commitments.channelVersion
-            val localParams = commitments.localParams
-            val remoteParams = commitments.remoteParams
-
+        private fun extractTxNumber(keyManager: KeyManager, commitments: Commitments, tx: Transaction): Long {
             require(tx.txIn.size == 1) { "commitment tx should have 1 input" }
-
-            val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
+            val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
             val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
             val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
             // this tx has been published by remote, so we need to invert local/remote params
-            val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
-            require(txnumber <= 0xffffffffffffL) { "txnumber must be lesser than 48 bits long" }
-            logger.warning { "a revoked commit has been published with txnumber=$txnumber" }
+            val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isFunder, commitments.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
+            require(txNumber <= 0xffffffffffffL) { "txNumber must be lesser than 48 bits long" }
+            logger.warning { "a revoked commit has been published with txNumber=$txNumber" }
+            return txNumber
+        }
 
+        /**
+         * When an unexpected transaction spending the funding tx is detected:
+         * 1) we find out if the published transaction is one of our remote's revoked txs
+         * 2) and then:
+         *  a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
+         *  b) otherwise there is nothing we can do
+         *
+         * @return a [[RevokedCommitPublished]] object containing a penalty transaction for the remote's main output and the commitment number.
+         * With the commitment number, the caller should fetch information about the htlcs in this commitment and then call [[claimRevokedRemoteCommitTxHtlcOutputs]].
+         */
+        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): Pair<RevokedCommitPublished, Long>? {
+            val txNumber = extractTxNumber(keyManager, commitments, tx)
             // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-            val hash = commitments.remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber) ?: return null
+            val hash = commitments.remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber) ?: return null
 
+            val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+            val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
             val remotePerCommitmentSecret = PrivateKey.fromHex(hash.toHex())
             val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey()
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(
-                keyManager.revocationPoint(channelKeyPath).publicKey,
-                remotePerCommitmentPoint
-            )
+            val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
             val feerateMain = feerates.claimMainFeerate
-            // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
+            // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
             val feeratePenalty = feerates.fastFeerate
 
             // first we will claim our main output right away
@@ -675,10 +675,10 @@ object Helpers {
             val mainPenaltyTx = generateTx("main-penalty") {
                 Transactions.makeMainPenaltyTx(
                     tx,
-                    localParams.dustLimit,
+                    commitments.localParams.dustLimit,
                     remoteRevocationPubkey,
-                    localParams.defaultFinalScriptPubKey.toByteArray(),
-                    localParams.toSelfDelay,
+                    commitments.localParams.defaultFinalScriptPubKey.toByteArray(),
+                    commitments.localParams.toSelfDelay,
                     remoteDelayedPaymentPubkey,
                     feeratePenalty
                 )
@@ -687,56 +687,56 @@ object Helpers {
                 Transactions.addSigs(it, sig).tx
             }
 
-            // we retrieve the information needed to rebuild htlc scripts
-//                commitments.localCommit.spec.htlcs.map { it.add.paymentHash to it.add.cltvExpiry }
-            // TODO handling toRemote / toLocal
-            //  We need to find a way to retrieve previous htlcs from revoked commit tx
-            // from ECLAIR-CORE val htlcInfos = db.listHtlcInfos(commitments.channelId, txnumber)
-            //  val htlcInfos = commitments.remoteCommit.spec.htlcs.map { it.add.paymentHash to it.add.cltvExpiry }
-            //  logger.info{ "got htlcs=${htlcInfos.size} for txnumber=$txnumber" }
-            //                val htlcsRedeemScripts =
-            //                    htlcInfos.map { (paymentHash, cltvExpiry) ->
-            //                        val htlcsReceived = Scripts.htlcReceived(
-            //                            remoteHtlcPubkey,
-            //                            localHtlcPubkey,
-            //                            remoteRevocationPubkey,
-            //                            Crypto.ripemd160(paymentHash),
-            //                            cltvExpiry
-            //                        )
-            //                        val htlcsOffered = Scripts.htlcOffered(
-            //                            remoteHtlcPubkey,
-            //                            localHtlcPubkey,
-            //                            remoteRevocationPubkey,
-            //                            Crypto.ripemd160(paymentHash)
-            //                        )
-            //                        htlcsReceived + htlcsOffered
-            //                    }.map { redeemScript -> Script.write(pay2wsh(redeemScript)) to Script.write(redeemScript) }
-            //                        .toMap()
-            //              and finally we steal the htlc outputs
-            //                val htlcPenaltyTxs = tx.txOut.mapIndexedNotNull { outputIndex, txOut ->
-            //                    htlcsRedeemScripts[txOut.publicKeyScript.toByteArray()]?.let { htlcRedeemScript ->
-            //                        generateTx("htlc-penalty") {
-            //                            Transactions.makeHtlcPenaltyTx(
-            //                                tx,
-            //                                outputIndex,
-            //                                htlcRedeemScript,
-            //                                localParams.dustLimit,
-            //                                localParams.defaultFinalScriptPubKey.toByteArray(),
-            //                                feeratePerKwPenalty
-            //                            )
-            //                        }?.let { htlcPenalty ->
-            //                            val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath))
-            //                            Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey).tx
-            //                        }
-            //                    }
-            //                }
+            return Pair(RevokedCommitPublished(commitTx = tx, remotePerCommitmentSecret = remotePerCommitmentSecret, claimMainOutputTx = mainTx, mainPenaltyTx = mainPenaltyTx), txNumber)
+        }
 
-            return RevokedCommitPublished(
-                commitTx = tx,
-                claimMainOutputTx = mainTx,
-                mainPenaltyTx = mainPenaltyTx,
-//                    htlcPenaltyTxs = htlcPenaltyTxs
-            )
+        /**
+         * Once we've fetched htlc information for a revoked commitment from the DB, we create penalty transactions to claim all htlc outputs.
+         */
+        fun claimRevokedRemoteCommitTxHtlcOutputs(
+            keyManager: KeyManager,
+            commitments: Commitments,
+            revokedCommitPublished: RevokedCommitPublished,
+            feerates: OnChainFeerates,
+            htlcInfos: List<ChannelAction.Storage.HtlcInfo>
+        ): RevokedCommitPublished {
+            // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
+            val feeratePenalty = feerates.fastFeerate
+
+            val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+            val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
+            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+            val remoteHtlcPubkey = Generators.derivePubKey(commitments.remoteParams.htlcBasepoint, remotePerCommitmentPoint)
+            val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+
+            // we retrieve the information needed to rebuild htlc scripts
+            logger.info { "got htlcs=${htlcInfos.size} for txid=${revokedCommitPublished.commitTx.txid}" }
+            val htlcsRedeemScripts = htlcInfos.flatMap { htlcInfo ->
+                val htlcReceived = Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash), htlcInfo.cltvExpiry)
+                val htlcOffered = Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash))
+                listOf(htlcReceived, htlcOffered)
+            }.map { redeemScript -> write(pay2wsh(redeemScript)).toByteVector() to write(redeemScript).toByteVector() }.toMap()
+
+            // and finally we steal the htlc outputs
+            val htlcPenaltyTxs = revokedCommitPublished.commitTx.txOut.mapIndexedNotNull { outputIndex, txOut ->
+                htlcsRedeemScripts[txOut.publicKeyScript]?.let { redeemScript ->
+                    generateTx("htlc-penalty") {
+                        Transactions.makeHtlcPenaltyTx(
+                            revokedCommitPublished.commitTx,
+                            outputIndex,
+                            redeemScript.toByteArray(),
+                            commitments.localParams.dustLimit,
+                            commitments.localParams.defaultFinalScriptPubKey.toByteArray(),
+                            feeratePenalty
+                        )
+                    }?.let { htlcPenaltyTx ->
+                        val sig = keyManager.sign(htlcPenaltyTx, keyManager.revocationPoint(channelKeyPath), revokedCommitPublished.remotePerCommitmentSecret)
+                        Transactions.addSigs(htlcPenaltyTx, sig, remoteRevocationPubkey).tx
+                    }
+                }
+            }
+
+            return revokedCommitPublished.copy(htlcPenaltyTxs = htlcPenaltyTxs)
         }
 
         /**
@@ -744,8 +744,8 @@ object Helpers {
          *
          * In case a revoked commitment with pending HTLCs is published, there are two ways the HTLC outputs can be taken as punishment:
          * - by spending the corresponding output of the commitment tx, using [[HtlcPenaltyTx]] that we generate as soon as we detect that a revoked commit
-         * as been spent; note that those transactions will compete with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the counterparty.
-         * - by spending the delayed output of [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] if those get confirmed; because the output of these txes is protected by
+         * has been spent; note that those transactions will compete with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the counterparty.
+         * - by spending the delayed output of [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] if those get confirmed; because the output of these txs is protected by
          * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
          * this is the purpose of this method.
          */
@@ -759,45 +759,26 @@ object Helpers {
             if (htlcTx.txIn.map { it.outPoint.txid }.contains(revokedCommitPublished.commitTx.txid) && !claimTxs.map { it.txid }.toSet().contains(htlcTx.txid)) {
                 logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
-                val localParams = commitments.localParams
-                val channelVersion = commitments.channelVersion
-                val remoteParams = commitments.remoteParams
-                val remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets
-
-                val tx = revokedCommitPublished.commitTx
-                val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
-                val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-
-                // this tx has been published by remote, so we need to invert local/remote params
-                val txNumber = Transactions.obscuredCommitTxNumber(
-                    obscuredTxNumber,
-                    !localParams.isFunder,
-                    remoteParams.paymentBasepoint,
-                    keyManager.paymentPoint(channelKeyPath).publicKey
-                )
-                // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-                val hash = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber) ?: return revokedCommitPublished to null
-
-                val remotePerCommitmentSecret = PrivateKey(hash)
-                val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey()
-                val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+                val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+                val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
+                val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
                 val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
-                // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
+                // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
                 val feeratePenalty = feerates.fastFeerate
 
                 val signedTx = generateTx("claim-htlc-delayed-penalty") {
                     Transactions.makeClaimDelayedOutputPenaltyTx(
                         htlcTx,
-                        localParams.dustLimit,
+                        commitments.localParams.dustLimit,
                         remoteRevocationPubkey,
-                        localParams.toSelfDelay,
+                        commitments.localParams.toSelfDelay,
                         remoteDelayedPaymentPubkey,
-                        localParams.defaultFinalScriptPubKey.toByteArray(),
+                        commitments.localParams.defaultFinalScriptPubKey.toByteArray(),
                         feeratePenalty
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret)
+                    val sig = keyManager.sign(it, keyManager.revocationPoint(channelKeyPath), revokedCommitPublished.remotePerCommitmentSecret)
                     val signedTx = Transactions.addSigs(it, sig).tx
                     // we need to make sure that the tx is indeed valid
                     when (runTrying { Transaction.correctlySpends(signedTx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
@@ -825,9 +806,9 @@ object Helpers {
          */
         fun LocalCommit.extractPreimages(tx: Transaction): Set<Pair<UpdateAddHtlc, ByteVector32>> {
             val htlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromHtlcSuccess())
-                .also { it.forEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (htlc-success)" } } }
+                .onEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (htlc-success)" } }
             val claimHtlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess())
-                .also { it.forEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (claim-htlc-success)" } } }
+                .onEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (claim-htlc-success)" } }
             val paymentPreimages = (htlcSuccess + claimHtlcSuccess).toSet()
 
             return paymentPreimages.flatMap { paymentPreimage ->
@@ -871,10 +852,10 @@ object Helpers {
          * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
          * more htlcs have timed out and need to be failed in an upstream channel.
          *
-         * @param tx a tx that has reached mindepth
+         * @param tx a tx that has reached min_depth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun LocalCommit.timedoutHtlcs(localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+        fun LocalCommit.timedOutHtlcs(localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
             val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, spec).map { it.add }
             return if (tx.txid == publishableTxs.commitTx.tx.txid) {
                 // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -900,10 +881,10 @@ object Helpers {
          * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
          * more htlcs have timed out and need to be failed in an upstream channel.
          *
-         * @param tx a tx that has reached mindepth
+         * @param tx a tx that has reached min_depth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun RemoteCommit.timedoutHtlcs(remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+        fun RemoteCommit.timedOutHtlcs(remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
             val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, spec).map { it.add }
             return if (tx.txid == txid) {
                 // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)

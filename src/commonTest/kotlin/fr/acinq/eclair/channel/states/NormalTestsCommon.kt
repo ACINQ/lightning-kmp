@@ -1293,45 +1293,40 @@ class NormalTestsCommon : EclairTestSuite() {
         // htlcs :
         //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend
         //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend
-        //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
+        //    alice -> bob    :      10 000 (dust)                             => won't appear in the commitment tx
         //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
         alice8 as ChannelStateWithCommitments; bob8 as ChannelStateWithCommitments
         val bobCommitTx = bob8.commitments.localCommit.publishableTxs.commitTx.tx
-        assertEquals(8, bobCommitTx.txOut.size) // 2 main outputs and 4 pending htlcs
+        assertEquals(8, bobCommitTx.txOut.size) // 2 main outputs, 4 pending htlcs and 2 anchors
 
-        val (aliceClosing, actions) = alice8.process(
-            ChannelEvent.WatchReceived(
-                WatchEventSpent(
-                    alice8.channelId,
-                    BITCOIN_FUNDING_SPENT,
-                    bobCommitTx
-                )
-            )
-        )
-
+        val (aliceClosing, actions) = alice8.process(ChannelEvent.WatchReceived(WatchEventSpent(alice8.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
         assertTrue(aliceClosing is Closing)
         assertTrue(actions.isNotEmpty())
-        // in response to that, alice publishes its claim txes
-        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        assertEquals(4, claimTxes.size)
+
+        // in response to that, alice publishes its claim txs
+        val claimTxs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(4, claimTxs.size)
         // in addition to its main output, alice can only claim 3 out of 4 htlcs,
         // she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-        val amountClaimed = claimTxes.map { claimHtlcTx ->
+        val amountClaimed = claimTxs.map { claimHtlcTx ->
             assertEquals(1, claimHtlcTx.txIn.size)
             assertEquals(1, claimHtlcTx.txOut.size)
             Transaction.correctlySpends(claimHtlcTx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(819490.sat, amountClaimed)
+        assertEquals(819_490.sat, amountClaimed)
 
-        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.findWatches<WatchConfirmed>()[0].event)
+        val rcp = aliceClosing.remoteCommitPublished!!
+        val watchConfirmed = actions.findWatches<WatchConfirmed>()
+        assertEquals(2, watchConfirmed.size)
+        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
+        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!), watchConfirmed[1].event)
         assertEquals(3, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
-
-        assertEquals(1, aliceClosing.remoteCommitPublished?.claimHtlcSuccessTxs?.size)
-        assertEquals(2, aliceClosing.remoteCommitPublished?.claimHtlcTimeoutTxs?.size)
+        assertEquals(1, rcp.claimHtlcSuccessTxs.size)
+        assertEquals(2, rcp.claimHtlcTimeoutTxs.size)
     }
 
     @Test
@@ -1354,9 +1349,9 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob8, alice8) = fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
 
         // alice sign but we intercept bob's revocation
-        val (alice9, aActions8) = alice8.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
-        val commitSig0 = aActions8.findOutgoingMessage<CommitSig>()
-        val (bob9, _) = bob8.process(ChannelEvent.MessageReceived(commitSig0))
+        val (alice9, actions8) = alice8.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val commitSig = actions8.findOutgoingMessage<CommitSig>()
+        val (bob9, _) = bob8.process(ChannelEvent.MessageReceived(commitSig))
 
         // as far as alice knows, bob currently has two valid unrevoked commitment transactions
 
@@ -1368,196 +1363,124 @@ class NormalTestsCommon : EclairTestSuite() {
         // htlcs :
         //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend
         //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend
-        //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
+        //    alice -> bob    :      10 000 (dust)                             => won't appear in the commitment tx
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
         alice9 as ChannelStateWithCommitments; bob9 as ChannelStateWithCommitments
         // bob publishes his current commit tx
         val bobCommitTx = bob9.commitments.localCommit.publishableTxs.commitTx.tx
-        assertEquals(7, bobCommitTx.txOut.size) // 2 main outputs and 3 pending htlcs
+        assertEquals(7, bobCommitTx.txOut.size) // 2 main outputs, 3 pending htlcs and 2 anchors
 
-        val (aliceClosing, actions) = alice9.process(
-            ChannelEvent.WatchReceived(
-                WatchEventSpent(
-                    alice9.channelId,
-                    BITCOIN_FUNDING_SPENT,
-                    bobCommitTx
-                )
-            )
-        )
-
+        val (aliceClosing, actions9) = alice9.process(ChannelEvent.WatchReceived(WatchEventSpent(alice9.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
         assertTrue(aliceClosing is Closing)
-        assertTrue(actions.isNotEmpty())
+        assertTrue(actions9.isNotEmpty())
 
-        // in response to that, alice publishes its claim txes
-        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        assertEquals(3, claimTxes.size)
+        // in response to that, alice publishes its claim txs
+        val claimTxs = actions9.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(3, claimTxs.size)
         // alice can only claim 2 out of 3 htlcs,
         // she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-        val amountClaimed = claimTxes.map { claimHtlcTx ->
+        val amountClaimed = claimTxs.map { claimHtlcTx ->
             assertEquals(1, claimHtlcTx.txIn.size)
             assertEquals(1, claimHtlcTx.txOut.size)
             Transaction.correctlySpends(claimHtlcTx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(825770.sat, amountClaimed)
+        assertEquals(825_770.sat, amountClaimed)
 
-        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertEquals(2, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
-
-        assertEquals(0, aliceClosing.nextRemoteCommitPublished?.claimHtlcSuccessTxs?.size)
-        assertEquals(2, aliceClosing.nextRemoteCommitPublished?.claimHtlcTimeoutTxs?.size)
+        val rcp = aliceClosing.nextRemoteCommitPublished!!
+        val watchConfirmed = actions9.findWatches<WatchConfirmed>()
+        assertEquals(2, watchConfirmed.size)
+        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
+        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!), watchConfirmed[1].event)
+        assertEquals(2, actions9.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(0, rcp.claimHtlcSuccessTxs.size)
+        assertEquals(2, rcp.claimHtlcTimeoutTxs.size)
     }
 
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
         var (alice, bob) = reachNormal()
         // initially we have :
-        // alice = 800 000
-        //   bob = 200 000
-        fun send(): Transaction {
-            // alice sends 8 000 sat
-            addHtlc(10_000_000.msat, payer = alice, payee = bob)
-                .first.run { alice = first as Normal; bob = second as Normal }
-            crossSign(alice, bob)
-                .run { alice = first as Normal; bob = second as Normal }
-
-            return bob.commitments.localCommit.publishableTxs.commitTx.tx
+        // alice = 800 000 sat
+        //   bob = 200 000 sat
+        fun send(cmd: CMD_ADD_HTLC? = null): Pair<Transaction, UpdateAddHtlc> {
+            val (alice1, bob1, add) = if (cmd != null) {
+                addHtlc(cmd, payer = alice, payee = bob)
+            } else {
+                // alice sends 10 000 sat
+                val (nodes, _, add) = addHtlc(10_000_000.msat, payer = alice, payee = bob)
+                Triple(nodes.first, nodes.second, add)
+            }
+            alice = alice1 as Normal; bob = bob1 as Normal
+            crossSign(alice, bob).run { alice = first as Normal; bob = second as Normal }
+            return Pair(bob.commitments.localCommit.publishableTxs.commitTx.tx, add)
         }
 
-        val txes = (0 until 10).map { send() }
+        val (txs, adds) = run {
+            // The first two HTLCs are duplicates (MPP)
+            val (tx1, add1) = send()
+            val (tx2, add2) = send(CMD_ADD_HTLC(add1.amountMsat, add1.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, UUID.randomUUID(), commit = false))
+            val (otherTxs, otherAdds) = (2 until 10).map { send() }.unzip()
+            Pair(listOf(tx1, tx2) + otherTxs, listOf(add1, add2) + otherAdds)
+        }
+
         // bob now has 10 spendable tx, 9 of them being revoked
-
         // let's say that bob published this tx
-        val revokedTx = txes[3]
+        val revokedTx = txs[3]
         // channel state for this revoked tx is as follows:
-        // alice = 760 000
-        //   bob = 200 000
-        //  a->b =  10 000
-        //  a->b =  10 000
-        //  a->b =  10 000
-        //  a->b =  10 000
-        // 2 anchor outputs + 2 main outputs + 4 htlc
-        assertEquals(8, revokedTx.txOut.size)
+        // alice = 760 000 sat
+        //   bob = 200 000 sat
+        //  a->b =  10 000 sat
+        //  a->b =  10 000 sat
+        //  a->b =  10 000 sat
+        //  a->b =  10 000 sat
+        assertEquals(8, revokedTx.txOut.size) // 2 anchor outputs + 2 main outputs + 4 htlc
 
-        val (aliceClosing, actions) = alice.process(
-            ChannelEvent.WatchReceived(
-                WatchEventSpent(
-                    alice.channelId,
-                    BITCOIN_FUNDING_SPENT,
-                    revokedTx
-                )
-            )
-        )
+        val (aliceClosing1, actions1) = alice.process(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+        assertTrue(aliceClosing1 is Closing)
+        assertEquals(1, aliceClosing1.revokedCommitPublished.size)
+        actions1.hasOutgoingMessage<Error>()
+        assertEquals(ChannelAction.Storage.GetHtlcInfos(revokedTx.txid, 4), actions1.find<ChannelAction.Storage.GetHtlcInfos>())
 
-        assertTrue(aliceClosing is Closing)
-        assertEquals(1, aliceClosing.revokedCommitPublished.size)
-        assertTrue(actions.isNotEmpty())
-        actions.hasOutgoingMessage<Error>()
+        val (aliceClosing2, actions2) = aliceClosing1.process(ChannelEvent.GetHtlcInfosResponse(revokedTx.txid, adds.take(4).map { ChannelAction.Storage.HtlcInfo(alice.channelId, 4, it.paymentHash, it.cltvExpiry) }))
+        assertTrue(aliceClosing2 is Closing)
+        assertEquals(1, aliceClosing2.revokedCommitPublished.size)
+        assertNull(actions2.findOutgoingMessageOpt<Error>())
+        assertNull(actions2.findOpt<ChannelAction.Storage.GetHtlcInfos>())
 
-        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        // we don't need to claim our output since we use static_remote_key
-        val mainPenaltyTx = claimTxes[1]
-        // TODO business code is disabled for now
-        //      val htlcPenaltyTxs = claimTxes.drop(2)
-        //      assertEquals(2, htlcPenaltyTxs.size)
-        //      // let's make sure that htlc-penalty txs each spend a different output
-        //      assertEquals(htlcPenaltyTxs.map { it.txIn.first().outPoint.index }.toSet().size, htlcPenaltyTxs.size)
+        val claimTxs = actions2.findTxs()
+        assertEquals(6, claimTxs.size)
+        val mainOutputTx = claimTxs[0]
+        val mainPenaltyTx = claimTxs[1]
+        Transaction.correctlySpends(mainPenaltyTx, revokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(setOf(BITCOIN_TX_CONFIRMED(revokedTx), BITCOIN_TX_CONFIRMED(mainOutputTx)), actions2.findWatches<WatchConfirmed>().map { it.event }.toSet())
 
-        assertEquals(BITCOIN_TX_CONFIRMED(revokedTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertTrue(actions.findWatches<WatchSpent>().all { it.event is BITCOIN_OUTPUT_SPENT })
-        // TODO business code is disabled for now
-        //        assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
-        //        htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
+        val htlcPenaltyTxs = claimTxs.drop(2)
+        assertTrue(htlcPenaltyTxs.all { it.txIn.size == 1 })
+        htlcPenaltyTxs.forEach { Transaction.correctlySpends(it, revokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+        val htlcInputs = htlcPenaltyTxs.map { it.txIn.first().outPoint }.toSet()
+        assertEquals(4, htlcInputs.size) // each htlc-penalty tx spends a different output
+        assertEquals(5, actions2.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(htlcInputs + mainPenaltyTx.txIn.first().outPoint, actions2.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }.toSet())
 
-        Transaction.correctlySpends(mainPenaltyTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        // TODO business code is disabled for now
-//            htlcPenaltyTxs.forEach {
-//                Transaction.correctlySpends(it, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-//            }
-
-        // two main outputs are 760 000 and 200 000
-        assertEquals(195160.sat, mainPenaltyTx.txOut[0].amount)
-        // TODO business code is disabled for now
-        //        assertEquals(4540.sat, htlcPenaltyTxs[0].txOut[0].amount)
-        //        assertEquals(4540.sat, htlcPenaltyTxs[1].txOut[0].amount)
-        //        assertEquals(4540.sat, htlcPenaltyTxs[2].txOut[0].amount)
-        //        assertEquals(4540.sat, htlcPenaltyTxs[3].txOut[0].amount)
-    }
-
-    @Test
-    fun `recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)`() {
-        val (alice0, bob0) = reachNormal()
-        // initially we have :
-        // alice = 800 000
-        //   bob = 200 000
-        val (_, cmdAddHtlc) = makeCmdAdd(
-            10_000_000.msat,
-            bob0.staticParams.nodeParams.nodeId,
-            alice0.currentBlockHeight.toLong()
-        )
-
-        val (alice1, bob1, _) = addHtlc(cmdAdd = cmdAddHtlc, payer = alice0, payee = bob0)
-        val (alice2, bob2, _) = addHtlc(cmdAdd = cmdAddHtlc, payer = alice1, payee = bob1)
-
-        val (alice3, bob3) = crossSign(alice2, bob2)
-
-        // bob will publish this tx after it is revoked
-        val revokedTx = (bob3 as ChannelStateWithCommitments).commitments.localCommit.publishableTxs.commitTx.tx
-
-        val (alice4, bob4) = addHtlc(amount = 10000000.msat, payer = alice3, payee = bob3).first
-        val (alice5, _) = crossSign(alice4, bob4)
-
-        // channel state for this revoked tx is as follows:
-        // alice = 780 000
-        //   bob = 200 000
-        //  a->b =  10 000
-        //  a->b =  10 000
-        assertEquals(6, revokedTx.txOut.size)
-
-        val (aliceClosing, actions) = alice5.process(
-            ChannelEvent.WatchReceived(
-                WatchEventSpent(
-                    (alice5 as ChannelStateWithCommitments).channelId,
-                    BITCOIN_FUNDING_SPENT,
-                    revokedTx
-                )
-            )
-        )
-
-        assertTrue(aliceClosing is Closing)
-        assertTrue(actions.isNotEmpty())
-        actions.hasOutgoingMessage<Error>()
-
-        val claimTxes = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-        val mainPenaltyTx = claimTxes[0]
-        // TODO business code is disabled for now
-        //      val htlcPenaltyTxs = claimTxes.drop(2)
-        //      assertEquals(2, htlcPenaltyTxs.size)
-        //      // let's make sure that htlc-penalty txs each spend a different output
-        //      assertEquals(htlcPenaltyTxs.map { it.txIn.first().outPoint.index }.toSet().size, htlcPenaltyTxs.size)
-
-        assertEquals(BITCOIN_TX_CONFIRMED(revokedTx), actions.findWatches<WatchConfirmed>()[0].event)
-        assertTrue(actions.findWatches<WatchSpent>().all { it.event is BITCOIN_OUTPUT_SPENT })
-        // TODO business code is disabled for now
-        //        assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
-        //        htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
-
-        Transaction.correctlySpends(mainPenaltyTx, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        // TODO business code is disabled for now
-//            htlcPenaltyTxs.forEach {
-//                Transaction.correctlySpends(it, listOf(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-//            }
+        // two main outputs are 760 000 and 200 000 (minus fees)
+        assertEquals(745_860.sat, mainOutputTx.txOut[0].amount)
+        assertEquals(195_160.sat, mainPenaltyTx.txOut[0].amount)
+        assertEquals(4_520.sat, htlcPenaltyTxs[0].txOut[0].amount)
+        assertEquals(4_520.sat, htlcPenaltyTxs[1].txOut[0].amount)
+        assertEquals(4_520.sat, htlcPenaltyTxs[2].txOut[0].amount)
+        assertEquals(4_520.sat, htlcPenaltyTxs[3].txOut[0].amount)
     }
 
     @Test
     fun `recv Disconnected`() {
         val (alice0, _) = reachNormal()
         val (alice1, _) = alice0.process(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline } ; alice1 as Offline // force type inference
+        assertTrue { alice1 is Offline }; alice1 as Offline
         val previousState = alice1.state
-        assertTrue { previousState is Normal } ; previousState as Normal // force type inference
+        assertTrue { previousState is Normal }; previousState as Normal
         assertEquals(alice0.channelUpdate, previousState.channelUpdate)
     }
 
@@ -1570,7 +1493,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (alice2, _) = nodes1
 
         val (alice3, actions) = alice2.process(ChannelEvent.Disconnected)
-        assertTrue { alice3 is Offline } ; alice3 as Offline // force type inference
+        assertTrue { alice3 is Offline }; alice3 as Offline
 
         val addSettledFailList = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         assertEquals(2, addSettledFailList.size)

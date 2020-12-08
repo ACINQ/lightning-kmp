@@ -59,6 +59,7 @@ sealed class ChannelEvent {
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
     data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
+    data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
     data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelEvent()
     object Disconnected : ChannelEvent()
@@ -90,6 +91,7 @@ sealed class ChannelAction {
         data class StoreState(val data: ChannelStateWithCommitments) : Storage()
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
+        data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -195,7 +197,6 @@ sealed class ChannelState {
         val error = Error(channelId, exc.message)
         // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
         // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
-        // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 
@@ -204,7 +205,6 @@ sealed class ChannelState {
         logger.warning { "funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE}" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
-        // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 
@@ -297,19 +297,16 @@ sealed class ChannelState {
         require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx spent in txid=${tx.txid}" }
 
-        return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(
-            keyManager,
-            commitments,
-            tx,
-            currentOnChainFeerates
-        )?.let { revokedCommitPublished ->
+        return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
             logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
-            val exc = FundingTxSpent(channelId, tx)
-            val error = Error(channelId, exc.message)
+            val ex = FundingTxSpent(channelId, tx)
+            val error = Error(channelId, ex.message)
 
             val nextState = when (this) {
-                is Closing -> if (this.revokedCommitPublished.contains(revokedCommitPublished)) this
-                else copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
+                is Closing -> when (this.revokedCommitPublished.contains(revokedCommitPublished)) {
+                    true -> this
+                    false -> this.copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
+                }
                 is Negotiating -> Closing(
                     staticParams = staticParams,
                     currentTip = currentTip,
@@ -336,8 +333,8 @@ sealed class ChannelState {
                 add(ChannelAction.Storage.StoreState(nextState))
                 addAll(revokedCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
                 add(ChannelAction.Message.Send(error))
+                add(ChannelAction.Storage.GetHtlcInfos(revokedCommitPublished.commitTx.txid, txNumber))
             })
-
         } ?: run {
             // the published tx was neither their current commitment nor a revoked one
             logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
@@ -353,7 +350,6 @@ sealed class ChannelState {
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
         logger.error { "peer send error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
-        // TODO context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e), isFatal = true))
 
         return when {
             this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
@@ -2329,14 +2325,14 @@ data class Closing(
                     watch is WatchEventSpent && watch.event is BITCOIN_OUTPUT_SPENT -> {
                         // when a remote or local commitment tx containing outgoing htlcs is published on the network,
                         // we watch it in order to extract payment preimage if funds are pulled by the counterparty
-                        // we can then use these preimages to fulfill origin htlcs
+                        // we can then use these preimages to fulfill payments
                         logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=$watch.tx" }
                         val revokeCommitPublishActions = mutableListOf<ChannelAction>()
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
                             val (newRevokeCommitPublished, tx) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
                             tx?.let {
                                 revokeCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
-                                revokeCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, it, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
+                                revokeCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
                             }
                             newRevokeCommitPublished
                         }
@@ -2359,6 +2355,7 @@ data class Closing(
                             futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
                             revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
                         )
+                        closing1.networkFeePaid(watch.tx)?.let { logger.info { "paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" } }
                         when (val closingType = closing1.isClosed(watch.tx)) {
                             null -> Pair(closing1, listOf(ChannelAction.Storage.StoreState(closing1)))
                             else -> {
@@ -2372,6 +2369,21 @@ data class Closing(
                         }
                     }
                     else -> unhandled(event)
+                }
+            }
+            is ChannelEvent.GetHtlcInfosResponse -> {
+                val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == event.revokedCommitTxId }
+                if (index >= 0) {
+                    val revokedCommitPublished1 = Helpers.Closing.claimRevokedRemoteCommitTxHtlcOutputs(keyManager, commitments, revokedCommitPublished[index], currentOnChainFeerates, event.htlcInfos)
+                    val nextState = copy(revokedCommitPublished = revokedCommitPublished.updated(index, revokedCommitPublished1))
+                    val actions = buildList {
+                        add(ChannelAction.Storage.StoreState(nextState))
+                        addAll(revokedCommitPublished1.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+                    }
+                    Pair(nextState, actions)
+                } else {
+                    logger.warning { "cannot find revoked commit with txid=${event.revokedCommitTxId}" }
+                    Pair(this, listOf())
                 }
             }
             is ChannelEvent.MessageReceived -> when (event.message) {
@@ -2449,8 +2461,7 @@ data class Closing(
     /**
      * Checks if a channel is closed (i.e. its closing tx has been confirmed)
      *
-     * @param additionalConfirmedTx additional confirmed transaction; we need this for the mutual close scenario
-     *                                  because we don't store the closing tx in the channel state
+     * @param additionalConfirmedTx additional confirmed transaction; we need this for the mutual close scenario because we don't store the closing tx in the channel state
      * @return the channel closing type, if applicable
      */
     private fun isClosed(additionalConfirmedTx: Transaction?): ClosingType? {
@@ -2460,7 +2471,7 @@ data class Closing(
             remoteCommitPublished?.isDone() ?: false -> CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished!!)
             nextRemoteCommitPublished?.isDone() ?: false -> NextRemoteClose(commitments.remoteNextCommitInfo.left!!.nextRemoteCommit, nextRemoteCommitPublished!!)
             futureRemoteCommitPublished?.isDone() ?: false -> RecoveryClose(futureRemoteCommitPublished!!)
-            revokedCommitPublished.any { it.done() } -> RevokedClose(revokedCommitPublished.first { it.done() })
+            revokedCommitPublished.any { it.isDone() } -> RevokedClose(revokedCommitPublished.first { it.isDone() })
             else -> null
         }
     }
@@ -2478,17 +2489,16 @@ data class Closing(
 
     /**
      * This helper function returns the fee paid by the given transaction.
-     *
      * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
      *
      * @param tx a tx for which we want to compute the fee
      * @return if the parent tx is found, a tuple (fee, description)
      */
-    fun networkFeePaid(tx: Transaction): Pair<Satoshi, String>? {
+    private fun networkFeePaid(tx: Transaction): Pair<Satoshi, String>? {
         // only funder pays the fee
         if (!commitments.localParams.isFunder) return null
 
-        // we build a map with all known txes (that's not particularly efficient, but it doesn't really matter)
+        // we build a map with all known txs (that's not particularly efficient, but it doesn't really matter)
         val txs = buildList {
             mutualClosePublished.map { it to "mutual" }.forEach { add(it) }
             localCommitPublished?.let { localCommitPublished ->
