@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomKey
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.Commitments
@@ -12,6 +11,7 @@ import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.channel.RemoteParams
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlinx.serialization.decodeFromString

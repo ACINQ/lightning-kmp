@@ -10,10 +10,10 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eclair.transactions.Scripts.htlcOffered

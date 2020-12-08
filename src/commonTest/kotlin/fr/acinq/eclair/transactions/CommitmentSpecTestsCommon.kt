@@ -5,8 +5,8 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.UpdateAddHtlc
