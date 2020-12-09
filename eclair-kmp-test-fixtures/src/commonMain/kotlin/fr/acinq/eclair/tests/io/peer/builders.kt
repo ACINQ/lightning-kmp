@@ -49,7 +49,6 @@ public suspend fun newPeers(
         while (scope.isActive) {
             val bytes = bob.output.receive()
             val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
-            println("Bob sends $msg")
             emit(msg)
         }
     }
@@ -57,7 +56,6 @@ public suspend fun newPeers(
         while (scope.isActive) {
             val bytes = alice.output.receive()
             val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
-            println("Alice sends $msg")
             emit(msg)
         }
     }
