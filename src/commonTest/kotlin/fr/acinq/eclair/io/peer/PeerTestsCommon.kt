@@ -21,7 +21,7 @@ import kotlin.test.*
 import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
-class PeerTest : EclairTestSuite() {
+class PeerTestsCommon : EclairTestSuite() {
 
     @Test
     fun `init peer`() = runSuspendTest {

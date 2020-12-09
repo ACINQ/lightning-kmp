@@ -12,7 +12,7 @@ import kotlin.test.Test
 import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
-class ConnectionTest : EclairTestSuite() {
+class ConnectionTestsCommon : EclairTestSuite() {
 
     @Test
     fun `connection lost`() = runSuspendTest {
