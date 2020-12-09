@@ -173,7 +173,7 @@ data class RemoteCommitPublished(
     @Serializable(with = TransactionKSerializer::class)
     val commitTx: Transaction,
     @Serializable(with = TransactionKSerializer::class)
-    val claimMainDelayedOutputTx: Transaction? = null,
+    val claimMainOutputTx: Transaction? = null,
     val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
@@ -211,7 +211,7 @@ data class RemoteCommitPublished(
         val isCommitTxConfirmed = irrevocablySpent.values.toSet().contains(commitTx.txid)
 
         // are there remaining spendable outputs from the commitment tx?
-        val commitOutputsSpendableByUs = (listOfNotNull(claimMainDelayedOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs)
+        val commitOutputsSpendableByUs = (listOfNotNull(claimMainOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs)
             .flatMap { it.txIn.map(TxIn::outPoint) }.toSet() - irrevocablySpent.keys
 
         return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty()
@@ -219,14 +219,14 @@ data class RemoteCommitPublished(
 
     fun isConfirmed(): Boolean {
         val confirmedTxs = irrevocablySpent.values.toSet()
-        return (listOf(commitTx) + listOfNotNull(claimMainDelayedOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs).any {
+        return (listOf(commitTx) + listOfNotNull(claimMainOutputTx) + claimHtlcSuccessTxs + claimHtlcTimeoutTxs).any {
             confirmedTxs.contains(it.txid)
         }
     }
 
     internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
         val publishQueue = buildList {
-            claimMainDelayedOutputTx?.let { add(it) }
+            claimMainOutputTx?.let { add(it) }
             addAll(claimHtlcSuccessTxs)
             addAll(claimHtlcTimeoutTxs)
         }
@@ -238,7 +238,7 @@ data class RemoteCommitPublished(
         // - 'final txes' that send funds to our wallet and that spend outputs that only us control
         val watchConfirmedQueue = buildList {
             add(commitTx)
-            claimMainDelayedOutputTx?.let { add(it) }
+            claimMainOutputTx?.let { add(it) }
         }
         val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
 

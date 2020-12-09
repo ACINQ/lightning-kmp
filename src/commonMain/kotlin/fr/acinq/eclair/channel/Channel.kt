@@ -2500,13 +2500,13 @@ data class Closing(
             }
             remoteCommitPublished?.let { remoteCommitPublished ->
                 add(remoteCommitPublished.commitTx to "remote-commit")
-                remoteCommitPublished.claimMainDelayedOutputTx?.let { add(it to "remote-main") }
+                remoteCommitPublished.claimMainOutputTx?.let { add(it to "remote-main") }
                 remoteCommitPublished.claimHtlcSuccessTxs.forEach { add(it to "remote-htlc-success") }
                 remoteCommitPublished.claimHtlcTimeoutTxs.forEach { add(it to "remote-htlc-timeout") }
             }
             nextRemoteCommitPublished?.let { nextRemoteCommitPublished ->
                 add(nextRemoteCommitPublished.commitTx to "remote-commit")
-                nextRemoteCommitPublished.claimMainDelayedOutputTx?.let { add(it to "remote-main") }
+                nextRemoteCommitPublished.claimMainOutputTx?.let { add(it to "remote-main") }
                 nextRemoteCommitPublished.claimHtlcSuccessTxs.forEach { add(it to "remote-htlc-success") }
                 nextRemoteCommitPublished.claimHtlcTimeoutTxs.forEach { add(it to "remote-htlc-timeout") }
             }

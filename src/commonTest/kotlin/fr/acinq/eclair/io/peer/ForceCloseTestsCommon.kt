@@ -67,7 +67,7 @@ class ForceCloseTestsCommon {
         // Bob's commit tx has been confirmed, now we can spend it
         alice.send(WatchReceived(WatchEventConfirmed(channelId, BITCOIN_TX_CONFIRMED(remoteCommitTx), 0,1, remoteCommitTx)))
 
-        val claimMainDelayedOutputTx = closing.remoteCommitPublished?.claimMainDelayedOutputTx
+        val claimMainDelayedOutputTx = closing.remoteCommitPublished?.claimMainOutputTx
         assertNotNull(claimMainDelayedOutputTx)
 
         // Alice's claim tx has been confirmed, we can close the channel
