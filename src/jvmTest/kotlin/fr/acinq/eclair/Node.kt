@@ -155,7 +155,11 @@ object Node {
             onChainFeeConf = OnChainFeeConf(
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 2.0)
+                // these values mean that we will basically accept whatever feerate our peer is using.
+                // there is not much else we can do and this is mitigated by the fact that :
+                // - we only use the anchor_outputs format
+                // - we never fund channels (we're always "fundee" in LN parlance)
+                feerateTolerance = FeerateTolerance(ratioLow = 0.05, ratioHigh = 10.0)
             ),
             maxHtlcValueInFlightMsat = 5000000000L,
             maxAcceptedHtlcs = 30,

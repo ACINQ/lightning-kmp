@@ -3,9 +3,7 @@ package fr.acinq.eclair.io
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchEvent
-import fr.acinq.eclair.blockchain.electrum.AskForHeaderSubscriptionUpdate
-import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.blockchain.electrum.HeaderSubscriptionResponse
+import fr.acinq.eclair.blockchain.electrum.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
@@ -17,6 +15,7 @@ import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.payment.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
+import fr.acinq.eclair.wire.Ping
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -167,8 +166,33 @@ class Peer(
         }
     }
 
+    private suspend fun estimateFees(): OnChainFeerates {
+        val electrumFeesChannel = watcher.client.openNotificationsSubscription()
+        val flow = electrumFeesChannel.consumeAsFlow().filterIsInstance<EstimateFeeResponse>()
+
+        watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
+        watcher.client.sendElectrumRequest(EstimateFees(2))
+        watcher.client.sendElectrumRequest(EstimateFees(6))
+        watcher.client.sendElectrumRequest(EstimateFees(10))
+        val fees = mutableListOf<EstimateFeeResponse>()
+        flow.take(3).toCollection(fees)
+        logger.info { "onchain fees: $fees" }
+        val sortedFees = fees.sortedBy { it.confirmations }
+        val onChainFeerates = OnChainFeerates(
+            mutualCloseFeerate = sortedFees[2].feerate ?: onChainFeerates.mutualCloseFeerate,
+            claimMainFeerate = sortedFees[1].feerate ?: onChainFeerates.claimMainFeerate,
+            fastFeerate = sortedFees[0].feerate ?: onChainFeerates.fastFeerate
+        )
+        return onChainFeerates
+    }
+
     fun connect() {
         launch {
+            // onchain fees are retrieved once, when the app starts
+            // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
+            // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
+            onChainFeerates = estimateFees()
+
             logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
             _connectionState.value = Connection.ESTABLISHING
             val socket = try {

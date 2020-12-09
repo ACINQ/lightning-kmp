@@ -3,6 +3,9 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.FeeratePerKB
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.KSerializer
@@ -15,6 +18,7 @@ import kotlinx.serialization.json.*
 
 /**
  * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
+ * See the documentation for the ElectrumX protocol there: https://github.com/spesmilo/electrumx/
  */
 sealed class ElectrumMessage
 sealed class ElectrumSubscription : ElectrumMessage()
@@ -117,17 +121,6 @@ data class GetMerkle(val txid: ByteVector32, val height: Int, val contextOpt: Tr
 
 data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector32>, val block_height: Int, val pos: Int, val contextOpt: Transaction? = null) : ElectrumResponse() {
     val root: ByteVector32 by lazy {
-        /*
-        @tailrec
-      def loop(pos: Int, hashes: Seq[ByteVector32]): ByteVector32 = {
-        if (hashes.length == 1) hashes(0)
-        else {
-          val h = if (pos % 2 == 1) Crypto.hash256(hashes(1) ++ hashes(0)) else Crypto.hash256(hashes(0) ++ hashes(1))
-          loop(pos / 2, h +: hashes.drop(2))
-        }
-      }
-      loop(pos, txid.reverse +: merkle.map(b => b.reverse))
-         */
         tailrec fun loop(pos: Int, hashes: List<ByteVector32>): ByteVector32 {
             return if (hashes.size == 1) hashes[0]
             else {
@@ -140,6 +133,13 @@ data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector
         loop(pos, listOf(txid.reversed()) + merkle.map { it.reversed() })
     }
 }
+
+data class EstimateFees(val confirmations: Int) : ElectrumRequest(confirmations) {
+    override val method: String = "blockchain.estimatefee"
+}
+
+data class EstimateFeeResponse(val confirmations: Int, val feerate: FeeratePerKw?) : ElectrumResponse()
+
 
 data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.subscribe"
@@ -310,6 +310,12 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             val blockHeight = jsonObject.getValue("block_height").jsonPrimitive.int
             val pos = jsonObject.getValue("pos").jsonPrimitive.int
             GetMerkleResponse(request.txid, leaves, blockHeight, pos, request.contextOpt)
+        }
+        is EstimateFees -> {
+            val btcperkb: Double? = if (rpcResponse.result.jsonPrimitive.intOrNull == -1) null else rpcResponse.result.jsonPrimitive.double
+            val feeratePerKb = btcperkb?.let { FeeratePerKB(Satoshi((it * 100_000_000).toLong())) }
+            val feeratePerKw = feeratePerKb?.let { FeeratePerKw(it) }
+            EstimateFeeResponse(request.confirmations, feeratePerKw)
         }
         HeaderSubscription -> {
             val jsonObject = rpcResponse.result.jsonObject
