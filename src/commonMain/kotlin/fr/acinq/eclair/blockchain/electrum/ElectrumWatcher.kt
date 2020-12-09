@@ -416,7 +416,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
     init {
         logger.info { "Init Electrum Watcher" }
         runJob = launch { run() }
-        launch { eventChannel.send(ClientStateUpdate(client.connectionState.value)) }
     }
 
     private suspend fun run() {

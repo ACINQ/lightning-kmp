@@ -110,11 +110,7 @@ class Peer(
                 }
         }
         launch {
-            val electrumClientConnection = watcher.client.connectionState
-            // If Electrum client is already connected we ask for an update
-            if (electrumClientConnection.value == Connection.ESTABLISHED) watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
-
-            electrumClientConnection.filter { it == Connection.ESTABLISHED }.collect {
+            watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.collect {
                 watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
             }
         }
