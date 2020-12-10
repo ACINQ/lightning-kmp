@@ -31,7 +31,7 @@ object BitcoindService {
         return transaction.tx
     }
 
-    suspend fun generateBlocks(blockCount: Int, splitGeneration: Boolean = false) {
+    suspend fun generateBlocks(blockCount: Int, splitGeneration: Boolean = true) {
         val (address, _) = getNewAddress()
 
         if (splitGeneration) {
