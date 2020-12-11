@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
-import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Feature
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.NodeParams
@@ -893,7 +892,7 @@ object Helpers {
                 // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                 tx.txIn
                     .map { it.witness }
-                    .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
+                    .mapNotNull(Scripts.extractPaymentHashFromClaimHtlcTimeout())
                     .mapNotNull { paymentHash160 ->
                         logger.info { "extracted paymentHash160=$paymentHash160 and expiry=${tx.lockTime} from tx=$tx (claim-htlc-timeout)" }
                         tx.findTimedOutHtlc(
@@ -912,16 +911,41 @@ object Helpers {
          *
          * @param tx a transaction that is sufficiently buried in the blockchain
          */
-        fun onChainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: RemoteCommit?, tx: Transaction): Set<UpdateAddHtlc> =
-            when {
-                localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> localCommit.spec.htlcs.outgoings().toSet()
-                remoteCommit.txid == tx.txid -> remoteCommit.spec.htlcs.incomings().toSet()
-                nextRemoteCommit_opt?.txid == tx.txid -> nextRemoteCommit_opt.spec.htlcs.incomings().toSet()
-                else -> emptySet()
-            }
+        fun onChainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: RemoteCommit?, tx: Transaction): Set<UpdateAddHtlc> = when {
+            localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> localCommit.spec.htlcs.outgoings().toSet()
+            remoteCommit.txid == tx.txid -> remoteCommit.spec.htlcs.incomings().toSet()
+            nextRemoteCommit_opt?.txid == tx.txid -> nextRemoteCommit_opt.spec.htlcs.incomings().toSet()
+            else -> emptySet()
+        }
 
         /**
-         * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
+         * If a commitment tx reaches min_depth, we need to fail the outgoing htlcs that will never reach the blockchain.
+         * It could be because only us had signed them, or because a revoked commitment got confirmed.
+         */
+        fun overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: RemoteCommit?, revokedCommitPublished: List<RevokedCommitPublished>, tx: Transaction): Set<UpdateAddHtlc> = when {
+            localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> {
+                // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
+                val mostRecentRemoteCommit = nextRemoteCommit ?: remoteCommit
+                // NB: from the point of view of the remote, their incoming htlcs are our outgoing htlcs
+                mostRecentRemoteCommit.spec.htlcs.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
+            }
+            remoteCommit.txid == tx.txid -> when (nextRemoteCommit) {
+                null -> emptySet() // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
+                else -> {
+                    // we had signed a new commitment but they committed the previous one
+                    // any htlc that we signed in the new commitment that they didn't sign will never reach the chain
+                    nextRemoteCommit.spec.htlcs.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
+                }
+            }
+            revokedCommitPublished.map { it.commitTx.txid }.contains(tx.txid) -> {
+                // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment
+                (nextRemoteCommit ?: remoteCommit).spec.htlcs.incomings().toSet()
+            }
+            else -> emptySet()
+        }
+
+        /**
+         * This helper function tells if the utxos consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
          *
          * It can be useful to:
          *   - not attempt to publish this tx when we know this will fail
@@ -932,9 +956,9 @@ object Helpers {
          * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
          */
         fun Transaction.inputsAlreadySpent(irrevocablySpent: Map<OutPoint, ByteVector32>): Boolean {
-            require(txIn.size == 1) { "only tx with one input is supported" }
-            val outPoint = txIn.first().outPoint
-            return irrevocablySpent.contains(outPoint)
+            // NB: some transactions may have multiple inputs (e.g. htlc txs)
+            val outPoints = txIn.map { it.outPoint }
+            return outPoints.any { irrevocablySpent.contains(it) }
         }
 
         /**

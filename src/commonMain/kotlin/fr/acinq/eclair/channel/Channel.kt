@@ -8,6 +8,10 @@ import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
+import fr.acinq.eclair.channel.Helpers.Closing.extractPreimages
+import fr.acinq.eclair.channel.Helpers.Closing.onChainOutgoingHtlcs
+import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
+import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.*
@@ -2326,28 +2330,46 @@ data class Closing(
                         // when a remote or local commitment tx containing outgoing htlcs is published on the network,
                         // we watch it in order to extract payment preimage if funds are pulled by the counterparty
                         // we can then use these preimages to fulfill payments
-                        logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=$watch.tx" }
-                        val revokeCommitPublishActions = mutableListOf<ChannelAction>()
-                        val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
-                            val (newRevokeCommitPublished, tx) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
-                            tx?.let {
-                                revokeCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
-                                revokeCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
+                        logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=${watch.tx}" }
+                        val htlcSettledActions = mutableListOf<ChannelAction>()
+                        commitments.localCommit.extractPreimages(watch.tx).forEach { (htlc, preimage) ->
+                            when (val paymentId = commitments.payments[htlc.id]) {
+                                null -> {
+                                    // if we don't have a reference to the payment, it means that we already have forwarded the fulfill so that's not a big deal.
+                                    // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
+                                    logger.info { "cannot fulfill htlc #${htlc.id} paymentHash=${htlc.paymentHash} (payment not found)" }
+                                }
+                                else -> {
+                                    logger.info { "fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} paymentId=$paymentId" }
+                                    htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFulfill(paymentId, htlc, ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
+                                }
                             }
-                            newRevokeCommitPublished
+                        }
+
+                        val revokedCommitPublishActions = mutableListOf<ChannelAction>()
+                        val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
+                            val (newRevokedCommitPublished, tx) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
+                            tx?.let {
+                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
+                                revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
+                            }
+                            newRevokedCommitPublished
                         }
 
                         val nextState = copy(revokedCommitPublished = revokedCommitPublished1)
-                        Pair(nextState, buildList {
+                        val actions = buildList {
                             add(ChannelAction.Storage.StoreState(nextState))
                             // one of the outputs of the local/remote/revoked commit was spent
                             // we just put a watch to be notified when it is confirmed
                             add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx))))
-                            addAll(revokeCommitPublishActions)
-                        })
+                            addAll(revokedCommitPublishActions)
+                            addAll(htlcSettledActions)
+                        }
+                        Pair(nextState, actions)
                     }
                     watch is WatchEventConfirmed && watch.event is BITCOIN_TX_CONFIRMED -> {
                         logger.info { "txid=${watch.tx.txid} has reached mindepth, updating closing state" }
+                        // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
                         val closing1 = this.copy(
                             localCommitPublished = this.localCommitPublished?.update(watch.tx),
                             remoteCommitPublished = this.remoteCommitPublished?.update(watch.tx),
@@ -2356,17 +2378,61 @@ data class Closing(
                             revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
                         )
                         closing1.networkFeePaid(watch.tx)?.let { logger.info { "paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" } }
-                        when (val closingType = closing1.isClosed(watch.tx)) {
-                            null -> Pair(closing1, listOf(ChannelAction.Storage.StoreState(closing1)))
+
+                        // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
+                        val htlcSettledActions = mutableListOf<ChannelAction>()
+                        val timedOutHtlcs = when (val closingType = closing1.closingTypeAlreadyKnown()) {
+                            is LocalClose -> closingType.localCommit.timedOutHtlcs(closingType.localCommitPublished, commitments.localParams.dustLimit, watch.tx)
+                            is RemoteClose -> closingType.remoteCommit.timedOutHtlcs(closingType.remoteCommitPublished, commitments.remoteParams.dustLimit, watch.tx)
+                            else -> setOf() // we lose htlc outputs in option_data_loss_protect scenarios (future remote commit)
+                        }
+                        timedOutHtlcs.forEach { add ->
+                            when (val paymentId = commitments.payments[add.id]) {
+                                null -> {
+                                    // same as for fulfilling the htlc (no big deal)
+                                    logger.info { "cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                }
+                                else -> {
+                                    logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: htlc timed out" }
+                                    htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcsTimedoutDownstream(channelId, setOf(add))))
+                                }
+                            }
+                        }
+
+                        // we also need to fail outgoing htlcs that we know will never reach the blockchain
+                        overriddenOutgoingHtlcs(commitments.localCommit, commitments.remoteCommit, commitments.remoteNextCommitInfo.left?.nextRemoteCommit, closing1.revokedCommitPublished, watch.tx).forEach { add ->
+                            when (val paymentId = commitments.payments[add.id]) {
+                                null -> {
+                                    // same as for fulfilling the htlc (no big deal)
+                                    logger.info { "cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                }
+                                else -> {
+                                    logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
+                                    htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(channelId, add)))
+                                }
+                            }
+                        }
+
+                        // for our outgoing payments, let's log something if we know that they will settle on chain
+                        onChainOutgoingHtlcs(commitments.localCommit, commitments.remoteCommit, commitments.remoteNextCommitInfo.left?.nextRemoteCommit, watch.tx).forEach { add ->
+                            commitments.payments[add.id]?.let { paymentId -> logger.info { "paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
+                        }
+
+                        val nextState = when (val closingType = closing1.isClosed(watch.tx)) {
+                            null -> closing1
                             else -> {
                                 logger.info { "channel $channelId is now closed" }
                                 if (closingType !is MutualClose) {
                                     logger.info { "last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
-                                val nextState = Closed(closing1)
-                                Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+                                Closed(closing1)
                             }
                         }
+                        val actions = buildList {
+                            add(ChannelAction.Storage.StoreState(nextState))
+                            addAll(htlcSettledActions)
+                        }
+                        Pair(nextState, actions)
                     }
                     else -> unhandled(event)
                 }
@@ -2389,7 +2455,7 @@ data class Closing(
             is ChannelEvent.MessageReceived -> when (event.message) {
                 is ChannelReestablish -> {
                     // they haven't detected that we were closing and are trying to reestablish a connection
-                    // we give them one of the published txes as a hint
+                    // we give them one of the published txs as a hint
                     // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
                     val exc = FundingTxSpent(channelId, spendingTxs.first())
                     val error = Error(channelId, exc.message)
