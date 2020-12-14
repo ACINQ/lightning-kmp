@@ -50,7 +50,6 @@ class ElectrumRequestTest : EclairTestSuite() {
             appendLine()
         }
         val response = json.decodeFromString(ElectrumResponseDeserializer, jsonRpc)
-        println(response)
         assertEquals(
             Either.Left(HeaderSubscriptionResponse(height = 520481, BlockHeader(
                 version = 536870912,
