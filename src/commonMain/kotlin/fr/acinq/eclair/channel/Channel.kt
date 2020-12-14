@@ -18,10 +18,8 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -472,12 +470,12 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
         @OptIn(ExperimentalSerializationApi::class)
         fun serialize(state: ChannelStateWithCommitments): ByteArray {
-            return cbor.encodeToByteArray(ChannelState.serializer(), state as ChannelState)
+            return cbor.encodeToByteArray(serializer(), state)
         }
 
         @OptIn(ExperimentalSerializationApi::class)
         fun deserialize(bin: ByteArray): ChannelStateWithCommitments {
-            return cbor.decodeFromByteArray<ChannelState>(bin) as ChannelStateWithCommitments
+            return cbor.decodeFromByteArray(serializer(), bin)
         }
 
         @OptIn(ExperimentalSerializationApi::class)

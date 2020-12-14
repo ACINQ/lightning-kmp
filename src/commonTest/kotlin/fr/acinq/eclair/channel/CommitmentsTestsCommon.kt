@@ -1,9 +1,12 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.eclair.*
+import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.Features
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.crypto.ShaChain
@@ -14,6 +17,8 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.secp256k1.Hex
+import org.kodein.memory.text.toHexString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,6 +29,20 @@ class CommitmentsTestsCommon : EclairTestSuite() {
     @Test
     fun `reach normal state`() {
         reachNormal()
+    }
+
+    @Test
+    fun `encrypt - decrypt channel state`() {
+        val initial = reachNormal().first
+
+        val raw = ChannelStateWithCommitments.serialize(initial)
+
+        val decryptedByteArray = ChannelStateWithCommitments.deserialize(raw)
+        assertEquals(initial, decryptedByteArray)
+        val decryptedByteVector = ChannelStateWithCommitments.deserialize(raw.toByteVector())
+        assertEquals(initial, decryptedByteVector)
+        val decryptedHex = ChannelStateWithCommitments.deserialize(Hex.decode(raw.toHexString()))
+        assertEquals(initial, decryptedHex)
     }
 
     @Test
