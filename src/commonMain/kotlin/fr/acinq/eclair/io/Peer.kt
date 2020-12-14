@@ -31,7 +31,8 @@ sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object Disconnected : PeerEvent()
+object Connect : PeerEvent()
+object Disconnect : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
@@ -134,33 +135,6 @@ class Peer(
             run()
         }
 
-        /*
-            Handle connection changes:
-                - CLOSED
-                    + Move all relevant channels to Offline
-                    + Retry connection periodically
-                - ESTABLISHED
-                    + Try to reestablish all Offline channels
-         */
-        launch {
-            var previousState = connectionState.value
-            var delay = 0.5
-            connectionState.filter { it != previousState }.collect {
-                logger.info { "New connection state: $it" }
-                when (it) {
-                    Connection.CLOSED -> {
-                        if (previousState == Connection.ESTABLISHED) send(Disconnected)
-                        delay(delay.seconds); delay = min((delay * 2), 30.0)
-                        connect()
-                    }
-                    Connection.ESTABLISHED -> delay = 0.5
-                    else -> Unit
-                }
-
-                previousState = it
-            }
-        }
-
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
@@ -184,96 +158,103 @@ class Peer(
         return onChainFeerates
     }
 
-    fun connect() {
-        launch {
-            // onchain fees are retrieved once, when the app starts
-            // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
-            // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
-            onChainFeerates = estimateFees()
+    private var connectionJob: Job? = null
+    private fun establishConnection() = launch {
+        // onchain fees are retrieved once, when the app starts
+        // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
+        // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
+        onChainFeerates = estimateFees()
 
-            logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
-            _connectionState.value = Connection.ESTABLISHING
-            val socket = try {
-                socketBuilder.connect(nodeParams.trampolineNode.host, nodeParams.trampolineNode.port)
+        logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
+        _connectionState.value = Connection.ESTABLISHING
+        val socket = try {
+            socketBuilder.connect(nodeParams.trampolineNode.host, nodeParams.trampolineNode.port)
+        } catch (ex: TcpSocket.IOException) {
+            logger.warning { ex.message }
+            _connectionState.value = Connection.CLOSED
+            return@launch
+        }
+        val priv = nodeParams.nodePrivateKey
+        val pub = priv.publicKey()
+        val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
+        val (enc, dec, ck) = try {
+            handshake(
+                keyPair,
+                remoteNodeId.value.toByteArray(),
+                { s -> socket.receiveFully(s) },
+                { b -> socket.send(b) }
+            )
+        } catch (ex: TcpSocket.IOException) {
+            logger.warning { ex.message }
+            _connectionState.value = Connection.CLOSED
+            return@launch
+        }
+        val session = LightningSession(enc, dec, ck)
+
+        suspend fun receive(): ByteArray {
+            return session.receive { size -> socket.receiveFully(size) }
+        }
+
+        suspend fun send(message: ByteArray) {
+            try {
+                session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { ex.message }
-                _connectionState.value = Connection.CLOSED
-                return@launch
-            }
-            val priv = nodeParams.nodePrivateKey
-            val pub = priv.publicKey()
-            val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
-            val (enc, dec, ck) = try {
-                handshake(
-                    keyPair,
-                    remoteNodeId.value.toByteArray(),
-                    { s -> socket.receiveFully(s) },
-                    { b -> socket.send(b) }
-                )
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { ex.message }
-                _connectionState.value = Connection.CLOSED
-                return@launch
-            }
-            val session = LightningSession(enc, dec, ck)
-
-            suspend fun receive(): ByteArray {
-                return session.receive { size -> socket.receiveFully(size) }
-            }
-
-            suspend fun send(message: ByteArray) {
-                try {
-                    session.send(message) { data, flush -> socket.send(data, flush) }
-                } catch (ex: TcpSocket.IOException) {
-                    logger.warning { ex.message }
-                }
-            }
-            logger.info { "sending init $ourInit" }
-            send(LightningMessage.encode(ourInit))
-
-            suspend fun doPing() {
-                val ping = Hex.decode("0012000a0004deadbeef")
-                while (isActive) {
-                    delay(30000)
-                    send(ping)
-                }
-            }
-
-            suspend fun checkPaymentsTimeout() {
-                while (isActive) {
-                    delay(timeMillis = 30_000)
-                    input.send(CheckPaymentsTimeout)
-                }
-            }
-
-            suspend fun listen() {
-                try {
-                    while (isActive) {
-                        val received = receive()
-                        input.send(BytesReceived(received))
-                    }
-                } catch (ex: TcpSocket.IOException) {
-                    logger.warning { ex.message }
-                } finally {
-                    _connectionState.value = Connection.CLOSED
-                }
-            }
-
-            suspend fun respond() {
-                for (msg in output) {
-                    send(msg)
-                }
-            }
-
-            coroutineScope {
-                launch { doPing() }
-                launch { checkPaymentsTimeout() }
-                launch { respond() }
-
-                listen()
-                cancel()
             }
         }
+        logger.info { "sending init $ourInit" }
+        send(LightningMessage.encode(ourInit))
+
+        suspend fun doPing() {
+            val ping = Hex.decode("0012000a0004deadbeef")
+            while (isActive) {
+                delay(30000)
+                send(ping)
+            }
+        }
+
+        suspend fun checkPaymentsTimeout() {
+            while (isActive) {
+                delay(timeMillis = 30_000)
+                input.send(CheckPaymentsTimeout)
+            }
+        }
+
+        suspend fun listen() {
+            try {
+                while (isActive) {
+                    val received = receive()
+                    input.send(BytesReceived(received))
+                }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+            } finally {
+                _connectionState.value = Connection.CLOSED
+            }
+        }
+
+        suspend fun respond() {
+            for (msg in output) {
+                send(msg)
+            }
+        }
+
+        coroutineScope {
+            launch { doPing() }
+            launch { checkPaymentsTimeout() }
+            launch { respond() }
+
+            listen()
+            cancel()
+        }
+    }
+
+    fun connect() {
+        launch { input.send(Connect) }
+    }
+
+    fun disconnect() {
+        launch { input.send(Disconnect) }
     }
 
     suspend fun send(event: PeerEvent) {
@@ -595,9 +576,15 @@ class Peer(
                     _channels = _channels + (event.channelId to state1)
                 }
             }
-            event is Disconnected -> {
-                // We set all relevant channels as Offline
-                logger.warning { "Set channels as Offline." }
+            event is Connect -> {
+                logger.info { "Initiate Peer connection" }
+                if (connectionState.value == Connection.CLOSED) {
+                    connectionJob = establishConnection()
+                }
+            }
+            event is Disconnect -> {
+                logger.warning { "Disconnect Peer from TCP socket and set channels as Offline." }
+                connectionJob?.cancelAndJoin()
                 _channels.forEach { (key, value) ->
                     val (state1, actions) = value.process(ChannelEvent.Disconnected)
                     processActions(key, actions)
