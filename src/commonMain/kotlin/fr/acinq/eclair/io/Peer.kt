@@ -23,9 +23,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
-import kotlin.math.min
 import kotlin.time.ExperimentalTime
-import kotlin.time.seconds
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
@@ -140,11 +138,19 @@ class Peer(
             Handle connection changes:
                 - CLOSED
                     + Move all relevant channels to Offline
+                - ESTABLISHED
+                    + Retrieve onchain fees from [ElectrumClient]
          */
         launch {
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
-                if(it == Connection.CLOSED) send(Disconnected)
+                if (it == Connection.CLOSED) send(Disconnected)
+                else if (it == Connection.ESTABLISHED) launch {
+                    // onchain fees are retrieved punctually, when the peer gets connected
+                    // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
+                    // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
+                    updateEstimateFees()
+                }
                 previousState = it
             }
         }
@@ -152,7 +158,7 @@ class Peer(
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
-    private suspend fun estimateFees(): OnChainFeerates {
+    private suspend fun updateEstimateFees() {
         val electrumFeesChannel = watcher.client.openNotificationsSubscription()
         val flow = electrumFeesChannel.consumeAsFlow().filterIsInstance<EstimateFeeResponse>()
 
@@ -164,21 +170,15 @@ class Peer(
         flow.take(3).toCollection(fees)
         logger.info { "onchain fees: $fees" }
         val sortedFees = fees.sortedBy { it.confirmations }
-        val onChainFeerates = OnChainFeerates(
+        onChainFeerates = OnChainFeerates(
             mutualCloseFeerate = sortedFees[2].feerate ?: onChainFeerates.mutualCloseFeerate,
             claimMainFeerate = sortedFees[1].feerate ?: onChainFeerates.claimMainFeerate,
             fastFeerate = sortedFees[0].feerate ?: onChainFeerates.fastFeerate
         )
-        return onChainFeerates
     }
 
     private var connectionJob: Job? = null
     private fun establishConnection() = launch {
-        // onchain fees are retrieved once, when the app starts
-        // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
-        // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
-        onChainFeerates = estimateFees()
-
         logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
         _connectionState.value = Connection.ESTABLISHING
         val socket = try {
@@ -590,15 +590,12 @@ class Peer(
                     _channels = _channels + (event.channelId to state1)
                 }
             }
-            event is Connect -> {
-                logger.info { "Initiate Peer connection" }
-                if (connectionState.value == Connection.CLOSED) {
-                    connectionJob = establishConnection()
-                }
+            event is Connect && connectionState.value == Connection.CLOSED -> {
+                connectionJob = establishConnection()
             }
             event is Disconnect -> {
                 logger.warning { "Disconnect Peer from TCP socket" }
-                connectionJob?.cancelAndJoin()
+                connectionJob?.cancel()
                 _connectionState.value = Connection.CLOSED
             }
             event is Disconnected -> {
