@@ -307,9 +307,10 @@ sealed class ChannelState {
             val error = Error(channelId, ex.message)
 
             val nextState = when (this) {
-                is Closing -> when (this.revokedCommitPublished.contains(revokedCommitPublished)) {
-                    true -> this
-                    false -> this.copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
+                is Closing -> if (this.revokedCommitPublished.contains(revokedCommitPublished)) {
+                    this
+                } else {
+                    this.copy(revokedCommitPublished = this.revokedCommitPublished + revokedCommitPublished)
                 }
                 is Negotiating -> Closing(
                     staticParams = staticParams,
