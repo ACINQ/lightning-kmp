@@ -33,6 +33,7 @@ data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 object Connect : PeerEvent()
 object Disconnect : PeerEvent()
+object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
@@ -133,6 +134,19 @@ class Peer(
             }
             logger.info { "restored channels: $_channels" }
             run()
+        }
+
+        /*
+            Handle connection changes:
+                - CLOSED
+                    + Move all relevant channels to Offline
+         */
+        launch {
+            var previousState = connectionState.value
+            connectionState.filter { it != previousState }.collect {
+                if(it == Connection.CLOSED) send(Disconnected)
+                previousState = it
+            }
         }
 
         watcher.client.sendMessage(AskForStatusUpdate)
@@ -583,8 +597,12 @@ class Peer(
                 }
             }
             event is Disconnect -> {
-                logger.warning { "Disconnect Peer from TCP socket and set channels as Offline." }
+                logger.warning { "Disconnect Peer from TCP socket" }
                 connectionJob?.cancelAndJoin()
+                _connectionState.value = Connection.CLOSED
+            }
+            event is Disconnected -> {
+                logger.warning { "Set channels as Offline." }
                 _channels.forEach { (key, value) ->
                     val (state1, actions) = value.process(ChannelEvent.Disconnected)
                     processActions(key, actions)
