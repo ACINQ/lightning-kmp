@@ -214,7 +214,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 logger.warning { "h:${paymentPart.paymentHash} received payment for which we don't have a preimage" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
-            incomingPayment.isExpired() -> {
+            // Payments are rejected for expired invoices UNLESS invoice has already been paid
+            // We must accept payments for already paid invoices, because it could be the channel replaying HTLCs that we already fulfilled
+            incomingPayment.isExpired() && incomingPayment.received == null -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for expired invoice" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
