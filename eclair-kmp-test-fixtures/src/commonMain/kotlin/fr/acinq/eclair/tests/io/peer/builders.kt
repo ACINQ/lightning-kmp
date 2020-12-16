@@ -1,10 +1,10 @@
 package fr.acinq.eclair.tests.io.peer
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
+import fr.acinq.eclair.blockchain.fee.*
 import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Syncing
@@ -14,8 +14,7 @@ import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.io.BytesReceived
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.TcpSocket
-import fr.acinq.eclair.utils.Connection
-import fr.acinq.eclair.utils.toByteVector
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.ChannelReestablish
 import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.Init
@@ -156,6 +155,7 @@ public suspend fun CoroutineScope.newPeer(
     return peer
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 public fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
@@ -163,7 +163,15 @@ public fun buildPeer(
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope)
     val watcher = ElectrumWatcher(electrum, scope)
-    return Peer(TcpSocket.Builder(), nodeParams, watcher, databases, scope)
+    val peer = Peer(TcpSocket.Builder(), nodeParams, watcher, databases, scope)
+    peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
+    peer.onChainFeeratesFlow.value = OnChainFeerates(
+        mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
+        claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
+        fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
+    )
+
+    return peer
 }
 
 data class PeerTuple(val alice: Peer, val bob: Peer, val alice2bob: Flow<LightningMessage>, val bob2alice: Flow<LightningMessage>)

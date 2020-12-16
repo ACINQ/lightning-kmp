@@ -90,8 +90,8 @@ class Peer(
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
 
-    private val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
-    private val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
+    public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
+    public val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
     init {
         val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
