@@ -26,7 +26,10 @@ class ElectrumClientStateTest : EclairTestSuite() {
             assertTrue { actions.isEmpty() }
         }
 
-        assertFails { WaitingForConnection.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))) }
+        WaitingForConnection.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))).let { (newState, actions) ->
+            assertEquals(WaitingForConnection, newState)
+            assertTrue { actions.isEmpty() }
+        }
     }
 
     @Test
@@ -62,7 +65,10 @@ class ElectrumClientStateTest : EclairTestSuite() {
             assertTrue(actions.isEmpty())
         }
 
-        assertFails { ClientClosed.process(Connected) }
+        ClientClosed.process(Connected).let {  (newState, actions) ->
+            assertEquals(ClientClosed, newState)
+            assertTrue(actions.isEmpty())
+        }
     }
 
     @Test

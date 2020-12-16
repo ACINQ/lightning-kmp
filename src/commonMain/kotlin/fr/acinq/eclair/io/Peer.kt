@@ -4,9 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.WatchEvent
 import fr.acinq.eclair.blockchain.electrum.*
-import fr.acinq.eclair.blockchain.fee.FeeratePerByte
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.fee.OnChainFeerates
+import fr.acinq.eclair.blockchain.fee.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.Databases
@@ -23,14 +21,14 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
-import kotlin.math.min
 import kotlin.time.ExperimentalTime
-import kotlin.time.seconds
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
+object Connect : PeerEvent()
+object Disconnect : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -91,27 +89,26 @@ class Peer(
 
     private val ourInit = Init(features.toByteArray().toByteVector())
     private var theirInit: Init? = null
-    private var currentTip: Pair<Int, BlockHeader> = Pair(0, Block.RegtestGenesisBlock.header)
 
-    // TODO: connect to fee providers (can we get fee estimation from electrum?)
-    private var onChainFeerates = OnChainFeerates(
-        mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
-        claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
-        fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
-    )
+    public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
+    public val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
     init {
         val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
             electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
-                    currentTip = msg.height to msg.header
+                    currentTipFlow.value = msg.height to msg.header
                     send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
                 }
         }
         launch {
             watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.collect {
                 watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
+                // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
+                // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
+                // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
+                updateEstimateFees()
             }
         }
         launch {
@@ -125,7 +122,7 @@ class Peer(
             // we don't restore closed channels
             db.channels.listLocalChannels().filterNot { it is Closed }.forEach {
                 logger.info { "restoring $it" }
-                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onChainFeerates)
+                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTipFlow.filterNotNull().first(), onChainFeeratesFlow.filterNotNull().first())
                 val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
@@ -138,25 +135,11 @@ class Peer(
             Handle connection changes:
                 - CLOSED
                     + Move all relevant channels to Offline
-                    + Retry connection periodically
-                - ESTABLISHED
-                    + Try to reestablish all Offline channels
          */
         launch {
             var previousState = connectionState.value
-            var delay = 0.5
             connectionState.filter { it != previousState }.collect {
-                logger.info { "New connection state: $it" }
-                when (it) {
-                    Connection.CLOSED -> {
-                        if (previousState == Connection.ESTABLISHED) send(Disconnected)
-                        delay(delay.seconds); delay = min((delay * 2), 30.0)
-                        connect()
-                    }
-                    Connection.ESTABLISHED -> delay = 0.5
-                    else -> Unit
-                }
-
+                if (it == Connection.CLOSED) send(Disconnected)
                 previousState = it
             }
         }
@@ -164,7 +147,7 @@ class Peer(
         watcher.client.sendMessage(AskForStatusUpdate)
     }
 
-    private suspend fun estimateFees(): OnChainFeerates {
+    private suspend fun updateEstimateFees() {
         val electrumFeesChannel = watcher.client.openNotificationsSubscription()
         val flow = electrumFeesChannel.consumeAsFlow().filterIsInstance<EstimateFeeResponse>()
 
@@ -176,104 +159,106 @@ class Peer(
         flow.take(3).toCollection(fees)
         logger.info { "onchain fees: $fees" }
         val sortedFees = fees.sortedBy { it.confirmations }
-        val onChainFeerates = OnChainFeerates(
-            mutualCloseFeerate = sortedFees[2].feerate ?: onChainFeerates.mutualCloseFeerate,
-            claimMainFeerate = sortedFees[1].feerate ?: onChainFeerates.claimMainFeerate,
-            fastFeerate = sortedFees[0].feerate ?: onChainFeerates.fastFeerate
+        // TODO: If some feerates are null, we may implement a retry
+        onChainFeeratesFlow.value = OnChainFeerates(
+            mutualCloseFeerate = sortedFees[2].feerate ?: FeeratePerKw(FeeratePerByte(20.sat)),
+            claimMainFeerate = sortedFees[1].feerate ?: FeeratePerKw(FeeratePerByte(20.sat)),
+            fastFeerate = sortedFees[0].feerate ?: FeeratePerKw(FeeratePerByte(50.sat))
         )
-        return onChainFeerates
+    }
+
+    private var connectionJob: Job? = null
+    private fun establishConnection() = launch {
+        logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
+        _connectionState.value = Connection.ESTABLISHING
+        val socket = try {
+            socketBuilder.connect(nodeParams.trampolineNode.host, nodeParams.trampolineNode.port)
+        } catch (ex: TcpSocket.IOException) {
+            logger.warning { ex.message }
+            _connectionState.value = Connection.CLOSED
+            return@launch
+        }
+        val priv = nodeParams.nodePrivateKey
+        val pub = priv.publicKey()
+        val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
+        val (enc, dec, ck) = try {
+            handshake(
+                keyPair,
+                remoteNodeId.value.toByteArray(),
+                { s -> socket.receiveFully(s) },
+                { b -> socket.send(b) }
+            )
+        } catch (ex: TcpSocket.IOException) {
+            logger.warning { ex.message }
+            _connectionState.value = Connection.CLOSED
+            return@launch
+        }
+        val session = LightningSession(enc, dec, ck)
+
+        suspend fun receive(): ByteArray {
+            return session.receive { size -> socket.receiveFully(size) }
+        }
+
+        suspend fun send(message: ByteArray) {
+            try {
+                session.send(message) { data, flush -> socket.send(data, flush) }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+            }
+        }
+        logger.info { "sending init $ourInit" }
+        send(LightningMessage.encode(ourInit))
+
+        suspend fun doPing() {
+            val ping = Hex.decode("0012000a0004deadbeef")
+            while (isActive) {
+                delay(30000)
+                send(ping)
+            }
+        }
+
+        suspend fun checkPaymentsTimeout() {
+            while (isActive) {
+                delay(timeMillis = 30_000)
+                input.send(CheckPaymentsTimeout)
+            }
+        }
+
+        suspend fun listen() {
+            try {
+                while (isActive) {
+                    val received = receive()
+                    input.send(BytesReceived(received))
+                }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+            } finally {
+                _connectionState.value = Connection.CLOSED
+            }
+        }
+
+        suspend fun respond() {
+            for (msg in output) {
+                send(msg)
+            }
+        }
+
+        coroutineScope {
+            launch { doPing() }
+            launch { checkPaymentsTimeout() }
+            launch { respond() }
+
+            listen()
+            cancel()
+        }
     }
 
     fun connect() {
-        launch {
-            // onchain fees are retrieved once, when the app starts
-            // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
-            // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
-            onChainFeerates = estimateFees()
+        launch { input.send(Connect) }
+    }
 
-            logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
-            _connectionState.value = Connection.ESTABLISHING
-            val socket = try {
-                socketBuilder.connect(nodeParams.trampolineNode.host, nodeParams.trampolineNode.port)
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { ex.message }
-                _connectionState.value = Connection.CLOSED
-                return@launch
-            }
-            val priv = nodeParams.nodePrivateKey
-            val pub = priv.publicKey()
-            val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
-            val (enc, dec, ck) = try {
-                handshake(
-                    keyPair,
-                    remoteNodeId.value.toByteArray(),
-                    { s -> socket.receiveFully(s) },
-                    { b -> socket.send(b) }
-                )
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { ex.message }
-                _connectionState.value = Connection.CLOSED
-                return@launch
-            }
-            val session = LightningSession(enc, dec, ck)
-
-            suspend fun receive(): ByteArray {
-                return session.receive { size -> socket.receiveFully(size) }
-            }
-
-            suspend fun send(message: ByteArray) {
-                try {
-                    session.send(message) { data, flush -> socket.send(data, flush) }
-                } catch (ex: TcpSocket.IOException) {
-                    logger.warning { ex.message }
-                }
-            }
-            logger.info { "sending init $ourInit" }
-            send(LightningMessage.encode(ourInit))
-
-            suspend fun doPing() {
-                val ping = Hex.decode("0012000a0004deadbeef")
-                while (isActive) {
-                    delay(30000)
-                    send(ping)
-                }
-            }
-
-            suspend fun checkPaymentsTimeout() {
-                while (isActive) {
-                    delay(timeMillis = 30_000)
-                    input.send(CheckPaymentsTimeout)
-                }
-            }
-
-            suspend fun listen() {
-                try {
-                    while (isActive) {
-                        val received = receive()
-                        input.send(BytesReceived(received))
-                    }
-                } catch (ex: TcpSocket.IOException) {
-                    logger.warning { ex.message }
-                } finally {
-                    _connectionState.value = Connection.CLOSED
-                }
-            }
-
-            suspend fun respond() {
-                for (msg in output) {
-                    send(msg)
-                }
-            }
-
-            coroutineScope {
-                launch { doPing() }
-                launch { checkPaymentsTimeout() }
-                launch { respond() }
-
-                listen()
-                cancel()
-            }
-        }
+    fun disconnect() {
+        launch { input.send(Disconnect) }
     }
 
     suspend fun send(event: PeerEvent) {
@@ -310,6 +295,7 @@ class Peer(
                     }
                 }
                 action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
+                    val currentTip = currentTipFlow.filterNotNull().first()
                     when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
                         is OutgoingPaymentHandler.Progress -> {
                             listenerEventChannel.send(PaymentProgress(result.request, result.fees))
@@ -343,7 +329,7 @@ class Peer(
     }
 
     private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
-        val currentBlockHeight = currentTip.first
+        val currentBlockHeight = currentTipFlow.filterNotNull().first().first
         val result = when (item) {
             is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
@@ -424,13 +410,13 @@ class Peer(
                             null -> {
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
-                                logger.info { "before channels: $_channels" }
+                                logger.info { "before channels (${_channels.size}): $_channels" }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelEvent.Connected(ourInit, theirInit!!))
                                     processActions(entry.key, actions)
                                     state1
                                 }
-                                logger.info { "after channels: $_channels" }
+                                logger.info { "after channels (${_channels.size}): $_channels" }
                             }
                         }
                     }
@@ -467,10 +453,11 @@ class Peer(
                             closingPubkeyScript.toByteVector(),
                             features
                         )
+
                         val state = WaitForInit(
                             StaticParams(nodeParams, remoteNodeId),
-                            currentTip,
-                            onChainFeerates
+                            currentTipFlow.filterNotNull().first(),
+                            onChainFeeratesFlow.filterNotNull().first()
                         )
                         val (state1, actions1) = state.process(ChannelEvent.InitFundee(msg.temporaryChannelId, localParams, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
@@ -486,7 +473,7 @@ class Peer(
                                 is Try.Success -> {
                                     logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
-                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTip, onChainFeerates)
+                                    val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTipFlow.filterNotNull().first(), onChainFeeratesFlow.filterNotNull().first())
                                     val event1 = ChannelEvent.Restore(backup as ChannelState)
                                     val (state1, actions1) = state.process(event1)
                                     processActions(msg.channelId, actions1)
@@ -567,6 +554,7 @@ class Peer(
                 sendToPeer(event.payToOpenResponse)
             }
             event is SendPayment -> {
+                val currentTip = currentTipFlow.filterNotNull().first()
                 when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
                         listenerEventChannel.send(PaymentProgress(result.request, result.fees))
@@ -595,8 +583,15 @@ class Peer(
                     _channels = _channels + (event.channelId to state1)
                 }
             }
+            event is Connect && connectionState.value == Connection.CLOSED -> {
+                connectionJob = establishConnection()
+            }
+            event is Disconnect -> {
+                logger.warning { "Disconnect Peer from TCP socket" }
+                connectionJob?.cancel()
+                _connectionState.value = Connection.CLOSED
+            }
             event is Disconnected -> {
-                // We set all relevant channels as Offline
                 logger.warning { "Set channels as Offline." }
                 _channels.forEach { (key, value) ->
                     val (state1, actions) = value.process(ChannelEvent.Disconnected)

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.io.linesFlow
@@ -160,7 +161,10 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
             actions = listOf(BroadcastStatus(Connection.CLOSED), Shutdown)
         }
         AskForStatus, AskForHeader -> returnState() // TODO something else ?
-        else -> error("The state $this cannot process the event $event")
+        else -> {
+            logger.warning { "The state $this cannot process the event $event" }
+            returnState()
+        }
     }
 
 private class ClientStateBuilder {
@@ -279,7 +283,7 @@ class ElectrumClient(
                 is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
-                else -> error("sendMessage does not support message: $message")
+                else -> logger.warning{ "sendMessage does not support message: $message" }
             }
         }
     }
