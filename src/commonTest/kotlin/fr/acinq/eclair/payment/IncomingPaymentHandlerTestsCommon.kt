@@ -150,7 +150,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
         val expected = ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true))
         assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
 
-        assertEquals(result.incomingPayment.status, result.received)
+        assertEquals(result.incomingPayment.received, result.received)
         assertEquals(defaultAmount, result.received.amount)
         assertEquals(IncomingPayment.ReceivedWith.LightningPayment, result.received.receivedWith)
 
@@ -302,7 +302,7 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
             result as IncomingPaymentHandler.ProcessAddResult.Pending
-            assertTrue { result.incomingPayment.status == IncomingPayment.Status.Pending }
+            assertTrue { result.incomingPayment.received == null }
             assertTrue { result.actions.isEmpty() }
         }
 
@@ -929,15 +929,8 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(incomingPayment.preimage, dbPayment.preimage)
             assertEquals(incomingPayment.paymentHash, dbPayment.paymentHash)
             assertEquals(incomingPayment.origin, dbPayment.origin)
-            when (val status = incomingPayment.status) {
-                is IncomingPayment.Status.Received -> {
-                    val dbStatus = dbPayment.status as? IncomingPayment.Status.Received
-                    assertNotNull(dbStatus)
-                    assertEquals(status.amount, dbStatus.amount)
-                    assertEquals(status.receivedWith, dbStatus.receivedWith)
-                }
-                else -> assertEquals(incomingPayment.status, dbPayment.status)
-            }
+            assertEquals(incomingPayment.received?.amount, dbPayment.received?.amount)
+            assertEquals(incomingPayment.received?.receivedWith, dbPayment.received?.receivedWith)
         }
 
         private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {

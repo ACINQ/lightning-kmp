@@ -37,7 +37,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     sealed class ProcessAddResult {
         abstract val actions: List<PeerEvent>
 
-        data class Accepted(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Status.Received) : ProcessAddResult()
+        data class Accepted(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : ProcessAddResult()
         data class Rejected(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
         data class Pending(val incomingPayment: IncomingPayment) : ProcessAddResult() {
             override val actions: List<PeerEvent> = listOf()
@@ -137,7 +137,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             is Either.Left -> validationResult.value
             is Either.Right -> {
                 val incomingPayment = validationResult.value
-                if (incomingPayment.status is IncomingPayment.Status.Received) {
+                if (incomingPayment.received != null) {
                     logger.warning { "h:${paymentPart.paymentHash} received payment for an invoice that has already been paid" }
                     return when (paymentPart) {
                         is HtlcPart -> {
@@ -148,7 +148,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             //  - but we may restart the wallet or lose the connection to our peer, so the fulfill doesn't reach them
                             //  - when we reconnect, the channel will ask us to reprocess this htlc, so we must fulfill it again
                             val action = WrappedChannelEvent(paymentPart.htlc.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(paymentPart.htlc.id, incomingPayment.preimage, true)))
-                            ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.status)
+                            ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.received)
                         }
                         is PayToOpenPart -> {
                             val action = actionForPayToOpenFailure(privateKey, IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.payToOpenRequest)
@@ -192,14 +192,14 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             pending.remove(paymentPart.paymentHash)
                             val payToOpenRequests = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest }
                             val received = when {
-                                payToOpenRequests.isEmpty() -> IncomingPayment.Status.Received(payment.amountReceived, IncomingPayment.ReceivedWith.LightningPayment)
+                                payToOpenRequests.isEmpty() -> IncomingPayment.Received(payment.amountReceived, IncomingPayment.ReceivedWith.LightningPayment)
                                 else -> {
                                     val (_, fees) = PayToOpenRequest.combine(payToOpenRequests)
-                                    IncomingPayment.Status.Received(payment.amountReceived - fees.toMilliSatoshi(), IncomingPayment.ReceivedWith.NewChannel(fees.toMilliSatoshi(), channelId = null))
+                                    IncomingPayment.Received(payment.amountReceived - fees.toMilliSatoshi(), IncomingPayment.ReceivedWith.NewChannel(fees.toMilliSatoshi(), channelId = null))
                                 }
                             }
                             db.receivePayment(paymentPart.paymentHash, received.amount, received.receivedWith)
-                            return ProcessAddResult.Accepted(actions, incomingPayment.copy(status = received), received)
+                            return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }
                     }
                 }
@@ -214,7 +214,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 logger.warning { "h:${paymentPart.paymentHash} received payment for which we don't have a preimage" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
-            incomingPayment.status is IncomingPayment.Status.Expired -> {
+            incomingPayment.isExpired() -> {
                 logger.warning { "h:${paymentPart.paymentHash} received payment for expired invoice" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }

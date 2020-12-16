@@ -18,39 +18,22 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long) {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
         require(!incoming.contains(paymentHash)) { "an incoming payment for $paymentHash already exists" }
-        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Status.Pending, createdAt)
+        incoming[paymentHash] = IncomingPayment(preimage, origin, null, createdAt)
     }
 
-    override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? {
-        val payment = incoming[paymentHash]
-        val isExpired = payment?.let {
-            when (val origin = it.origin) {
-                is IncomingPayment.Origin.Invoice -> origin.paymentRequest.isExpired()
-                else -> false
-            }
-        }
-        return when {
-            payment == null -> null
-            payment.status == IncomingPayment.Status.Pending && isExpired == true -> {
-                val expired = payment.copy(status = IncomingPayment.Status.Expired)
-                incoming[paymentHash] = expired
-                expired
-            }
-            else -> payment
-        }
-    }
+    override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
 
     override suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = payment.copy(status = IncomingPayment.Status.Received(amount, receivedWith, receivedAt))
+            else -> incoming[paymentHash] = payment.copy(received = IncomingPayment.Received(amount, receivedWith, receivedAt))
         }
     }
 
     override suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
         incoming.values
             .asSequence()
-            .filter { it.status is IncomingPayment.Status.Received && it.origin.matchesFilters(filters) }
+            .filter { it.received != null && it.origin.matchesFilters(filters) }
             .sortedByDescending { WalletPayment.completedAt(it) }
             .drop(skip)
             .take(count)
