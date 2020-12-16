@@ -72,10 +72,7 @@ sealed class WalletPayment {
     companion object {
         /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
         fun completedAt(payment: WalletPayment): Long = when (payment) {
-            is IncomingPayment -> when (val status = payment.status) {
-                is IncomingPayment.Status.Received -> status.receivedAt
-                else -> 0
-            }
+            is IncomingPayment -> payment.received?.receivedAt ?: 0
             is OutgoingPayment -> when (val status = payment.status) {
                 is OutgoingPayment.Status.Succeeded -> status.completedAt
                 is OutgoingPayment.Status.Failed -> status.completedAt
@@ -85,19 +82,13 @@ sealed class WalletPayment {
 
         /** Amount sent or received. */
         fun amount(payment: WalletPayment): MilliSatoshi = when (payment) {
-            is IncomingPayment -> when (val status = payment.status) {
-                is IncomingPayment.Status.Received -> status.amount
-                else -> 0.msat
-            }
+            is IncomingPayment -> payment.received?.amount ?: 0.msat
             is OutgoingPayment -> payment.recipientAmount + payment.fees
         }
 
         /** Fees that applied to the payment. */
         fun fees(payment: WalletPayment): MilliSatoshi = when (payment) {
-            is IncomingPayment -> when (val status = payment.status) {
-                is IncomingPayment.Status.Received -> status.receivedWith.fees
-                else -> 0.msat
-            }
+            is IncomingPayment -> payment.received?.receivedWith?.fees ?: 0.msat
             is OutgoingPayment -> payment.fees
         }
     }
@@ -109,11 +100,11 @@ sealed class WalletPayment {
  *
  * @param preimage payment preimage, which acts as a proof-of-payment for the payer.
  * @param origin origin of a payment (normal, swap, etc).
- * @param status current status of the payment.
+ * @param received funds received for this payment, null if no funds have been received yet.
  * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
-data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val status: Status, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
-    constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, Status.Pending, currentTimestampMillis())
+data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
+    constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, null, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
 
@@ -134,6 +125,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val s
         }
     }
 
+    data class Received(val amount: MilliSatoshi, val receivedWith: ReceivedWith, val receivedAt: Long = currentTimestampMillis())
+
     sealed class ReceivedWith {
         abstract val fees: MilliSatoshi
 
@@ -146,11 +139,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val s
         data class NewChannel(override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
     }
 
-    sealed class Status {
-        object Pending : Status()
-        object Expired : Status()
-        data class Received(val amount: MilliSatoshi, val receivedWith: ReceivedWith, val receivedAt: Long = currentTimestampMillis()) : Status()
-    }
+    /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */
+    fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
 }
 
 /**

@@ -41,7 +41,7 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
-data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Status.Received) : PeerListenerEvent()
+data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerListenerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
