@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel.states
 
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.updated
 import fr.acinq.eclair.Eclair
@@ -14,6 +15,7 @@ import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.FundingSigned
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
@@ -57,6 +59,22 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertTrue { bob1 is Aborted }
     }
 
+    @Test
+    fun `recv NewBlock`() {
+        val (alice, _) = init(ChannelVersion.STANDARD, TestConstants.fundingSatoshis, TestConstants.pushMsat)
+
+        run {
+            val (alice1, actions1) = alice.process(ChannelEvent.NewBlock(alice.currentBlockHeight + 1, Block.RegtestGenesisBlock.header))
+            assertEquals(alice.copy(currentTip = alice1.currentTip), alice1)
+            assertTrue(actions1.isEmpty())
+        }
+
+        run {
+            val (alice1, actions1) = alice.process(ChannelEvent.CheckHtlcTimeout)
+            assertEquals(alice, alice1)
+            assertTrue(actions1.isEmpty())
+        }
+    }
 
     @Test
     fun `recv Disconnected`() {

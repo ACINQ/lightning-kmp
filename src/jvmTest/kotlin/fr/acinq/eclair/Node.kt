@@ -167,6 +167,7 @@ object Node {
             maxAcceptedHtlcs = 30,
             expiryDeltaBlocks = CltvExpiryDelta(144),
             fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(24),
+            checkHtlcTimeoutAfterStartupDelaySeconds = 15,
             htlcMinimum = 1.msat,
             minDepthBlocks = 3,
             toRemoteDelayBlocks = CltvExpiryDelta(2016),

@@ -121,14 +121,23 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            db.channels.listLocalChannels().filterNot { it is Closed }.forEach {
-                logger.info { "restoring $it" }
+            val channelIds = db.channels.listLocalChannels().filterNot { it is Closed }.map {
+                logger.info { "restoring ${it.channelId}" }
                 val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTipFlow.filterNotNull().first(), onChainFeeratesFlow.filterNotNull().first())
                 val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
+                it.channelId
             }
-            logger.info { "restored channels: $_channels" }
+            logger.info { "restored channels: ${channelIds.joinToString(", ")}" }
+            launch {
+                // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
+                // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
+                // We give them a bit of time after we reconnect to send us their latest htlc updates.
+                delay(timeMillis = nodeParams.checkHtlcTimeoutAfterStartupDelaySeconds.toLong() * 1000)
+                logger.info { "checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
+                channelIds.forEach { input.send(WrappedChannelEvent(it, ChannelEvent.CheckHtlcTimeout)) }
+            }
             run()
         }
 

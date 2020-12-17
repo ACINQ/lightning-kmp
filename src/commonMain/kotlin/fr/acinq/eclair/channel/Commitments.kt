@@ -100,8 +100,8 @@ data class Commitments(
             remoteCommit.spec.toRemote == 0.msat &&
             remoteNextCommitInfo.isRight
 
-    fun timedOutOutgoingHtlcs(blockheight: Long): Set<UpdateAddHtlc> {
-        fun expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong()
+    fun timedOutOutgoingHtlcs(blockHeight: Long): Set<UpdateAddHtlc> {
+        fun expired(add: UpdateAddHtlc) = blockHeight >= add.cltvExpiry.toLong()
 
         val thisCommitAdds = localCommit.spec.htlcs.outgoings().filter(::expired).toSet() + remoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
         return when (remoteNextCommitInfo) {
@@ -110,16 +110,18 @@ data class Commitments(
         }
     }
 
-    val isZeroReserve: Boolean get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
-
     /**
      * Incoming HTLCs that are close to timing out are potentially dangerous. If we released the pre-image for those
      * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
      * Otherwise when we get close to the timeout, we risk an on-chain race condition between their HTLC timeout
      * and our HTLC success in case of a force-close.
      */
-    fun almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> =
-        localCommit.spec.htlcs.incomings().filter { blockheight >= (it.cltvExpiry - fulfillSafety).toLong() }.toSet()
+    fun almostTimedOutIncomingHtlcs(blockHeight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> {
+        val relayedFulfills = localChanges.all.filterIsInstance<UpdateFulfillHtlc>().map { it.id }.toSet()
+        return localCommit.spec.htlcs.incomings().filter { relayedFulfills.contains(it.id) && blockHeight >= (it.cltvExpiry - fulfillSafety).toLong() }.toSet()
+    }
+
+    val isZeroReserve: Boolean get() = channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
 
     private fun addLocalProposal(proposal: UpdateMessage): Commitments = copy(localChanges = localChanges.copy(proposed = localChanges.proposed + proposal))
 
@@ -269,7 +271,6 @@ data class Commitments(
 
         val htlcValueInFlight = outgoingHtlcs.map { it.amountMsat }.sum()
         if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toLong()) {
-            // TODO: this should be a specific UPDATE error
             return Either.Left(HtlcValueTooHighInFlight(channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight))
         }
 
@@ -519,8 +520,6 @@ data class Commitments(
             "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommitTx.tx.txid} tx=${localCommitTx.tx}"
         }
 
-        // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
-
         // no need to compute htlc sigs if commit sig doesn't check out
         val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
@@ -629,10 +628,6 @@ data class Commitments(
                 else -> false
             }
         }
-
-        fun revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index)
-
-        fun revocationHash(seed: ByteVector32, index: Long): ByteVector32 = ByteVector32(sha256(revocationPreimage(seed, index)))
 
         fun makeLocalTxs(
             keyManager: KeyManager,

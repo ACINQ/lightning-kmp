@@ -1,8 +1,6 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.WatchConfirmed
@@ -13,9 +11,7 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class OfflineTestsCommon : EclairTestSuite() {
 
@@ -274,6 +270,80 @@ class OfflineTestsCommon : EclairTestSuite() {
         actionsBob.hasOutgoingMessage<CommitSig>()
         assertEquals(listOf(ChannelAction.ProcessIncomingHtlc(htlcs[2])), actionsBob.filterIsInstance<ChannelAction.ProcessIncomingHtlc>())
         actionsBob.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv NewBlock (no htlc timed out)`() {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, _) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
+        val (alice2, _) = alice1.process(ChannelEvent.Disconnected)
+        assertTrue(alice2 is Offline)
+
+        val (alice3, actions3) = alice2.process(ChannelEvent.NewBlock(alice2.currentBlockHeight + 1, alice2.currentTip.second))
+        assertTrue(alice3 is Offline)
+        assertEquals((alice2.state as Normal).copy(currentTip = alice3.currentTip), alice3.state)
+        assertTrue(actions3.isEmpty())
+
+        val (alice4, actions4) = alice3.process(ChannelEvent.CheckHtlcTimeout)
+        assertTrue(alice4 is Offline)
+        assertEquals(alice3, alice4)
+        assertTrue(actions4.isEmpty())
+    }
+
+    @Test
+    fun `recv NewBlock (an htlc timed out)`() {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
+        val (alice2, _) = alice1.process(ChannelEvent.Disconnected)
+        assertTrue(alice2 is Offline)
+
+        // alice restarted after the htlc timed out
+        val alice3 = alice2.copy(state = (alice2.state as Normal).copy(currentTip = alice2.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())))
+        val (alice4, actions) = alice3.process(ChannelEvent.CheckHtlcTimeout)
+        assertTrue(alice4 is Closing)
+        assertNotNull(alice4.localCommitPublished)
+        actions.hasOutgoingMessage<Error>()
+        actions.has<ChannelAction.Storage.StoreState>()
+        val lcp = alice4.localCommitPublished!!
+        actions.hasTx(lcp.commitTx)
+        assertEquals(1, lcp.htlcTimeoutTxs.size)
+        assertEquals(1, lcp.claimHtlcDelayedTxs.size)
+        assertEquals(4, actions.findTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
+        assertEquals(3, actions.findWatches<WatchConfirmed>().size) // commit tx + main output + claim-htlc-delayed
+        assertEquals(1, actions.findWatches<WatchSpent>().size) // htlc-timeout
+    }
+
+    @Test
+    fun `recv NewBlock (fulfilled signed htlc ignored by peer)`() {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, preimage, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = TestsHelper.crossSign(nodes.first, nodes.second)
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
+        actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (bob3, _) = bob2.process(ChannelEvent.Disconnected)
+        assertTrue(bob3 is Offline)
+
+        // bob restarts when the fulfilled htlc is close to timing out: alice hasn't signed, so bob closes the channel
+        val (bob4, actions4) = bob3.process(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt(), bob3.state.currentTip.second))
+        assertTrue(bob4 is Closing)
+        assertNotNull(bob4.localCommitPublished)
+        actions4.has<ChannelAction.Storage.StoreState>()
+
+        val lcp = bob4.localCommitPublished!!
+        assertNotNull(lcp.claimMainDelayedOutputTx)
+        assertEquals(1, lcp.htlcSuccessTxs.size)
+        Transaction.correctlySpends(lcp.htlcSuccessTxs.first(), lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(1, lcp.claimHtlcDelayedTxs.size)
+        Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first(), lcp.htlcSuccessTxs.first(), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.htlcSuccessTxs.first(), lcp.claimHtlcDelayedTxs.first())
+        assertEquals(txs, actions4.findTxs().toSet())
+        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.claimHtlcDelayedTxs.first()).map { it.txid }.toSet()
+        assertEquals(watchConfirmed, actions4.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+        val watchSpent = lcp.htlcSuccessTxs.first().txIn.map { it.outPoint }.toSet()
+        assertEquals(watchSpent, actions4.findWatches<WatchSpent>().map { OutPoint(lcp.commitTx, it.outputIndex.toLong()) }.toSet())
     }
 
 }
