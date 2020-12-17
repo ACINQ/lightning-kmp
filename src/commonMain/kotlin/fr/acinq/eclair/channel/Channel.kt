@@ -211,8 +211,51 @@ sealed class ChannelState {
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 
+    internal fun doPublish(tx: Transaction, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
+        ChannelAction.Blockchain.PublishTx(tx),
+        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
+    )
+
+    fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
+        // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
+        logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
+
+        return when {
+            this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
+            this is Negotiating && this.bestUnpublishedClosingTx != null -> {
+                val nexState = Closing(
+                    staticParams = staticParams,
+                    currentTip = currentTip,
+                    currentOnChainFeerates = currentOnChainFeerates,
+                    commitments = commitments,
+                    fundingTx = null,
+                    waitingSince = currentTimestampMillis(),
+                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                    mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
+                )
+                Pair(nexState, buildList {
+                    add(ChannelAction.Storage.StoreState(nexState))
+                    addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
+                })
+            }
+            // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
+            this is ChannelStateWithCommitments -> this.spendLocalCurrent()
+            // when there is no commitment yet, we just go to CLOSED state in case an error occurs
+            else -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+        }
+    }
+}
+
+@Serializable
+sealed class ChannelStateWithCommitments : ChannelState() {
+    abstract val commitments: Commitments
+    val channelId: ByteVector32 get() = commitments.channelId
+    val isFunder: Boolean get() = commitments.localParams.isFunder
+    val isZeroReserve: Boolean get() = commitments.isZeroReserve
+
+    abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
+
     internal fun handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
-        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
@@ -257,7 +300,6 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitments.remoteNextCommitInfo.isLeft) { "next remote commit must be defined" }
         val remoteCommit = commitments.remoteNextCommitInfo.left?.nextRemoteCommit
@@ -297,7 +339,6 @@ sealed class ChannelState {
     }
 
     internal fun handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
         logger.warning { "funding tx spent in txid=${tx.txid}" }
 
         return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
@@ -346,41 +387,7 @@ sealed class ChannelState {
         }
     }
 
-    internal fun doPublish(tx: Transaction, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
-        ChannelAction.Blockchain.PublishTx(tx),
-        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
-    )
-
-    fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
-        // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
-        logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
-
-        return when {
-            this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
-            this is Negotiating && this.bestUnpublishedClosingTx != null -> {
-                val nexState = Closing(
-                    staticParams = staticParams,
-                    currentTip = currentTip,
-                    currentOnChainFeerates = currentOnChainFeerates,
-                    commitments = commitments,
-                    fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
-                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                    mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
-                )
-                Pair(nexState, buildList {
-                    add(ChannelAction.Storage.StoreState(nexState))
-                    addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
-                })
-            }
-            // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
-            this is ChannelStateWithCommitments -> spendLocalCurrent()
-            // when there is no commitment yet, we just go to CLOSED state in case an error occurs
-            else -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
-        }
-    }
-
-    internal fun ChannelStateWithCommitments.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
+    internal fun spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
         val outdatedCommitment = when (this) {
             is WaitForRemotePublishFutureCommitment -> true
             is Closing -> this.futureRemoteCommitPublished != null
@@ -434,16 +441,6 @@ sealed class ChannelState {
             })
         }
     }
-}
-
-@Serializable
-sealed class ChannelStateWithCommitments : ChannelState() {
-    abstract val commitments: Commitments
-    val channelId: ByteVector32 get() = commitments.channelId
-    val isFunder: Boolean get() = commitments.localParams.isFunder
-    val isZeroReserve: Boolean get() = commitments.isZeroReserve
-
-    abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
     /**
      * Check HTLC timeout in our commitment and our remote's.
