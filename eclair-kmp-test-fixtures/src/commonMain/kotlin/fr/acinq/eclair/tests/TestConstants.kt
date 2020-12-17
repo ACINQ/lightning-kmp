@@ -24,9 +24,19 @@ object TestConstants {
     val feeratePerKw = FeeratePerKw(10_000.sat)
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
+    val trampolineFees = listOf(
+        TrampolineFees(0.sat, 0.0f, CltvExpiryDelta(576)),
+        TrampolineFees(1.sat, 0.0001f, CltvExpiryDelta(576)),
+        TrampolineFees(3.sat, 0.0001f, CltvExpiryDelta(576)),
+        TrampolineFees(5.sat, 0.0005f, CltvExpiryDelta(576)),
+        TrampolineFees(5.sat, 0.001f, CltvExpiryDelta(576)),
+        TrampolineFees(5.sat, 0.0012f, CltvExpiryDelta(576))
+    )
+
     object Alice {
-        val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
+        private val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees)
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "alice",
@@ -77,7 +87,6 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(randomKey().publicKey(), "alice.com", 9735),
             enableTrampolinePayment = true
         )
 
@@ -90,8 +99,9 @@ object TestConstants {
     }
 
     object Bob {
-        val seed = ByteVector32("0202020202020202020202020202020202020202020202020202020202020202")
+        private val seed = ByteVector32("0202020202020202020202020202020202020202020202020202020202020202")
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees)
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "bob",
@@ -142,7 +152,6 @@ object TestConstants {
             minFundingSatoshis = 1000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(randomKey().publicKey(), "bob.com", 9735),
             enableTrampolinePayment = true
         )
 

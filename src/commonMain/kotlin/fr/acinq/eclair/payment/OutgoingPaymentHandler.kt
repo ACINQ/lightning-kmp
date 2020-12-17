@@ -1,6 +1,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.sphinx.FailurePacket
@@ -16,7 +17,7 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import org.kodein.log.Logger
 
-class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPaymentsDb, private val trampolineParams: RouteCalculation.TrampolineParams) {
+class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 
     interface SendPaymentResult
     interface ProcessFailureResult
@@ -54,7 +55,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
             return Failure(request, FinalFailure.InvalidPaymentId.toPaymentFailure())
         }
 
-        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineParams.attempts.first(), currentBlockHeight)
+        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, walletParams.trampolineFees.first(), currentBlockHeight)
         return when (val result = RouteCalculation.findRoutes(trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value.message}" }
@@ -134,7 +135,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
                 val finalError = when {
-                    trampolineParams.attempts.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
+                    walletParams.trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
                     failure != TrampolineExpiryTooSoon && failure != TrampolineFeeInsufficient -> FinalFailure.UnknownError // non-retriable error
                     else -> null
                 }
@@ -149,7 +150,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
                         // NB: we don't update failures here to avoid duplicate trampoline errors
                         Pair(updated, null)
                     } else {
-                        val trampolineFees = trampolineParams.attempts[payment.attemptNumber + 1]
+                        val trampolineFees = walletParams.trampolineFees[payment.attemptNumber + 1]
                         logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${trampolineFees.feeBase}, percent=${trampolineFees.feePercent})..." }
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, trampolineFees, currentBlockHeight)
                         when (val routes = RouteCalculation.findRoutes(trampolineAmount, channels)) {
@@ -283,23 +284,23 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val db: OutgoingPayment
         val outgoingPayment = OutgoingPayment.Part(
             childId,
             route.amount,
-            listOf(HopDesc(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.shortChannelId), HopDesc(route.channel.staticParams.remoteNodeId, request.recipient)),
+            listOf(HopDesc(nodeId, route.channel.staticParams.remoteNodeId, route.channel.shortChannelId), HopDesc(route.channel.staticParams.remoteNodeId, request.recipient)),
             OutgoingPayment.Part.Status.Pending
         )
-        val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
+        val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
         val (add, secrets) = OutgoingPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
         return Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ChannelEvent.ExecuteCommand(add)))
     }
 
-    private fun createTrampolinePayload(request: SendPayment, fees: RouteCalculation.TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
+    private fun createTrampolinePayload(request: SendPayment, fees: TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
         // We are either directly paying our peer (the trampoline node) or a remote node via our peer (using trampoline).
         val trampolineRoute = when (request.recipient) {
-            trampolineParams.nodeId -> listOf(
-                NodeHop(nodeParams.nodeId, request.recipient, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat)
+            walletParams.trampolineNode.id -> listOf(
+                NodeHop(nodeId, request.recipient, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat)
             )
             else -> listOf(
-                NodeHop(nodeParams.nodeId, trampolineParams.nodeId, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat),
-                NodeHop(trampolineParams.nodeId, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
+                NodeHop(nodeId, walletParams.trampolineNode.id, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat),
+                NodeHop(walletParams.trampolineNode.id, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
             )
         }
 

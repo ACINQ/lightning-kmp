@@ -50,6 +50,7 @@ data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) :
 class Peer(
     val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
+    val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
     scope: CoroutineScope
@@ -59,7 +60,7 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
-    public val remoteNodeId: PublicKey = nodeParams.trampolineNode.id
+    public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
     public val output = Channel<ByteArray>(BUFFERED)
@@ -80,10 +81,10 @@ class Peer(
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
 
     // encapsulates logic for validating incoming payments
-    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, walletParams, db.payments)
 
     // encapsulates logic for sending payments
-    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, db.payments, RouteCalculation.TrampolineParams(remoteNodeId, RouteCalculation.defaultTrampolineFees))
+    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams.nodeId, walletParams, db.payments)
 
     private val features = nodeParams.features
 
@@ -169,10 +170,10 @@ class Peer(
 
     private var connectionJob: Job? = null
     private fun establishConnection() = launch {
-        logger.info { "connecting to {$remoteNodeId}@{${nodeParams.trampolineNode.host}}" }
+        logger.info { "connecting to {$remoteNodeId}@{${walletParams.trampolineNode.host}}" }
         _connectionState.value = Connection.ESTABLISHING
         val socket = try {
-            socketBuilder.connect(nodeParams.trampolineNode.host, nodeParams.trampolineNode.port)
+            socketBuilder.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port)
         } catch (ex: TcpSocket.IOException) {
             logger.warning { ex.message }
             _connectionState.value = Connection.CLOSED

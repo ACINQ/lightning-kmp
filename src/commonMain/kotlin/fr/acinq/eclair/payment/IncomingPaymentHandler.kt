@@ -32,7 +32,7 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
 }
 
-class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
+class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: IncomingPaymentsDb) {
 
     sealed class ProcessAddResult {
         abstract val actions: List<PeerEvent>
@@ -72,7 +72,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         val extraHops = listOf(
             listOf(
                 PaymentRequest.TaggedField.ExtraHop(
-                    nodeId = nodeParams.trampolineNode.id,
+                    nodeId = walletParams.trampolineNode.id,
                     shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
                     feeBase = MilliSatoshi(1000),
                     feeProportionalMillionths = 100,
