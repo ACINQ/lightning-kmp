@@ -18,6 +18,7 @@ import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.utils.*
 import io.ktor.application.*
 import io.ktor.features.*
@@ -133,6 +134,7 @@ object Node {
             override val channels = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
             override val payments = InMemoryPaymentsDb()
         }
+        val walletParams = WalletParams(NodeUri(nodeId, nodeAddress, nodePort), TestConstants.trampolineFees)
         // We only support anchor_outputs commitments, so we should anchor_outputs to mandatory.
         // However we're currently only connecting to the Acinq node, which will reject mandatory anchors but will always use anchor_outputs when opening channels to us.
         // We will change that and set this feature to mandatory once the Acinq node is ready to publicly activate anchor_outputs.
@@ -189,7 +191,6 @@ object Node {
             minFundingSatoshis = 100000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
-            trampolineNode = NodeUri(nodeId, nodeAddress, nodePort),
             enableTrampolinePayment = true
         )
 
@@ -207,7 +208,7 @@ object Node {
         runBlocking {
             val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
-            val peer = Peer(TcpSocket.Builder(), nodeParams, watcher, db, this)
+            val peer = Peer(TcpSocket.Builder(), nodeParams, walletParams, watcher, db, this)
 
             launch { connectLoop(peer) }
 

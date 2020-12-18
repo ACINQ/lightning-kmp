@@ -1,38 +1,18 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.channel.Normal
-import fr.acinq.eclair.utils.*
+import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.eclairLogger
+import fr.acinq.eclair.utils.getValue
+import fr.acinq.eclair.utils.msat
 import kotlin.native.concurrent.ThreadLocal
 
 @ThreadLocal
 object RouteCalculation {
-
-    data class TrampolineParams(val nodeId: PublicKey, val attempts: List<TrampolineFees>)
-
-    /**
-     * When we send a trampoline payment, we start with a low fee.
-     * If that fails, we increase the fee(s) and retry (up to a point).
-     * This class encapsulates the fees and expiry to use at a particular retry.
-     */
-    data class TrampolineFees(val feeBase: Satoshi, val feePercent: Float, val cltvExpiryDelta: CltvExpiryDelta) {
-        fun calculateFees(recipientAmount: MilliSatoshi): MilliSatoshi = feeBase.toMilliSatoshi() + (recipientAmount * feePercent)
-    }
-
-    // TODO: fetch this from the server, and have it passed to the OutgoingPaymentHandler
-    val defaultTrampolineFees = listOf(
-        TrampolineFees(0.sat, 0.0f, CltvExpiryDelta(576)),
-        TrampolineFees(1.sat, 0.0001f, CltvExpiryDelta(576)),
-        TrampolineFees(3.sat, 0.0001f, CltvExpiryDelta(576)),
-        TrampolineFees(5.sat, 0.0005f, CltvExpiryDelta(576)),
-        TrampolineFees(5.sat, 0.001f, CltvExpiryDelta(576)),
-        TrampolineFees(5.sat, 0.0012f, CltvExpiryDelta(576))
-    )
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 

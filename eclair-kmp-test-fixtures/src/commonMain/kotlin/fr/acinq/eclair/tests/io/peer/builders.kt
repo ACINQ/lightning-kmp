@@ -1,20 +1,25 @@
 package fr.acinq.eclair.tests.io.peer
 
-import fr.acinq.bitcoin.*
-import fr.acinq.eclair.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.WalletParams
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
-import fr.acinq.eclair.blockchain.fee.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.ChannelStateWithCommitments
 import fr.acinq.eclair.channel.Normal
 import fr.acinq.eclair.channel.Syncing
-import fr.acinq.eclair.db.InMemoryChannelsDb
 import fr.acinq.eclair.db.InMemoryDatabases
-import fr.acinq.eclair.db.InMemoryPaymentsDb
 import fr.acinq.eclair.io.BytesReceived
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.TcpSocket
-import fr.acinq.eclair.utils.*
+import fr.acinq.eclair.utils.Connection
+import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.ChannelReestablish
 import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.Init
@@ -32,14 +37,15 @@ import kotlinx.coroutines.launch
 public suspend fun newPeers(
     scope: CoroutineScope,
     nodeParams: Pair<NodeParams, NodeParams>,
+    walletParams: Pair<WalletParams, WalletParams>,
     initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList(),
     automateMessaging: Boolean = true
 ): PeerTuple {
     // Create Alice and Bob peers
-    val alice = buildPeer(scope, nodeParams.first, databases = InMemoryDatabases().apply {
+    val alice = buildPeer(scope, nodeParams.first, walletParams.first, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.first) }
     })
-    val bob = buildPeer(scope, nodeParams.second, databases = InMemoryDatabases().apply {
+    val bob = buildPeer(scope, nodeParams.second, walletParams.second, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.second) }
     })
 
@@ -110,12 +116,13 @@ public suspend fun newPeers(
 
 public suspend fun CoroutineScope.newPeer(
     nodeParams: NodeParams,
+    walletParams: WalletParams,
     remotedNodeChannelState: ChannelStateWithCommitments? = null,
     setupDatabases: suspend InMemoryDatabases.() -> Unit = {},
 ): Peer {
     val db = InMemoryDatabases().apply { setupDatabases(this) }
 
-    val peer = buildPeer(this, nodeParams, db)
+    val peer = buildPeer(this, nodeParams, walletParams, db)
 
     remotedNodeChannelState?.let { state ->
         // send Init from remote node
@@ -159,11 +166,12 @@ public suspend fun CoroutineScope.newPeer(
 public fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
+    walletParams: WalletParams,
     databases: InMemoryDatabases = InMemoryDatabases()
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope)
     val watcher = ElectrumWatcher(electrum, scope)
-    val peer = Peer(TcpSocket.Builder(), nodeParams, watcher, databases, scope)
+    val peer = Peer(TcpSocket.Builder(), nodeParams, walletParams, watcher, databases, scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),

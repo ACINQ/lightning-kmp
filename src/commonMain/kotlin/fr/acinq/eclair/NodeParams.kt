@@ -3,15 +3,34 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.Eclair.nodeFee
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.io.SatoshiKSerializer
+import fr.acinq.eclair.utils.toMilliSatoshi
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class NodeUri(@Serializable(with = PublicKeyKSerializer::class) val id: PublicKey, val host: String, val port: Int)
+
+/**
+ * When we send a trampoline payment, we start with a low fee.
+ * If that fails, we increase the fee(s) and retry (up to a point).
+ * This class encapsulates the fees and expiry to use at a particular attempt.
+ */
+@Serializable
+data class TrampolineFees(@Serializable(with = SatoshiKSerializer::class) val feeBase: Satoshi, val feeProportional: Long, val cltvExpiryDelta: CltvExpiryDelta) {
+    fun calculateFees(recipientAmount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase.toMilliSatoshi(), feeProportional, recipientAmount)
+}
+
+/**
+ * @param trampolineNode address of the trampoline node used for outgoing payments.
+ * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
+ */
+@Serializable
+data class WalletParams(val trampolineNode: NodeUri, val trampolineFees: List<TrampolineFees>)
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
@@ -49,7 +68,6 @@ data class NodeParams(
     @Serializable(with = SatoshiKSerializer::class) val minFundingSatoshis: Satoshi,
     @Serializable(with = SatoshiKSerializer::class) val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
-    val trampolineNode: NodeUri,
     val enableTrampolinePayment: Boolean,
 ) {
     val nodePrivateKey get() = keyManager.nodeKey.privateKey
