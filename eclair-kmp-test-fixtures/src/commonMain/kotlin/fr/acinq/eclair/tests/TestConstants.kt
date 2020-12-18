@@ -25,12 +25,12 @@ object TestConstants {
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
     val trampolineFees = listOf(
-        TrampolineFees(0.sat, 0.0f, CltvExpiryDelta(576)),
-        TrampolineFees(1.sat, 0.0001f, CltvExpiryDelta(576)),
-        TrampolineFees(3.sat, 0.0001f, CltvExpiryDelta(576)),
-        TrampolineFees(5.sat, 0.0005f, CltvExpiryDelta(576)),
-        TrampolineFees(5.sat, 0.001f, CltvExpiryDelta(576)),
-        TrampolineFees(5.sat, 0.0012f, CltvExpiryDelta(576))
+        TrampolineFees(0.sat, 0, CltvExpiryDelta(576)),
+        TrampolineFees(1.sat, 100, CltvExpiryDelta(576)),
+        TrampolineFees(3.sat, 100, CltvExpiryDelta(576)),
+        TrampolineFees(5.sat, 500, CltvExpiryDelta(576)),
+        TrampolineFees(5.sat, 1000, CltvExpiryDelta(576)),
+        TrampolineFees(5.sat, 1200, CltvExpiryDelta(576))
     )
 
     object Alice {

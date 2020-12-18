@@ -195,7 +195,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (single part)`() = runSuspendTest {
         val channels = makeChannels()
-        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(3.sat, 0.01f, CltvExpiryDelta(144))))
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(3.sat, 10_000, CltvExpiryDelta(144))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = 195_000.msat, supportsTrampoline = true, privKey = recipientKey)
@@ -250,7 +250,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (multiple parts)`() = runSuspendTest {
         val channels = makeChannels()
-        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0f, CltvExpiryDelta(144))))
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
@@ -310,7 +310,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (multiple parts, legacy recipient)`() = runSuspendTest {
         val channels = makeChannels()
-        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0f, CltvExpiryDelta(144))))
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val extraHops = listOf(listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(42), 10.msat, 100, CltvExpiryDelta(48))))
@@ -536,8 +536,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val channels = makeChannels()
         val walletParams = defaultWalletParams.copy(
             trampolineFees = listOf(
-                TrampolineFees(10.sat, 0f, CltvExpiryDelta(144)),
-                TrampolineFees(100.sat, 0f, CltvExpiryDelta(144)),
+                TrampolineFees(10.sat, 0, CltvExpiryDelta(144)),
+                TrampolineFees(100.sat, 0, CltvExpiryDelta(144)),
             )
         )
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
@@ -565,8 +565,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val channels = makeChannels()
         val walletParams = defaultWalletParams.copy(
             trampolineFees = listOf(
-                TrampolineFees(10.sat, 0f, CltvExpiryDelta(144)),
-                TrampolineFees(20.sat, 0f, CltvExpiryDelta(144)),
+                TrampolineFees(10.sat, 0, CltvExpiryDelta(144)),
+                TrampolineFees(20.sat, 0, CltvExpiryDelta(144)),
             )
         )
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())

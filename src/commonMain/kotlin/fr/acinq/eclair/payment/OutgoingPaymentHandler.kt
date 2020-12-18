@@ -151,7 +151,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                         Pair(updated, null)
                     } else {
                         val trampolineFees = walletParams.trampolineFees[payment.attemptNumber + 1]
-                        logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${trampolineFees.feeBase}, percent=${trampolineFees.feePercent})..." }
+                        logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${trampolineFees.feeBase}, proportional=${trampolineFees.feeProportional})..." }
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, trampolineFees, currentBlockHeight)
                         when (val routes = RouteCalculation.findRoutes(trampolineAmount, channels)) {
                             is Either.Left -> {

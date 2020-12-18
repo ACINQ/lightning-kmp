@@ -3,6 +3,7 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.Eclair.nodeFee
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.io.ByteVector32KSerializer
@@ -20,8 +21,8 @@ data class NodeUri(@Serializable(with = PublicKeyKSerializer::class) val id: Pub
  * This class encapsulates the fees and expiry to use at a particular attempt.
  */
 @Serializable
-data class TrampolineFees(@Serializable(with = SatoshiKSerializer::class) val feeBase: Satoshi, val feePercent: Float, val cltvExpiryDelta: CltvExpiryDelta) {
-    fun calculateFees(recipientAmount: MilliSatoshi): MilliSatoshi = feeBase.toMilliSatoshi() + (recipientAmount * feePercent)
+data class TrampolineFees(@Serializable(with = SatoshiKSerializer::class) val feeBase: Satoshi, val feeProportional: Long, val cltvExpiryDelta: CltvExpiryDelta) {
+    fun calculateFees(recipientAmount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase.toMilliSatoshi(), feeProportional, recipientAmount)
 }
 
 /**
