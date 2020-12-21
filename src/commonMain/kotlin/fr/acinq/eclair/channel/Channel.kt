@@ -1594,6 +1594,11 @@ data class WaitForFundingConfirmed(
                     }
                     else -> unhandled(event)
                 }
+            is ChannelEvent.ExecuteCommand -> when (event.command) {
+                is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
+                is CMD_FORCECLOSE -> spendLocalCurrent()
+                else -> unhandled(event)
+            }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())

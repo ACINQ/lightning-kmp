@@ -268,12 +268,12 @@ class NormalTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC (over capacity)`() {
         val (alice0, _) = reachNormal()
-        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)))
+        val (alice1, actionsAlice1) = alice0.process(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = TestConstants.fundingAmount.toMilliSatoshi() * 2 / 3)))
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasOutgoingMessage<CommitSig>()
         // this is over channel-capacity
-        val failAdd = defaultAdd.copy(amount = TestConstants.fundingSatoshis.toMilliSatoshi() * 2 / 3)
+        val failAdd = defaultAdd.copy(amount = TestConstants.fundingAmount.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(failAdd))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
         val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 570_393.sat, 20_000.sat, 8_000.sat)

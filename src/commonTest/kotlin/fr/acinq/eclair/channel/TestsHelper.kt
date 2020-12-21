@@ -58,7 +58,7 @@ fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnCha
 fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
 
 object TestsHelper {
-    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingAmount): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState =
             WaitForInit(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
@@ -101,7 +101,7 @@ object TestsHelper {
         return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
     }
 
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
+    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingAmount): Pair<Normal, Normal> {
         val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
         var alice = a as ChannelState
         var bob = b as ChannelState

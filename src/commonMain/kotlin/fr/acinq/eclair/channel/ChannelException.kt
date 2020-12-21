@@ -69,5 +69,5 @@ data class CommitmentSyncError                 (override val channelId: ByteVect
 data class RevocationSyncError                 (override val channelId: ByteVector32) : ChannelException(channelId, "revocation sync error")
 data class InvalidFailureCode                  (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment         (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
-data class CommandUnavailableInThisState       (override val channelId: ByteVector32, val command: String, val state: String) : ChannelException(channelId, "cannot execute command=$command in state=$state")
+data class CommandUnavailableInThisState       (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
 // @formatter:on
