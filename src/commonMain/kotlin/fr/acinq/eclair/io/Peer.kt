@@ -318,6 +318,13 @@ class Peer(
                     logger.info { "storing state for channelId=$actualChannelId data=${action.data}" }
                     db.channels.addOrUpdateChannel(action.data)
                 }
+                action is ChannelAction.Storage.StoreHtlcInfos -> {
+                    action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
+                }
+                action is ChannelAction.Storage.GetHtlcInfos -> {
+                    val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
+                    input.send(WrappedChannelEvent(actualChannelId, ChannelEvent.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
+                }
                 action is ChannelAction.ChannelId.IdSwitch -> {
                     logger.info { "switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
                     actualChannelId = action.newChannelId
