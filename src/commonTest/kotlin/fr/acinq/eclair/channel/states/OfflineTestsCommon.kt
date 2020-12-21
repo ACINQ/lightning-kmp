@@ -11,7 +11,10 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class OfflineTestsCommon : EclairTestSuite() {
 
@@ -20,33 +23,31 @@ class OfflineTestsCommon : EclairTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val (alice1, _) = alice.process(ChannelEvent.Disconnected)
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
-        assertTrue { bob1 is Offline }
+        assertTrue(alice1 is Offline)
+        assertTrue(bob1 is Offline)
 
         val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(ChannelEvent.Connected(localInit, remoteInit))
-        assertTrue { alice2 is Syncing }
-        val channelReestablishA = (actions[0] as ChannelAction.Message.Send).message as ChannelReestablish
+        assertTrue(alice2 is Syncing)
+        val channelReestablishA = actions.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actions1) = bob1.process(ChannelEvent.Connected(remoteInit, localInit))
-        assertTrue { bob2 is Syncing }
-        val channelReestablishB = (actions1[0] as ChannelAction.Message.Send).message as ChannelReestablish
+        assertTrue(bob2 is Syncing)
+        val channelReestablishB = actions1.findOutgoingMessage<ChannelReestablish>()
 
         val bobCommitments = bob.commitments
         val aliceCommitments = alice.commitments
-
         val bobCurrentPerCommitmentPoint = bob.keyManager.commitmentPoint(
             bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
             bobCommitments.localCommit.index
         )
-
         val aliceCurrentPerCommitmentPoint = alice.keyManager.commitmentPoint(
             alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
             aliceCommitments.localCommit.index
         )
 
-        // a didn't receive any update or sig
+        // alice didn't receive any update or sig
         assertEquals(
             ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint),
             channelReestablishA.copy(channelData = ByteVector.empty)
@@ -57,108 +58,90 @@ class OfflineTestsCommon : EclairTestSuite() {
         )
 
         val (alice3, actions2) = alice2.process(ChannelEvent.MessageReceived(channelReestablishB))
-        assertEquals(alice.commitments.localParams, (alice3 as Normal).commitments.localParams)
         assertEquals(alice, alice3)
-        assertTrue(actions2.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<FundingLocked>().size == 1)
+        actions2.hasOutgoingMessage<FundingLocked>()
 
-        val (bob3, actions4) = bob2.process(ChannelEvent.MessageReceived(channelReestablishA))
+        val (bob3, actions3) = bob2.process(ChannelEvent.MessageReceived(channelReestablishA))
         assertEquals(bob, bob3)
-        assertTrue(actions4.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<FundingLocked>().size == 1)
+        actions3.hasOutgoingMessage<FundingLocked>()
     }
 
     @Test
     fun `re-send update and sig after first commitment`() {
         var (alice, bob) = TestsHelper.reachNormal()
         run {
-            val (alice1, actions) = alice.process(
-                ChannelEvent.ExecuteCommand(
-                    CMD_ADD_HTLC(
-                        1000000.msat,
-                        ByteVector32.Zeroes,
-                        CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()),
-                        TestConstants.emptyOnionPacket,
-                        UUID.randomUUID()
-                    )
-                )
-            )
+            val cmdAdd = CMD_ADD_HTLC(1_000_000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())
+            val (alice1, actions) = alice.process(ChannelEvent.ExecuteCommand(cmdAdd))
             alice = alice1 as Normal
-            val add = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<UpdateAddHtlc>().first()
+            val add = actions.hasOutgoingMessage<UpdateAddHtlc>()
             val (bob1, _) = bob.process(ChannelEvent.MessageReceived(add))
             bob = bob1 as Normal
             val (alice2, actions3) = alice.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
             alice = alice2 as Normal
-            assertTrue { actions3.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<CommitSig>().size == 1 }
+            actions3.hasOutgoingMessage<CommitSig>()
             // bob doesn't receive the sig
         }
 
         val (alice1, _) = alice.process(ChannelEvent.Disconnected)
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
-        assertTrue { bob1 is Offline }
+        assertTrue(alice1 is Offline)
+        assertTrue(bob1 is Offline)
 
         val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(ChannelEvent.Connected(localInit, remoteInit))
-        assertTrue { alice2 is Syncing }
-        val channelReestablishA = (actions[0] as ChannelAction.Message.Send).message as ChannelReestablish
+        assertTrue(alice2 is Syncing)
+        val channelReestablishA = actions.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actions1) = bob1.process(ChannelEvent.Connected(remoteInit, localInit))
-        assertTrue { bob2 is Syncing }
-        val channelReestablishB = (actions1[0] as ChannelAction.Message.Send).message as ChannelReestablish
+        assertTrue(bob2 is Syncing)
+        val channelReestablishB = actions1.findOutgoingMessage<ChannelReestablish>()
 
         val bobCommitments = bob.commitments
         val aliceCommitments = alice.commitments
-
         val bobCurrentPerCommitmentPoint = bob.keyManager.commitmentPoint(
             bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
             bobCommitments.localCommit.index
         )
-
         val aliceCurrentPerCommitmentPoint = alice.keyManager.commitmentPoint(
             alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
             aliceCommitments.localCommit.index
         )
 
-        // a didn't receive any update or sig
-        assertEquals(
-            ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint),
-            channelReestablishA
-        )
-        // b did not receive the sig
-        assertEquals(
-            ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint),
-            channelReestablishB
-        )
+        // alice didn't receive any update or sig
+        assertEquals(channelReestablishA, ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+        // bob did not receive the sig
+        assertEquals(channelReestablishB, ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
 
         val (alice3, actions2) = alice2.process(ChannelEvent.MessageReceived(channelReestablishB))
         alice = alice3 as Normal
         // a sends FundingLocked again
-        assertTrue(actions2.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<FundingLocked>().size == 1)
+        actions2.hasOutgoingMessage<FundingLocked>()
         // a will re-send the update and the sig
-        val add = actions2.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<UpdateAddHtlc>().first()
-        val sig = actions2.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<CommitSig>().first()
+        val add = actions2.hasOutgoingMessage<UpdateAddHtlc>()
+        val sig = actions2.hasOutgoingMessage<CommitSig>()
 
         val (bob3, actions4) = bob2.process(ChannelEvent.MessageReceived(channelReestablishA))
         bob = bob3 as Normal
-        // b sends FundingLocked again
-        assertTrue(actions4.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<FundingLocked>().size == 1)
+        actions4.hasOutgoingMessage<FundingLocked>() // bob sends FundingLocked again
         run {
             val (bob5, _) = bob.process(ChannelEvent.MessageReceived(add))
             bob = bob5 as Normal
             val (bob6, actions6) = bob.process(ChannelEvent.MessageReceived(sig))
             bob = bob6 as Normal
-            // b sends back a revocation and a sig
-            val revB = actions6.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
-            assertTrue { actions6.filterIsInstance<ChannelAction.Message.SendToSelf>() == listOf(ChannelAction.Message.SendToSelf(CMD_SIGN)) }
+
+            // bob sends back a revocation and a sig
+            val revB = actions6.hasOutgoingMessage<RevokeAndAck>()
+            actions6.hasCommand<CMD_SIGN>()
             val (bob7, actions7) = bob.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
             bob = bob7 as Normal
-            val sigB = actions7.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<CommitSig>().first()
+            val sigB = actions7.hasOutgoingMessage<CommitSig>()
 
             val (alice4, _) = alice.process(ChannelEvent.MessageReceived(revB))
             alice = alice4 as Normal
             val (alice5, actions8) = alice.process(ChannelEvent.MessageReceived(sigB))
             alice = alice5 as Normal
-            val revA = actions8.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<RevokeAndAck>().first()
+            val revA = actions8.hasOutgoingMessage<RevokeAndAck>()
 
             val (bob4, _) = bob.process(ChannelEvent.MessageReceived(revA))
             bob4 as Normal
@@ -184,12 +167,14 @@ class OfflineTestsCommon : EclairTestSuite() {
             // And some htlcs aren't signed yet: they will be dropped when disconnecting, and may be retransmitted later.
             val (bob7, alice7, _) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(50_000.msat, aliceId, currentBlockHeight, randomBytes32()).second, bob6, alice6)
             val (alice8, bob8, _) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(70_000.msat, bobId, currentBlockHeight, randomBytes32()).second, alice7, bob7)
-            Triple(alice8 as Normal, bob8 as Normal, listOf(htlc1, htlc2, htlc3, htlc4, htlc5))
+            assertTrue(alice8 is Normal)
+            assertTrue(bob8 is Normal)
+            Triple(alice8, bob8, listOf(htlc1, htlc2, htlc3, htlc4, htlc5))
         }
 
         // Bob's wallet disconnects, but doesn't restart.
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
-        assertTrue { bob1 is Offline }
+        assertTrue(bob1 is Offline)
 
         // Alice's wallet restarts.
         val initState = WaitForInit(alice.staticParams, alice.currentTip, alice.currentOnChainFeerates)
@@ -197,16 +182,17 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertEquals(2, actions1.size)
         actions1.hasWatch<WatchSpent>()
         actions1.hasWatch<WatchConfirmed>()
-        assertTrue { alice1 is Offline }
+        assertTrue(alice1 is Offline)
 
         val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
+
         val (alice2, actionsAlice2) = alice1.process(ChannelEvent.Connected(localInit, remoteInit))
-        assertTrue { alice2 is Syncing }
-        assertTrue { actionsAlice2.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().isEmpty() }
+        assertTrue(alice2 is Syncing)
+        assertTrue(actionsAlice2.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().isEmpty())
         val channelReestablishAlice = actionsAlice2.hasOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelEvent.Connected(localInit, remoteInit))
-        assertTrue { actionsBob2.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().isEmpty() }
+        assertTrue(actionsBob2.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().isEmpty())
         val channelReestablishBob = actionsBob2.hasOutgoingMessage<ChannelReestablish>()
 
         // Alice reprocesses the htlcs received from Bob.
@@ -249,15 +235,16 @@ class OfflineTestsCommon : EclairTestSuite() {
         // Alice and Bob are disconnected.
         val (alice1, _) = alice.process(ChannelEvent.Disconnected)
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
-        assertTrue { bob1 is Offline }
+        assertTrue(alice1 is Offline)
+        assertTrue(bob1 is Offline)
 
         val aliceInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
         val bobInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
+
         val (alice2, actionsAlice) = alice1.process(ChannelEvent.Connected(aliceInit, bobInit))
         val (bob2, _) = bob1.process(ChannelEvent.Connected(bobInit, aliceInit))
-        assertTrue { alice2 is Syncing }
-        assertTrue { bob2 is Syncing }
+        assertTrue(alice2 is Syncing)
+        assertTrue(bob2 is Syncing)
         val channelReestablishAlice = actionsAlice.hasOutgoingMessage<ChannelReestablish>()
 
         // Bob resends htlc settlement messages to Alice and reprocesses unsettled htlcs.
