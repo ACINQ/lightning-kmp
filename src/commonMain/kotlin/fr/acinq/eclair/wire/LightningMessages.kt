@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
-import fr.acinq.eclair.io.*
+import fr.acinq.eclair.serialization.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable

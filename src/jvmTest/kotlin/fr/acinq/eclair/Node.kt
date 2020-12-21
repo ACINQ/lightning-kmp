@@ -18,6 +18,7 @@ import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.serialization.eclairSerializersModule
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.utils.*
 import io.ktor.application.*
@@ -130,10 +131,6 @@ object Node {
         val electrumServerAddress = parseElectrumServerAddress(config.getString("phoenix.electrum-server"))
         val keyManager = LocalKeyManager(seed, chainHash)
         logger.info { "node ${keyManager.nodeId} is starting" }
-        val db = object : Databases {
-            override val channels = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
-            override val payments = InMemoryPaymentsDb()
-        }
         val walletParams = WalletParams(NodeUri(nodeId, nodeAddress, nodePort), TestConstants.trampolineFees)
         // We only support anchor_outputs commitments, so we should anchor_outputs to mandatory.
         // However we're currently only connecting to the Acinq node, which will reject mandatory anchors but will always use anchor_outputs when opening channels to us.
@@ -195,6 +192,10 @@ object Node {
             enableTrampolinePayment = true
         )
 
+        val db = object : Databases {
+            override val channels = SqliteChannelsDb(nodeParams, DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
+            override val payments = InMemoryPaymentsDb()
+        }
         // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
 //        val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
@@ -250,11 +251,11 @@ object Node {
                         call.respond(pr)
                     }
                     get("/channels") {
-                        call.respond(peer.channels.values.toList())
+                        call.respond(peer.channels.values.toList().map { fr.acinq.eclair.serialization.v1.ChannelState.import(it) })
                     }
                     get("/channels/{channelId}") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        call.respond(peer.channels[channelId] ?: "")
+                        call.respond(peer.channels[channelId]?.let { fr.acinq.eclair.serialization.v1.ChannelState.import(it) } ?: "")
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))

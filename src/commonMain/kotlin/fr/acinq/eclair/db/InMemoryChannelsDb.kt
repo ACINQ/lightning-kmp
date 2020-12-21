@@ -2,6 +2,8 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.ChannelStateWithCommitments
 
 class InMemoryChannelsDb : ChannelsDb {

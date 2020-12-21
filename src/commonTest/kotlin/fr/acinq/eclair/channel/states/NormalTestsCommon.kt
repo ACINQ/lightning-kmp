@@ -14,6 +14,7 @@ import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.crypto.sphinx.Sphinx
+import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Transactions.weight2fee
@@ -605,7 +606,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
         val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
-        val blob = Helpers.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
+        val blob = Serialization.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
         assertEquals(blob.toByteVector(), commitSig.channelData)
     }
 
@@ -845,7 +846,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val commitSig1 = actions4.findOutgoingMessage<CommitSig>()
         val (bob4, actions5) = bob3.process(ChannelEvent.MessageReceived(commitSig1))
         val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
-        val blob = Helpers.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
+        val blob = Serialization.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
         assertEquals(blob.toByteVector(), revack1.channelData)
     }
 

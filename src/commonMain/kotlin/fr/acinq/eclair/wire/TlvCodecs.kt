@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.eclair.io.ByteVectorKSerializer
+import fr.acinq.eclair.serialization.ByteVectorKSerializer
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule

@@ -7,9 +7,6 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
 
 interface KeyManager {
     val nodeKey: DeterministicWallet.ExtendedPrivateKey
@@ -107,11 +104,5 @@ interface KeyManager {
         }
 
         fun channelKeyPath(fundingPubKey: ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
-
-        val serializersModule = SerializersModule {
-            polymorphic(KeyManager::class) {
-                subclass(LocalKeyManager.serializer())
-            }
-        }
     }
 }

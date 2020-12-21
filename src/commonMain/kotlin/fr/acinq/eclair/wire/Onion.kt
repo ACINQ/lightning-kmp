@@ -11,9 +11,9 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.io.ByteVector32KSerializer
-import fr.acinq.eclair.io.ByteVectorKSerializer
-import fr.acinq.eclair.io.PublicKeyKSerializer
+import fr.acinq.eclair.serialization.ByteVector32KSerializer
+import fr.acinq.eclair.serialization.ByteVectorKSerializer
+import fr.acinq.eclair.serialization.PublicKeyKSerializer
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector

@@ -15,20 +15,14 @@ import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.*
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
 import org.kodein.log.Logger
 
 /*
@@ -37,12 +31,10 @@ import org.kodein.log.Logger
  */
 
 /** Channel Events (inputs to be fed to the state machine). */
-@Serializable
 sealed class ChannelEvent {
-    @Serializable
     data class InitFunder(
-        @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
-        @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+        val temporaryChannelId: ByteVector32,
+        val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
         val initialFeerate: FeeratePerKw,
         val fundingTxFeerate: FeeratePerKw,
@@ -138,11 +130,9 @@ sealed class ChannelAction {
 }
 
 /** Channel static parameters. */
-@Serializable
-data class StaticParams(val nodeParams: NodeParams, @Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey)
+data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 
 /** Channel state. */
-@Serializable
 sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
@@ -179,10 +169,10 @@ sealed class ChannelState {
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         this is ChannelStateWithCommitments && this.isZeroReserve -> actions.map {
             when {
-                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
                 else -> it
             }
         }
@@ -270,7 +260,6 @@ sealed class ChannelState {
     }
 }
 
-@Serializable
 sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
@@ -512,48 +501,9 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
-
-    companion object {
-        val serializersModule = SerializersModule {
-            polymorphic(ChannelStateWithCommitments::class) {
-                subclass(Normal::class)
-                subclass(WaitForFundingConfirmed::class)
-                subclass(WaitForFundingLocked::class)
-                subclass(WaitForRemotePublishFutureCommitment::class)
-                subclass(ShuttingDown::class)
-                subclass(Negotiating::class)
-                subclass(Closing::class)
-            }
-        }
-
-        private val serializationModules = SerializersModule {
-            include(Tlv.serializersModule)
-            include(KeyManager.serializersModule)
-            include(UpdateMessage.serializersModule)
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        private val cbor = Cbor {
-            serializersModule = serializationModules
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        fun serialize(state: ChannelStateWithCommitments): ByteArray {
-            return cbor.encodeToByteArray(serializer(), state)
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        fun deserialize(bin: ByteArray): ChannelStateWithCommitments {
-            return cbor.decodeFromByteArray(serializer(), bin)
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        fun deserialize(bin: ByteVector): ChannelStateWithCommitments = deserialize(bin.toByteArray())
-    }
 }
 
-@Serializable
-data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
+data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.InitFundee -> {
@@ -693,7 +643,6 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     }
 }
 
-@Serializable
 data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -812,7 +761,6 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
  * we send ours (for example, to extract encrypted backup data from extra fields)
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
-@Serializable
 data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -831,7 +779,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     waitForTheirReestablishMessage -> {
                         val nextState = if (!event.message.channelData.isEmpty()) {
                             logger.info { "c:${state.channelId} channel_reestablish includes a peer backup" }
-                            when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {
+                            when (val decrypted = runTrying { Serialization.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData, staticParams.nodeParams) }) {
                                 is Try.Success -> {
                                     if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
                                         logger.warning { "c:${state.channelId} they have a more recent commitment, using it instead" }
@@ -1039,10 +987,9 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
 
 }
 
-@Serializable
 data class WaitForRemotePublishFutureCommitment(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish
@@ -1086,12 +1033,11 @@ data class WaitForRemotePublishFutureCommitment(
     }
 }
 
-@Serializable
 data class WaitForOpenChannel(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteInit: Init
 ) : ChannelState() {
@@ -1187,18 +1133,17 @@ data class WaitForOpenChannel(
     }
 }
 
-@Serializable
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
     val initialFeerate: FeeratePerKw,
-    @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
+    val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
     val lastSent: AcceptChannel
@@ -1309,10 +1254,9 @@ data class WaitForFundingCreated(
     }
 }
 
-@Serializable
 data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     val initFunder: ChannelEvent.InitFunder,
     val lastSent: OpenChannel
@@ -1381,18 +1325,17 @@ data class WaitForAcceptChannel(
     }
 }
 
-@Serializable
 data class WaitForFundingInternal(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
     val initialFeerate: FeeratePerKw,
-    @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
+    val remoteFirstPerCommitmentPoint: PublicKey,
     val channelVersion: ChannelVersion,
     val lastSent: OpenChannel
 ) : ChannelState() {
@@ -1472,16 +1415,15 @@ data class WaitForFundingInternal(
     }
 }
 
-@Serializable
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
+    val channelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction,
-    @Serializable(with = SatoshiKSerializer::class) val fundingTxFee: Satoshi,
+    val fundingTx: Transaction,
+    val fundingTxFee: Satoshi,
     val localSpec: CommitmentSpec,
     val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx,
     val remoteCommit: RemoteCommit,
@@ -1560,13 +1502,12 @@ data class WaitForFundingSigned(
     }
 }
 
-@Serializable
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
+    val fundingTx: Transaction?,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
@@ -1651,10 +1592,9 @@ data class WaitForFundingConfirmed(
     }
 }
 
-@Serializable
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
@@ -1738,10 +1678,9 @@ data class WaitForFundingLocked(
     }
 }
 
-@Serializable
 data class Normal(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
@@ -2044,10 +1983,9 @@ data class Normal(
     }
 }
 
-@Serializable
 data class ShuttingDown(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
@@ -2242,16 +2180,15 @@ data class ShuttingDown(
     }
 }
 
-@Serializable
 data class Negotiating(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
-    @Serializable(with = TransactionKSerializer::class) val bestUnpublishedClosingTx: Transaction?
+    val bestUnpublishedClosingTx: Transaction?
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
@@ -2423,16 +2360,15 @@ data class NextRemoteClose(override val remoteCommit: RemoteCommit, override val
 data class RecoveryClose(val remoteCommitPublished: RemoteCommitPublished) : ClosingType()
 data class RevokedClose(val revokedCommitPublished: RevokedCommitPublished) : ClosingType()
 
-@Serializable
 data class Closing(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
+    val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
-    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
-    val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val mutualCloseProposed: List<Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
+    val mutualClosePublished: List<Transaction> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
     val remoteCommitPublished: RemoteCommitPublished? = null,
     val nextRemoteCommitPublished: RemoteCommitPublished? = null,
@@ -2782,7 +2718,6 @@ data class Closing(
 /**
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
  */
-@Serializable
 data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -2806,8 +2741,7 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
 /**
  * Channel has been aborted before it was funded (because we did not receive a FundingCreated or FundingSigned message for example)
  */
-@Serializable
-data class Aborted(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
+data class Aborted(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
     }
@@ -2817,10 +2751,9 @@ data class Aborted(override val staticParams: StaticParams, override val current
     }
 }
 
-@Serializable
 data class ErrorInformationLeak(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments
 ) : ChannelStateWithCommitments() {
