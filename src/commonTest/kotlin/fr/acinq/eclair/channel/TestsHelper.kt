@@ -64,7 +64,8 @@ object TestsHelper {
     fun init(
         channelVersion: ChannelVersion = ChannelVersion.STANDARD,
         currentHeight: Int = TestConstants.defaultBlockHeight,
-        fundingAmount: Satoshi = TestConstants.fundingAmount
+        fundingAmount: Satoshi = TestConstants.fundingAmount,
+        pushMsat: MilliSatoshi = TestConstants.pushMsat
     ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState = WaitForInit(
             StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
@@ -88,7 +89,7 @@ object TestsHelper {
             ChannelEvent.InitFunder(
                 ByteVector32.Zeroes,
                 fundingAmount,
-                TestConstants.pushMsat,
+                pushMsat,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -106,8 +107,13 @@ object TestsHelper {
         return Triple(alice, bob, open)
     }
 
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = TestConstants.defaultBlockHeight, fundingAmount: Satoshi = TestConstants.fundingAmount): Pair<Normal, Normal> {
-        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
+    fun reachNormal(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = TestConstants.defaultBlockHeight,
+        fundingAmount: Satoshi = TestConstants.fundingAmount,
+        pushMsat: MilliSatoshi = TestConstants.pushMsat
+    ): Pair<Normal, Normal> {
+        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount, pushMsat)
         var alice = a as ChannelState
         var bob = b as ChannelState
         var rb = bob.process(ChannelEvent.MessageReceived(open))

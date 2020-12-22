@@ -885,10 +885,15 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     )
                                     Pair(nextState, actions)
                                 } else {
-                                    // they lied! the last per_commitment_secret they claimed to have received from us is invalid
                                     logger.warning { "they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
-                                    //throw InvalidRevokedCommitProof(state.channelId, state.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
-                                    Pair(this, listOf())
+                                    val exc = InvalidRevokedCommitProof(state.channelId, state.commitments.localCommit.index, event.message.nextRemoteRevocationNumber, event.message.yourLastCommitmentSecret)
+                                    val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
+                                    val (nextState, spendActions) = state.spendLocalCurrent()
+                                    val actions = buildList {
+                                        addAll(spendActions)
+                                        add(ChannelAction.Message.Send(error))
+                                    }
+                                    Pair(nextState, actions)
                                 }
                             }
                             !Helpers.checkRemoteCommit(state.commitments, event.message.nextLocalCommitmentNumber) -> {
