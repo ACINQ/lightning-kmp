@@ -22,6 +22,7 @@ import kotlin.test.assertTrue
 class RouteCalculationTestsCommon : EclairTestSuite() {
 
     private val defaultChannel = reachNormal().first
+    private val paymentId = UUID.randomUUID()
 
     private fun makeChannel(channelId: ByteVector32, balance: MilliSatoshi, htlcMin: MilliSatoshi): Normal {
         val shortChannelId = ShortChannelId(Random.nextLong())
@@ -60,7 +61,7 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
             channelId2 to Syncing(makeChannel(channelId2, 20_000.msat, 5.msat), false),
             channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
         )
-        assertEquals(Either.Left(FinalFailure.NoAvailableChannels), findRoutes(5_000.msat, channels))
+        assertEquals(Either.Left(FinalFailure.NoAvailableChannels), findRoutes(paymentId, 5_000.msat, channels))
     }
 
     @Test
@@ -71,7 +72,7 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
             channelId2 to makeChannel(channelId2, 18_000.msat, 5.msat),
             channelId3 to makeChannel(channelId3, 12_000.msat, 10.msat),
         )
-        assertEquals(Either.Left(FinalFailure.InsufficientBalance), findRoutes(50_000.msat, channels))
+        assertEquals(Either.Left(FinalFailure.InsufficientBalance), findRoutes(paymentId, 50_000.msat, channels))
     }
 
     @Test
@@ -83,12 +84,12 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
                 channelId2 to makeChannel(channelId2, 30_000.msat, 5.msat),
                 channelId3 to makeChannel(channelId3, 38_000.msat, 10.msat),
             )
-            val routes = findRoutes(38_000.msat, channels).right!!
+            val routes = findRoutes(paymentId, 38_000.msat, channels).right!!
             assertEquals(listOf(RouteCalculation.Route(38_000.msat, channels.getValue(channelId3))), routes)
         }
         run {
             val channels = mapOf(channelId3 to makeChannel(channelId3, 38_000.msat, 10.msat))
-            val routes = findRoutes(38_000.msat, channels).right!!
+            val routes = findRoutes(paymentId, 38_000.msat, channels).right!!
             assertEquals(listOf(RouteCalculation.Route(38_000.msat, channels.getValue(channelId3))), routes)
         }
     }
@@ -102,13 +103,13 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
             channelId3 to makeChannel(channelId3, 30_000.msat, 15.msat),
             channelId4 to makeChannel(channelId4, 20_000.msat, 50.msat),
         )
-        val routes = findRoutes(50_000.msat, channels).right!!
+        val routes = findRoutes(paymentId, 50_000.msat, channels).right!!
         val expected = setOf(
             RouteCalculation.Route(30_000.msat, channels.getValue(channelId3)),
             RouteCalculation.Route(20_000.msat, channels.getValue(channelId4)),
         )
         assertEquals(expected, routes.toSet())
-        assertEquals(Either.Left(FinalFailure.InsufficientBalance), findRoutes(50010.msat, channels))
+        assertEquals(Either.Left(FinalFailure.InsufficientBalance), findRoutes(paymentId, 50010.msat, channels))
     }
 
     @Test
@@ -121,7 +122,7 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
             channelId4 to makeChannel(channelId4, 75.msat, 50.msat),
         )
         run {
-            val routes = findRoutes(300.msat, channels).right!!
+            val routes = findRoutes(paymentId, 300.msat, channels).right!!
             val expected = setOf(
                 RouteCalculation.Route(50.msat, channels.getValue(channelId1)),
                 RouteCalculation.Route(150.msat, channels.getValue(channelId2)),
@@ -131,17 +132,17 @@ class RouteCalculationTestsCommon : EclairTestSuite() {
             assertEquals(expected, routes.toSet())
         }
         run {
-            val routes = findRoutes(250.msat, channels).right!!
+            val routes = findRoutes(paymentId, 250.msat, channels).right!!
             assertTrue(routes.size >= 3)
             assertEquals(250.msat, routes.map { it.amount }.sum())
         }
         run {
-            val routes = findRoutes(200.msat, channels).right!!
+            val routes = findRoutes(paymentId, 200.msat, channels).right!!
             assertTrue(routes.size >= 2)
             assertEquals(200.msat, routes.map { it.amount }.sum())
         }
         run {
-            val routes = findRoutes(50.msat, channels).right!!
+            val routes = findRoutes(paymentId, 50.msat, channels).right!!
             assertTrue(routes.size == 1)
             assertEquals(50.msat, routes.map { it.amount }.sum())
         }

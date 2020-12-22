@@ -71,7 +71,7 @@ data class LocalCommitPublished(
     val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -140,7 +140,7 @@ data class LocalCommitPublished(
             addAll(htlcTimeoutTxs)
             addAll(claimHtlcDelayedTxs)
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
@@ -175,7 +175,7 @@ data class RemoteCommitPublished(
     val claimMainOutputTx: Transaction? = null,
     val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -230,7 +230,7 @@ data class RemoteCommitPublished(
             addAll(claimHtlcTimeoutTxs)
         }
 
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
@@ -268,7 +268,7 @@ data class RevokedCommitPublished(
     val mainPenaltyTx: Transaction? = null,
     val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -327,7 +327,7 @@ data class RevokedCommitPublished(
             addAll(htlcPenaltyTxs)
             addAll(claimHtlcDelayedPenaltyTxs)
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs

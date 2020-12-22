@@ -5,10 +5,7 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.ChannelState
 import fr.acinq.eclair.channel.Normal
-import fr.acinq.eclair.utils.Either
-import fr.acinq.eclair.utils.eclairLogger
-import fr.acinq.eclair.utils.getValue
-import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.utils.*
 import kotlin.native.concurrent.ThreadLocal
 
 @ThreadLocal
@@ -18,7 +15,7 @@ object RouteCalculation {
 
     private val logger by eclairLogger()
 
-    fun findRoutes(amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
+    fun findRoutes(paymentId: UUID, amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
         data class ChannelBalance(val c: Normal) {
             val balance: MilliSatoshi = c.commitments.availableBalanceForSend()
             val capacity: Satoshi = c.commitments.commitInput.txOut.amount
@@ -26,7 +23,7 @@ object RouteCalculation {
 
         val sortedChannels = channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()
         if (sortedChannels.isEmpty()) {
-            logger.warning { "no available channels" }
+            logger.warning { "p:$paymentId no available channels" }
             return Either.Left(FinalFailure.NoAvailableChannels)
         }
 
@@ -43,10 +40,10 @@ object RouteCalculation {
         }
 
         return if (remaining > 0.msat) {
-            logger.info { "insufficient balance: ${sortedChannels.joinToString { "${it.c.shortChannelId}->${it.balance}/${it.capacity}" }}" }
+            logger.info { "p:$paymentId insufficient balance: ${sortedChannels.joinToString { "${it.c.shortChannelId}->${it.balance}/${it.capacity}" }}" }
             Either.Left(FinalFailure.InsufficientBalance)
         } else {
-            logger.info { "routes found: ${routes.map { "${it.channel.shortChannelId}->${it.amount}" }}" }
+            logger.info { "p:$paymentId routes found: ${routes.map { "${it.channel.shortChannelId}->${it.amount}" }}" }
             Either.Right(routes)
         }
     }
