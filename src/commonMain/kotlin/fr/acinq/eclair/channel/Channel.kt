@@ -2176,97 +2176,75 @@ data class Negotiating(
         return when {
             event is ChannelEvent.MessageReceived && event.message is ClosingSigned -> {
                 logger.info { "received closingFeeSatoshis=${event.message.feeSatoshis}" }
-                val result = Helpers.Closing.checkClosingSignature(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), event.message.feeSatoshis, event.message.signature)
+                val checkSig = Helpers.Closing.checkClosingSignature(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), event.message.feeSatoshis, event.message.signature)
                 val lastLocalClosingFee = closingTxProposed.last().lastOrNull()?.localClosingSigned?.feeSatoshis
-                when {
-                    result is Either.Right && (lastLocalClosingFee == event.message.feeSatoshis || closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS) -> {
-                        // we close when we converge or when there were too many iterations
-                        val signedClosingTx = result.value
-                        logger.info { "closing tx published: closingTxId=${signedClosingTx.txid}" }
-                        val nextState = Closing(
-                            staticParams,
-                            currentTip,
-                            currentOnChainFeerates,
-                            commitments,
-                            null,
-                            currentTimestampMillis(),
-                            this.closingTxProposed.flatten().map { it.unsignedTx },
-                            listOf(signedClosingTx)
-                        )
-                        val actions = listOf(
-                            ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(signedClosingTx),
-                            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx)))
-                        )
-                        Pair(nextState, actions)
-                    }
-                    result is Either.Right -> {
-                        val signedClosingTx = result.value
-                        val nextClosingFee = Helpers.Closing.nextClosingFee(
-                            lastLocalClosingFee ?: Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), currentOnChainFeerates.mutualCloseFeerate),
-                            event.message.feeSatoshis
-                        )
-                        when {
-                            lastLocalClosingFee == nextClosingFee -> {
-                                // next computed fee is the same than the one we previously sent (probably because of rounding), let's close now
-                                val nextState = Closing(
-                                    staticParams,
-                                    currentTip,
-                                    currentOnChainFeerates,
-                                    commitments,
-                                    null,
-                                    currentTimestampMillis(),
-                                    this.closingTxProposed.flatten().map { it.unsignedTx },
-                                    listOf(signedClosingTx)
-                                )
-                                val actions = listOf(
-                                    ChannelAction.Storage.StoreState(nextState),
-                                    ChannelAction.Blockchain.PublishTx(signedClosingTx),
-                                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx)))
-                                )
-                                logger.info { "closing tx published: closingTxId=${signedClosingTx.txid}" }
-                                Pair(nextState, actions)
-                            }
-                            nextClosingFee == event.message.feeSatoshis -> {
-                                // we have converged!
-                                val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
-                                val nextState = Closing(
-                                    staticParams,
-                                    currentTip,
-                                    currentOnChainFeerates,
-                                    commitments,
-                                    null,
-                                    currentTimestampMillis(),
-                                    this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(closingTx.tx),
-                                    listOf(closingTx.tx)
-                                )
-                                val actions = listOf(
-                                    ChannelAction.Storage.StoreState(nextState),
-                                    ChannelAction.Blockchain.PublishTx(closingTx.tx),
-                                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx))),
-                                    ChannelAction.Message.Send(closingSigned)
-                                )
-                                logger.info { "closing tx published: closingTxId=${closingTx.tx.txid}" }
-                                Pair(nextState, actions)
-                            }
-                            else -> {
-                                val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
-                                logger.info { "proposing closingFeeSatoshis=$closingSigned.feeSatoshis" }
-                                val closingProposed1 = closingTxProposed.updated(
-                                    closingTxProposed.lastIndex,
-                                    closingTxProposed.last() + listOf(ClosingTxProposed(closingTx.tx, closingSigned))
-                                )
-                                val nextState = this.copy(
-                                    commitments = commitments.copy(remoteChannelData = event.message.channelData),
-                                    closingTxProposed = closingProposed1,
-                                    bestUnpublishedClosingTx = closingTx.tx
-                                )
-                                val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned))
-                                Pair(nextState, actions)
-                            }
+                val nextClosingFee = Helpers.Closing.nextClosingFee(
+                    lastLocalClosingFee ?: Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, currentOnChainFeerates.mutualCloseFeerate),
+                    event.message.feeSatoshis
+                )
+                val result = checkSig.map { signedClosingTx -> // this signed closing tx matches event.message.feeSatoshis
+                    when {
+                        lastLocalClosingFee == event.message.feeSatoshis || lastLocalClosingFee == nextClosingFee || closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS -> {
+                            logger.info { "closing tx published: closingTxId=${signedClosingTx.txid}" }
+                            val nextState = Closing(
+                                staticParams,
+                                currentTip,
+                                currentOnChainFeerates,
+                                commitments,
+                                null,
+                                currentTimestampMillis(),
+                                this.closingTxProposed.flatten().map { it.unsignedTx },
+                                listOf(signedClosingTx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(signedClosingTx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx)))
+                            )
+                            Pair(nextState, actions)
+                        }
+                        nextClosingFee == event.message.feeSatoshis -> {
+                            // we have converged but they don't have our signature yet
+                            logger.info { "closing tx published: closingTxId=${signedClosingTx.txid}" }
+                            val (_, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
+                            val nextState = Closing(
+                                staticParams,
+                                currentTip,
+                                currentOnChainFeerates,
+                                commitments,
+                                null,
+                                currentTimestampMillis(),
+                                this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
+                                listOf(signedClosingTx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(signedClosingTx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx))),
+                                ChannelAction.Message.Send(closingSigned)
+                            )
+                            Pair(nextState, actions)
+                        }
+                        else -> {
+                            val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
+                            logger.info { "proposing closingFeeSatoshis=${closingSigned.feeSatoshis}" }
+                            val closingProposed1 = closingTxProposed.updated(
+                                closingTxProposed.lastIndex,
+                                closingTxProposed.last() + listOf(ClosingTxProposed(closingTx.tx, closingSigned))
+                            )
+                            val nextState = this.copy(
+                                commitments = commitments.copy(remoteChannelData = event.message.channelData),
+                                closingTxProposed = closingProposed1,
+                                bestUnpublishedClosingTx = closingTx.tx
+                            )
+                            val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned))
+                            Pair(nextState, actions)
                         }
                     }
-                    else -> handleLocalError(event, result.left!!)
+                }
+                when (result) {
+                    is Either.Right -> result.value
+                    is Either.Left -> handleLocalError(event, result.value)
                 }
             }
             event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)

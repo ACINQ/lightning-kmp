@@ -358,6 +358,9 @@ object Helpers {
             return Transactions.weight2fee(requestedFeerate, closingWeight)
         }
 
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, requestedFeerate: FeeratePerKw): Satoshi =
+            firstClosingFee(commitments, localScriptPubkey.toByteArray(), remoteScriptPubkey.toByteArray(), requestedFeerate)
+
         fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
         fun makeFirstClosingTx(
