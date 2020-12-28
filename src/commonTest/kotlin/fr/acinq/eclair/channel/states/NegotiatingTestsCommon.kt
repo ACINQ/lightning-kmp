@@ -37,7 +37,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         // Alice agrees with Bob's closing fee, publishes her closing tx and replies with her own ClosingSigned
         val (alice2, _) = alice1.process(ChannelEvent.MessageReceived(shutdownB))
         val (alice3, actions4) = alice2.process(ChannelEvent.MessageReceived(closingSignedB))
-        alice3 as Closing
+        assertTrue(alice3 is Closing)
         val closingTxA = actions4.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx
         val closingSignedA = actions4.findOutgoingMessage<ClosingSigned>()
         val watch = actions4.findWatch<WatchConfirmed>()
