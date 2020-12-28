@@ -56,8 +56,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         // Bob published his closing tx (which should be the same as Alice's !!!)
         val (bob2, actions5) = bob1.process(ChannelEvent.MessageReceived(closingSignedA))
         assertTrue(bob2 is Closing)
-        val closingTxB = actions5.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx
-        assertEquals(closingTxA, closingTxB)
+        actions5.hasTx(closingTxA)
 
         // Alice sees Bob's closing tx (which should be the same as the one she published)
         val (alice4, _) = alice3.process(ChannelEvent.WatchReceived(WatchEventSpent(alice3.channelId, BITCOIN_FUNDING_SPENT, closingTxB)))
