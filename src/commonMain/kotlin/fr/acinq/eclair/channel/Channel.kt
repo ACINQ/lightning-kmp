@@ -2227,7 +2227,7 @@ data class Negotiating(
                         }
                         else -> {
                             val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
-                            logger.info { "proposing closingFeeSatoshis=$closingSigned.feeSatoshis" }
+                            logger.info { "proposing closingFeeSatoshis=${closingSigned.feeSatoshis}" }
                             val closingProposed1 = closingTxProposed.updated(
                                 closingTxProposed.lastIndex,
                                 closingTxProposed.last() + listOf(ClosingTxProposed(closingTx.tx, closingSigned))
