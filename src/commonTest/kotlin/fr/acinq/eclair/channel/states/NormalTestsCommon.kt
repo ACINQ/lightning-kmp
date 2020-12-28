@@ -1475,6 +1475,118 @@ class NormalTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv NewBlock (no htlc timed out)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = crossSign(nodes.first, nodes.second)
+        assertTrue(alice1 is Normal)
+
+        val (alice2, actions2) = alice1.process(ChannelEvent.NewBlock(alice1.currentBlockHeight + 1, alice1.currentTip.second))
+        assertEquals(alice1.copy(currentTip = alice2.currentTip), alice2)
+        assertTrue(actions2.isEmpty())
+
+        val (alice3, actions3) = alice2.process(ChannelEvent.CheckHtlcTimeout)
+        assertEquals(alice2, alice3)
+        assertTrue(actions3.isEmpty())
+    }
+
+    @Test
+    fun `recv NewBlock (an htlc timed out)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = crossSign(nodes.first, nodes.second)
+        assertTrue(alice1 is Normal)
+
+        // alice restarted after the htlc timed out
+        val alice2 = alice1.copy(currentTip = alice1.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt()))
+        val (alice3, actions) = alice2.process(ChannelEvent.CheckHtlcTimeout)
+        assertTrue(alice3 is Closing)
+        assertNotNull(alice3.localCommitPublished)
+        actions.hasOutgoingMessage<Error>()
+        actions.has<ChannelAction.Storage.StoreState>()
+        val lcp = alice3.localCommitPublished!!
+        actions.hasTx(lcp.commitTx)
+        assertEquals(1, lcp.htlcTimeoutTxs.size)
+        assertEquals(1, lcp.claimHtlcDelayedTxs.size)
+        assertEquals(4, actions.findTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
+        assertEquals(3, actions.findWatches<WatchConfirmed>().size) // commit tx + main output + claim-htlc-delayed
+        assertEquals(1, actions.findWatches<WatchSpent>().size) // htlc-timeout
+    }
+
+    private fun checkFulfillTimeout(bob: ChannelState, actions: List<ChannelAction>) {
+        assertTrue(bob is Closing)
+        assertNotNull(bob.localCommitPublished)
+        actions.hasOutgoingMessage<Error>()
+        actions.has<ChannelAction.Storage.StoreState>()
+
+        val lcp = bob.localCommitPublished!!
+        assertNotNull(lcp.claimMainDelayedOutputTx)
+        assertEquals(1, lcp.htlcSuccessTxs.size)
+        Transaction.correctlySpends(lcp.htlcSuccessTxs.first(), lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(1, lcp.claimHtlcDelayedTxs.size)
+        Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first(), lcp.htlcSuccessTxs.first(), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.htlcSuccessTxs.first(), lcp.claimHtlcDelayedTxs.first())
+        assertEquals(txs, actions.findTxs().toSet())
+        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.claimHtlcDelayedTxs.first()).map { it.txid }.toSet()
+        assertEquals(watchConfirmed, actions.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+        val watchSpent = lcp.htlcSuccessTxs.first().txIn.map { it.outPoint }.toSet()
+        assertEquals(watchSpent, actions.findWatches<WatchSpent>().map { OutPoint(lcp.commitTx, it.outputIndex.toLong()) }.toSet())
+    }
+
+    @Test
+    fun `recv NewBlock (fulfilled signed htlc ignored by peer)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
+        actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (bob3, actions3) = bob2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        actions3.hasOutgoingMessage<CommitSig>()
+
+        // fulfilled htlc is close to timing out and alice still hasn't signed, so bob closes the channel
+        val (bob4, actions4) = bob3.process(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+        checkFulfillTimeout(bob4, actions4)
+    }
+
+    @Test
+    fun `recv NewBlock (fulfilled proposed htlc ignored by peer)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
+        actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
+
+        // bob restarts when the fulfilled htlc is close to timing out
+        val bob3 = (bob2 as Normal).copy(currentTip = bob2.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt() - 3))
+        // alice still hasn't signed, so bob closes the channel
+        val (bob4, actions4) = bob3.process(ChannelEvent.CheckHtlcTimeout)
+        checkFulfillTimeout(bob4, actions4)
+    }
+
+    @Test
+    fun `recv NewBlock (fulfilled proposed htlc acked but not committed by peer)`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = crossSign(nodes.first, nodes.second)
+
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
+        val fulfill = actionsBob2.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (bob3, actionsBob3) = bob2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val commitSig = actionsBob3.hasOutgoingMessage<CommitSig>()
+        val (alice2, _) = alice1.process(ChannelEvent.MessageReceived(fulfill))
+        val (_, actionsAlice3) = alice2.process(ChannelEvent.MessageReceived(commitSig))
+        val ack = actionsAlice3.hasOutgoingMessage<RevokeAndAck>()
+        val (bob4, _) = bob3.process(ChannelEvent.MessageReceived(ack))
+
+        // fulfilled htlc is close to timing out and alice has revoked her previous commitment but not signed the new one, so bob closes the channel
+        val (bob5, actions5) = bob4.process(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+        checkFulfillTimeout(bob5, actions5)
+    }
+
+    @Test
     fun `recv Disconnected`() {
         val (alice0, _) = reachNormal()
         val (alice1, _) = alice0.process(ChannelEvent.Disconnected)

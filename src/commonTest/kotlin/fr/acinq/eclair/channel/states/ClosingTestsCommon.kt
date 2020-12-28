@@ -1209,6 +1209,31 @@ class ClosingTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv NewBlock (an htlc timed out)`() {
+        val (alice, bob) = reachNormal()
+        val (aliceClosing, htlc) = run {
+            val (nodes1, _, htlc) = addHtlc(30_000_000.msat, alice, bob)
+            val (alice1, bob1) = nodes1
+            val (alice2, _) = crossSign(alice1, bob1)
+            val (alice3, _) = localClose(alice2)
+            Pair(alice3, htlc)
+        }
+
+        run {
+            val (alice1, actions) = aliceClosing.process(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt(), aliceClosing.currentTip.second))
+            assertEquals(aliceClosing.copy(currentTip = alice1.currentTip), alice1)
+            assertTrue(actions.isEmpty())
+        }
+
+        run {
+            val alice1 = aliceClosing.copy(currentTip = aliceClosing.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt()))
+            val (alice2, actions) = alice1.process(ChannelEvent.CheckHtlcTimeout)
+            assertEquals(alice1, alice2)
+            assertTrue(actions.isEmpty())
+        }
+    }
+
+    @Test
     fun `recv Disconnected`() {
         val (alice0, _, _) = initMutualClose()
         val (alice1, _) = alice0.process(ChannelEvent.Disconnected)

@@ -4,10 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.NodeUri
-import fr.acinq.eclair.channel.Normal
-import fr.acinq.eclair.channel.Offline
-import fr.acinq.eclair.channel.Syncing
-import fr.acinq.eclair.channel.TestsHelper
+import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.InMemoryDatabases
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.io.BytesReceived
@@ -55,13 +52,17 @@ class PeerTest : EclairTestSuite() {
     @Test
     fun `restore channel`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
+        assertTrue(alice1 is Normal)
+        val alice2 = alice1.copy(currentTip = alice1.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt()))
 
-        val db = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice0) }
-        val peer = buildPeer(this, alice0.staticParams.nodeParams, TestConstants.Alice.walletParams, db)
+        val db = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice2) }
+        val peer = buildPeer(this, alice2.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5), TestConstants.Alice.walletParams, db)
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }
         assertEquals(1, initChannels.size)
-        assertEquals(alice0.channelId, initChannels.keys.first())
+        assertEquals(alice2.channelId, initChannels.keys.first())
         assertTrue(initChannels.values.first() is Offline)
 
         // send Init from remote node
@@ -75,7 +76,7 @@ class PeerTest : EclairTestSuite() {
         val syncChannels = peer.channelsFlow
             .first { it.values.size == 1 && it.values.all { channelState -> channelState is Syncing } }
             .map { it.value as Syncing }
-        assertEquals(alice0.channelId, syncChannels.first().channelId)
+        assertEquals(alice2.channelId, syncChannels.first().channelId)
 
         val syncState = syncChannels.first()
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
@@ -95,8 +96,12 @@ class PeerTest : EclairTestSuite() {
         peer.send(BytesReceived(reestablishMsg))
 
         // Wait until the channels are Reestablished(=Normal)
-        val reestablishChannels = peer.channelsFlow.first { it.values.size == 1 && it.values.all { channelState -> channelState is Normal } }
-        assertEquals(alice0.channelId, reestablishChannels.keys.first())
+        val reestablishChannels = peer.channelsFlow.first { it.values.isNotEmpty() && it.values.all { channelState -> channelState is Normal } }
+        assertEquals(alice2.channelId, reestablishChannels.keys.first())
+
+        // Wait until alice detects the HTLC-timeout and closes
+        val closingChannels = peer.channelsFlow.first { it.values.isNotEmpty() && it.values.all { channelState -> channelState is Closing } }
+        assertEquals(alice2.channelId, closingChannels.keys.first())
     }
 
     @Test
