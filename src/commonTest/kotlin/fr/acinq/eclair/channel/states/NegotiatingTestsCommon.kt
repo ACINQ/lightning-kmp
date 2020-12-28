@@ -49,7 +49,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
             txOut = listOf(bob.commitments.commitInput.txOut),
             lockTime = 0
         )
-        (assertEquals(fundingTx.txid, closingTxA.txIn[0].outPoint.txid))
+        assertEquals(fundingTx.txid, closingTxA.txIn[0].outPoint.txid)
         // check that our closing tx is correctly signed
         Transaction.correctlySpends(closingTxA, fundingTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
