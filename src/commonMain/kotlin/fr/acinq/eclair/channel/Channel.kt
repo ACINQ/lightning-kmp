@@ -719,36 +719,30 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
             is ChannelEvent.WatchReceived -> {
                 val watch = event.watch
                 when {
-                    watch is WatchEventSpent && state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
-                        logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
-                        val nextState = Closing(
-                            staticParams,
-                            currentTip,
-                            currentOnChainFeerates,
-                            state.commitments,
-                            null,
-                            currentTimestampMillis(),
-                            state.closingTxProposed.flatten().map { it.unsignedTx },
-                            listOf(watch.tx)
-                        )
-                        val actions = listOf(
-                            ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(watch.tx),
-                            ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
-                        )
-                        Pair(nextState, actions)
-                    }
-                    watch is WatchEventSpent && watch.tx.txid == state.commitments.remoteCommit.txid -> {
-                        state.handleRemoteSpentCurrent(watch.tx)
-                    }
-                    watch is WatchEventSpent && watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> {
-                        state.handleRemoteSpentNext(watch.tx)
-                    }
-                    watch is WatchEventSpent && state is WaitForRemotePublishFutureCommitment -> {
-                        state.handleRemoteSpentFuture(watch.tx)
-                    }
-                    watch is WatchEventSpent -> {
-                        state.handleRemoteSpentOther(watch.tx)
+                    watch is WatchEventSpent -> when {
+                        state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
+                            logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
+                            val nextState = Closing(
+                                staticParams,
+                                currentTip,
+                                currentOnChainFeerates,
+                                state.commitments,
+                                null,
+                                currentTimestampMillis(),
+                                state.closingTxProposed.flatten().map { it.unsignedTx },
+                                listOf(watch.tx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(watch.tx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
+                            )
+                            Pair(nextState, actions)
+                        }
+                        watch.tx.txid == state.commitments.remoteCommit.txid -> state.handleRemoteSpentCurrent(watch.tx)
+                        watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.handleRemoteSpentNext(watch.tx)
+                        state is WaitForRemotePublishFutureCommitment -> state.handleRemoteSpentFuture(watch.tx)
+                        else -> state.handleRemoteSpentOther(watch.tx)
                     }
                     watch is WatchEventConfirmed && (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) -> {
                         // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
@@ -1591,7 +1585,7 @@ data class WaitForFundingConfirmed(
                     }
                     is WatchEventSpent -> when (event.watch.tx.txid) {
                         commitments.remoteCommit.txid -> handleRemoteSpentCurrent(event.watch.tx)
-                        else -> TODO("handle information leak")
+                        else -> handleRemoteSpentOther(event.watch.tx)
                     }
                     else -> unhandled(event)
                 }
@@ -1953,9 +1947,9 @@ data class Normal(
                 Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             }
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
-                is WatchEventSpent -> when {
-                    watch.tx.txid == commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
-                    commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid == watch.tx.txid -> handleRemoteSpentNext(watch.tx)
+                is WatchEventSpent -> when (watch.tx.txid) {
+                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
+                    commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> handleRemoteSpentNext(watch.tx)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(event)
@@ -2165,9 +2159,9 @@ data class ShuttingDown(
                 else -> unhandled(event)
             }
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
-                is WatchEventSpent -> when {
-                    watch.tx.txid == commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
-                    commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid == watch.tx.txid -> handleRemoteSpentNext(watch.tx)
+                is WatchEventSpent -> when (watch.tx.txid) {
+                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
+                    commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> handleRemoteSpentNext(watch.tx)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(event)
@@ -2323,7 +2317,7 @@ data class Negotiating(
                         Pair(nextState, actions)
                     }
                     watch.tx.txid == commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
-                    commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid == watch.tx.txid -> handleRemoteSpentNext(watch.tx)
+                    watch.tx.txid == commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> handleRemoteSpentNext(watch.tx)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(event)
@@ -2777,15 +2771,15 @@ data class ErrorInformationLeak(
     override val commitments: Commitments
 ) : ChannelStateWithCommitments() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        TODO("implement this")
+        return Pair(this, listOf())
     }
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
-        TODO("Not yet implemented")
+        return this.copy(commitments = input)
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        TODO("Not yet implemented")
+        return Pair(this, listOf())
     }
 }
 
