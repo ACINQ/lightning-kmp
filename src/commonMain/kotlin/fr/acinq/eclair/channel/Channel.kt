@@ -1828,13 +1828,23 @@ data class Normal(
                     is RevokeAndAck -> when (val result = commitments.receiveRevocation(event.message)) {
                         is Either.Left -> handleLocalError(event, result.value)
                         is Either.Right -> {
-                            // TODO: handle shutdown
-                            val nextState = this.copy(commitments = result.value.first)
-                            val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
+                            val commitments1 = result.value.first
+                            val actions = mutableListOf<ChannelAction>()
                             actions.addAll(result.value.second)
                             if (result.value.first.localHasChanges() && commitments.remoteNextCommitInfo.left?.reSignAsap == true) {
                                 actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
                             }
+                            val nextState = if (this.remoteShutdown != null && !commitments1.localHasUnsignedOutgoingHtlcs()) {
+                                // we were waiting for our pending htlcs to be signed before replying with our local shutdown
+                                val localShutdown = Shutdown(channelId, commitments.localParams.defaultFinalScriptPubKey)
+                                actions.add(ChannelAction.Message.Send(localShutdown))
+                                // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
+                                require(commitments1.remoteCommit.spec.htlcs.isNotEmpty()) { "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier" }
+                                ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown)
+                            } else {
+                                this.copy(commitments = commitments1)
+                            }
+                            actions.add(0, ChannelAction.Storage.StoreState(nextState))
                             Pair(nextState, actions)
                         }
                     }
