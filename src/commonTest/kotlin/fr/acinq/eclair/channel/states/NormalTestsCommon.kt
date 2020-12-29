@@ -1296,9 +1296,69 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252"))
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_CLOSE (no pending htlcs)`() {
-        TODO("import all CMD_CLOSE / Shutdown tests")
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice1 is Normal)
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertNotNull(alice1.localShutdown)
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with unacked sent htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (alice1, _) = nodes
+        val (alice2, actions1) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice2 is Normal)
+        actions1.hasCommandError<CannotCloseWithUnsignedOutgoingHtlcs>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with invalid final script)`() {
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(ByteVector("00112233445566778899"))))
+        assertTrue(alice1 is Normal)
+        actions1.hasCommandError<InvalidFinalScript>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with signed sent htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (alice1, _) = crossSign(nodes.first, nodes.second)
+        val (alice2, actions1) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertTrue(alice2 is Normal)
+        assertNotNull(alice2.localShutdown)
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (two in a row)`() {
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice1 is Normal)
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertNotNull(alice1.localShutdown)
+        val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice2 is Normal)
+        actions2.hasCommandError<ClosingAlreadyInProgress>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (while waiting for a RevokeAndAck)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (alice1, actions1) = nodes.first.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(alice1 is Normal)
+        actions1.hasOutgoingMessage<CommitSig>()
+        val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice2 is Normal)
+        actions2.hasOutgoingMessage<Shutdown>()
     }
 
     @Test
