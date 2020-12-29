@@ -1,8 +1,11 @@
 package fr.acinq.eclair.io.peer
 
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.eclair.Eclair
+import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.NodeUri
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.InMemoryDatabases
@@ -15,13 +18,11 @@ import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.io.peer.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
-import fr.acinq.eclair.utils.Connection
-import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.toByteVector
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.count
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -47,7 +48,41 @@ class PeerTest : EclairTestSuite() {
     }
 
     @Test
-    fun `init peer (bundled)`() = runSuspendTest { newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)) }
+    fun `init peer (bundled)`() = runSuspendTest {
+        newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams))
+    }
+
+    @Test
+    fun `ignore duplicate temporary channel ids`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, _, alice2bob, _) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+        val open = OpenChannel(
+            Block.RegtestGenesisBlock.hash,
+            randomBytes32(),
+            100_000.sat,
+            0.msat,
+            483.sat,
+            10_000,
+            1_000.sat,
+            1.msat,
+            TestConstants.feeratePerKw,
+            CltvExpiryDelta(144),
+            100,
+            randomKey().publicKey(),
+            randomKey().publicKey(),
+            randomKey().publicKey(),
+            randomKey().publicKey(),
+            randomKey().publicKey(),
+            randomKey().publicKey(),
+            0.toByte()
+        )
+        alice.forward(open)
+        alice2bob.expect<AcceptChannel>()
+        // bob tries to open another channel with the same temporaryChannelId
+        alice.forward(open.copy(firstPerCommitmentPoint = randomKey().publicKey()))
+        assertEquals(1, alice.channels.size)
+    }
 
     @Test
     fun `restore channel`() = runSuspendTest {
@@ -122,7 +157,7 @@ class PeerTest : EclairTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(Eclair.randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
+        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
@@ -168,7 +203,7 @@ class PeerTest : EclairTestSuite() {
         val (alice, bob) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0))
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(Eclair.randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
+        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))

@@ -1071,9 +1071,7 @@ data class WaitForOpenChannel(
             event is ChannelEvent.MessageReceived ->
                 when (event.message) {
                     is OpenChannel -> {
-                        require(Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.StaticRemoteKey)) {
-                            "static_remote_key is not set"
-                        }
+                        require(Features.canUseFeature(localParams.features, Features.invoke(remoteInit.features), Feature.StaticRemoteKey)) { "static_remote_key is not set" }
                         val channelVersion = event.message.channelVersion ?: ChannelVersion.STANDARD
                         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }
                         require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
@@ -1086,7 +1084,6 @@ data class WaitForOpenChannel(
 
                         val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
                         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-                        // TODO: maybe also check uniqueness of temporary channel id
                         val minimumDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
                         val paymentBasepoint = keyManager.paymentPoint(channelKeyPath)
                         val accept = AcceptChannel(
@@ -1302,7 +1299,6 @@ data class WaitForAcceptChannel(
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(initFunder.temporaryChannelId, err.value.message))))
                     }
                 }
-                // TODO: check equality of temporaryChannelId? or should be done upstream
                 val remoteParams = RemoteParams(
                     nodeId = staticParams.remoteNodeId,
                     dustLimit = event.message.dustLimitSatoshis,
