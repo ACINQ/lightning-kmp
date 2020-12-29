@@ -1199,6 +1199,23 @@ class ClosingTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv ChannelReestablish`() {
+        val (alice0, bob0, _) = initMutualClose()
+        val bobCurrentPerCommitmentPoint = bob0.keyManager.commitmentPoint(
+            bob0.keyManager.channelKeyPath(bob0.commitments.localParams, bob0.commitments.channelVersion),
+            bob0.commitments.localCommit.index
+        )
+        val channelReestablish = ChannelReestablish(bob0.channelId, 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)
+        val (alice1, actions1) = alice0.process(ChannelEvent.MessageReceived(channelReestablish))
+        assertTrue(alice1 is Closing)
+        assertNull(alice1.localCommitPublished)
+        assertNull(alice1.remoteCommitPublished)
+        assertTrue(alice1.mutualClosePublished.isNotEmpty())
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), FundingTxSpent(alice0.channelId, alice0.mutualClosePublished.first()).message)
+    }
+
+    @Test
     fun `recv CMD_CLOSE`() {
         val (alice0, _, _) = initMutualClose()
         val cmdClose = CMD_CLOSE(null)

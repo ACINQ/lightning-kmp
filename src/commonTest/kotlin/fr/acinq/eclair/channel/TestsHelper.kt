@@ -1,7 +1,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.eclair.*
+import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair
+import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
@@ -58,24 +61,27 @@ fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnCha
 fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
 
 object TestsHelper {
-    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
-        var alice: ChannelState =
-            WaitForInit(
-                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
-                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
-            )
-        var bob: ChannelState =
-            WaitForInit(
-                StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
-                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
-            )
+    fun init(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = TestConstants.defaultBlockHeight,
+        fundingAmount: Satoshi = TestConstants.fundingAmount,
+        pushMsat: MilliSatoshi = TestConstants.pushMsat
+    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+        var alice: ChannelState = WaitForInit(
+            StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
+            currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+            currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+        )
+        var bob: ChannelState = WaitForInit(
+            StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
+            currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+            currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+        )
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams
         val bobChannelParams = TestConstants.Bob.channelParams
         if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
-            aliceChannelParams = aliceChannelParams.copy(channelReserve = Satoshi(0))
+            aliceChannelParams = aliceChannelParams.copy(channelReserve = 0.sat)
         }
         val aliceInit = Init(ByteVector(aliceChannelParams.features.toByteArray()))
         val bobInit = Init(ByteVector(bobChannelParams.features.toByteArray()))
@@ -83,7 +89,7 @@ object TestsHelper {
             ChannelEvent.InitFunder(
                 ByteVector32.Zeroes,
                 fundingAmount,
-                TestConstants.pushMsat,
+                pushMsat,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -93,16 +99,21 @@ object TestsHelper {
             )
         )
         alice = ra.first
-        assertTrue { alice is WaitForAcceptChannel }
+        assertTrue(alice is WaitForAcceptChannel)
         val rb = bob.process(ChannelEvent.InitFundee(ByteVector32.Zeroes, bobChannelParams, aliceInit))
         bob = rb.first
-        assertTrue { bob is WaitForOpenChannel }
+        assertTrue(bob is WaitForOpenChannel)
         val open = ra.second.findOutgoingMessage<OpenChannel>()
-        return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
+        return Triple(alice, bob, open)
     }
 
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
-        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
+    fun reachNormal(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = TestConstants.defaultBlockHeight,
+        fundingAmount: Satoshi = TestConstants.fundingAmount,
+        pushMsat: MilliSatoshi = TestConstants.pushMsat
+    ): Pair<Normal, Normal> {
+        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount, pushMsat)
         var alice = a as ChannelState
         var bob = b as ChannelState
         var rb = bob.process(ChannelEvent.MessageReceived(open))
@@ -121,7 +132,7 @@ object TestsHelper {
             txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)),
             lockTime = 0
         )
-        ra = alice.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
+        ra = alice.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, 100.sat))
         alice = ra.first
         val created = ra.second.findOutgoingMessage<FundingCreated>()
         rb = bob.process(ChannelEvent.MessageReceived(created))
@@ -130,7 +141,7 @@ object TestsHelper {
         ra = alice.process(ChannelEvent.MessageReceived(signedBob))
         alice = ra.first
         val watchConfirmed = run {
-            val candidates = ra.second.filterIsInstance<ChannelAction.Blockchain.SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>()
+            val candidates = ra.second.findWatches<WatchConfirmed>()
             if (candidates.isEmpty()) throw IllegalArgumentException("cannot find WatchConfirmed")
             candidates.first()
         }
@@ -158,20 +169,21 @@ object TestsHelper {
 
         // Bob is fundee and initiates the closing
         val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(bob2 is Normal)
         val shutdown = actions.findOutgoingMessage<Shutdown>()
 
         // Alice is funder, she will sign the first closing tx
         val (alice2, actions1) = alice1.process(ChannelEvent.MessageReceived(shutdown))
-        assertTrue { alice2 is Negotiating }
+        assertTrue(alice2 is Negotiating)
         val shutdown1 = actions1.findOutgoingMessage<Shutdown>()
         val closingSigned = actions1.findOutgoingMessage<ClosingSigned>()
 
-        val alice3 = (alice2 as Negotiating).updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
-        val bob3 = (bob2 as Normal).updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
+        val alice3 = alice2.updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
+        val bob3 = bob2.updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
 
         val (bob4, _) = bob3.process(ChannelEvent.MessageReceived(shutdown1))
-        assertTrue { bob4 is Negotiating }
-        return Triple(alice3, bob4 as Negotiating, closingSigned)
+        assertTrue(bob4 is Negotiating)
+        return Triple(alice3, bob4, closingSigned)
     }
 
     fun localClose(s: ChannelState): Pair<Closing, LocalCommitPublished> {
@@ -181,7 +193,7 @@ object TestsHelper {
         val commitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         actions1.has<ChannelAction.Storage.StoreState>()
-        assertTrue { s1 is Closing }; s1 as Closing
+        assertTrue(s1 is Closing)
 
         val localCommitPublished = s1.localCommitPublished
         assertNotNull(localCommitPublished)
@@ -223,7 +235,7 @@ object TestsHelper {
         assertEquals(ChannelVersion.STANDARD, s.commitments.channelVersion)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(ChannelEvent.WatchReceived(WatchEventSpent(s.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
-        assertTrue { s1 is Closing }; s1 as Closing
+        assertTrue(s1 is Closing)
 
         val remoteCommitPublished = s1.remoteCommitPublished ?: s1.nextRemoteCommitPublished ?: s1.futureRemoteCommitPublished
         assertNotNull(remoteCommitPublished)

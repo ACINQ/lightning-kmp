@@ -72,7 +72,7 @@ object Helpers {
         }
 
         // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-        if (open.pushMsat.truncateToSatoshi() > open.fundingSatoshis) {
+        if (open.pushMsat > open.fundingSatoshis) {
             return Either.Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi()))
         }
 
@@ -103,7 +103,7 @@ object Helpers {
         // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
         // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
         val (toLocalMsat, toRemoteMsat) = Pair(open.pushMsat, open.fundingSatoshis.toMilliSatoshi() - open.pushMsat)
-        if (toLocalMsat.truncateToSatoshi() < open.channelReserveSatoshis && toRemoteMsat.truncateToSatoshi() < open.channelReserveSatoshis) {
+        if (toLocalMsat < open.channelReserveSatoshis && toRemoteMsat < open.channelReserveSatoshis) {
             return Either.Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
         }
 

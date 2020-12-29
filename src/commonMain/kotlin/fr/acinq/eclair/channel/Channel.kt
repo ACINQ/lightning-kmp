@@ -656,7 +656,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             else -> unhandled(event)
         }
     }
@@ -885,10 +885,15 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     )
                                     Pair(nextState, actions)
                                 } else {
-                                    // they lied! the last per_commitment_secret they claimed to have received from us is invalid
                                     logger.warning { "they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
-                                    //throw InvalidRevokedCommitProof(state.channelId, state.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
-                                    Pair(this, listOf())
+                                    val exc = InvalidRevokedCommitProof(state.channelId, state.commitments.localCommit.index, event.message.nextRemoteRevocationNumber, event.message.yourLastCommitmentSecret)
+                                    val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
+                                    val (nextState, spendActions) = state.spendLocalCurrent()
+                                    val actions = buildList {
+                                        addAll(spendActions)
+                                        add(ChannelAction.Message.Send(error))
+                                    }
+                                    Pair(nextState, actions)
                                 }
                             }
                             !Helpers.checkRemoteCommit(state.commitments, event.message.nextLocalCommitmentNumber) -> {
@@ -1140,7 +1145,7 @@ data class WaitForOpenChannel(
                     }
                     else -> unhandled(event)
                 }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -1264,7 +1269,7 @@ data class WaitForFundingCreated(
                     }
                     else -> unhandled(event)
                 }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -1336,7 +1341,7 @@ data class WaitForAcceptChannel(
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -1427,7 +1432,7 @@ data class WaitForFundingInternal(
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -1515,7 +1520,7 @@ data class WaitForFundingSigned(
                 logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -1594,6 +1599,11 @@ data class WaitForFundingConfirmed(
                     }
                     else -> unhandled(event)
                 }
+            is ChannelEvent.ExecuteCommand -> when (event.command) {
+                is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
+                is CMD_FORCECLOSE -> spendLocalCurrent()
+                else -> unhandled(event)
+            }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -1664,6 +1674,18 @@ data class WaitForFundingLocked(
                     Pair(nextState, actions)
                 }
                 is Error -> handleRemoteError(event.message)
+                else -> unhandled(event)
+            }
+            is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
+                is WatchEventSpent -> when (watch.tx.txid) {
+                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
+                    else -> handleRemoteSpentOther(watch.tx)
+                }
+                else -> unhandled(event)
+            }
+            is ChannelEvent.ExecuteCommand -> when (event.command) {
+                is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
+                is CMD_FORCECLOSE -> spendLocalCurrent()
                 else -> unhandled(event)
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
