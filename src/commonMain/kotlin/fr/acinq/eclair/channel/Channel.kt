@@ -1731,6 +1731,7 @@ data class Normal(
                             Pair(this, listOf())
                         }
                         commitments.remoteNextCommitInfo is Either.Left -> {
+                            logger.debug { "c:$channelId already in the process of signing, will sign again as soon as possible" }
                             val commitments1 = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))
                             Pair(this.copy(commitments = commitments1), listOf())
                         }
@@ -1876,6 +1877,7 @@ data class Normal(
                             commitments.remoteHasUnsignedOutgoingHtlcs() -> handleLocalError(event, CannotCloseWithUnsignedOutgoingHtlcs(channelId))
                             commitments.localHasUnsignedOutgoingHtlcs() -> {
                                 require(localShutdown == null) { "can't have pending unsigned outgoing htlcs after having sent Shutdown" }
+                                // are we in the middle of a signature?
                                 when (commitments.remoteNextCommitInfo) {
                                     is Either.Left -> {
                                         // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
@@ -2836,11 +2838,7 @@ object Channel {
                     val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
                     val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, d.commitments.localCommit.index - 1)
                     val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index + 1)
-                    val revocation = RevokeAndAck(
-                        channelId = commitments1.channelId,
-                        perCommitmentSecret = localPerCommitmentSecret,
-                        nextPerCommitmentPoint = localNextPerCommitmentPoint
-                    )
+                    val revocation = RevokeAndAck(commitments1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
                     sendQueue.add(ChannelAction.Message.Send(revocation))
                 }
                 else -> throw RevocationSyncError(d.channelId)
@@ -2868,12 +2866,6 @@ object Channel {
                 sendQueue.add(ChannelAction.Message.Send(commitments1.remoteNextCommitInfo.left!!.sent))
                 if (revWasSentLast) resendRevocation()
             }
-        }
-
-        @Suppress("ControlFlowWithEmptyBody")
-        if (commitments1.remoteNextCommitInfo.isLeft) {
-            // we expect them to (re-)send the revocation immediately
-            // TODO: set a timer and wait for their revocation
         }
 
         if (commitments1.localHasChanges()) {
