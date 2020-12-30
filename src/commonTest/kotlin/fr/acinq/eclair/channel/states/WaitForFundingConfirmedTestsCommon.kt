@@ -1,9 +1,6 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.updated
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
@@ -15,7 +12,10 @@ import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.FundingSigned
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     @Test
@@ -86,15 +86,14 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Ignore
+    @Test
     fun `recv BITCOIN_FUNDING_SPENT (other commit)`() {
         val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val spendingTx = Transaction(version = 2, txIn = listOf(), txOut = listOf(), lockTime = 0)
+        val spendingTx = Transaction(version = 2, txIn = alice.commitments.localCommit.publishableTxs.commitTx.tx.txIn, txOut = listOf(), lockTime = 0)
         listOf(alice, bob).forEach { state ->
             val (state1, actions1) = state.process(ChannelEvent.WatchReceived(WatchEventSpent(state.channelId, BITCOIN_FUNDING_SPENT, spendingTx)))
             assertTrue(state1 is ErrorInformationLeak)
-            actions1.hasOutgoingMessage<Error>()
-            actions1.hasTx(state.commitments.localCommit.publishableTxs.commitTx.tx)
+            assertTrue(actions1.isEmpty())
         }
     }
 
