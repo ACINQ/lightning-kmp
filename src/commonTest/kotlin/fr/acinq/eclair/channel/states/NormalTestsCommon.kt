@@ -1848,4 +1848,86 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(htlc2.paymentHash, addSettledFailList.last().htlc.paymentHash)
         assertEquals(alice2, alice3.state)
     }
+
+    @Test
+    fun `receive Error`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+        val (nodes1, ra2, _) = addHtlc(100_000_000.msat, payer = nodes0.first, payee = nodes0.second)
+        val (nodes2, _, _) = addHtlc(10_000.msat, payer = nodes1.first, payee = nodes1.second)
+        val (nodes3, rb1, _) = addHtlc(50_000_000.msat, payer = nodes2.second, payee = nodes2.first)
+        val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = nodes3.first, payee = nodes3.second)
+        val (bob1, alice1) = crossSign(nodes4.first, nodes4.second)
+        val (alice2, bob2) = fulfillHtlc(1, ra2, alice1, bob1)
+        val (_, alice3) = fulfillHtlc(0, rb1, bob2, alice2)
+
+        // at this point here is the situation from alice pov and what she should do when she publishes his commit tx:
+        // balances :
+        //    alice's balance : 449 999 990                             => nothing to do
+        //    bob's balance   :  95 000 000                             => nothing to do
+        // htlcs :
+        //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend using 2nd stage htlc-timeout
+        //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend using 2nd stage htlc-timeout
+        //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
+        //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage using htlc-success
+        //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
+
+        // an error occurs and alice publishes her commit tx
+        assertTrue(alice3 is Normal)
+        val aliceCommitTx = alice3.commitments.localCommit.publishableTxs.commitTx
+        val (alice4, actions) = alice3.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        assertTrue(alice4 is Closing)
+        assertNotNull(alice4.localCommitPublished)
+        assertEquals(alice4.localCommitPublished!!.commitTx, aliceCommitTx.tx)
+        assertEquals(1, alice4.localCommitPublished!!.htlcSuccessTxs.size)
+        assertEquals(2, alice4.localCommitPublished!!.htlcTimeoutTxs.size)
+        assertEquals(3, alice4.localCommitPublished!!.claimHtlcDelayedTxs.size)
+
+        val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(8, txs.size)
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+        // so we expect 8 transactions:
+        // - alice's current commit tx
+        // - 1 tx to claim the main delayed output
+        // - 3 txes for each htlc
+        // - 3 txes for each delayed output of the claimed htlc
+
+        assertEquals(aliceCommitTx.tx, txs[0])
+        assertEquals(aliceCommitTx.tx.txOut.size, 8) // 2 anchor outputs + 2 main output + 4 pending htlcs
+        // the main delayed output spends the commitment transaction
+        Transaction.correctlySpends(txs[1], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        // 2nd stage transactions spend the commitment transaction
+        Transaction.correctlySpends(txs[2], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[3], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[4], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        // 3rd stage transactions spend their respective HTLC-Success/HTLC-Timeout transactions
+        Transaction.correctlySpends(txs[5], txs[2], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[6], txs[3], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[7], txs[4], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        assertEquals(
+            actions.findWatches<WatchConfirmed>().map { it.txId },
+            listOf(
+                txs[0].txid, // commit tx
+                txs[1].txid, // main delayed
+                txs[5].txid, // htlc-delayed
+                txs[6].txid, // htlc-delayed
+                txs[7].txid  // htlc-delayed
+            )
+        )
+        assertEquals(3, actions.findWatches<WatchSpent>().size)
+    }
+
+    @Test
+    fun `receive Error (nothing at stake)`() {
+        val (_, bob0) = reachNormal(pushMsat = 0.msat)
+        val bobCommitTx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
+        val (bob1, actions) = bob0.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(txs, listOf(bobCommitTx))
+        assertTrue(bob1 is Closing)
+        assertEquals(bob1.localCommitPublished!!.commitTx, bobCommitTx)
+    }
 }
