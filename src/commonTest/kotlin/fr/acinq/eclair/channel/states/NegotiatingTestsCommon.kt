@@ -1,16 +1,20 @@
 package fr.acinq.eclair.channel.states
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.TxOut
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.ClosingSigned
+import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.wire.Shutdown
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,7 +62,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         assertTrue(bob2 is Closing)
         val closingTxB = actions5.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx
         assertEquals(closingTxA, closingTxB)
-        
+
         // Alice sees Bob's closing tx (which should be the same as the one she published)
         val (alice4, _) = alice3.process(ChannelEvent.WatchReceived(WatchEventSpent(alice3.channelId, BITCOIN_FUNDING_SPENT, closingTxB)))
         assertTrue(alice4 is Closing)
@@ -93,9 +97,56 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         assertTrue { converge(alice, bob, aliceCloseSig) != null }
     }
 
+    @Test
+    fun `recv ClosingSigned (nothing at stake)`() {
+        val (alice, bob, aliceCloseSig) = init(pushMsat = 0.msat)
+        // Bob has nothing at stake
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(aliceCloseSig))
+        assertTrue(bob1 is Closing)
+        val mutualCloseTxBob = actions.findTxs().first()
+        val bobCloseSig = actions.findOutgoingMessage<ClosingSigned>()
+        assertEquals(aliceCloseSig.feeSatoshis, bobCloseSig.feeSatoshis)
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(bobCloseSig))
+        assertTrue(alice1 is Closing)
+        val mutualCloseTxAlice = actions1.findTxs().first()
+        assertEquals(mutualCloseTxAlice, mutualCloseTxBob)
+        assertEquals(actions.findWatches<WatchConfirmed>().map { it.event }, listOf(BITCOIN_TX_CONFIRMED(mutualCloseTxBob)))
+        assertEquals(actions1.findWatches<WatchConfirmed>().map { it.event }, listOf(BITCOIN_TX_CONFIRMED(mutualCloseTxBob)))
+        assertEquals(bob1.mutualClosePublished, listOf(mutualCloseTxBob))
+        assertEquals(alice1.mutualClosePublished, listOf(mutualCloseTxBob))
+    }
+
+    @Test
+    fun `recv ClosingSigned (invalid signature)`() {
+        val (_, bob, aliceCloseSig) = init()
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(aliceCloseSig.copy(feeSatoshis = 99000.sat)))
+        assertTrue(bob1 is Closing)
+        actions.hasOutgoingMessage<Error>()
+        actions.hasWatch<WatchConfirmed>()
+        actions.findTxs().contains(bob.commitments.localCommit.publishableTxs.commitTx.tx)
+        println(actions)
+    }
+
+    @Test
+    fun `recv CMD_CLOSE`() {
+        val (alice, _, _) = init()
+        val (alice1, actions) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertEquals(alice1, alice)
+        assertEquals(actions, listOf(ChannelAction.ProcessCmdRes.NotExecuted(CMD_CLOSE(null), ClosingAlreadyInProgress(alice.channelId))))
+    }
+
+    @Test
+    fun `recv Error`() {
+        val (alice, _, _) = init()
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        assertTrue(alice1 is Closing)
+        assertTrue(actions.findTxs().contains(alice.commitments.localCommit.publishableTxs.commitTx.tx))
+        assertTrue(actions.findWatches<WatchConfirmed>().map { it.event }.contains(BITCOIN_TX_CONFIRMED(alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+    }
+
     companion object {
-        fun init(tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = TestsHelper.reachNormal()
+        fun init(tweakFees: Boolean = false, pushMsat: MilliSatoshi? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
+            val (alice, bob) = pushMsat?.let { TestsHelper.reachNormal(pushMsat = it) } ?: TestsHelper.reachNormal()
             return mutualClose(alice, bob, tweakFees)
         }
 
