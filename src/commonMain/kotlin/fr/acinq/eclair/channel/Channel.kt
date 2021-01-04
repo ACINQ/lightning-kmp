@@ -22,7 +22,8 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.*
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
@@ -2115,7 +2116,7 @@ data class ShuttingDown(
                         }
                     }
                     is Error -> {
-                        TODO("handle remote errors")
+                        handleRemoteError(event.message)
                     }
                     else -> unhandled(event)
                 }
@@ -2167,7 +2168,9 @@ data class ShuttingDown(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        TODO("Not yet implemented")
+        logger.error(t) { "error on event $event in state ${this::class}" }
+        val error = Error(channelId, t.message)
+        return spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
     }
 
     private fun handleCommandResult(command: Command, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
@@ -2209,10 +2212,15 @@ data class Negotiating(
                 logger.info { "c:$channelId received closingFeeSatoshis=${event.message.feeSatoshis}" }
                 val checkSig = Helpers.Closing.checkClosingSignature(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), event.message.feeSatoshis, event.message.signature)
                 val lastLocalClosingFee = closingTxProposed.last().lastOrNull()?.localClosingSigned?.feeSatoshis
-                val nextClosingFee = Helpers.Closing.nextClosingFee(
-                    lastLocalClosingFee ?: Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, currentOnChainFeerates.mutualCloseFeerate),
+                val nextClosingFee = if (commitments.localCommit.spec.toLocal == 0.msat) {
+                    // if we have nothing at stake there is no need to negotiate and we accept their fee right away
                     event.message.feeSatoshis
-                )
+                } else {
+                    Helpers.Closing.nextClosingFee(
+                        lastLocalClosingFee ?: Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, currentOnChainFeerates.mutualCloseFeerate),
+                        event.message.feeSatoshis
+                    )
+                }
                 val result = checkSig.map { signedClosingTx -> // this signed closing tx matches event.message.feeSatoshis
                     when {
                         lastLocalClosingFee == event.message.feeSatoshis || lastLocalClosingFee == nextClosingFee || closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS -> {
@@ -2311,6 +2319,7 @@ data class Negotiating(
             event is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
             else -> unhandled(event)
         }
     }
