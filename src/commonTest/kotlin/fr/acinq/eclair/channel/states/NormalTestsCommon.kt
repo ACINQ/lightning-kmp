@@ -1885,7 +1885,7 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(8, txs.size)
-        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
         // so we expect 8 transactions:
         // - alice's current commit tx
         // - 1 tx to claim the main delayed output
