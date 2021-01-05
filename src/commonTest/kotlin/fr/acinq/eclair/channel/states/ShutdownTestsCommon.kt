@@ -301,13 +301,11 @@ class ShutdownTestsCommon : EclairTestSuite() {
 
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(6, txs.size)
-        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
-        // so we expect 8 transactions:
+        // alice has sent 2 htlcs so we expect 6 transactions:
         // - alice's current commit tx
         // - 1 tx to claim the main delayed output
         // - 2 txes for each htlc
         // - 2 txes for each delayed output of the claimed htlc
-
         assertEquals(aliceCommitTx.tx, txs[0])
         assertEquals(aliceCommitTx.tx.txOut.size, 6) // 2 anchor outputs + 2 main output + 2 pending htlcs
         // the main delayed output spends the commitment transaction

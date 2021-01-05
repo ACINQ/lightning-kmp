@@ -1839,9 +1839,26 @@ data class Normal(
                                 // we were waiting for our pending htlcs to be signed before replying with our local shutdown
                                 val localShutdown = Shutdown(channelId, commitments.localParams.defaultFinalScriptPubKey)
                                 actions.add(ChannelAction.Message.Send(localShutdown))
-                                // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
-                                require(commitments1.remoteCommit.spec.htlcs.isNotEmpty()) { "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier" }
-                                ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown)
+
+                                if (commitments1.remoteCommit.spec.htlcs.isNotEmpty()) {
+                                    // we just signed htlcs that need to be resolved now
+                                    ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown)
+                                } else {
+                                    logger.warning { "c:$channelId we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
+                                    val closingTxProposed = if (isFunder) {
+                                        val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                            keyManager,
+                                            commitments1,
+                                            localShutdown.scriptPubKey.toByteArray(),
+                                            remoteShutdown.scriptPubKey.toByteArray(),
+                                            currentOnChainFeerates.mutualCloseFeerate,
+                                        )
+                                        listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned)))
+                                    } else {
+                                        listOf(listOf())
+                                    }
+                                    Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed, bestUnpublishedClosingTx = null)
+                                }
                             } else {
                                 this.copy(commitments = commitments1)
                             }

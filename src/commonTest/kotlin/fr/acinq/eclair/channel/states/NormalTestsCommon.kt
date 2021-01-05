@@ -1387,7 +1387,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (_, actions4) = bob1.process(ChannelEvent.MessageReceived(commitSig))
         val revack = actions4.findOutgoingMessage<RevokeAndAck>()
 
-        // as soon as alice as received the revocation, she will send her shutdown message
+        // as soon as alice has received the revocation, she will send her shutdown message
         val (alice3, actions5) = alice2.process(ChannelEvent.MessageReceived(revack))
         assertTrue(alice3 is ShuttingDown)
         actions5.hasOutgoingMessage<Shutdown>()

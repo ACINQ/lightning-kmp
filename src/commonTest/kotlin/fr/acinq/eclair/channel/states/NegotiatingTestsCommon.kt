@@ -9,6 +9,7 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
@@ -124,7 +125,6 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         actions.hasOutgoingMessage<Error>()
         actions.hasWatch<WatchConfirmed>()
         actions.findTxs().contains(bob.commitments.localCommit.publishableTxs.commitTx.tx)
-        println(actions)
     }
 
     @Test
@@ -146,7 +146,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
 
     companion object {
         fun init(tweakFees: Boolean = false, pushMsat: MilliSatoshi = TestConstants.pushMsat): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = pushMsat?.let { TestsHelper.reachNormal(pushMsat = it) } ?: TestsHelper.reachNormal()
+            val (alice, bob) = TestsHelper.reachNormal(pushMsat = pushMsat)
             return mutualClose(alice, bob, tweakFees)
         }
 
