@@ -68,7 +68,7 @@ class ShutdownTestsCommon : EclairTestSuite() {
     @Test
     fun `recv UpdateFulfillHtlc (unknown htlc id)`() {
         val (alice, _) = init()
-        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 42, randomBytes32())))
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 42, r1)))
         actions.hasOutgoingMessage<Error>()
         // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
         assertEquals(6, actions.findTxs().size)
