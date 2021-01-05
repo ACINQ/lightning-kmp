@@ -2634,11 +2634,10 @@ data class Closing(
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error processing ${event::class} in state ${this::class}" }
-        return when (localCommitPublished) {
-            null -> spendLocalCurrent()
+        return localCommitPublished?.let {
             // we're already trying to claim our commitment, there's nothing more we can do
-            else -> Pair(this, listOf())
-        }
+            Pair(this, listOf())
+        } ?: spendLocalCurrent()
     }
 
     /**
