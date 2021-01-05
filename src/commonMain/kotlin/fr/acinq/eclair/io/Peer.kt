@@ -277,6 +277,13 @@ class Peer(
         output.send(encoded)
     }
 
+    // The (node_id, fcm_token) tuple only needs to be registered once.
+    // And after that, only if the tuple changes (e.g. different fcm_token).
+    fun registerFcmToken(token: String?) {
+        val msg = FCMToken(token)
+        launch { sendToPeer(msg) }
+    }
+
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
         var actualChannelId: ByteVector32 = channelId
         actions.forEach { action ->
