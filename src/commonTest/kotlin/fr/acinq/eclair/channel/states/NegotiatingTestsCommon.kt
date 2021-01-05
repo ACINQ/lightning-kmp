@@ -145,7 +145,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
     }
 
     companion object {
-        fun init(tweakFees: Boolean = false, pushMsat: MilliSatoshi? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
+        fun init(tweakFees: Boolean = false, pushMsat: MilliSatoshi = TestConstants.pushMsat): Triple<Negotiating, Negotiating, ClosingSigned> {
             val (alice, bob) = pushMsat?.let { TestsHelper.reachNormal(pushMsat = it) } ?: TestsHelper.reachNormal()
             return mutualClose(alice, bob, tweakFees)
         }
