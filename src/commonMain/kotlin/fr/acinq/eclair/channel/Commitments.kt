@@ -461,7 +461,7 @@ data class Commitments(
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         if (!localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
 
-        // remote commitment will includes all local changes + remote acked changes
+        // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
         val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath))
@@ -478,10 +478,9 @@ data class Commitments(
             "c:$channelId built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}"
         }
 
-        // don't sign if they don't get paid
         val commitSig = CommitSig(channelId, sig, htlcSigs.toList())
         val commitments1 = copy(
-            remoteNextCommitInfo = Either.Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, localCommit.index, reSignAsap = true)),
+            remoteNextCommitInfo = Either.Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, localCommit.index)),
             localChanges = localChanges.copy(proposed = emptyList(), signed = localChanges.proposed),
             remoteChanges = remoteChanges.copy(acked = emptyList(), signed = remoteChanges.acked)
         )

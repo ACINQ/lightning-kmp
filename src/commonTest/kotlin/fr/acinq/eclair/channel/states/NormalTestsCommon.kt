@@ -530,7 +530,7 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(actions.isEmpty())
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_SIGN (while waiting for RevokeAndAck, no pending changes)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
@@ -542,15 +542,16 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(alice2 is Normal)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left!!
-        assertFalse(waitForRevocation.reSignAsap) // TODO
+        assertFalse(waitForRevocation.reSignAsap)
 
-        val (alice3, _) = alice2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertTrue(alice3 is Normal)
         assertEquals(Either.Left(waitForRevocation), alice3.commitments.remoteNextCommitInfo)
+        assertNull(actionsAlice3.findOutgoingMessageOpt<CommitSig>())
     }
 
-    @Ignore
-    fun `recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)`() {
+    @Test
+    fun `recv CMD_SIGN (while waiting for RevokeAndAck, with pending changes)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(alice1 is Normal)
@@ -560,14 +561,14 @@ class NormalTestsCommon : EclairTestSuite() {
         actionsAlice2.hasOutgoingMessage<CommitSig>()
         assertTrue(alice2 is Normal)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
-        val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left
-        assertNotNull(waitForRevocation)
-        assertFalse(waitForRevocation.reSignAsap) // TODO
+        val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left!!
+        assertFalse(waitForRevocation.reSignAsap)
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob1).first
-        val (alice4, _) = alice3.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val (alice4, actionsAlice4) = alice3.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertTrue(alice4 is Normal)
         assertEquals(Either.Left(waitForRevocation.copy(reSignAsap = true)), alice4.commitments.remoteNextCommitInfo)
+        assertTrue(actionsAlice4.isEmpty())
     }
 
     @Test
@@ -988,11 +989,6 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(2, actionsAlice2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice2.findWatches<WatchConfirmed>().count())
         actionsAlice2.hasTx(tx)
-    }
-
-    @Ignore
-    fun `recv RevocationTimeout`() {
-        TODO("later")
     }
 
     @Test

@@ -51,15 +51,14 @@ class WaitForFundingLockedTestsCommon : EclairTestSuite() {
         }
     }
 
-    @Ignore
+    @Test
     fun `recv BITCOIN_FUNDING_SPENT (other commit)`() {
         val (alice, _, _) = init()
         val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val unknownTx = Transaction(2, aliceCommitTx.txIn, listOf(), 0)
         val (alice1, actions1) = alice.process(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, unknownTx)))
         assertTrue(alice1 is ErrorInformationLeak)
-        actions1.hasOutgoingMessage<Error>()
-        actions1.hasTx(aliceCommitTx)
+        assertTrue(actions1.isEmpty())
     }
 
     @Test
