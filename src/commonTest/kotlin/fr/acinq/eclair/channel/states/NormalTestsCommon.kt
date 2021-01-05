@@ -1868,7 +1868,7 @@ class NormalTestsCommon : EclairTestSuite() {
         // htlcs :
         //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend using 2nd stage htlc-timeout
         //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend using 2nd stage htlc-timeout
-        //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
+        //    alice -> bob    :          10 000 (dust)                             => won't appear in the commitment tx
         //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage using htlc-success
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
