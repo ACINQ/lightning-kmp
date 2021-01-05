@@ -24,42 +24,42 @@ sealed class FailureMessage {
         val logger = eclairLogger()
 
         private fun readChannelUpdate(stream: ByteArrayInput): ChannelUpdate {
-            val len = LightningSerializer.u16(stream)
-            val tag = LightningSerializer.u16(stream)
-            require(tag == ChannelUpdate.tag.toInt()) { "channel update should be prefixed with its lightning message type" }
-            return ChannelUpdate.read(LightningSerializer.bytes(stream, len - 2))
+            val len = LightningCodecs.u16(stream)
+            val tag = LightningCodecs.u16(stream)
+            require(tag == ChannelUpdate.type.toInt()) { "channel update should be prefixed with its lightning message type" }
+            return ChannelUpdate.read(LightningCodecs.bytes(stream, len - 2))
         }
 
         fun decode(input: ByteArray): FailureMessage {
             val stream = ByteArrayInput(input)
-            return when (val code = LightningSerializer.u16(stream)) {
+            return when (val code = LightningCodecs.u16(stream)) {
                 InvalidRealm.code -> InvalidRealm
                 TemporaryNodeFailure.code -> TemporaryNodeFailure
                 PermanentNodeFailure.code -> PermanentNodeFailure
                 RequiredNodeFeatureMissing.code -> RequiredNodeFeatureMissing
-                InvalidOnionVersion.code -> InvalidOnionVersion(LightningSerializer.bytes(stream, 32).toByteVector32())
-                InvalidOnionHmac.code -> InvalidOnionHmac(LightningSerializer.bytes(stream, 32).toByteVector32())
-                InvalidOnionKey.code -> InvalidOnionKey(LightningSerializer.bytes(stream, 32).toByteVector32())
+                InvalidOnionVersion.code -> InvalidOnionVersion(LightningCodecs.bytes(stream, 32).toByteVector32())
+                InvalidOnionHmac.code -> InvalidOnionHmac(LightningCodecs.bytes(stream, 32).toByteVector32())
+                InvalidOnionKey.code -> InvalidOnionKey(LightningCodecs.bytes(stream, 32).toByteVector32())
                 TemporaryChannelFailure.code -> TemporaryChannelFailure(readChannelUpdate(stream))
                 PermanentChannelFailure.code -> PermanentChannelFailure
                 RequiredChannelFeatureMissing.code -> RequiredChannelFeatureMissing
                 UnknownNextPeer.code -> UnknownNextPeer
-                AmountBelowMinimum.code -> AmountBelowMinimum(MilliSatoshi(LightningSerializer.u64(stream)), readChannelUpdate(stream))
-                FeeInsufficient.code -> FeeInsufficient(MilliSatoshi(LightningSerializer.u64(stream)), readChannelUpdate(stream))
+                AmountBelowMinimum.code -> AmountBelowMinimum(MilliSatoshi(LightningCodecs.u64(stream)), readChannelUpdate(stream))
+                FeeInsufficient.code -> FeeInsufficient(MilliSatoshi(LightningCodecs.u64(stream)), readChannelUpdate(stream))
                 TrampolineFeeInsufficient.code -> TrampolineFeeInsufficient
-                IncorrectCltvExpiry.code -> IncorrectCltvExpiry(CltvExpiry(LightningSerializer.u32(stream).toLong()), readChannelUpdate(stream))
+                IncorrectCltvExpiry.code -> IncorrectCltvExpiry(CltvExpiry(LightningCodecs.u32(stream).toLong()), readChannelUpdate(stream))
                 ExpiryTooSoon.code -> ExpiryTooSoon(readChannelUpdate(stream))
                 TrampolineExpiryTooSoon.code -> TrampolineExpiryTooSoon
                 IncorrectOrUnknownPaymentDetails.code -> {
-                    val amount = if (stream.availableBytes > 0) MilliSatoshi(LightningSerializer.u64(stream)) else MilliSatoshi(0)
-                    val blockHeight = if (stream.availableBytes > 0) LightningSerializer.u32(stream).toLong() else 0L
+                    val amount = if (stream.availableBytes > 0) MilliSatoshi(LightningCodecs.u64(stream)) else MilliSatoshi(0)
+                    val blockHeight = if (stream.availableBytes > 0) LightningCodecs.u32(stream).toLong() else 0L
                     IncorrectOrUnknownPaymentDetails(amount, blockHeight)
                 }
-                FinalIncorrectCltvExpiry.code -> FinalIncorrectCltvExpiry(CltvExpiry(LightningSerializer.u32(stream).toLong()))
-                FinalIncorrectHtlcAmount.code -> FinalIncorrectHtlcAmount(MilliSatoshi(LightningSerializer.u64(stream)))
-                ChannelDisabled.code -> ChannelDisabled(LightningSerializer.byte(stream).toByte(), LightningSerializer.byte(stream).toByte(), readChannelUpdate(stream))
+                FinalIncorrectCltvExpiry.code -> FinalIncorrectCltvExpiry(CltvExpiry(LightningCodecs.u32(stream).toLong()))
+                FinalIncorrectHtlcAmount.code -> FinalIncorrectHtlcAmount(MilliSatoshi(LightningCodecs.u64(stream)))
+                ChannelDisabled.code -> ChannelDisabled(LightningCodecs.byte(stream).toByte(), LightningCodecs.byte(stream).toByte(), readChannelUpdate(stream))
                 ExpiryTooFar.code -> ExpiryTooFar
-                InvalidOnionPayload.code -> InvalidOnionPayload(LightningSerializer.bigSize(stream).toULong(), LightningSerializer.u16(stream))
+                InvalidOnionPayload.code -> InvalidOnionPayload(LightningCodecs.bigSize(stream).toULong(), LightningCodecs.u16(stream))
                 PaymentTimeout.code -> PaymentTimeout
                 else -> {
                     LightningMessage.logger.warning { "cannot decode ${Hex.encode(input)}" }
@@ -69,56 +69,56 @@ sealed class FailureMessage {
         }
 
         private fun writeChannelUpdate(channelUpdate: ChannelUpdate, out: Output) {
-            val bin = ChannelUpdate.write(channelUpdate)
-            LightningSerializer.writeU16(bin.size + 2, out)
-            LightningSerializer.writeU16(ChannelUpdate.tag.toInt(), out)
-            LightningSerializer.writeBytes(bin, out)
+            val bin = channelUpdate.write()
+            LightningCodecs.writeU16(bin.size + 2, out)
+            LightningCodecs.writeU16(ChannelUpdate.type.toInt(), out)
+            LightningCodecs.writeBytes(bin, out)
         }
 
         fun encode(input: FailureMessage, out: Output) {
-            LightningSerializer.writeU16(input.code, out)
+            LightningCodecs.writeU16(input.code, out)
             when (input) {
                 InvalidRealm -> return
                 TemporaryNodeFailure -> return
                 PermanentNodeFailure -> return
                 RequiredNodeFeatureMissing -> return
-                is InvalidOnionVersion -> LightningSerializer.writeBytes(input.onionHash, out)
-                is InvalidOnionHmac -> LightningSerializer.writeBytes(input.onionHash, out)
-                is InvalidOnionKey -> LightningSerializer.writeBytes(input.onionHash, out)
+                is InvalidOnionVersion -> LightningCodecs.writeBytes(input.onionHash, out)
+                is InvalidOnionHmac -> LightningCodecs.writeBytes(input.onionHash, out)
+                is InvalidOnionKey -> LightningCodecs.writeBytes(input.onionHash, out)
                 is TemporaryChannelFailure -> writeChannelUpdate(input.update, out)
                 PermanentChannelFailure -> return
                 RequiredChannelFeatureMissing -> return
                 UnknownNextPeer -> return
                 is AmountBelowMinimum -> {
-                    LightningSerializer.writeU64(input.amount.toLong(), out)
+                    LightningCodecs.writeU64(input.amount.toLong(), out)
                     writeChannelUpdate(input.update, out)
                 }
                 is FeeInsufficient -> {
-                    LightningSerializer.writeU64(input.amount.toLong(), out)
+                    LightningCodecs.writeU64(input.amount.toLong(), out)
                     writeChannelUpdate(input.update, out)
                 }
                 TrampolineFeeInsufficient -> return
                 is IncorrectCltvExpiry -> {
-                    LightningSerializer.writeU32(input.expiry.toLong().toInt(), out)
+                    LightningCodecs.writeU32(input.expiry.toLong().toInt(), out)
                     writeChannelUpdate(input.update, out)
                 }
                 is ExpiryTooSoon -> writeChannelUpdate(input.update, out)
                 TrampolineExpiryTooSoon -> return
                 is IncorrectOrUnknownPaymentDetails -> {
-                    LightningSerializer.writeU64(input.amount.toLong(), out)
-                    LightningSerializer.writeU32(input.height.toInt(), out)
+                    LightningCodecs.writeU64(input.amount.toLong(), out)
+                    LightningCodecs.writeU32(input.height.toInt(), out)
                 }
-                is FinalIncorrectCltvExpiry -> LightningSerializer.writeU32(input.expiry.toLong().toInt(), out)
-                is FinalIncorrectHtlcAmount -> LightningSerializer.writeU64(input.amount.toLong(), out)
+                is FinalIncorrectCltvExpiry -> LightningCodecs.writeU32(input.expiry.toLong().toInt(), out)
+                is FinalIncorrectHtlcAmount -> LightningCodecs.writeU64(input.amount.toLong(), out)
                 is ChannelDisabled -> {
-                    LightningSerializer.writeByte(input.messageFlags.toInt(), out)
-                    LightningSerializer.writeByte(input.channelFlags.toInt(), out)
+                    LightningCodecs.writeByte(input.messageFlags.toInt(), out)
+                    LightningCodecs.writeByte(input.channelFlags.toInt(), out)
                     writeChannelUpdate(input.update, out)
                 }
                 ExpiryTooFar -> return
                 is InvalidOnionPayload -> {
-                    LightningSerializer.writeBigSize(input.tag.toLong(), out)
-                    LightningSerializer.writeU16(input.offset, out)
+                    LightningCodecs.writeBigSize(input.tag.toLong(), out)
+                    LightningCodecs.writeU16(input.offset, out)
                 }
                 PaymentTimeout -> return
                 is UnknownFailureMessage -> return

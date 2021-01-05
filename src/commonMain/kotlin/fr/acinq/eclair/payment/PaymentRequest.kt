@@ -10,7 +10,7 @@ import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.utils.*
-import fr.acinq.eclair.wire.LightningSerializer
+import fr.acinq.eclair.wire.LightningCodecs
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.experimental.and
@@ -135,7 +135,11 @@ data class PaymentRequest(
         const val DEFAULT_EXPIRY_SECONDS = 3600
         val DEFAULT_MIN_FINAL_EXPIRY_DELTA = CltvExpiryDelta(18)
 
-        val prefixes = mapOf(Block.RegtestGenesisBlock.hash to "lnbcrt", Block.TestnetGenesisBlock.hash to "lntb", Block.LivenetGenesisBlock.hash to "lnbc")
+        private val prefixes = mapOf(
+            Block.RegtestGenesisBlock.hash to "lnbcrt",
+            Block.TestnetGenesisBlock.hash to "lntb",
+            Block.LivenetGenesisBlock.hash to "lnbc"
+        )
 
         // only some features are valid in invoices
         // see 'Context' column in https://github.com/lightningnetwork/lightning-rfc/blob/master/09-features.md
@@ -478,11 +482,11 @@ data class PaymentRequest(
             override fun encode(): List<Int5> {
                 val out = ByteArrayOutput()
                 hints.forEach {
-                    LightningSerializer.writeBytes(it.nodeId.value, out)
-                    LightningSerializer.writeU64(it.shortChannelId.toLong(), out)
-                    LightningSerializer.writeU32(it.feeBase.toLong().toInt(), out)
-                    LightningSerializer.writeU32(it.feeProportionalMillionths.toInt(), out)
-                    LightningSerializer.writeU16(it.cltvExpiryDelta.toInt(), out)
+                    LightningCodecs.writeBytes(it.nodeId.value, out)
+                    LightningCodecs.writeU64(it.shortChannelId.toLong(), out)
+                    LightningCodecs.writeU32(it.feeBase.toLong().toInt(), out)
+                    LightningCodecs.writeU32(it.feeProportionalMillionths.toInt(), out)
+                    LightningCodecs.writeU16(it.cltvExpiryDelta.toInt(), out)
                 }
                 return Bech32.eight2five(out.toByteArray()).toList()
             }
@@ -495,11 +499,11 @@ data class PaymentRequest(
                     val hints = ArrayList<ExtraHop>()
                     while (stream.availableBytes >= 51) {
                         val hint = ExtraHop(
-                            PublicKey(LightningSerializer.bytes(stream, 33)),
-                            ShortChannelId(LightningSerializer.u64(stream)),
-                            MilliSatoshi(LightningSerializer.u32(stream).toLong()),
-                            LightningSerializer.u32(stream).toLong(),
-                            CltvExpiryDelta(LightningSerializer.u16(stream))
+                            PublicKey(LightningCodecs.bytes(stream, 33)),
+                            ShortChannelId(LightningCodecs.u64(stream)),
+                            MilliSatoshi(LightningCodecs.u32(stream).toLong()),
+                            LightningCodecs.u32(stream).toLong(),
+                            CltvExpiryDelta(LightningCodecs.u16(stream))
                         )
                         hints.add(hint)
                     }

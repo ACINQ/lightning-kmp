@@ -49,7 +49,7 @@ class OnionTestsCommon : EclairTestSuite() {
             val expected = it.key
             val decoded = RelayLegacyPayload.read(it.value)
             assertEquals(expected, decoded)
-            val encoded = RelayLegacyPayload.write(decoded)
+            val encoded = decoded.write()
             assertArrayEquals(it.value, encoded)
         }
     }
@@ -67,7 +67,7 @@ class OnionTestsCommon : EclairTestSuite() {
             val decoded = FinalPayload.read(it.value)
             assertEquals(expected, decoded)
             assertEquals(decoded.totalAmount, decoded.amount)
-            val encoded = FinalPayload.write(decoded)
+            val encoded = decoded.write()
             assertArrayEquals(it.value, encoded)
         }
     }
@@ -88,7 +88,7 @@ class OnionTestsCommon : EclairTestSuite() {
         assertNull(decoded.invoiceFeatures)
         assertNull(decoded.invoiceRoutingInfo)
 
-        val encoded = NodeRelayPayload.write(expected)
+        val encoded = expected.write()
         assertArrayEquals(bin, encoded)
     }
 
@@ -128,7 +128,7 @@ class OnionTestsCommon : EclairTestSuite() {
         assertEquals(decoded.invoiceFeatures, features)
         assertEquals(decoded.invoiceRoutingInfo, routingHints)
 
-        val encoded = NodeRelayPayload.write(expected)
+        val encoded = expected.write()
         assertArrayEquals(bin, encoded)
     }
 
@@ -194,7 +194,7 @@ class OnionTestsCommon : EclairTestSuite() {
             assertEquals(decoded.amount, 561.msat)
             assertEquals(decoded.expiry, CltvExpiry(42))
 
-            val encoded = FinalPayload.write(FinalTlvPayload(expected))
+            val encoded = FinalTlvPayload(expected).write()
             assertArrayEquals(it.value, encoded)
         }
     }
@@ -204,7 +204,7 @@ class OnionTestsCommon : EclairTestSuite() {
         val tlvs = TlvStream<OnionTlv>(listOf(OnionTlv.AmountToForward(561.msat), OnionTlv.OutgoingCltv(CltvExpiry(42))), listOf(GenericTlv(5432123457L, ByteVector("16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828"))))
         val bin = Hex.decode("31 02020231 04012a ff0000000143c7a0412016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")
 
-        val encoded = FinalPayload.write(FinalTlvPayload(tlvs))
+        val encoded = FinalTlvPayload(tlvs).write()
         assertArrayEquals(bin, encoded)
         assertEquals(FinalTlvPayload(tlvs), FinalPayload.read(bin))
     }

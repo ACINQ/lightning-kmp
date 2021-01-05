@@ -13,75 +13,61 @@ import kotlinx.serialization.Serializable
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
     @Serializable
-    data class UpfrontShutdownScript(@Serializable(with = ByteVectorKSerializer::class) val scriptPubkey: ByteVector) : ChannelTlv(), LightningSerializable<UpfrontShutdownScript> {
-        override fun serializer(): LightningSerializer<UpfrontShutdownScript> = UpfrontShutdownScript
-
+    data class UpfrontShutdownScript(@Serializable(with = ByteVectorKSerializer::class) val scriptPubkey: ByteVector) : ChannelTlv() {
         val isEmpty: Boolean get() = scriptPubkey.isEmpty()
-        override val tag: Long
-            get() = serializer().tag
 
-        companion object : LightningSerializer<UpfrontShutdownScript>() {
-            override val tag: Long
-                get() = 0L
+        override val tag: Long get() = UpfrontShutdownScript.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(scriptPubkey, out)
+        }
+
+        companion object : TlvValueReader<UpfrontShutdownScript> {
+            const val tag: Long = 0
 
             override fun read(input: Input): UpfrontShutdownScript {
                 val len = input.availableBytes
-                val script = bytes(input, len)
+                val script = LightningCodecs.bytes(input, len)
                 return UpfrontShutdownScript(ByteVector(script))
-            }
-
-            override fun write(message: UpfrontShutdownScript, out: Output) {
-                writeBytes(message.scriptPubkey, out)
             }
         }
     }
 
     @Serializable
-    data class ChannelVersionTlvLegacy(val channelVersion: ChannelVersion) : ChannelTlv(), LightningSerializable<ChannelVersionTlvLegacy> {
-        override fun serializer(): LightningSerializer<ChannelVersionTlvLegacy> = ChannelVersionTlvLegacy
-        override val tag: Long
-            get() = serializer().tag
+    data class ChannelVersionTlvLegacy(val channelVersion: ChannelVersion) : ChannelTlv() {
+        override val tag: Long get() = ChannelVersionTlvLegacy.tag
 
-        companion object : LightningSerializer<ChannelVersionTlvLegacy>() {
-            override val tag: Long
-                get() = 0x47000000L
+        override fun write(out: Output) {
+            LightningCodecs.writeBigSize(4L, out)
+            LightningCodecs.writeBytes(channelVersion.bits.bytes, out)
+        }
 
-            // ChannelVersion is not a real TLV, it's missing a L field
-            override val willHandleLength = true
+        companion object : TlvLengthAndValueReader<ChannelVersionTlvLegacy> {
+            const val tag: Long = 0x47000000
 
             override fun read(input: Input): ChannelVersionTlvLegacy {
                 val len = 4 // len is missing, value is always 4 bytes
-                val buffer = bytes(input, len)
+                val buffer = LightningCodecs.bytes(input, len)
                 return ChannelVersionTlvLegacy(ChannelVersion(BitField.from(buffer)))
-            }
-
-            override fun write(message: ChannelVersionTlvLegacy, out: Output) {
-                writeBigSize(4L, out)
-                writeBytes(message.channelVersion.bits.bytes, out)
             }
         }
     }
 
     @Serializable
-    data class ChannelVersionTlv(val channelVersion: ChannelVersion) : ChannelTlv(), LightningSerializable<ChannelVersionTlv> {
-        override fun serializer(): LightningSerializer<ChannelVersionTlv> = ChannelVersionTlv
-        override val tag: Long
-            get() = serializer().tag
+    data class ChannelVersionTlv(val channelVersion: ChannelVersion) : ChannelTlv() {
+        override val tag: Long get() = ChannelVersionTlv.tag
 
-        companion object : LightningSerializer<ChannelVersionTlv>() {
-            override val tag: Long
-                get() = 0x47000001L
+        override fun write(out: Output) {
+            out.write(channelVersion.bits.bytes)
+        }
 
-            override val willHandleLength = false
+        companion object : TlvValueReader<ChannelVersionTlv> {
+            const val tag: Long = 0x47000001
 
             override fun read(input: Input): ChannelVersionTlv {
                 val len = input.availableBytes
-                val buffer = bytes(input, len)
+                val buffer = LightningCodecs.bytes(input, len)
                 return ChannelVersionTlv(ChannelVersion(BitField.from(buffer)))
-            }
-
-            override fun write(message: ChannelVersionTlv, out: Output) {
-                out.write(message.channelVersion.bits.bytes)
             }
         }
     }
