@@ -71,7 +71,7 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 42, randomBytes32())))
         actions.hasOutgoingMessage<Error>()
         // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
-        assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size)
+        assertEquals(6, actions.findTxs().size)
         assertTrue(alice1 is Closing)
     }
 
