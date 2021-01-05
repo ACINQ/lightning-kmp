@@ -1,12 +1,12 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
+import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventSpent
+import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
@@ -39,12 +39,50 @@ class ShutdownTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv CMD_FULFILL_HTLC (unknown htlc id)`() {
+        val (_, bob) = init()
+        val cmd = CMD_FULFILL_HTLC(42, randomBytes32())
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(cmd))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, UnknownHtlcId(bob.channelId, 42))))
+        assertEquals(bob1, bob)
+    }
+
+    @Test
+    fun `recv CMD_FULFILL_HTLC (invalid preimage)`() {
+        val (_, bob) = init()
+        val cmd = CMD_FULFILL_HTLC(0, randomBytes32())
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(cmd))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, InvalidHtlcPreimage(bob.channelId, 0))))
+        assertEquals(bob1, bob)
+    }
+
+    @Test
     fun `recv UpdateFulfillHtlc`() {
         val (alice, bob) = init()
         val (_, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         val fulfill = actions1.findOutgoingMessage<UpdateFulfillHtlc>()
         val (alice1, _) = alice.process(ChannelEvent.MessageReceived(fulfill))
         assertTrue { alice1 is ShuttingDown && alice1.commitments.remoteChanges.proposed.contains(fulfill) }
+    }
+
+    @Test
+    fun `recv UpdateFulfillHtlc (unknown htlc id)`() {
+        val (alice, _) = init()
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 42, r1)))
+        actions.hasOutgoingMessage<Error>()
+        // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
+        assertEquals(6, actions.findTxs().size)
+        assertTrue(alice1 is Closing)
+    }
+
+    @Test
+    fun `recv UpdateFulfillHtlc (invalid preimage)`() {
+        val (alice, _) = init()
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 0, randomBytes32())))
+        actions.hasOutgoingMessage<Error>()
+        // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
+        assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size)
+        assertTrue(alice1 is Closing)
     }
 
     @Test
@@ -106,6 +144,20 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val fail = actions1.findOutgoingMessage<UpdateFailMalformedHtlc>()
         val (alice1, _) = alice.process(ChannelEvent.MessageReceived(fail))
         assertTrue { alice1 is ShuttingDown && alice1.commitments.remoteChanges.proposed.contains(fail) }
+    }
+
+    @Test
+    fun `recv UpdateFailMalformedHtlc (invalid failure_code)`() {
+        val (alice, _) = init()
+        val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, ByteVector.empty.sha256(), 42)
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(fail))
+        assertTrue(alice1 is Closing)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertTrue(actions.contains(ChannelAction.Blockchain.PublishTx(alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+        assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
+        assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
+        val error = actions.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), InvalidFailureCode(alice.channelId).message)
     }
 
     @Test
@@ -228,6 +280,55 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val (alice, _) = init()
         val (alice1, _) = alice.process(ChannelEvent.Disconnected)
         assertTrue { alice1 is Offline }
+    }
+
+    @Test
+    fun `recv CMD_CLOSE`() {
+        val (alice, _) = init()
+        val (alice1, actions) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertEquals(alice1, alice)
+        assertEquals(actions, listOf(ChannelAction.ProcessCmdRes.NotExecuted(CMD_CLOSE(null), ClosingAlreadyInProgress(alice.channelId))))
+    }
+
+    @Test
+    fun `recv Error`() {
+        val (alice, _) = init()
+        val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        assertTrue(alice1 is Closing)
+        assertNotNull(alice1.localCommitPublished)
+        assertEquals(alice1.localCommitPublished!!.commitTx, aliceCommitTx.tx)
+
+        val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(6, txs.size)
+        // alice has sent 2 htlcs so we expect 6 transactions:
+        // - alice's current commit tx
+        // - 1 tx to claim the main delayed output
+        // - 2 txes for each htlc
+        // - 2 txes for each delayed output of the claimed htlc
+        assertEquals(aliceCommitTx.tx, txs[0])
+        assertEquals(aliceCommitTx.tx.txOut.size, 6) // 2 anchor outputs + 2 main output + 2 pending htlcs
+        // the main delayed output spends the commitment transaction
+        Transaction.correctlySpends(txs[1], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        // 2nd stage transactions spend the commitment transaction
+        Transaction.correctlySpends(txs[2], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[3], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        // 3rd stage transactions spend their respective HTLC-Success/HTLC-Timeout transactions
+        Transaction.correctlySpends(txs[4], txs[2], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[5], txs[3], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        assertEquals(
+            actions.findWatches<WatchConfirmed>().map { it.txId },
+            listOf(
+                txs[0].txid, // commit tx
+                txs[1].txid, // main delayed
+                txs[4].txid, // htlc-delayed
+                txs[5].txid, // htlc-delayed
+            )
+        )
+        assertEquals(2, actions.findWatches<WatchSpent>().size)
     }
 
     companion object {

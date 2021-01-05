@@ -1296,9 +1296,206 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252"))
     }
 
-    @Ignore
+    @Test
     fun `recv CMD_CLOSE (no pending htlcs)`() {
-        TODO("import all CMD_CLOSE / Shutdown tests")
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice1 is Normal)
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertNotNull(alice1.localShutdown)
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with unacked sent htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (alice1, _) = nodes
+        val (alice2, actions1) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice2 is Normal)
+        actions1.hasCommandError<CannotCloseWithUnsignedOutgoingHtlcs>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with invalid final script)`() {
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(ByteVector("00112233445566778899"))))
+        assertTrue(alice1 is Normal)
+        actions1.hasCommandError<InvalidFinalScript>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with signed sent htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (alice1, _) = crossSign(nodes.first, nodes.second)
+        val (alice2, actions1) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertTrue(alice2 is Normal)
+        assertNotNull(alice2.localShutdown)
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (two in a row)`() {
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice1 is Normal)
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertNotNull(alice1.localShutdown)
+        val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice2 is Normal)
+        actions2.hasCommandError<ClosingAlreadyInProgress>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (while waiting for a RevokeAndAck)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (alice1, actions1) = nodes.first.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(alice1 is Normal)
+        actions1.hasOutgoingMessage<CommitSig>()
+        val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice2 is Normal)
+        actions2.hasOutgoingMessage<Shutdown>()
+    }
+
+    @Test
+    fun `recv Shutdown (no pending htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(Shutdown(alice.channelId, bob.commitments.localParams.defaultFinalScriptPubKey)))
+        assertTrue(alice1 is Negotiating)
+        actions1.hasOutgoingMessage<Shutdown>()
+        actions1.hasOutgoingMessage<ClosingSigned>()
+    }
+
+    @Test
+    fun `recv Shutdown (with unacked sent htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
+        val (bob1, actions1) = nodes.second.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+
+        val shutdown = actions1.findOutgoingMessage<Shutdown>()
+        val (alice1, actions2) = nodes.first.process(ChannelEvent.MessageReceived(shutdown))
+        // Alice sends a new sig
+        assertEquals(actions2, listOf(ChannelAction.Message.SendToSelf(CMD_SIGN)))
+        val (alice2, actions3) = alice1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val commitSig = actions3.findOutgoingMessage<CommitSig>()
+
+        // Bob replies with a revocation
+        val (_, actions4) = bob1.process(ChannelEvent.MessageReceived(commitSig))
+        val revack = actions4.findOutgoingMessage<RevokeAndAck>()
+
+        // as soon as alice has received the revocation, she will send her shutdown message
+        val (alice3, actions5) = alice2.process(ChannelEvent.MessageReceived(revack))
+        assertTrue(alice3 is ShuttingDown)
+        actions5.hasOutgoingMessage<Shutdown>()
+    }
+
+    @Test
+    fun `recv Shutdown (with unacked received htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
+        val (bob1, actions1) = nodes.second.process(ChannelEvent.MessageReceived(Shutdown(alice.channelId, alice.commitments.localParams.defaultFinalScriptPubKey)))
+        assertTrue(bob1 is Closing)
+        actions1.hasOutgoingMessage<Error>()
+        assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        actions1.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv Shutdown (with invalid script)`() {
+        val (_, bob) = reachNormal()
+        val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(Shutdown(bob.channelId, ByteVector("00112233445566778899"))))
+        assertTrue(bob1 is Closing)
+        actions1.hasOutgoingMessage<Error>()
+        assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        actions1.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+        val (bob2, actions1) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        actions1.hasOutgoingMessage<Shutdown>()
+
+        // actual test begins
+        val (bob3, actions2) = bob2.process(ChannelEvent.MessageReceived(Shutdown(bob.channelId, ByteVector("00112233445566778899"))))
+        assertTrue(bob3 is Closing)
+        actions2.hasOutgoingMessage<Error>()
+        assertEquals(2, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        actions2.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv Shutdown (with signed htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
+        val (_, bob1) = crossSign(nodes.first, nodes.second)
+
+        // actual test begins
+        val (bob2, actions1) = bob1.process(ChannelEvent.MessageReceived(Shutdown(bob.channelId, alice.commitments.localParams.defaultFinalScriptPubKey)))
+        assertTrue(bob2 is ShuttingDown)
+        actions1.hasOutgoingMessage<Shutdown>()
+    }
+
+    @Test
+    fun `recv Shutdown (while waiting for a RevokeAndAck)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
+        val (alice1, actions1) = nodes.first.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        actions1.hasOutgoingMessage<CommitSig>()
+        val (_, actions2) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        val shutdown = actions2.findOutgoingMessage<Shutdown>()
+
+        // actual test begins
+        val (alice2, actions3) = alice1.process(ChannelEvent.MessageReceived(shutdown))
+        assertTrue(alice2 is ShuttingDown)
+        actions3.hasOutgoingMessage<Shutdown>()
+    }
+
+    @Test
+    fun `recv Shutdown (while waiting for a RevokeAndAck with pending outgoing htlc)`() {
+        val (alice, bob) = reachNormal()
+        // let's make bob send a Shutdown message
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        val shutdown = actions1.findOutgoingMessage<Shutdown>()
+
+        // this is just so we have something to sign
+        val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob1)
+        val (alice1, actions2) = nodes.first.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
+        val (bob2, actions3) = nodes.second.process(ChannelEvent.MessageReceived(commitSig))
+        val revack = actions3.findOutgoingMessage<RevokeAndAck>()
+
+        // adding an outgoing pending htlc
+        val (nodes1, _, _) = addHtlc(50000000.msat, payer = alice1, payee = bob2)
+
+        // actual test begins
+        // alice eventually gets bob's shutdown
+        val (alice3, actions4) = nodes1.first.process(ChannelEvent.MessageReceived(shutdown))
+        // alice can't do anything for now other than waiting for bob to send the revocation
+        assertTrue(actions4.isEmpty())
+        // bob sends the revocation
+        val (alice4, actions5) = alice3.process(ChannelEvent.MessageReceived(revack))
+        assertTrue(actions5.contains(ChannelAction.Message.SendToSelf(CMD_SIGN)))
+        // bob will also sign back
+        val (bob3, actions6) = nodes1.second.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val (alice5, actions7) = alice4.process(ChannelEvent.MessageReceived(actions6.findOutgoingMessage<CommitSig>()))
+
+        // then alice can sign the 2nd htlc
+        assertTrue(actions7.contains(ChannelAction.Message.SendToSelf(CMD_SIGN)))
+        val (alice6, actions8) = alice5.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(alice6 is Normal)
+        val (_, actions9) = bob3.process(ChannelEvent.MessageReceived(actions8.findOutgoingMessage<CommitSig>()))
+        // bob replies with the 2nd revocation
+        val (alice7, actions11) = alice6.process(ChannelEvent.MessageReceived(actions9.findOutgoingMessage<RevokeAndAck>()))
+        // then alice sends her shutdown
+        assertTrue(alice7 is ShuttingDown)
+        actions11.hasOutgoingMessage<Shutdown>()
     }
 
     @Test
@@ -1650,5 +1847,87 @@ class NormalTestsCommon : EclairTestSuite() {
         assertEquals(htlc1.paymentHash, addSettledFailList.first().htlc.paymentHash)
         assertEquals(htlc2.paymentHash, addSettledFailList.last().htlc.paymentHash)
         assertEquals(alice2, alice3.state)
+    }
+
+    @Test
+    fun `receive Error`() {
+        val (alice0, bob0) = reachNormal()
+        val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+        val (nodes1, ra2, _) = addHtlc(100_000_000.msat, payer = nodes0.first, payee = nodes0.second)
+        val (nodes2, _, _) = addHtlc(10_000.msat, payer = nodes1.first, payee = nodes1.second)
+        val (nodes3, rb1, _) = addHtlc(50_000_000.msat, payer = nodes2.second, payee = nodes2.first)
+        val (nodes4, _, _) = addHtlc(55_000_000.msat, payer = nodes3.first, payee = nodes3.second)
+        val (bob1, alice1) = crossSign(nodes4.first, nodes4.second)
+        val (alice2, bob2) = fulfillHtlc(1, ra2, alice1, bob1)
+        val (_, alice3) = fulfillHtlc(0, rb1, bob2, alice2)
+
+        // at this point here is the situation from alice pov and what she should do when she publishes his commit tx:
+        // balances :
+        //    alice's balance : 449 999 990                             => nothing to do
+        //    bob's balance   :  95 000 000                             => nothing to do
+        // htlcs :
+        //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend using 2nd stage htlc-timeout
+        //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend using 2nd stage htlc-timeout
+        //    alice -> bob    :          10 000 (dust)                             => won't appear in the commitment tx
+        //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage using htlc-success
+        //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
+
+        // an error occurs and alice publishes her commit tx
+        assertTrue(alice3 is Normal)
+        val aliceCommitTx = alice3.commitments.localCommit.publishableTxs.commitTx
+        val (alice4, actions) = alice3.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        assertTrue(alice4 is Closing)
+        assertNotNull(alice4.localCommitPublished)
+        assertEquals(alice4.localCommitPublished!!.commitTx, aliceCommitTx.tx)
+        assertEquals(1, alice4.localCommitPublished!!.htlcSuccessTxs.size)
+        assertEquals(2, alice4.localCommitPublished!!.htlcTimeoutTxs.size)
+        assertEquals(3, alice4.localCommitPublished!!.claimHtlcDelayedTxs.size)
+
+        val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(8, txs.size)
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+        // so we expect 8 transactions:
+        // - alice's current commit tx
+        // - 1 tx to claim the main delayed output
+        // - 3 txes for each htlc
+        // - 3 txes for each delayed output of the claimed htlc
+
+        assertEquals(aliceCommitTx.tx, txs[0])
+        assertEquals(aliceCommitTx.tx.txOut.size, 8) // 2 anchor outputs + 2 main output + 4 pending htlcs
+        // the main delayed output spends the commitment transaction
+        Transaction.correctlySpends(txs[1], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        // 2nd stage transactions spend the commitment transaction
+        Transaction.correctlySpends(txs[2], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[3], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[4], aliceCommitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        // 3rd stage transactions spend their respective HTLC-Success/HTLC-Timeout transactions
+        Transaction.correctlySpends(txs[5], txs[2], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[6], txs[3], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(txs[7], txs[4], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        assertEquals(
+            actions.findWatches<WatchConfirmed>().map { it.txId },
+            listOf(
+                txs[0].txid, // commit tx
+                txs[1].txid, // main delayed
+                txs[5].txid, // htlc-delayed
+                txs[6].txid, // htlc-delayed
+                txs[7].txid  // htlc-delayed
+            )
+        )
+        assertEquals(3, actions.findWatches<WatchSpent>().size)
+    }
+
+    @Test
+    fun `receive Error (nothing at stake)`() {
+        val (_, bob0) = reachNormal(pushMsat = 0.msat)
+        val bobCommitTx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
+        val (bob1, actions) = bob0.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        assertEquals(txs, listOf(bobCommitTx))
+        assertTrue(bob1 is Closing)
+        assertEquals(bob1.localCommitPublished!!.commitTx, bobCommitTx)
     }
 }
