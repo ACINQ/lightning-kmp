@@ -162,7 +162,7 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
         }
         AskForStatus, AskForHeader -> returnState() // TODO something else ?
         else -> {
-            logger.warning { "The state $this cannot process the event $event" }
+            logger.warning { "cannot process event ${event::class} in state ${this::class}" }
             returnState()
         }
     }
@@ -198,7 +198,7 @@ class ElectrumClient(
 
     private var state: ClientState = ClientClosed
         set(value) {
-            if (value != field) logger.info {
+            if (value != field) logger.debug {
                 """Updated State: 
                 |prev: $field
                 |new:  $value""".trimMargin()
@@ -209,7 +209,7 @@ class ElectrumClient(
     var runJob: Job? = null
 
     init {
-        logger.info { "Init Electrum Client" }
+        logger.info { "initializing electrum client" }
         runJob = launch { run() }
     }
 
@@ -236,7 +236,7 @@ class ElectrumClient(
 
     fun connect(serverAddress: ServerAddress) {
         if (state == ClientClosed) launch { eventChannel.send(Start(serverAddress)) }
-        else logger.warning { "ElectrumClient is already running $this" }
+        else logger.warning { "electrum client is already running" }
     }
 
     fun disconnect() {
@@ -247,9 +247,9 @@ class ElectrumClient(
     private fun establishConnection(serverAddress: ServerAddress) = launch {
         try {
             val (host, port, tls) = serverAddress
-            logger.info { "Attempt connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
+            logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socket = socketBuilder.connect(host, port, tls)
-            logger.info { "Connected to electrumx instance" }
+            logger.info { "connected to electrumx instance" }
             eventChannel.send(Connected)
             socket.linesFlow().collect {
                 val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
@@ -283,7 +283,7 @@ class ElectrumClient(
                 is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
-                else -> logger.warning{ "sendMessage does not support message: $message" }
+                else -> logger.warning{ "sendMessage does not support message: ${message::class}" }
             }
         }
     }
@@ -297,7 +297,7 @@ class ElectrumClient(
     }
 
     fun stop() {
-        logger.info { "Stop Electrum Client" }
+        logger.info { "electrum client stopping" }
         closeConnection()
         // Cancel event consumer
         runJob?.cancel()

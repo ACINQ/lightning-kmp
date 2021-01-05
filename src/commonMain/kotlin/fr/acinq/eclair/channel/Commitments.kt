@@ -475,7 +475,7 @@ data class Commitments(
         log.info {
             val htlcsIn = spec.htlcs.outgoings().map { it.id }.joinToString(",")
             val htlcsOut = spec.htlcs.incomings().map { it.id }.joinToString(",")
-            "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}"
+            "c:$channelId built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${remoteCommitTx.tx.txid} tx=${remoteCommitTx.tx}"
         }
 
         // don't sign if they don't get paid
@@ -501,7 +501,7 @@ data class Commitments(
         // lnd sometimes sends a new signature without any changes, which is a (harmless) spec violation
         if (!remoteHasChanges()) {
             //  return Either.Left(CannotSignWithoutChanges(commitments.channelId))
-            log.warning { "received a commit sig with no changes (probably coming from lnd)" }
+            log.warning { "c:$channelId received a commit sig with no changes (probably coming from lnd)" }
         }
 
         // check that their signature is valid
@@ -517,14 +517,14 @@ data class Commitments(
         log.info {
             val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
             val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
-            "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommitTx.tx.txid} tx=${localCommitTx.tx}"
+            "c:$channelId built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommitTx.tx.txid} tx=${localCommitTx.tx}"
         }
 
         // no need to compute htlc sigs if commit sig doesn't check out
         val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
             is Try.Failure -> {
-                log.error(check.error) { "remote signature $commit is invalid" }
+                log.error(check.error) { "c:$channelId remote signature $commit is invalid" }
                 return Either.Left(InvalidCommitmentSignature(channelId, signedCommitTx.tx))
             }
         }

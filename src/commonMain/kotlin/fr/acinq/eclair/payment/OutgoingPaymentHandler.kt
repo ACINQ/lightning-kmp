@@ -56,7 +56,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         }
 
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, walletParams.trampolineFees.first(), currentBlockHeight)
-        return when (val result = RouteCalculation.findRoutes(trampolineAmount, channels)) {
+        return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value.message}" }
                 val failure = result.value.toPaymentFailure()
@@ -94,7 +94,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
                 val ignore = payment.ignore + channelId // we ignore the failing channel in retries
-                when (val routes = RouteCalculation.findRoutes(add.amount, channels - ignore)) {
+                when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, add.amount, channels - ignore)) {
                     is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, Either.Left(event.error), db, logger)
                     is Either.Right -> {
                         val newPayments = createChildPayments(payment.request, routes.value, payment.trampolinePayload)
@@ -153,7 +153,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                         val trampolineFees = walletParams.trampolineFees[payment.attemptNumber + 1]
                         logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${trampolineFees.feeBase}, proportional=${trampolineFees.feeProportional})..." }
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, trampolineFees, currentBlockHeight)
-                        when (val routes = RouteCalculation.findRoutes(trampolineAmount, channels)) {
+                        when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
                             is Either.Left -> {
                                 logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value.message}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
@@ -229,7 +229,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             is PaymentAttempt.PaymentAborted -> {
                 // The recipient released the preimage without receiving the full payment amount.
                 // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
-                logger.warning { "payment succeeded after partial failure: we may have paid less than the full amount" }
+                logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} payment succeeded after partial failure: we may have paid less than the full amount" }
                 PaymentAttempt.PaymentSucceeded(payment.request, preimage, part?.let { listOf(it) } ?: listOf(), payment.pending - event.paymentId)
             }
         }

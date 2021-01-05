@@ -167,7 +167,7 @@ sealed class ChannelState {
     abstract fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
     internal fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled event $event in state ${this::class}" }
+        logger.warning { "unhandled event ${event::class} in state ${this::class}" }
         return Pair(this, listOf())
     }
 
@@ -186,7 +186,7 @@ sealed class ChannelState {
     }
 
     internal fun handleCommandError(cmd: Command, error: ChannelException, channelUpdate: ChannelUpdate? = null): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning(error) { "processing $cmd in state $this failed" }
+        logger.warning(error) { "c:${error.channelId} processing ${cmd::class} in state ${this::class} failed" }
         return when (cmd) {
             is CMD_ADD_HTLC -> Pair(this, listOf(ChannelAction.ProcessCmdRes.AddFailed(cmd, error, channelUpdate)))
             else -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, error)))
@@ -194,8 +194,8 @@ sealed class ChannelState {
     }
 
     internal fun handleFundingPublishFailed(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
-        logger.error { "failed to publish funding tx" }
+        require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
+        logger.error { "c:$channelId failed to publish funding tx" }
         val exc = ChannelFundingError(channelId)
         val error = Error(channelId, exc.message)
         // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
@@ -204,8 +204,8 @@ sealed class ChannelState {
     }
 
     internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        require(this is ChannelStateWithCommitments) { "$this must be type of HasCommitments" }
-        logger.warning { "funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE}" }
+        require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
+        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE}" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -218,7 +218,7 @@ sealed class ChannelState {
 
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
-        logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
+        logger.error { "c:${e.channelId} peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
 
         return when {
             this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
@@ -256,7 +256,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
     internal fun handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
-        logger.warning { "they published their current commit in txid=${commitTx.txid}" }
+        logger.warning { "c:$channelId they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnChainFeerates)
@@ -300,7 +300,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     internal fun handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "they published their next commit in txid=${commitTx.txid}" }
+        logger.warning { "c:$channelId they published their next commit in txid=${commitTx.txid}" }
         require(commitments.remoteNextCommitInfo.isLeft) { "next remote commit must be defined" }
         val remoteCommit = commitments.remoteNextCommitInfo.left?.nextRemoteCommit
         require(remoteCommit != null) { "remote commit must not be null" }
@@ -339,10 +339,10 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     internal fun handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "funding tx spent in txid=${tx.txid}" }
+        logger.warning { "c:$channelId funding tx spent in txid=${tx.txid}" }
 
         return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
-            logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
+            logger.warning { "c:$channelId txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
             val ex = FundingTxSpent(channelId, tx)
             val error = Error(channelId, ex.message)
 
@@ -382,7 +382,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             })
         } ?: run {
             // the published tx was neither their current commitment nor a revoked one
-            logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
+            logger.error { "c:$channelId couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
             Pair(ErrorInformationLeak(staticParams, currentTip, currentOnChainFeerates, commitments), listOf())
         }
     }
@@ -395,7 +395,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         }
 
         return if (outdatedCommitment) {
-            logger.warning { "we have an outdated commitment: will not publish our local tx" }
+            logger.warning { "c:$channelId we have an outdated commitment: will not publish our local tx" }
             Pair(this as ChannelState, listOf())
         } else {
             val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
@@ -457,7 +457,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         return when (channelEx) {
             null -> Pair(this, listOf())
             else -> {
-                logger.error { "${channelEx.message}" }
+                logger.error { "c:$channelId ${channelEx.message}" }
                 when {
                     this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
                     this is Negotiating && this.bestUnpublishedClosingTx != null -> {
@@ -573,12 +573,12 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
             event is ChannelEvent.Restore && event.state is Closing && event.state.commitments.nothingAtStake() -> {
-                logger.info { "we have nothing at stake, going straight to CLOSED" }
+                logger.info { "c:${event.state.channelId} we have nothing at stake, going straight to CLOSED" }
                 Pair(Closed(event.state), listOf())
             }
             event is ChannelEvent.Restore && event.state is Closing -> {
                 val closingType = event.state.closingTypeAlreadyKnown()
-                logger.info { "channel is closing (closing type = ${closingType ?: "unknown yet"}" }
+                logger.info { "c:${event.state.channelId} channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"}" }
                 // if the closing type is known:
                 // - there is no need to watch the funding tx because it has already been spent and the spending tx has
                 //   already reached mindepth
@@ -635,7 +635,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 }
             }
             event is ChannelEvent.Restore && event.state is ChannelStateWithCommitments -> {
-                logger.info { "restoring channel channelId=${event.state.channelId}" }
+                logger.info { "c:${event.state.channelId} restoring channel" }
                 val watchSpent = WatchSpent(
                     event.state.channelId,
                     event.state.commitments.commitInput.outPoint.txid,
@@ -662,7 +662,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "error on event ${event::class} in state ${this::class}" }
         return Pair(this, listOf(ChannelAction.ProcessLocalError(t, event)))
     }
 }
@@ -679,7 +679,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
     }
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "offline processing $event" }
+        logger.warning { "c:${state.channelId} offline processing ${event::class}" }
         return when (event) {
             is ChannelEvent.Connected -> {
                 when {
@@ -692,7 +692,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                         Pair(nextState, listOf(ChannelAction.Message.Send(error)))
                     }
                     state.isZeroReserve -> {
-                        logger.info { "syncing $state, waiting fo their channelReestablish message" }
+                        logger.info { "c:${state.channelId} syncing ${state::class}, waiting fo their channelReestablish message" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
                         Pair(Syncing(nextState, true), listOf())
                     }
@@ -709,7 +709,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
                             state.commitments.remoteChannelData
                         )
-                        logger.info { "syncing $state" }
+                        logger.info { "c:${state.channelId} syncing ${state::class}" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
@@ -719,7 +719,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent && state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
-                        logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
+                        logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
                         val nextState = Closing(
                             staticParams,
                             currentTip,
@@ -777,7 +777,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:${state.channelId} error on event ${event::class} in state ${this::class}" }
         return Pair(this, listOf(ChannelAction.ProcessLocalError(t, event)))
     }
 }
@@ -799,25 +799,25 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
     }
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "syncing processing $event" }
+        logger.warning { "c:${state.channelId} syncing processing ${event::class}" }
         return when {
             event is ChannelEvent.MessageReceived && event.message is ChannelReestablish ->
                 when {
                     waitForTheirReestablishMessage -> {
                         val nextState = if (!event.message.channelData.isEmpty()) {
-                            logger.info { "channel_reestablish includes a peer backup" }
+                            logger.info { "c:${state.channelId} channel_reestablish includes a peer backup" }
                             when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {
                                 is Try.Success -> {
                                     if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
-                                        logger.warning { "they have a more recent commitment, using it instead" }
+                                        logger.warning { "c:${state.channelId} they have a more recent commitment, using it instead" }
                                         decrypted.get()
                                     } else {
-                                        logger.info { "ignoring their older backup" }
+                                        logger.info { "c:${state.channelId} ignoring their older backup" }
                                         state
                                     }
                                 }
                                 is Try.Failure -> {
-                                    logger.error(decrypted.error) { "ignoring unreadable channel data for channelId=${state.channelId}" }
+                                    logger.error(decrypted.error) { "c:${state.channelId} ignoring unreadable channel data" }
                                     state
                                 }
                             }
@@ -859,7 +859,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         Pair(state, actions)
                     }
                     state is WaitForFundingLocked -> {
-                        logger.debug { "re-sending fundingLocked" }
+                        logger.debug { "c:${state.channelId} re-sending fundingLocked" }
                         val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                         val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
@@ -873,7 +873,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
                                 // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
                                 if (keyManager.commitmentSecret(channelKeyPath, event.message.nextRemoteRevocationNumber - 1) == event.message.yourLastCommitmentSecret) {
-                                    logger.warning { "counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommit.index} theirCommitmentNumber=${event.message.nextRemoteRevocationNumber}" }
+                                    logger.warning { "c:${state.channelId} counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommit.index} theirCommitmentNumber=${event.message.nextRemoteRevocationNumber}" }
                                     // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
                                     // would punish us by taking all the funds in the channel
                                     val exc = PleasePublishYourCommitment(state.channelId)
@@ -885,7 +885,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     )
                                     Pair(nextState, actions)
                                 } else {
-                                    logger.warning { "they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
+                                    logger.warning { "c:${state.channelId} they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
                                     val exc = InvalidRevokedCommitProof(state.channelId, state.commitments.localCommit.index, event.message.nextRemoteRevocationNumber, event.message.yourLastCommitmentSecret)
                                     val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
                                     val (nextState, spendActions) = state.spendLocalCurrent()
@@ -898,7 +898,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             }
                             !Helpers.checkRemoteCommit(state.commitments, event.message.nextLocalCommitmentNumber) -> {
                                 // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
-                                logger.warning { "counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.index ?: state.commitments.remoteCommit.index} theirCommitmentNumber=${event.message.nextLocalCommitmentNumber}" }
+                                logger.warning { "c:${state.channelId} counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.index ?: state.commitments.remoteCommit.index} theirCommitmentNumber=${event.message.nextLocalCommitmentNumber}" }
                                 // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
                                 // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
                                 // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
@@ -916,7 +916,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 val actions = ArrayList<ChannelAction>()
                                 if (event.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommit.index == 0L) {
                                     // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
-                                    logger.debug { "re-sending fundingLocked" }
+                                    logger.debug { "c:${state.channelId} re-sending fundingLocked" }
                                     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                                     val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
                                     actions.add(ChannelAction.Message.Send(fundingLocked))
@@ -926,7 +926,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
 
                                 // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
                                 state.localShutdown?.let {
-                                    logger.debug { "re-sending localShutdown" }
+                                    logger.debug { "c:${state.channelId} re-sending local shutdown" }
                                     actions.add(ChannelAction.Message.Send(it))
                                 }
 
@@ -943,7 +943,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     actions.add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
                                 }
 
-                                logger.info { "switching to $state" }
+                                logger.info { "c:${state.channelId} switching to ${state::class}" }
                                 Pair(state.copy(commitments = commitments1), actions)
                             }
                         }
@@ -1003,7 +1003,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:${state.channelId} error on event ${event::class} in state ${this::class}" }
         return Pair(this, listOf(ChannelAction.ProcessLocalError(t, event)))
     }
 
@@ -1028,13 +1028,13 @@ data class WaitForRemotePublishFutureCommitment(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:${commitments.channelId} error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 
     internal fun handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
+        logger.warning { "c:${commitments.channelId} they published their future commit (because we asked them to) in txid=${tx.txid}" }
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(
             keyManager,
             commitments,
@@ -1078,7 +1078,7 @@ data class WaitForOpenChannel(
                         require(channelVersion.hasAnchorOutputs) { "invalid channel version $channelVersion (anchor_outputs is not set)" }
                         when (val err = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, channelVersion)) {
                             is Either.Left -> {
-                                logger.error(err.value) { "invalid ${event.message} in state $this" }
+                                logger.error(err.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
                                 return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, err.value.message))))
                             }
                         }
@@ -1140,7 +1140,7 @@ data class WaitForOpenChannel(
                         Pair(nextState, listOf(ChannelAction.Message.Send(accept)))
                     }
                     is Error -> {
-                        logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                        logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
                     }
                     else -> unhandled(event)
@@ -1154,7 +1154,7 @@ data class WaitForOpenChannel(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1197,7 +1197,7 @@ data class WaitForFundingCreated(
                         )
                         when (firstCommitTxRes) {
                             is Either.Left -> {
-                                logger.error(firstCommitTxRes.value) { "cannot create first commit tx" }
+                                logger.error(firstCommitTxRes.value) { "c:$temporaryChannelId cannot create first commit tx" }
                                 handleLocalError(event, firstCommitTxRes.value)
                             }
                             is Either.Right -> {
@@ -1214,7 +1214,7 @@ data class WaitForFundingCreated(
                                 )
                                 when (val result = Transactions.checkSpendable(signedLocalCommitTx)) {
                                     is Try.Failure -> {
-                                        logger.error(result.error) { "their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
+                                        logger.error(result.error) { "c:$temporaryChannelId their first commit sig is not valid for ${firstCommitTx.localCommitTx.tx}" }
                                         handleLocalError(event, result.error)
                                     }
                                     is Try.Success -> {
@@ -1240,13 +1240,11 @@ data class WaitForFundingCreated(
                                             ShaChain.init,
                                             channelId = channelId
                                         )
-                                        //context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
-                                        //context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
                                         // NB: we don't send a ChannelSignatureSent for the first commit
-                                        logger.info { "waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
+                                        logger.info { "c:$channelId waiting for them to publish the funding tx with fundingTxid=${commitInput.outPoint.txid}" }
                                         // phoenix channels have a zero mindepth for funding tx
                                         val fundingMinDepth = if (commitments.isZeroReserve) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, fundingAmount)
-                                        logger.info { "$channelId will wait for $fundingMinDepth confirmations" }
+                                        logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
                                         val watchSpent = WatchSpent(channelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                                         val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                                         val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
@@ -1264,7 +1262,7 @@ data class WaitForFundingCreated(
                         }
                     }
                     is Error -> {
-                        logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                        logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
                     }
                     else -> unhandled(event)
@@ -1278,7 +1276,7 @@ data class WaitForFundingCreated(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1292,12 +1290,14 @@ data class WaitForAcceptChannel(
     val initFunder: ChannelEvent.InitFunder,
     val lastSent: OpenChannel
 ) : ChannelState() {
+    private val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived && event.message is AcceptChannel -> {
                 when (val err = Helpers.validateParamsFunder(staticParams.nodeParams, lastSent, event.message)) {
                     is Either.Left -> {
-                        logger.error(err.value) { "invalid ${event.message} in state $this" }
+                        logger.error(err.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(initFunder.temporaryChannelId, err.value.message))))
                     }
                 }
@@ -1317,7 +1317,6 @@ data class WaitForAcceptChannel(
                     htlcBasepoint = event.message.htlcBasepoint,
                     features = Features(initFunder.remoteInit.features)
                 )
-                logger.debug { "remote params: $remoteParams" }
                 val localFundingPubkey = keyManager.fundingPublicKey(initFunder.localParams.fundingKeyPath)
                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey))))
                 val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeerate)
@@ -1338,7 +1337,7 @@ data class WaitForAcceptChannel(
                 Pair(nextState, listOf(makeFundingTx))
             }
             event is ChannelEvent.MessageReceived && event.message is Error -> {
-                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
             event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
@@ -1350,7 +1349,7 @@ data class WaitForAcceptChannel(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
         val error = Error(initFunder.temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1390,7 +1389,7 @@ data class WaitForFundingInternal(
                 )
                 when (firstCommitTxRes) {
                     is Either.Left -> {
-                        logger.error(firstCommitTxRes.value) { "cannot create first commit tx" }
+                        logger.error(firstCommitTxRes.value) { "c:$temporaryChannelId cannot create first commit tx" }
                         handleLocalError(event, firstCommitTxRes.value)
                     }
                     is Either.Right -> {
@@ -1429,7 +1428,7 @@ data class WaitForFundingInternal(
                 }
             }
             event is ChannelEvent.MessageReceived && event.message is Error -> {
-                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
             event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
@@ -1441,7 +1440,7 @@ data class WaitForFundingInternal(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1484,7 +1483,7 @@ data class WaitForFundingSigned(
                             remoteNextCommitInfo = Either.Right(Eclair.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                             commitInput, ShaChain.init, channelId, event.message.channelData
                         )
-                        logger.info { "publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
+                        logger.info { "c:$channelId publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}" }
                         val watchSpent = WatchSpent(
                             this.channelId,
                             commitments.commitInput.outPoint.txid,
@@ -1501,7 +1500,7 @@ data class WaitForFundingSigned(
                             minDepthBlocks.toLong(),
                             BITCOIN_FUNDING_DEPTHOK
                         )
-                        logger.info { "committing txid=${fundingTx.txid}" }
+                        logger.info { "c:$channelId committing txid=${fundingTx.txid}" }
 
                         val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentTimestampMillis(), null, Either.Left(lastSent))
                         val actions = listOf(
@@ -1517,7 +1516,7 @@ data class WaitForFundingSigned(
                 }
             }
             event is ChannelEvent.MessageReceived && event.message is Error -> {
-                logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                logger.error { "c:$channelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
             event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
@@ -1529,7 +1528,7 @@ data class WaitForFundingSigned(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1566,7 +1565,7 @@ data class WaitForFundingConfirmed(
                             )
                         }
                         if (result is Try.Failure) {
-                            logger.error { "funding tx verification failed: ${result.error}" }
+                            logger.error { "c:$channelId funding tx verification failed: ${result.error}" }
                             return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
@@ -1586,7 +1585,7 @@ data class WaitForFundingConfirmed(
                             ChannelAction.Storage.StoreState(nextState)
                         )
                         if (deferred != null) {
-                            logger.info { "FundingLocked has already been received" }
+                            logger.info { "c:$channelId funding_locked has already been received" }
                             val resultPair = nextState.process(ChannelEvent.MessageReceived(deferred))
                             Pair(resultPair.first, actions + resultPair.second)
                         } else {
@@ -1613,7 +1612,7 @@ data class WaitForFundingConfirmed(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1697,7 +1696,7 @@ data class WaitForFundingLocked(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
@@ -1737,7 +1736,7 @@ data class Normal(
                     is CMD_UPDATE_FEE -> handleCommandResult(event.command, commitments.sendFee(event.command), event.command.commit)
                     is CMD_SIGN -> when {
                         !commitments.localHasChanges() -> {
-                            logger.warning { "no changes to sign" }
+                            logger.warning { "c:$channelId no changes to sign" }
                             Pair(this, listOf())
                         }
                         commitments.remoteNextCommitInfo is Either.Left -> {
@@ -1754,7 +1753,7 @@ data class Normal(
                                 // counterparty, so only htlcs above remote's dust_limit matter
                                 val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
                                 val htlcInfos = trimmedHtlcs.map { it.add }.map {
-                                    logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
+                                    logger.info { "c:$channelId adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                     ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                                 }
                                 val nextState = this.copy(commitments = result.value.first)
@@ -1922,11 +1921,11 @@ data class Normal(
             }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> {
-                logger.info { "new tip ${event.height} ${event.Header}" }
+                logger.info { "c:$channelId new tip ${event.height} ${event.Header.hash}" }
                 this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             }
             is ChannelEvent.SetOnChainFeerates -> {
-                logger.info { "using on-chain fee rates ${event.feerates}" }
+                logger.info { "c:$channelId using on-chain fee rates ${event.feerates}" }
                 Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             }
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
@@ -1942,12 +1941,12 @@ data class Normal(
                 val failedHtlcs = mutableListOf<ChannelAction>()
                 val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
                 if (proposedHtlcs.isNotEmpty()) {
-                    logger.info { "updating channel_update announcement (reason=disabled)" }
+                    logger.info { "c:$channelId updating channel_update announcement (reason=disabled)" }
                     val channelUpdate = Announcements.disableChannel(channelUpdate, staticParams.nodeParams.nodePrivateKey, staticParams.remoteNodeId)
                     proposedHtlcs.forEach { htlc ->
                         commitments.payments[htlc.id]?.let { paymentId ->
                             failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)))
-                        } ?: logger.warning { "cannot find payment for $htlc" }
+                        } ?: logger.warning { "c:$channelId cannot find payment for $htlc" }
                     }
                 }
                 Pair(Offline(this), failedHtlcs)
@@ -1957,7 +1956,7 @@ data class Normal(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
             commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -2113,16 +2112,16 @@ data class ShuttingDown(
             }
             is ChannelEvent.ExecuteCommand -> when {
                 event.command is CMD_ADD_HTLC -> {
-                    logger.info { "rejecting htlc request in state=$this" }
+                    logger.info { "c:$channelId rejecting htlc request in state=${this::class}" }
                     // we don't provide a channel_update: this will be a permanent channel failure
                     handleCommandError(event.command, ChannelUnavailable(channelId))
                 }
                 event.command is CMD_SIGN && !commitments.localHasChanges() -> {
-                    logger.debug { "ignoring CMD_SIGN (nothing to sign)" }
+                    logger.debug { "c:$channelId ignoring CMD_SIGN (nothing to sign)" }
                     Pair(this, listOf())
                 }
                 event.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
-                    logger.debug { "already in the process of signing, will sign again as soon as possible" }
+                    logger.debug { "c:$channelId already in the process of signing, will sign again as soon as possible" }
                     Pair(this.copy(commitments = this.commitments.copy(remoteNextCommitInfo = Either.Left(this.commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))), listOf())
                 }
                 event.command is CMD_SIGN -> when (val result = commitments.sendCommit(keyManager, logger)) {
@@ -2197,7 +2196,7 @@ data class Negotiating(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived && event.message is ClosingSigned -> {
-                logger.info { "received closingFeeSatoshis=${event.message.feeSatoshis}" }
+                logger.info { "c:$channelId received closingFeeSatoshis=${event.message.feeSatoshis}" }
                 val checkSig = Helpers.Closing.checkClosingSignature(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), event.message.feeSatoshis, event.message.signature)
                 val lastLocalClosingFee = closingTxProposed.last().lastOrNull()?.localClosingSigned?.feeSatoshis
                 val nextClosingFee = Helpers.Closing.nextClosingFee(
@@ -2207,7 +2206,7 @@ data class Negotiating(
                 val result = checkSig.map { signedClosingTx -> // this signed closing tx matches event.message.feeSatoshis
                     when {
                         lastLocalClosingFee == event.message.feeSatoshis || lastLocalClosingFee == nextClosingFee || closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS -> {
-                            logger.info { "closing tx published: closingTxId=${signedClosingTx.txid}" }
+                            logger.info { "c:$channelId closing tx published: closingTxId=${signedClosingTx.txid}" }
                             val nextState = Closing(
                                 staticParams,
                                 currentTip,
@@ -2227,7 +2226,7 @@ data class Negotiating(
                         }
                         nextClosingFee == event.message.feeSatoshis -> {
                             // we have converged but they don't have our signature yet
-                            logger.info { "closing tx published: closingTxId=${signedClosingTx.txid}" }
+                            logger.info { "c:$channelId closing tx published: closingTxId=${signedClosingTx.txid}" }
                             val (_, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
                             val nextState = Closing(
                                 staticParams,
@@ -2249,7 +2248,7 @@ data class Negotiating(
                         }
                         else -> {
                             val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
-                            logger.info { "proposing closingFeeSatoshis=${closingSigned.feeSatoshis}" }
+                            logger.info { "c:$channelId proposing closingFeeSatoshis=${closingSigned.feeSatoshis}" }
                             val closingProposed1 = closingTxProposed.updated(
                                 closingTxProposed.lastIndex,
                                 closingTxProposed.last() + listOf(ClosingTxProposed(closingTx.tx, closingSigned))
@@ -2274,7 +2273,7 @@ data class Negotiating(
                 is WatchEventSpent -> when {
                     watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
                         // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
-                        logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
+                        logger.info { "c:$channelId closing tx published: closingTxId=${watch.tx.txid}" }
                         val nextState = Closing(
                             staticParams,
                             currentTip,
@@ -2307,7 +2306,7 @@ data class Negotiating(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
             commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -2416,17 +2415,17 @@ data class Closing(
                         // when a remote or local commitment tx containing outgoing htlcs is published on the network,
                         // we watch it in order to extract payment preimage if funds are pulled by the counterparty
                         // we can then use these preimages to fulfill payments
-                        logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=${watch.tx}" }
+                        logger.info { "c:$channelId processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=${watch.tx}" }
                         val htlcSettledActions = mutableListOf<ChannelAction>()
                         commitments.localCommit.extractPreimages(watch.tx).forEach { (htlc, preimage) ->
                             when (val paymentId = commitments.payments[htlc.id]) {
                                 null -> {
                                     // if we don't have a reference to the payment, it means that we already have forwarded the fulfill so that's not a big deal.
                                     // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
-                                    logger.info { "cannot fulfill htlc #${htlc.id} paymentHash=${htlc.paymentHash} (payment not found)" }
+                                    logger.info { "c:$channelId cannot fulfill htlc #${htlc.id} paymentHash=${htlc.paymentHash} (payment not found)" }
                                 }
                                 else -> {
-                                    logger.info { "fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} paymentId=$paymentId" }
+                                    logger.info { "c:$channelId fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} paymentId=$paymentId" }
                                     htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFulfill(paymentId, htlc, ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
                                 }
                             }
@@ -2454,7 +2453,7 @@ data class Closing(
                         Pair(nextState, actions)
                     }
                     watch is WatchEventConfirmed && watch.event is BITCOIN_TX_CONFIRMED -> {
-                        logger.info { "txid=${watch.tx.txid} has reached mindepth, updating closing state" }
+                        logger.info { "c:$channelId txid=${watch.tx.txid} has reached mindepth, updating closing state" }
                         // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
                         val closing1 = this.copy(
                             localCommitPublished = this.localCommitPublished?.update(watch.tx),
@@ -2463,7 +2462,7 @@ data class Closing(
                             futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
                             revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
                         )
-                        closing1.networkFeePaid(watch.tx)?.let { logger.info { "paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" } }
+                        closing1.networkFeePaid(watch.tx)?.let { logger.info { "c:$channelId paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" } }
 
                         // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                         val htlcSettledActions = mutableListOf<ChannelAction>()
@@ -2476,10 +2475,10 @@ data class Closing(
                             when (val paymentId = commitments.payments[add.id]) {
                                 null -> {
                                     // same as for fulfilling the htlc (no big deal)
-                                    logger.info { "cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                    logger.info { "c:$channelId cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                 }
                                 else -> {
-                                    logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: htlc timed out" }
+                                    logger.info { "c:$channelId failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: htlc timed out" }
                                     htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcsTimedOutDownstream(channelId, setOf(add))))
                                 }
                             }
@@ -2490,10 +2489,10 @@ data class Closing(
                             when (val paymentId = commitments.payments[add.id]) {
                                 null -> {
                                     // same as for fulfilling the htlc (no big deal)
-                                    logger.info { "cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                    logger.info { "c:$channelId cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                 }
                                 else -> {
-                                    logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
+                                    logger.info { "c:$channelId failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
                                     htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(channelId, add)))
                                 }
                             }
@@ -2501,15 +2500,15 @@ data class Closing(
 
                         // for our outgoing payments, let's log something if we know that they will settle on chain
                         onChainOutgoingHtlcs(commitments.localCommit, commitments.remoteCommit, commitments.remoteNextCommitInfo.left?.nextRemoteCommit, watch.tx).forEach { add ->
-                            commitments.payments[add.id]?.let { paymentId -> logger.info { "paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
+                            commitments.payments[add.id]?.let { paymentId -> logger.info { "c:$channelId paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
                         }
 
                         val nextState = when (val closingType = closing1.isClosed(watch.tx)) {
                             null -> closing1
                             else -> {
-                                logger.info { "channel $channelId is now closed" }
+                                logger.info { "c:$channelId channel is now closed" }
                                 if (closingType !is MutualClose) {
-                                    logger.info { "last known remoteChannelData=${commitments.remoteChannelData}" }
+                                    logger.debug { "c:$channelId last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
                                 Closed(closing1)
                             }
@@ -2534,7 +2533,7 @@ data class Closing(
                     }
                     Pair(nextState, actions)
                 } else {
-                    logger.warning { "cannot find revoked commit with txid=${event.revokedCommitTxId}" }
+                    logger.warning { "c:$channelId cannot find revoked commit with txid=${event.revokedCommitTxId}" }
                     Pair(this, listOf())
                 }
             }
@@ -2548,7 +2547,7 @@ data class Closing(
                     Pair(this, listOf(ChannelAction.Message.Send(error)))
                 }
                 is Error -> {
-                    logger.error { "peer send error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                    logger.error { "c:$channelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                     // nothing to do, there is already a spending tx published
                     Pair(this, listOf())
                 }
@@ -2557,13 +2556,13 @@ data class Closing(
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
                 is CMD_ADD_HTLC -> {
-                    logger.info { "rejecting htlc request in state=$this" }
+                    logger.info { "c:$channelId rejecting htlc request in state=${this::class}" }
                     // we don't provide a channel_update: this will be a permanent channel failure
                     handleCommandError(event.command, ChannelUnavailable(channelId))
                 }
                 is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(event.command)) {
                     is Either.Right -> {
-                        logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
+                        logger.info { "c:$channelId got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
                         val commitments1 = result.value.first
                         val localCommitPublished1 = localCommitPublished?.let {
                             Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, it.commitTx, currentOnChainFeerates)
@@ -2606,7 +2605,7 @@ data class Closing(
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error processing $event in state $this" }
+        logger.error(t) { "c:$channelId error processing ${event::class} in state ${this::class}" }
         // TODO: is it the right thing to do ?
         return Pair(this, listOf())
     }
@@ -2719,7 +2718,7 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event $event in state ${this::class}" }
+        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         return Pair(this, listOf())
     }
 }
