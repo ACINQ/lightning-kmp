@@ -169,7 +169,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         assertEquals(partsSettled, db.getOutgoingPayment(initialPayment.id))
         partsSettled.parts.forEach { assertEquals(partsSettled, db.getOutgoingPart(it.id)) }
 
-        // Payment succeeds: failed parts are removed.
+        // Payment succeeds: failed parts will be ignored.
         val paymentSucceeded = partsSettled.copy(
             status = OutgoingPayment.Status.Succeeded(preimage, 130),
             parts = partsSettled.parts.drop(1)
@@ -177,8 +177,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         db.updateOutgoingPayment(initialPayment.id, preimage, 130)
         assertFails { db.updateOutgoingPayment(UUID.randomUUID(), preimage, 130) }
         assertEquals(paymentSucceeded, db.getOutgoingPayment(initialPayment.id))
-        assertNull(db.getOutgoingPart(partsSettled.parts[0].id))
-        partsSettled.parts.drop(1).forEach { assertEquals(paymentSucceeded, db.getOutgoingPart(it.id)) }
+        partsSettled.parts.forEach { assertEquals(paymentSucceeded, db.getOutgoingPart(it.id)) }
     }
 
     @Test

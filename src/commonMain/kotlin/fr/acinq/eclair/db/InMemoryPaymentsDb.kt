@@ -49,7 +49,10 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun getOutgoingPayment(id: UUID): OutgoingPayment? {
         return outgoing[id]?.let { payment ->
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
-            payment.copy(parts = parts)
+            return when (payment.status) {
+                is OutgoingPayment.Status.Succeeded -> payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
+                else -> payment.copy(parts = parts)
+            }
         }
     }
 
@@ -63,9 +66,6 @@ class InMemoryPaymentsDb : PaymentsDb {
         require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
         val payment = outgoing[id]!!
         outgoing[id] = payment.copy(status = OutgoingPayment.Status.Succeeded(preimage, completedAt))
-        // We delete obsolete failed attempts.
-        val failedParts = outgoingParts.values.filter { it.first == id && it.second.status is OutgoingPayment.Part.Status.Failed }.map { it.second.id }
-        outgoingParts.minusAssign(failedParts)
     }
 
     override suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>) {
@@ -89,9 +89,7 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun getOutgoingPart(partId: UUID): OutgoingPayment? {
         return outgoingParts[partId]?.let { (parentId, _) ->
             require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
-            val payment = outgoing[parentId]!!
-            val parts = outgoingParts.values.filter { it.first == parentId }.map { it.second }
-            payment.copy(parts = parts)
+            getOutgoingPayment(parentId)
         }
     }
 
