@@ -35,7 +35,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<O
 
     companion object {
         fun convertFailure(failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis()): OutgoingPayment.Part.Status.Failed = when (failure) {
-            is Either.Left -> OutgoingPayment.Part.Status.Failed(null, failure.value.message!!, completedAt)
+            is Either.Left -> OutgoingPayment.Part.Status.Failed(null, failure.value.toString(), completedAt)
             is Either.Right -> OutgoingPayment.Part.Status.Failed(failure.value.code, failure.value.message, completedAt)
         }
 
