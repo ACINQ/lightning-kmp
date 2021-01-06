@@ -103,7 +103,7 @@ object Sphinx {
      */
     private fun decodePayloadLength(payload: ByteArray): Int {
         val input = ByteArrayInput(payload)
-        val size = LightningSerializer.bigSize(input)
+        val size = LightningCodecs.bigSize(input)
         val sizeLength = payload.size - input.availableBytes
         return size.toInt() + sizeLength
     }
@@ -303,11 +303,11 @@ object FailurePacket {
         val out = ByteArrayOutput()
         val failureMessageBin = FailureMessage.encode(failure)
         require(failureMessageBin.size <= MaxPayloadLength) { "encoded failure message overflows onion" }
-        LightningSerializer.writeU16(failureMessageBin.size, out)
-        LightningSerializer.writeBytes(failureMessageBin, out)
+        LightningCodecs.writeU16(failureMessageBin.size, out)
+        LightningCodecs.writeBytes(failureMessageBin, out)
         val padLen = MaxPayloadLength - failureMessageBin.size
-        LightningSerializer.writeU16(padLen, out)
-        LightningSerializer.writeBytes(ByteArray(padLen), out)
+        LightningCodecs.writeU16(padLen, out)
+        LightningCodecs.writeBytes(ByteArray(padLen), out)
         val packet = out.toByteArray()
         return Sphinx.mac(macKey.toByteArray(), packet).toByteArray() + packet
     }
@@ -322,7 +322,7 @@ object FailurePacket {
             return Try.Failure(IllegalArgumentException("invalid error packet mac: ${Hex.encode(input)}"))
         }
         val stream = ByteArrayInput(payload)
-        return runTrying { FailureMessage.decode(LightningSerializer.bytes(stream, LightningSerializer.u16(stream))) }
+        return runTrying { FailureMessage.decode(LightningCodecs.bytes(stream, LightningCodecs.u16(stream))) }
     }
 
     /**

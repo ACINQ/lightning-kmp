@@ -25,9 +25,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
 @OptIn(ExperimentalUnsignedTypes::class)
-class LightningSerializerTestsCommon : EclairTestSuite() {
+class LightningCodecsTestsCommon : EclairTestSuite() {
 
-    fun point(fill: Byte) = PrivateKey(ByteArray(32) { fill }).publicKey()
+    private fun point(fill: Byte) = PrivateKey(ByteArray(32) { fill }).publicKey()
 
     fun publicKey(fill: Byte) = point(fill)
 
@@ -45,9 +45,9 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
 
         testCases.forEach {
             val out = ByteArrayOutput()
-            LightningSerializer.writeU64(it.key.toLong(), out)
+            LightningCodecs.writeU64(it.key.toLong(), out)
             assertArrayEquals(it.value, out.toByteArray())
-            val decoded = LightningSerializer.u64(ByteArrayInput(it.value))
+            val decoded = LightningCodecs.u64(ByteArrayInput(it.value))
             assertEquals(it.key, decoded.toULong())
         }
     }
@@ -183,11 +183,11 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             val bytes = Hex.decode(it.jsonObject["bytes"]?.jsonPrimitive?.content!!)
             val value = it.jsonObject["value"]?.jsonPrimitive?.content?.toULong()!!
             if (it.jsonObject["exp_error"] != null) {
-                assertFails(name) { LightningSerializer.bigSize(ByteArrayInput(bytes)) }
+                assertFails(name) { LightningCodecs.bigSize(ByteArrayInput(bytes)) }
             } else {
-                assertEquals(value, LightningSerializer.bigSize(ByteArrayInput(bytes)).toULong(), name)
+                assertEquals(value, LightningCodecs.bigSize(ByteArrayInput(bytes)).toULong(), name)
                 val out = ByteArrayOutput()
-                LightningSerializer.writeBigSize(value.toLong(), out)
+                LightningCodecs.writeBigSize(value.toLong(), out)
                 assertArrayEquals(bytes, out.toByteArray())
             }
         }
@@ -227,7 +227,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
                 val init = Init.read(testCase.encoded.toByteArray())
                 assertEquals(testCase.rawFeatures, init.features)
                 assertEquals(testCase.networks, init.networks)
-                val encoded = Init.write(init)
+                val encoded = init.write()
                 assertEquals(testCase.reEncoded ?: testCase.encoded, ByteVector(encoded), testCase.toString())
             }
             assertEquals(result.isFailure, !testCase.valid, testCase.toString())
@@ -268,7 +268,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             val decoded = OpenChannel.read(it.key.toByteArray())
             val expected = it.value
             assertEquals(expected, decoded)
-            val reEncoded = OpenChannel.write(decoded)
+            val reEncoded = decoded.write()
             assertEquals(it.key, ByteVector(reEncoded))
         }
     }
@@ -328,7 +328,7 @@ class LightningSerializerTestsCommon : EclairTestSuite() {
             val decoded = AcceptChannel.read(it.key.toByteArray())
             val expected = it.value
             assertEquals(expected, decoded)
-            val reEncoded = AcceptChannel.write(decoded)
+            val reEncoded = decoded.write()
             assertEquals(it.key, ByteVector(reEncoded))
         }
     }

@@ -11,27 +11,24 @@ import kotlinx.serialization.Serializable
 @Serializable
 sealed class InitTlv : Tlv {
     @Serializable
-    data class Networks(val chainHashes: List<@Serializable(with = ByteVector32KSerializer::class) ByteVector32>) : InitTlv(), LightningSerializable<Networks> {
-        override fun serializer(): LightningSerializer<Networks> = Networks
-        override val tag: Long
-            get() = serializer().tag
+    data class Networks(val chainHashes: List<@Serializable(with = ByteVector32KSerializer::class) ByteVector32>) : InitTlv() {
+        override val tag: Long get() = Networks.tag
 
-        companion object : LightningSerializer<Networks>() {
+        override fun write(out: Output) {
+            chainHashes.forEach { LightningCodecs.writeBytes(it, out) }
+        }
+
+        companion object : TlvValueReader<Networks> {
+            const val tag: Long = 1
+
             override fun read(input: Input): Networks {
                 val networks = ArrayList<ByteVector32>()
-                // README: it's up to the caller to make sure that the input stream will EOF when there are no more hashes to read !
+                // README: it's up to the caller to make sure that the input stream will EOF when there are no more hashes to read!
                 while (input.availableBytes > 0) {
-                    networks.add(ByteVector32(bytes(input, 32)))
+                    networks.add(ByteVector32(LightningCodecs.bytes(input, 32)))
                 }
                 return Networks(networks.toList())
             }
-
-            override fun write(message: Networks, out: Output) {
-                message.chainHashes.forEach { writeBytes(it, out) }
-            }
-
-            override val tag: Long
-                get() = 1L
         }
     }
 }

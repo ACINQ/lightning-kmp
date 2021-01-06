@@ -25,15 +25,15 @@ object OutgoingPacket {
     /**
      * Build an encrypted onion packet from onion payloads and node public keys.
      */
-    fun buildOnion(nodes: List<PublicKey>, payloads: List<PerHopPayload>, associatedData: ByteVector32, payloadLength: Int): PacketAndSecrets {
+    private fun buildOnion(nodes: List<PublicKey>, payloads: List<PerHopPayload>, associatedData: ByteVector32, payloadLength: Int): PacketAndSecrets {
         require(nodes.size == payloads.size)
         val sessionKey = Eclair.randomKey()
         val payloadsBin = payloads
             .map {
                 when (it) {
-                    is RelayLegacyPayload -> RelayLegacyPayload.write(it)
-                    is NodeRelayPayload -> NodeRelayPayload.write(it)
-                    is FinalPayload -> FinalPayload.write(it)
+                    is RelayLegacyPayload -> it.write()
+                    is NodeRelayPayload -> it.write()
+                    is FinalPayload -> it.write()
                 }
             }
         return Sphinx.create(sessionKey, nodes, payloadsBin, associatedData, payloadLength)
@@ -49,7 +49,7 @@ object OutgoingPacket {
      *         - firstExpiry is the cltv expiry for the first htlc in the route
      *         - a sequence of payloads that will be used to build the onion
      */
-    fun buildPayloads(hops: List<Hop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PerHopPayload>> {
+    private fun buildPayloads(hops: List<Hop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PerHopPayload>> {
         return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PerHopPayload>(finalPayload))) { triple, hop ->
             val (amount, expiry, payloads) = triple
             val payload = when (hop) {

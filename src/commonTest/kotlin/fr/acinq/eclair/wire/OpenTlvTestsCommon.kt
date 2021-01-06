@@ -15,20 +15,20 @@ class OpenTlvTestsCommon : EclairTestSuite() {
             Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000000 0000000f"), Hex.decode("fe47000000 0000000f")),
             Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000001 04 0000000f"), Hex.decode("fe47000000 0000000f"))
         )
-        val serializers = HashMap<Long, LightningSerializer<ChannelTlv>>()
-        @Suppress("UNCHECKED_CAST")
-        serializers.put(ChannelTlv.ChannelVersionTlvLegacy.tag, ChannelTlv.ChannelVersionTlvLegacy.Companion as LightningSerializer<ChannelTlv>)
-        @Suppress("UNCHECKED_CAST")
-        serializers.put(ChannelTlv.ChannelVersionTlv.tag, ChannelTlv.ChannelVersionTlv.Companion as LightningSerializer<ChannelTlv>)
 
-        val tlvStreamSerializer = TlvStreamSerializer(false, serializers)
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
+        )
+        val tlvStreamSerializer = TlvStreamSerializer(false, readers)
 
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
-            val version = decoded.records.mapNotNull {
-                when (it) {
-                    is ChannelTlv.ChannelVersionTlvLegacy -> it.channelVersion
-                    is ChannelTlv.ChannelVersionTlv -> it.channelVersion
+            val version = decoded.records.mapNotNull { record ->
+                when (record) {
+                    is ChannelTlv.ChannelVersionTlvLegacy -> record.channelVersion
+                    is ChannelTlv.ChannelVersionTlv -> record.channelVersion
                     else -> null
                 }
             }.first()
