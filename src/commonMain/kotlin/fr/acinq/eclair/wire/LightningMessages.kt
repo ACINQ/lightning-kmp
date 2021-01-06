@@ -55,6 +55,7 @@ interface LightningMessage {
                 Shutdown.tag -> Shutdown.read(stream)
                 ClosingSigned.tag -> ClosingSigned.read(stream)
                 PayToOpenRequest.tag -> PayToOpenRequest.read(stream)
+                FCMToken.tag -> FCMToken.read(stream)
                 else -> {
                     logger.warning { "cannot decode ${Hex.encode(input)}" }
                     null
@@ -1050,6 +1051,30 @@ data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHa
                     }
                 }
             }
+        }
+    }
+}
+
+@Serializable
+data class FCMToken(
+    @Serializable(with = ByteVectorKSerializer::class) val token: ByteVector
+) : LightningMessage, LightningSerializable<FCMToken> {
+    constructor(token: String?) : this(ByteVector(token?.encodeToByteArray() ?: ByteArray(0)))
+
+    fun toAscii(): String = token.toByteArray().decodeToString()
+
+    override fun serializer(): LightningSerializer<FCMToken> = FCMToken
+
+    companion object : LightningSerializer<FCMToken>() {
+        override val tag: Long get() = 35017L
+
+        override fun read(input: Input): FCMToken {
+            return FCMToken(bytes(input, u16(input)).toByteVector())
+        }
+
+        override fun write(message: FCMToken, out: Output) {
+            writeU16(message.token.size(), out)
+            writeBytes(message.token, out)
         }
     }
 }
