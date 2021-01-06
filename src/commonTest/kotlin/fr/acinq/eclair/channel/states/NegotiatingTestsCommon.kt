@@ -8,6 +8,7 @@ import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -73,6 +74,16 @@ class NegotiatingTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv CMD_ADD_HTLC`() {
+        val (alice, _, _) = init()
+        val (_, add) = makeCmdAdd(500_000.msat, alice.staticParams.remoteNodeId, TestConstants.defaultBlockHeight.toLong())
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(add))
+        assertTrue(alice1 is Negotiating)
+        assertEquals(1, actions1.size)
+        actions1.hasCommandError<ChannelUnavailable>()
+    }
+
+    @Test
     fun `recv ClosingSigned (theirCloseFee != ourCloseFee)`() {
         val (alice, bob, aliceCloseSig) = init()
         val (_, actions) = bob.process(ChannelEvent.MessageReceived(aliceCloseSig))
@@ -93,7 +104,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (theirCloseFee == ourCloseFee)(different fee parameters)`() {
+    fun `recv ClosingSigned (theirCloseFee == ourCloseFee, different fee parameters)`() {
         val (alice, bob, aliceCloseSig) = init(true)
         assertTrue { converge(alice, bob, aliceCloseSig) != null }
     }
@@ -125,6 +136,31 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         actions.hasOutgoingMessage<Error>()
         actions.hasWatch<WatchConfirmed>()
         actions.findTxs().contains(bob.commitments.localCommit.publishableTxs.commitTx.tx)
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_SPENT (an older mutual close)`() {
+        val (alice, bob, aliceCloseSig) = init()
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(aliceCloseSig))
+        assertTrue(bob1 is Negotiating)
+        val bobCloseSig = actions.findOutgoingMessage<ClosingSigned>()
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(bobCloseSig))
+        val aliceCloseSig1 = actions1.findOutgoingMessage<ClosingSigned>()
+        assertTrue(bobCloseSig.feeSatoshis != aliceCloseSig1.feeSatoshis)
+        // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
+        val bobClosingTx = Helpers.Closing.checkClosingSignature(
+            bob1.keyManager,
+            bob1.commitments,
+            bob1.localShutdown.scriptPubKey.toByteArray(),
+            bob1.remoteShutdown.scriptPubKey.toByteArray(),
+            aliceCloseSig1.feeSatoshis,
+            aliceCloseSig1.signature
+        ).right!!
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
+        assertTrue(alice2 is Closing)
+        actionsAlice2.has<ChannelAction.Storage.StoreState>()
+        actionsAlice2.hasTx(bobClosingTx)
+        assertEquals(actionsAlice2.hasWatch<WatchConfirmed>().txId, bobClosingTx.txid)
     }
 
     @Test
