@@ -58,7 +58,7 @@ class OutgoingPaymentFailureTestsCommon : EclairTestSuite() {
         )
         val expected = "1: general temporary failure of the processing node\n" +
                 "2: processing node does not know the next peer in the route\n" +
-                "3: too many accepted htlcs: maximum=42\n"
+                "3: 0000000000000000000000000000000000000000000000000000000000000000: too many accepted htlcs: maximum=42\n"
         assertEquals(failure.details(), expected)
     }
 

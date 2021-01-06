@@ -872,7 +872,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
                                     // would punish us by taking all the funds in the channel
                                     val exc = PleasePublishYourCommitment(state.channelId)
-                                    val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
+                                    val error = Error(state.channelId, exc.message.encodeToByteArray().toByteVector())
                                     val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
                                     val actions = listOf(
                                         ChannelAction.Storage.StoreState(nextState),
@@ -882,7 +882,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 } else {
                                     logger.warning { "c:${state.channelId} they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
                                     val exc = InvalidRevokedCommitProof(state.channelId, state.commitments.localCommit.index, event.message.nextRemoteRevocationNumber, event.message.yourLastCommitmentSecret)
-                                    val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
+                                    val error = Error(state.channelId, exc.message.encodeToByteArray().toByteVector())
                                     val (nextState, spendActions) = state.spendLocalCurrent()
                                     val actions = buildList {
                                         addAll(spendActions)
@@ -898,7 +898,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
                                 // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
                                 val exc = PleasePublishYourCommitment(state.channelId)
-                                val error = Error(state.channelId, exc.message?.encodeToByteArray()?.toByteVector() ?: ByteVector.empty)
+                                val error = Error(state.channelId, exc.message.encodeToByteArray().toByteVector())
                                 val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreState(nextState),
