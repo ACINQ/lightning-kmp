@@ -11,7 +11,9 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.AnnouncementSignatures
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
-open class ChannelException(open val channelId: ByteVector32, message: String) : RuntimeException(message)
+open class ChannelException(open val channelId: ByteVector32, override val message: String) : RuntimeException(message) {
+    fun details(): String = "$channelId: $message"
+}
 
 // @formatter:off
 data class DebugTriggeredException             (override val channelId: ByteVector32) : ChannelException(channelId, "debug-mode triggered failure")

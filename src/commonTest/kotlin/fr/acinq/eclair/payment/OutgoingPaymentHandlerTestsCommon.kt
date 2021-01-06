@@ -36,7 +36,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), MilliSatoshi(-1), invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(), alice.currentBlockHeight)
-        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.InvalidPaymentAmount.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.InvalidPaymentAmount.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertNull(outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId))
     }
@@ -48,7 +48,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to Offline(alice)), alice.currentBlockHeight)
-        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.NoAvailableChannels.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.NoAvailableChannels.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
@@ -68,7 +68,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), amount, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
-        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.InsufficientBalance.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.InsufficientBalance.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
@@ -124,11 +124,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
             val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
-            val expected = OutgoingPaymentHandler.Failure(
-                payment,
-                OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1))))
-            )
-            assertEquals(result2, expected)
+            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1)))))
+            assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -181,11 +178,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
             val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
-            val expected = OutgoingPaymentHandler.Failure(
-                payment,
-                OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat))))
-            )
-            assertEquals(result2, expected)
+            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat)))))
+            assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -554,7 +548,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertNull(outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
         val fail = outgoingPaymentHandler.processAddSettled(adds1[2].first, createRemoteFailure(adds1[2].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeInsufficient))))
-        assertEquals(expected, fail)
+        assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 3)
@@ -587,7 +581,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val attempt2 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
         val fail = outgoingPaymentHandler.processAddSettled(adds2[0].first, createRemoteFailure(adds2[0].second, attempt2, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeInsufficient))))
-        assertEquals(expected, fail)
+        assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 2)
@@ -610,7 +604,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
             val fail = outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.UnknownError, listOf(Either.Right(remoteFailure))))
-            assertEquals(expected, fail)
+            assertFailureEquals(expected, fail)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -642,7 +636,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val (channelId, add) = filterAddHtlcCommands(progress).first()
         val fail = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 15), null), channels) as OutgoingPaymentHandler.Failure
         assertEquals(FinalFailure.InsufficientBalance, fail.failure.reason)
-        assertEquals(4, fail.failure.failures.filter { it.isLeft }.size)
+        assertEquals(4, fail.failure.failures.filter { it.isLocalFailure() }.size)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 4)
@@ -767,14 +761,14 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, db)
             assertNull(outgoingPaymentHandler.processAddFailed(adds[0].first, ChannelAction.ProcessCmdRes.AddFailed(adds[0].second, ChannelUnavailable(adds[0].first), null), channels))
             assertNull(outgoingPaymentHandler.processAddSettled(adds[1].first, createRemoteFailure(adds[1].second, attempt, TemporaryNodeFailure), channels, TestConstants.defaultBlockHeight))
-            val result = outgoingPaymentHandler.processAddSettled(adds[2].first, createRemoteFailure(adds[2].second, attempt, PermanentNodeFailure), channels, TestConstants.defaultBlockHeight)
+            val result = outgoingPaymentHandler.processAddSettled(adds[2].first, createRemoteFailure(adds[2].second, attempt, PermanentNodeFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
             val failures: List<Either<ChannelException, FailureMessage>> = listOf(
                 Either.Left(ChannelUnavailable(adds[0].first)),
                 // Since we've lost the shared secrets, we can't decrypt remote failures.
                 Either.Right(UnknownFailureMessage(0)),
                 Either.Right(UnknownFailureMessage(0))
             )
-            assertEquals(OutgoingPaymentHandler.Failure(attempt.request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures)), result)
+            assertFailureEquals(OutgoingPaymentHandler.Failure(attempt.request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures)), result)
         }
     }
 
@@ -905,6 +899,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue(dbPayment.status is OutgoingPayment.Status.Succeeded)
         assertEquals(partsCount, dbPayment.parts.size)
         assertTrue(dbPayment.parts.all { it.status is OutgoingPayment.Part.Status.Succeeded })
+    }
+
+    private fun assertFailureEquals(f1: OutgoingPaymentHandler.Failure, f2: OutgoingPaymentHandler.Failure) {
+        val f1b = f1.copy(failure = f1.failure.copy(failures = f1.failure.failures.map { it.copy(completedAt = 0) }))
+        val f2b = f2.copy(failure = f2.failure.copy(failures = f2.failure.failures.map { it.copy(completedAt = 0) }))
+        assertEquals(f1b, f2b)
     }
 
 }

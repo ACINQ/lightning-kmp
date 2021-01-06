@@ -58,7 +58,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, walletParams.trampolineFees.first(), currentBlockHeight)
         return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
-                logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value.message}" }
+                logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
                 val failure = result.value.toPaymentFailure()
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
                 db.updateOutgoingPayment(request.paymentId, failure.reason)
@@ -155,7 +155,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, trampolineFees, currentBlockHeight)
                         when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
                             is Either.Left -> {
-                                logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value.message}" }
+                                logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
                                 val result = Failure(payment.request, OutgoingPaymentFailure(aborted.reason, aborted.failures))
                                 db.updateOutgoingPayment(payment.request.paymentId, result.failure.reason)
@@ -202,11 +202,11 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 db.updateOutgoingPart(partId, failure)
                 val hasMorePendingParts = payment.parts.any { it.status == OutgoingPayment.Part.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
-                    logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted.message}" }
+                    logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted}" }
                     db.updateOutgoingPayment(payment.id, FinalFailure.WalletRestarted)
                     Failure(
                         SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
-                        OutgoingPaymentFailure(FinalFailure.WalletRestarted, payment.parts.map { it.status }.filterIsInstance<OutgoingPayment.Part.Status.Failed>().map { it.failure } + failure)
+                        OutgoingPaymentFailure(FinalFailure.WalletRestarted, payment.parts.map { it.status }.filterIsInstance<OutgoingPayment.Part.Status.Failed>() + OutgoingPaymentFailure.convertFailure(failure))
                     )
                 } else {
                     null
@@ -376,7 +376,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             suspend fun failChild(childId: UUID, failure: Either<ChannelException, FailureMessage>, db: OutgoingPaymentsDb, logger: Logger): Pair<PaymentAborted, ProcessFailureResult?> {
                 val updated = copy(pending = pending - childId, failures = failures + failure)
                 val result = if (updated.isComplete()) {
-                    logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${updated.reason.message}" }
+                    logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${updated.reason}" }
                     db.updateOutgoingPayment(request.paymentId, updated.reason)
                     Failure(request, OutgoingPaymentFailure(updated.reason, updated.failures))
                 } else {
