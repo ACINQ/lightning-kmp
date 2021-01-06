@@ -54,10 +54,6 @@ interface TlvValueReader<T : Tlv> {
     fun read(hex: String): T = read(Hex.decode(hex))
 }
 
-// this type should not be needed: unfortunately Phoenix previously used a value that was not a valid tlv in message extensions,
-// so it's needed for backwards-compatibility until we can deprecate the old value.
-interface TlvLengthAndValueReader<T : Tlv> : TlvValueReader<T>
-
 /**
  * Generic tlv type we fallback to if we don't understand the incoming tlv.
  *
@@ -105,19 +101,13 @@ class TlvStreamSerializer<T : Tlv>(private val lengthPrefixed: Boolean, private 
                 require(tag > previousTag) { "tlv stream is not sorted by tags" }
             }
             previousTag = tag
+
             val reader = readers[tag]
+            val length = if (tag == ChannelTlv.ChannelVersionTlvLegacy.tag) 4 else LightningCodecs.bigSize(input)
+            val data = LightningCodecs.bytes(input, length)
             reader?.let {
-                when (reader) {
-                    is TlvLengthAndValueReader -> records.add(reader.read(input))
-                    else -> {
-                        val length = LightningCodecs.bigSize(input)
-                        val data = LightningCodecs.bytes(input, length)
-                        records.add(reader.read(data))
-                    }
-                }
+                records.add(reader.read(data))
             } ?: run {
-                val length = LightningCodecs.bigSize(input)
-                val data = LightningCodecs.bytes(input, length)
                 unknown.add(GenericTlv(tag, ByteVector(data)))
             }
         }

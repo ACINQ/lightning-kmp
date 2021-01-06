@@ -302,7 +302,7 @@ data class OpenChannel(
             val readers = mapOf(
                 ChannelTlv.UpfrontShutdownScript.tag to ChannelTlv.UpfrontShutdownScript.Companion as TlvValueReader<ChannelTlv>,
                 ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvLengthAndValueReader<ChannelTlv>
+                ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvValueReader<ChannelTlv>
             )
             return OpenChannel(
                 ByteVector32(LightningCodecs.bytes(input, 32)),

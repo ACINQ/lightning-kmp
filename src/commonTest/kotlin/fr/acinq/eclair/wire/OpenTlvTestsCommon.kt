@@ -18,7 +18,7 @@ class OpenTlvTestsCommon : EclairTestSuite() {
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvLengthAndValueReader<ChannelTlv>,
+            ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
         )
         val tlvStreamSerializer = TlvStreamSerializer(false, readers)
