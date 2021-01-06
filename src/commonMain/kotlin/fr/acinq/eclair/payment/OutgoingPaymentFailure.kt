@@ -1,81 +1,57 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.eclair.channel.ChannelException
+import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.currentTimestampMillis
 import fr.acinq.eclair.wire.*
 
 /** A fatal failure that stops payment attempts. */
 sealed class FinalFailure {
-    abstract val message: String
 
     /** Use this function when no payment attempts have been made (e.g. when a precondition failed). */
-    fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf())
+    fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<OutgoingPayment.Part.Status.Failed>())
 
     // @formatter:off
-    object InvalidPaymentAmount : FinalFailure() { override val message: String = "Invalid parameter: payment amount must be positive." }
-    object InvalidPaymentId : FinalFailure() { override val message: String = "Invalid parameter: payment ID must be unique." }
-    object NoAvailableChannels : FinalFailure() { override val message: String = "No channels available to send payment. Check internet connection or ensure you have an available balance." }
-    object InsufficientBalance : FinalFailure() { override val message: String = "Not enough funds in wallet to afford payment (note that fees may apply)." }
-    object NoRouteToRecipient : FinalFailure() { override val message: String = "Unable to route payment to recipient." }
-    object RetryExhausted: FinalFailure() { override val message: String = "Payment attempts exhausted without success." }
-    object WalletRestarted: FinalFailure() { override val message: String = "Wallet restarted while a payment was ongoing." }
-    object UnknownError : FinalFailure() { override val message: String = "An unknown error occurred." }
+    object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
+    object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
+    object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
+    object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
+    object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
+    object RetryExhausted: FinalFailure() { override fun toString(): String = "payment attempts exhausted without success" }
+    object WalletRestarted: FinalFailure() { override fun toString(): String = "wallet restarted while a payment was ongoing" }
+    object UnknownError : FinalFailure() { override fun toString(): String = "an unknown error occurred" }
     // @formatter:on
 }
 
-data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<Either<ChannelException, FailureMessage>>) {
-
-    private fun isRouteError(failure: Either<ChannelException, FailureMessage>) = when (failure) {
-        is Either.Left -> false
-        is Either.Right -> when (failure.value) {
-            is UnknownNextPeer -> true
-            is ChannelDisabled -> true
-            is TemporaryChannelFailure -> true
-            is PermanentChannelFailure -> true
-            is TemporaryNodeFailure -> true
-            is PermanentNodeFailure -> true
-            else -> false
-        }
-    }
-
-    private fun isRejectedByRecipient(failure: Either<ChannelException, FailureMessage>) = when (failure) {
-        is Either.Left -> false
-        is Either.Right -> when (failure.value) {
-            is IncorrectOrUnknownPaymentDetails -> true
-            else -> false
-        }
-    }
-
-    /** A simple summary of the problem, designed for general users. */
-    fun message(): String {
-        // We strive to provide a message that would lead a general user toward solving their own problem.
-        // And we must not assume any knowledge of the lightning protocol.
-        //
-        // A concrete example:
-        // - the user has 2 channels
-        // - one channel fails with HtlcValueTooHighInFlight
-        // - the remaining channel contains an insufficient balance to make the payment
-        //
-        // So the UI should say:
-        // - message = Not enough funds in wallet ...
-        // - details = HtlcValueTooHighInFlight ...
-        //
-        // The general user will see "not enough funds in wallet", and some gobbledygook.
-        // It may be a bit confusing, but it leads them toward the solution: add funds, retry payment, success!
-        return when {
-            reason == FinalFailure.WalletRestarted -> reason.message
-            failures.any { isRejectedByRecipient(it) } -> "Payment rejected by the recipient. This usually occurs when the invoice has already been paid or when it contains an expiration date, and you attempted to send a payment after the expiration."
-            failures.any { isRouteError(it) } -> FinalFailure.NoRouteToRecipient.message
-            else -> reason.message
-        }
-    }
+data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<OutgoingPayment.Part.Status.Failed>) {
+    constructor(reason: FinalFailure, failures: List<Either<ChannelException, FailureMessage>>, completedAt: Long = currentTimestampMillis()) : this(reason, failures.map { convertFailure(it, completedAt) })
 
     /**
      * A detailed summary of the all internal errors.
      * This is targeted at users with technical knowledge of the lightning protocol.
      */
-    fun details(): String = failures.foldIndexed("", { index, msg, problem ->
-        msg + "${index + 1}: ${problem.fold({ ex -> ex.message }, { f -> f.message })}\n"
-    })
+    fun details(): String = failures.foldIndexed("", { index, msg, problem -> msg + "${index + 1}: ${problem.details}\n" })
 
+    companion object {
+        fun convertFailure(failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis()): OutgoingPayment.Part.Status.Failed = when (failure) {
+            is Either.Left -> OutgoingPayment.Part.Status.Failed(null, failure.value.message!!, completedAt)
+            is Either.Right -> OutgoingPayment.Part.Status.Failed(failure.value.code, failure.value.message, completedAt)
+        }
+
+        fun isRouteError(failure: OutgoingPayment.Part.Status.Failed) = when (failure.remoteFailureCode) {
+            UnknownNextPeer.code -> true
+            ChannelDisabled.code -> true
+            TemporaryChannelFailure.code -> true
+            PermanentChannelFailure.code -> true
+            TemporaryNodeFailure.code -> true
+            PermanentNodeFailure.code -> true
+            else -> false
+        }
+
+        fun isRejectedByRecipient(failure: OutgoingPayment.Part.Status.Failed) = when (failure.remoteFailureCode) {
+            IncorrectOrUnknownPaymentDetails.code -> true
+            else -> false
+        }
+    }
 }

@@ -4,11 +4,15 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.TooManyAcceptedHtlcs
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.Either
+import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.wire.PaymentTimeout
 import fr.acinq.eclair.wire.TemporaryNodeFailure
 import fr.acinq.eclair.wire.UnknownNextPeer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class OutgoingPaymentFailureTestsCommon : EclairTestSuite() {
 
@@ -22,13 +26,24 @@ class OutgoingPaymentFailureTestsCommon : EclairTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        assertEquals(failure.message(), "Unable to route payment to recipient.")
+        assertTrue(OutgoingPaymentFailure.isRouteError(failure.failures[0]))
+        assertTrue(OutgoingPaymentFailure.isRouteError(failure.failures[1]))
+        assertFalse(OutgoingPaymentFailure.isRouteError(failure.failures[2]))
     }
 
     @Test
-    fun `defaults to simple message`() {
-        val failure = OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(PaymentTimeout)))
-        assertEquals(failure.message(), "Not enough funds in wallet to afford payment (note that fees may apply).")
+    fun `identify recipient failures`() {
+        val failure = OutgoingPaymentFailure(
+            FinalFailure.UnknownError,
+            listOf(
+                Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42)),
+                Either.Right(PaymentTimeout),
+                Either.Right(IncorrectOrUnknownPaymentDetails(100_000.msat, 150))
+            )
+        )
+        assertFalse(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[0]))
+        assertFalse(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[1]))
+        assertTrue(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[2]))
     }
 
     @Test

@@ -128,7 +128,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         // One of the parts fails.
         val onePartFailed = initialPayment.copy(
             parts = listOf(
-                initialPayment.parts[0].copy(status = OutgoingPayment.Part.Status.Failed(Either.Right(TemporaryNodeFailure), 110)),
+                initialPayment.parts[0].copy(status = OutgoingPayment.Part.Status.Failed(TemporaryNodeFailure.code, TemporaryNodeFailure.message, 110)),
                 initialPayment.parts[1]
             )
         )
@@ -200,8 +200,8 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
         val channelId = randomBytes32()
         val partsFailed = initialPayment.copy(
             parts = listOf(
-                initialPayment.parts[0].copy(status = OutgoingPayment.Part.Status.Failed(Either.Right(TemporaryNodeFailure), 110)),
-                initialPayment.parts[1].copy(status = OutgoingPayment.Part.Status.Failed(Either.Left(TooManyAcceptedHtlcs(channelId, 10)), 111)),
+                initialPayment.parts[0].copy(status = OutgoingPayment.Part.Status.Failed(TemporaryNodeFailure.code, TemporaryNodeFailure.message, 110)),
+                initialPayment.parts[1].copy(status = OutgoingPayment.Part.Status.Failed(null, TooManyAcceptedHtlcs(channelId, 10).message!!, 111)),
             )
         )
         db.updateOutgoingPart(initialPayment.parts[0].id, Either.Right(TemporaryNodeFailure), 110)
