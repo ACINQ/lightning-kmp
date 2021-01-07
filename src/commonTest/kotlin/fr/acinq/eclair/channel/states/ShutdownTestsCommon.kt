@@ -240,6 +240,7 @@ class ShutdownTestsCommon : EclairTestSuite() {
         // alice receives another commit signature
         val (alice3, actionsAlice3) = alice2.process(ChannelEvent.MessageReceived(sig))
         assertTrue(alice3 is Closing)
+        actionsAlice3.hasOutgoingMessage<Error>()
         assertNotNull(alice3.localCommitPublished)
         actionsAlice3.hasTx(alice2.commitments.localCommit.publishableTxs.commitTx.tx)
     }
@@ -255,6 +256,7 @@ class ShutdownTestsCommon : EclairTestSuite() {
         assertTrue(alice1 is ShuttingDown)
         val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(sig.copy(signature = ByteVector64.Zeroes)))
         assertTrue(alice2 is Closing)
+        actionsAlice2.hasOutgoingMessage<Error>()
         assertNotNull(alice2.localCommitPublished)
         actionsAlice2.hasTx(alice1.commitments.localCommit.publishableTxs.commitTx.tx)
     }
