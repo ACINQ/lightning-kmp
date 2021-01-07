@@ -3,24 +3,28 @@ package fr.acinq.eclair.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
+import fr.acinq.eclair.channel.TestsHelper.crossSign
+import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
+import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
+import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class ShutdownTestsCommon : EclairTestSuite() {
+
     @Test
     fun `recv CMD_ADD_HTLC`() {
         val (_, bob) = init()
@@ -138,6 +142,20 @@ class ShutdownTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv UpdateFailHtlc (unknown htlc id)`() {
+        val (alice, _) = init()
+        val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(UpdateFailHtlc(alice.channelId, 42, ByteVector.empty)))
+        assertTrue(alice1 is Closing)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
+        assertTrue(actions1.findWatches<WatchSpent>().isNotEmpty())
+        val error = actions1.findOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), UnknownHtlcId(alice.channelId, 42).message)
+    }
+
+    @Test
     fun `recv UpdateFailMalformedHtlc`() {
         val (alice, bob) = init()
         val (_, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FAIL_MALFORMED_HTLC(1, ByteVector32(Crypto.sha256(ByteVector.empty)), FailureMessage.BADONION)))
@@ -177,6 +195,140 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertEquals(bob, bob1)
         assertTrue { actions1.isEmpty() }
+    }
+
+    @Test
+    fun `recv CMD_SIGN (while waiting for RevokeAndAck)`() {
+        val (_, bob) = init()
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
+        actions1.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (bob2, actions2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(bob2 is ShuttingDown)
+        actions2.hasOutgoingMessage<CommitSig>()
+        assertNotNull(bob2.commitments.remoteNextCommitInfo.left)
+        val waitForRevocation = bob2.commitments.remoteNextCommitInfo.left!!
+        assertFalse(waitForRevocation.reSignAsap)
+        val (bob3, actions3) = bob2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(bob3 is ShuttingDown)
+        assertTrue(actions3.isEmpty())
+        assertEquals(Either.Left(waitForRevocation), bob3.commitments.remoteNextCommitInfo)
+    }
+
+    @Test
+    fun `recv CommitSig`() {
+        val (alice0, bob0) = init()
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
+        val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
+        val (alice1, _) = alice0.process(ChannelEvent.MessageReceived(fulfill))
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(sig))
+        assertTrue(alice2 is ShuttingDown)
+        actionsAlice2.hasOutgoingMessage<RevokeAndAck>()
+    }
+
+    @Test
+    fun `recv CommitSig (no changes)`() {
+        val (alice0, bob0) = init()
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
+        val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
+        val (alice1, _) = alice0.process(ChannelEvent.MessageReceived(fulfill))
+        val (alice2, _) = alice1.process(ChannelEvent.MessageReceived(sig))
+        assertTrue(alice2 is ShuttingDown)
+        // alice receives another commit signature
+        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.MessageReceived(sig))
+        assertTrue(alice3 is Closing)
+        actionsAlice3.hasOutgoingMessage<Error>()
+        assertNotNull(alice3.localCommitPublished)
+        actionsAlice3.hasTx(alice2.commitments.localCommit.publishableTxs.commitTx.tx)
+    }
+
+    @Test
+    fun `recv CommitSig (invalid signature)`() {
+        val (alice0, bob0) = init()
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
+        val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (_, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
+        val (alice1, _) = alice0.process(ChannelEvent.MessageReceived(fulfill))
+        assertTrue(alice1 is ShuttingDown)
+        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(sig.copy(signature = ByteVector64.Zeroes)))
+        assertTrue(alice2 is Closing)
+        actionsAlice2.hasOutgoingMessage<Error>()
+        assertNotNull(alice2.localCommitPublished)
+        actionsAlice2.hasTx(alice1.commitments.localCommit.publishableTxs.commitTx.tx)
+    }
+
+    @Test
+    fun `recv RevokeAndAck (with remaining htlcs on both sides)`() {
+        val (alice0, bob0) = init()
+        val (alice1, bob1) = fulfillHtlc(1, r2, alice0, bob0)
+        val (bob2, alice2) = crossSign(bob1, alice1)
+        assertTrue(alice2 is ShuttingDown)
+        assertTrue(bob2 is ShuttingDown)
+        assertEquals(1, alice2.commitments.localCommit.spec.htlcs.size)
+        assertEquals(1, alice2.commitments.remoteCommit.spec.htlcs.size)
+        assertEquals(1, bob2.commitments.localCommit.spec.htlcs.size)
+        assertEquals(1, bob2.commitments.remoteCommit.spec.htlcs.size)
+    }
+
+    @Test
+    fun `recv RevokeAndAck (with remaining htlcs on one side)`() {
+        val (alice0, bob0) = init()
+        val (alice1, bob1) = fulfillHtlc(0, r1, alice0, bob0)
+        val (alice2, bob2) = fulfillHtlc(1, r2, alice1, bob1)
+        val (bob3, actionsBob3) = bob2.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sig = actionsBob3.hasOutgoingMessage<CommitSig>()
+        val (alice3, actionsAlice3) = alice2.process(ChannelEvent.MessageReceived(sig))
+        assertTrue(alice3 is ShuttingDown)
+        val revack = actionsAlice3.hasOutgoingMessage<RevokeAndAck>()
+        val (bob4, _) = bob3.process(ChannelEvent.MessageReceived(revack))
+        assertTrue(bob4 is ShuttingDown)
+        assertEquals(2, bob4.commitments.localCommit.spec.htlcs.size)
+        assertTrue(bob4.commitments.remoteCommit.spec.htlcs.isEmpty())
+        assertEquals(2, alice3.commitments.remoteCommit.spec.htlcs.size)
+        assertTrue(alice3.commitments.localCommit.spec.htlcs.isEmpty())
+
+    }
+
+    @Test
+    fun `recv RevokeAndAck (no more htlcs on either side)`() {
+        val (alice0, bob0) = init()
+        val (alice1, bob1) = fulfillHtlc(0, r1, alice0, bob0)
+        val (alice2, bob2) = fulfillHtlc(1, r2, alice1, bob1)
+        val (bob3, alice3) = crossSign(bob2, alice2)
+        assertTrue(alice3 is Negotiating)
+        assertTrue(bob3 is Negotiating)
+    }
+
+    @Test
+    fun `recv RevokeAndAck (invalid preimage)`() {
+        val (alice0, bob0) = init()
+        val (bob1, actionsBob1) = bob0.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
+        val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
+        val (bob2, actionsBob2) = bob1.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(bob2 is ShuttingDown)
+        val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
+        val (alice1, _) = alice0.process(ChannelEvent.MessageReceived(fulfill))
+        val (_, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(sig))
+        val revack = actionsAlice2.hasOutgoingMessage<RevokeAndAck>()
+        val (bob3, actionsBob3) = bob2.process(ChannelEvent.MessageReceived(revack.copy(perCommitmentSecret = randomKey())))
+        assertTrue(bob3 is Closing)
+        assertNotNull(bob3.localCommitPublished)
+        actionsBob3.hasTx(bob2.commitments.localCommit.publishableTxs.commitTx.tx)
+        actionsBob3.hasOutgoingMessage<Error>()
+    }
+
+    @Test
+    fun `recv RevokeAndAck (unexpectedly)`() {
+        val (alice0, _) = init()
+        val (alice1, actions1) = alice0.process(ChannelEvent.MessageReceived(RevokeAndAck(alice0.channelId, randomKey(), randomKey().publicKey())))
+        assertTrue(alice1 is Closing)
+        assertNotNull(alice1.localCommitPublished)
+        actions1.hasTx(alice0.commitments.localCommit.publishableTxs.commitTx.tx)
+        actions1.hasOutgoingMessage<Error>()
     }
 
     @Test
@@ -223,10 +375,10 @@ class ShutdownTestsCommon : EclairTestSuite() {
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (their next commit)`() {
         val (alice, bob) = run {
-            val (alice0, bob0) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
+            val (alice0, bob0) = reachNormal(ChannelVersion.STANDARD)
             val (nodes1, _, _) = addHtlc(25_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
-            val (alice2, bob2) = TestsHelper.crossSign(alice1, bob1)
+            val (alice2, bob2) = crossSign(alice1, bob1)
             val (nodes3, _, _) = addHtlc(35_000_000.msat, alice2, bob2)
             val (alice3, bob3) = nodes3
             // alice signs the next commitment, but bob doesn't
@@ -252,13 +404,13 @@ class ShutdownTestsCommon : EclairTestSuite() {
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (revoked tx)`() {
         val (alice, _, revokedTx) = run {
-            val (alice0, bob0) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
+            val (alice0, bob0) = reachNormal(ChannelVersion.STANDARD)
             val (nodes1, _, _) = addHtlc(25_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
-            val (alice2, bob2) = TestsHelper.crossSign(alice1, bob1)
+            val (alice2, bob2) = crossSign(alice1, bob1)
             val (nodes3, _, _) = addHtlc(35_000_000.msat, alice2, bob2)
             val (alice3, bob3) = nodes3
-            val (alice4, bob4) = TestsHelper.crossSign(alice3, bob3)
+            val (alice4, bob4) = crossSign(alice3, bob3)
             val (alice5, bob5) = shutdown(alice4, bob4)
             Triple(alice5, bob5, (bob2 as Normal).commitments.localCommit.publishableTxs.commitTx.tx)
         }
@@ -336,13 +488,13 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val r2 = randomBytes32()
 
         fun init(currentBlockHeight: Int = TestConstants.defaultBlockHeight): Pair<ShuttingDown, ShuttingDown> {
-            val (alice, bob) = TestsHelper.reachNormal(ChannelVersion.STANDARD)
-            val (_, cmdAdd1) = TestsHelper.makeCmdAdd(300_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r1)
+            val (alice, bob) = reachNormal(ChannelVersion.STANDARD)
+            val (_, cmdAdd1) = makeCmdAdd(300_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r1)
             val (alice1, actions) = alice.process(ChannelEvent.ExecuteCommand(cmdAdd1))
             val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()
             val (bob1, _) = bob.process(ChannelEvent.MessageReceived(htlc1))
 
-            val (_, cmdAdd2) = TestsHelper.makeCmdAdd(200_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r2)
+            val (_, cmdAdd2) = makeCmdAdd(200_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r2)
             val (alice2, actions3) = alice1.process(ChannelEvent.ExecuteCommand(cmdAdd2))
             val htlc2 = actions3.findOutgoingMessage<UpdateAddHtlc>()
             val (bob2, _) = bob1.process(ChannelEvent.MessageReceived(htlc2))

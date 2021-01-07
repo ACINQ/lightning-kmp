@@ -1313,6 +1313,17 @@ class NormalTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv CMD_CLOSE (with unacked received htlcs)`() {
+        val (alice, bob) = reachNormal()
+        val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
+        val (_, bob1) = nodes
+        val (bob2, actions1) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(bob2 is Normal)
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertNotNull(bob2.localShutdown)
+    }
+
+    @Test
     fun `recv CMD_CLOSE (with invalid final script)`() {
         val (alice, _) = reachNormal()
         assertNull(alice.localShutdown)

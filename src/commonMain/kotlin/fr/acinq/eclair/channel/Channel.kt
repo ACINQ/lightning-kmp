@@ -2328,6 +2328,7 @@ data class Negotiating(
             event is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CMD_ADD_HTLC -> handleCommandError(event.command, ChannelUnavailable(channelId))
             event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
             else -> unhandled(event)
         }
