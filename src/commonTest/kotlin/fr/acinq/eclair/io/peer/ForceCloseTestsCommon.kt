@@ -9,6 +9,7 @@ import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.io.peer.*
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.*
@@ -18,14 +19,14 @@ import kotlin.test.*
 import kotlin.time.ExperimentalTime
 import kotlin.time.minutes
 
- @OptIn(ExperimentalTime::class)
+@OptIn(ExperimentalTime::class)
 class ForceCloseTestsCommon {
 
     @Test
     fun `remote sends an error`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val channelId = alice0.channelId
-        val (alice, _) = newPeers(this, Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams), listOf(alice0 to bob0))
+        val (alice, _) = newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams), listOf(alice0 to bob0))
 
         val error = Error(channelId, "forced local commit".encodeToByteArray().toByteVector())
         alice.send(BytesReceived(LightningMessage.encode(error)))
@@ -55,7 +56,7 @@ class ForceCloseTestsCommon {
     fun `remote publishes his commit tx`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val channelId = alice0.channelId
-        val (alice, _) = newPeers(this, Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams), listOf(alice0 to bob0))
+        val (alice, _) = newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams), listOf(alice0 to bob0))
 
         // Commit tx has been published by Bob
         alice.send(WatchReceived(WatchEventSpent(channelId, BITCOIN_FUNDING_SPENT, bob0.commitments.localCommit.publishableTxs.commitTx.tx)))
@@ -78,14 +79,16 @@ class ForceCloseTestsCommon {
     }
 
     @Test
-    fun `remote publishes his commit tx (with one pending htlc)`() = runSuspendTest(timeout = 10.minutes) {
+    fun `remote publishes his commit tx (with one pending htlc)`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
-        val nodeParams = Pair(
-            // Alice must declare Bob as her trampoline node to enable direct payments.
-            alice0.staticParams.nodeParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)),
-            bob0.staticParams.nodeParams,
+        // Alice must declare Bob as her trampoline node to enable direct payments.
+        val (alice, bob, alice2bob, bob2alice) = newPeers(
+            scope = this,
+            walletParams = Pair(TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)), TestConstants.Bob.walletParams),
+            initChannels = listOf(alice0 to bob0),
+            automateMessaging = false
         )
-        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, listOf(alice0 to bob0), automateMessaging = false)
+
         val channelId = alice0.channelId
 
         // Add HTLC Alice -> Bob
@@ -143,12 +146,12 @@ class ForceCloseTestsCommon {
     @Test
     fun `remote publishes a revoked commit tx`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
-        val nodeParams = Pair(
-            // Alice must declare Bob as her trampoline node to enable direct payments.
-            alice0.staticParams.nodeParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)),
-            bob0.staticParams.nodeParams
+        // Alice must declare Bob as her trampoline node to enable direct payments.
+        val (alice, bob) = newPeers(
+            scope = this,
+            walletParams = Pair(TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)), TestConstants.Bob.walletParams),
+            initChannels = listOf(alice0 to bob0)
         )
-        val (alice, bob) = newPeers(this, nodeParams, listOf(alice0 to bob0))
         val channelId = alice0.channelId
         assertEquals(bob0.channelId, channelId)
 

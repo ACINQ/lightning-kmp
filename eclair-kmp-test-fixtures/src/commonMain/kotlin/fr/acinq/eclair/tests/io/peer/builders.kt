@@ -17,6 +17,7 @@ import fr.acinq.eclair.db.InMemoryDatabases
 import fr.acinq.eclair.io.BytesReceived
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.TcpSocket
+import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.utils.Connection
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.utils.toByteVector
@@ -36,8 +37,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 public suspend fun newPeers(
     scope: CoroutineScope,
-    nodeParams: Pair<NodeParams, NodeParams>,
-    walletParams: Pair<WalletParams, WalletParams>,
+    nodeParams: Pair<NodeParams, NodeParams> = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams),
+    walletParams: Pair<WalletParams, WalletParams> = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams),
     initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList(),
     automateMessaging: Boolean = true
 ): PeerTuple {
