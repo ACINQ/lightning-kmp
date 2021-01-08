@@ -21,17 +21,34 @@ class ElectrumClientStateTest : EclairTestSuite() {
             assertTrue(actions[1] is SendRequest)
         }
 
-        assertFails { WaitingForConnection.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))) }
+        WaitingForConnection.process(AskForStatus).let { (newState, actions) ->
+            assertEquals(WaitingForConnection, newState)
+            assertTrue { actions.isEmpty() }
+        }
+
+        WaitingForConnection.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))).let { (newState, actions) ->
+            assertEquals(WaitingForConnection, newState)
+            assertTrue { actions.isEmpty() }
+        }
     }
 
     @Test
     fun `WaitingForTip state`() {
         // TODO
+        WaitingForTip.process(AskForStatus).let { (newState, actions) ->
+            assertEquals(WaitingForTip, newState)
+            assertTrue(actions.isEmpty())
+        }
     }
 
     @Test
     fun `ClientRunning state`() {
         // TODO
+        ClientRunning(0, testBlockHeader).process(AskForStatus).let { (newState, actions) ->
+            assertTrue(newState is ClientRunning)
+            assertEquals(1, actions.size)
+            assertTrue(actions[0] is BroadcastStatus)
+        }
     }
 
     @Test
@@ -43,7 +60,15 @@ class ElectrumClientStateTest : EclairTestSuite() {
             assertTrue(actions[1] is ConnectionAttempt)
         }
 
-        assertFails { ClientClosed.process(Connected) }
+        ClientClosed.process(AskForStatus).let { (newState, actions) ->
+            assertEquals(ClientClosed, newState)
+            assertTrue(actions.isEmpty())
+        }
+
+        ClientClosed.process(Connected).let {  (newState, actions) ->
+            assertEquals(ClientClosed, newState)
+            assertTrue(actions.isEmpty())
+        }
     }
 
     @Test

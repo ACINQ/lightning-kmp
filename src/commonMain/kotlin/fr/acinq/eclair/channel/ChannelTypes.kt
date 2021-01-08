@@ -47,7 +47,6 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
 
 object CMD_SIGN : Command()
 data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command()
-data class CMD_UPDATE_RELAY_FEE(val feeBase: MilliSatoshi, val feeProportionalMillionths: Long) : Command()
 
 sealed class CloseCommand : Command()
 data class CMD_CLOSE(val scriptPubKey: ByteVector?) : CloseCommand()
@@ -72,7 +71,7 @@ data class LocalCommitPublished(
     val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -85,14 +84,14 @@ data class LocalCommitPublished(
      * @param tx a transaction that has been irrevocably confirmed
      */
     fun update(tx: Transaction): LocalCommitPublished {
-        // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+        // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
         val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
             // is this the commit tx itself ? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
             // does the tx spend an output of the local commitment tx?
             val spendsTheCommitTx = commitTx.txid == outPoint.txid
-            // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
+            // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
             // is itself spending the output of the commitment tx)
             val is3rdStageDelayedTx = claimHtlcDelayedTxs.map { it.txid }.contains(tx.txid)
             isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
@@ -104,7 +103,7 @@ data class LocalCommitPublished(
     /**
      * A local commit is considered done when:
      * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
-     * - all 3rd stage txes (txes spending htlc txes) have been confirmed
+     * - all 3rd stage txs (txs spending htlc txs) have been confirmed
      */
     fun isDone(): Boolean {
         // is the commitment tx buried? (we need to check this because we may not have any outputs)
@@ -114,16 +113,16 @@ data class LocalCommitPublished(
         val commitOutputsSpendableByUs = (listOfNotNull(claimMainDelayedOutputTx) + htlcSuccessTxs + htlcTimeoutTxs)
             .flatMap { it.txIn.map { txIn -> txIn.outPoint }.toSet() - irrevocablySpent.keys }
 
-        // which htlc delayed txes can we expect to be confirmed?
-        val unconfirmedHtlcDelayedTxes = claimHtlcDelayedTxs
+        // which htlc delayed txs can we expect to be confirmed?
+        val unconfirmedHtlcDelayedTxs = claimHtlcDelayedTxs
             .filter { tx ->
                 (tx.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
-            } // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+            } // only the txs which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
             .filterNot {
                 irrevocablySpent.values.toSet().contains(it.txid)
             } // has the tx already been confirmed?
 
-        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxes.isEmpty()
+        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxs.isEmpty()
     }
 
     fun isConfirmed(): Boolean {
@@ -141,11 +140,11 @@ data class LocalCommitPublished(
             addAll(htlcTimeoutTxs)
             addAll(claimHtlcDelayedTxs)
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+        // - 'final txs' that send funds to our wallet and that spend outputs that only us control
         val watchConfirmedQueue = buildList {
             add(commitTx)
             claimMainDelayedOutputTx?.let { add(it) }
@@ -176,7 +175,7 @@ data class RemoteCommitPublished(
     val claimMainOutputTx: Transaction? = null,
     val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -189,12 +188,12 @@ data class RemoteCommitPublished(
      * @param tx a transaction that has been irrevocably confirmed
      */
     fun update(tx: Transaction): RemoteCommitPublished {
-        // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+        // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
         val relevantOutpoints = tx.txIn.map { it.outPoint }.filter {
             // is this the commit tx itself ? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
-            // does the tx spend an output of the local commitment tx?
+            // does the tx spend an output of the commitment tx?
             val spendsTheCommitTx = commitTx.txid == it.txid
             isCommitTx || spendsTheCommitTx
         }
@@ -231,11 +230,11 @@ data class RemoteCommitPublished(
             addAll(claimHtlcTimeoutTxs)
         }
 
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+        // - 'final txs' that send funds to our wallet and that spend outputs that only us control
         val watchConfirmedQueue = buildList {
             add(commitTx)
             claimMainOutputTx?.let { add(it) }
@@ -261,13 +260,15 @@ data class RemoteCommitPublished(
 data class RevokedCommitPublished(
     @Serializable(with = TransactionKSerializer::class)
     val commitTx: Transaction,
+    @Serializable(with = PrivateKeyKSerializer::class)
+    val remotePerCommitmentSecret: PrivateKey,
     @Serializable(with = TransactionKSerializer::class)
     val claimMainOutputTx: Transaction? = null,
     @Serializable(with = TransactionKSerializer::class)
     val mainPenaltyTx: Transaction? = null,
     val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -280,17 +281,19 @@ data class RevokedCommitPublished(
      * @param tx a transaction that has been irrevocably confirmed
      */
     fun update(tx: Transaction): RevokedCommitPublished {
-        // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+        // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
         val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
             // is this the commit tx itself ? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
-            // does the tx spend an output of the local commitment tx?
+            // does the tx spend an output of the commitment tx?
             val spendsTheCommitTx = commitTx.txid == outPoint.txid
-            // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
+            // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
             // is itself spending the output of the commitment tx)
             val is3rdStageDelayedTx = claimHtlcDelayedPenaltyTxs.map { it.txid }.contains(tx.txid)
-            isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+            // does the tx spend an output of an htlc tx? (in which case it may invalidate one of our claim-htlc-delayed-penalty)
+            val spendsHtlcOutput = claimHtlcDelayedPenaltyTxs.flatMap { it.txIn }.map { it.outPoint }.contains(outPoint)
+            isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx || spendsHtlcOutput
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
         return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx.txid }.toMap())
@@ -300,23 +303,21 @@ data class RevokedCommitPublished(
      * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
      * (even if the spending tx was not ours).
      */
-    fun done(): Boolean {
+    fun isDone(): Boolean {
         // is the commitment tx buried? (we need to check this because we may not have any outputs)
         val isCommitTxConfirmed = irrevocablySpent.values.toSet().contains(commitTx.txid)
         // are there remaining spendable outputs from the commitment tx?
         val commitOutputsSpendableByUs = (listOfNotNull(claimMainOutputTx) + listOfNotNull(mainPenaltyTx) + htlcPenaltyTxs)
             .flatMap { it.txIn.map(TxIn::outPoint) }.toSet() - irrevocablySpent.keys
 
-        // which htlc delayed txes can we expect to be confirmed?
-        val unconfirmedHtlcDelayedTxes = claimHtlcDelayedPenaltyTxs
-            .filter { tx ->
-                (tx.txIn.map { it.outPoint.txid }.toSet() - irrevocablySpent.values.toSet()).isEmpty()
-            } // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
-            .filterNot {
-                irrevocablySpent.values.toSet().contains(it.txid)
-            } // has the tx already been confirmed?
+        // which htlc delayed txs can we expect to be confirmed?
+        val unconfirmedHtlcDelayedTxs = claimHtlcDelayedPenaltyTxs
+            // only the txs which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+            .filter { tx -> irrevocablySpent.values.toSet().containsAll(tx.txIn.map { it.outPoint.txid }) }
+            // if one of the tx inputs has been spent, the tx has already been confirmed or a competing tx has been confirmed
+            .filterNot { tx -> tx.txIn.any { irrevocablySpent.containsKey(it.outPoint) } }
 
-        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxes.isEmpty()
+        return isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty() && unconfirmedHtlcDelayedTxs.isEmpty()
     }
 
     internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
@@ -326,11 +327,11 @@ data class RevokedCommitPublished(
             addAll(htlcPenaltyTxs)
             addAll(claimHtlcDelayedPenaltyTxs)
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-        // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+        // - 'final txs' that send funds to our wallet and that spend outputs that only us control
         val watchConfirmedQueue = buildList {
             add(commitTx)
             claimMainOutputTx?.let { add(it) }
@@ -409,13 +410,13 @@ data class ChannelVersion(val bits: BitField) {
         const val USE_ANCHOR_OUTPUTS_BIT = 2
         const val ZERO_RESERVE_BIT = 3
 
-        fun fromBit(bit: Int) = ChannelVersion(BitField(SIZE_BYTE).apply { setRight(bit) })
+        private fun fromBit(bit: Int) = ChannelVersion(BitField(SIZE_BYTE).apply { setRight(bit) })
 
-        val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
-        val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
-        val USE_ANCHOR_OUTPUTS = fromBit(USE_ANCHOR_OUTPUTS_BIT)
+        private val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+        private val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
+        private val USE_ANCHOR_OUTPUTS = fromBit(USE_ANCHOR_OUTPUTS_BIT)
         val ZERO_RESERVE = fromBit(ZERO_RESERVE_BIT)
-        
+
         val STANDARD = ZEROES or USE_PUBKEY_KEYPATH or USE_STATIC_REMOTEKEY or USE_ANCHOR_OUTPUTS
     }
 }

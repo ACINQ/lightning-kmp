@@ -11,7 +11,9 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.AnnouncementSignatures
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
-open class ChannelException(open val channelId: ByteVector32, message: String) : RuntimeException(message)
+open class ChannelException(open val channelId: ByteVector32, override val message: String) : RuntimeException(message) {
+    fun details(): String = "$channelId: $message"
+}
 
 // @formatter:off
 data class DebugTriggeredException             (override val channelId: ByteVector32) : ChannelException(channelId, "debug-mode triggered failure")
@@ -34,8 +36,8 @@ data class ChannelUnavailable                  (override val channelId: ByteVect
 data class InvalidFinalScript                  (override val channelId: ByteVector32) : ChannelException(channelId, "invalid final script")
 data class FundingTxTimedout                   (override val channelId: ByteVector32) : ChannelException(channelId, "funding tx timed out")
 data class FundingTxSpent                      (override val channelId: ByteVector32, val spendingTx: Transaction) : ChannelException(channelId, "funding tx has been spent by txid=${spendingTx.txid}")
-data class HtlcsTimedoutDownstream             (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs timed out downstream: ids=${htlcs.take(10).map { it.id } .joinToString(",")}") // we only display the first 10 ids
-data class HtlcsWillTimeoutUpstream            (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map { it.id }.joinToString()}") // we only display the first 10 ids
+data class HtlcsTimedOutDownstream             (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs timed out downstream: ids=${htlcs.map { it.id } .joinToString(",")}")
+data class FulfilledHtlcsWillTimeout           (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs that should be fulfilled are close to timing out: ids=${htlcs.map { it.id }.joinToString()}")
 data class HtlcOverriddenByLocalCommit         (override val channelId: ByteVector32, val htlc: UpdateAddHtlc) : ChannelException(channelId, "htlc ${htlc.id} was overridden by local commit")
 data class FeerateTooSmall                     (override val channelId: ByteVector32, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "remote fee rate is too small: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()}")
 data class FeerateTooDifferent                 (override val channelId: ByteVector32, val localFeeratePerKw: FeeratePerKw, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()} localFeeratePerKw=${localFeeratePerKw.toLong()}")
@@ -69,5 +71,5 @@ data class CommitmentSyncError                 (override val channelId: ByteVect
 data class RevocationSyncError                 (override val channelId: ByteVector32) : ChannelException(channelId, "revocation sync error")
 data class InvalidFailureCode                  (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment         (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
-data class CommandUnavailableInThisState       (override val channelId: ByteVector32, val command: String, val state: String) : ChannelException(channelId, "cannot execute command=$command in state=$state")
+data class CommandUnavailableInThisState       (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
 // @formatter:on

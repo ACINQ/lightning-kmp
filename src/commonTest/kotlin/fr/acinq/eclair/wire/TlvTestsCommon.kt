@@ -31,10 +31,10 @@ class TlvTestsCommon : EclairTestSuite() {
         )
 
         testCases.forEach {
-            val decoded = LightningSerializer.tu16(ByteArrayInput(Hex.decode(it.key)))
+            val decoded = LightningCodecs.tu16(ByteArrayInput(Hex.decode(it.key)))
             assertEquals(it.value, decoded)
             val out = ByteArrayOutput()
-            LightningSerializer.writeTU16(it.value, out)
+            LightningCodecs.writeTU16(it.value, out)
             assertEquals(it.key, Hex.encode(out.toByteArray()))
         }
     }
@@ -58,10 +58,10 @@ class TlvTestsCommon : EclairTestSuite() {
         )
 
         testCases.forEach {
-            val decoded = LightningSerializer.tu32(ByteArrayInput(Hex.decode(it.key)))
+            val decoded = LightningCodecs.tu32(ByteArrayInput(Hex.decode(it.key)))
             assertEquals(it.value, decoded)
             val out = ByteArrayOutput()
-            LightningSerializer.writeTU32(it.value, out)
+            LightningCodecs.writeTU32(it.value, out)
             assertEquals(it.key, Hex.encode(out.toByteArray()))
         }
     }
@@ -97,10 +97,10 @@ class TlvTestsCommon : EclairTestSuite() {
         )
 
         testCases.forEach {
-            val decoded = LightningSerializer.tu64(ByteArrayInput(Hex.decode(it.key)))
+            val decoded = LightningCodecs.tu64(ByteArrayInput(Hex.decode(it.key)))
             assertEquals(it.value, decoded)
             val out = ByteArrayOutput()
-            LightningSerializer.writeTU64(it.value, out)
+            LightningCodecs.writeTU64(it.value, out)
             assertEquals(it.key, Hex.encode(out.toByteArray()))
         }
     }
@@ -131,9 +131,9 @@ class TlvTestsCommon : EclairTestSuite() {
             "ffffffffffffffffff" // length too big
         )
 
-        testCases16.forEach { assertFails { LightningSerializer.tu16(ByteArrayInput(Hex.decode(it))) } }
-        testCases32.forEach { assertFails { LightningSerializer.tu32(ByteArrayInput(Hex.decode(it))) } }
-        testCases64.forEach { assertFails { LightningSerializer.tu64(ByteArrayInput(Hex.decode(it))) } }
+        testCases16.forEach { assertFails { LightningCodecs.tu16(ByteArrayInput(Hex.decode(it))) } }
+        testCases32.forEach { assertFails { LightningCodecs.tu32(ByteArrayInput(Hex.decode(it))) } }
+        testCases64.forEach { assertFails { LightningCodecs.tu64(ByteArrayInput(Hex.decode(it))) } }
     }
 
     @Test
@@ -310,64 +310,55 @@ class TlvTestsCommon : EclairTestSuite() {
     // See https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#appendix-a-type-length-value-test-vectors
     companion object {
         sealed class TestTlv : Tlv {
-            data class TestType1(val v: Long) : TestTlv(), LightningSerializable<TestType1> {
+            data class TestType1(val v: Long) : TestTlv() {
                 override val tag: Long get() = TestType1.tag
-                override fun serializer(): LightningSerializer<TestType1> = TestType1
+                override fun write(out: Output) = LightningCodecs.writeTU64(v, out)
 
-                companion object : LightningSerializer<TestType1>() {
-                    override val tag: Long get() = 1
-                    override fun read(input: Input): TestType1 = TestType1(tu64(input))
-                    override fun write(message: TestType1, out: Output) = writeTU64(message.v, out)
+                companion object : TlvValueReader<TestType1> {
+                    const val tag: Long = 1
+                    override fun read(input: Input): TestType1 = TestType1(LightningCodecs.tu64(input))
                 }
             }
 
-            data class TestType2(val shortChannelId: ShortChannelId) : TestTlv(), LightningSerializable<TestType2> {
+            data class TestType2(val shortChannelId: ShortChannelId) : TestTlv() {
                 override val tag: Long get() = TestType2.tag
-                override fun serializer(): LightningSerializer<TestType2> = TestType2
+                override fun write(out: Output) = LightningCodecs.writeU64(shortChannelId.toLong(), out)
 
-                companion object : LightningSerializer<TestType2>() {
-                    override val tag: Long get() = 2
+                companion object : TlvValueReader<TestType2> {
+                    const val tag: Long = 2
                     override fun read(input: Input): TestType2 {
                         require(input.availableBytes == 8)
-                        return TestType2(ShortChannelId(u64(input)))
+                        return TestType2(ShortChannelId(LightningCodecs.u64(input)))
                     }
-
-                    override fun write(message: TestType2, out: Output) = writeU64(message.shortChannelId.toLong(), out)
                 }
             }
 
-            data class TestType3(val nodeId: PublicKey, val value1: Long, val value2: Long) : TestTlv(), LightningSerializable<TestType3> {
+            data class TestType3(val nodeId: PublicKey, val value1: Long, val value2: Long) : TestTlv() {
                 override val tag: Long get() = TestType3.tag
-                override fun serializer(): LightningSerializer<TestType3> = TestType3
+                override fun write(out: Output) {
+                    LightningCodecs.writeBytes(nodeId.value.toByteArray(), out)
+                    LightningCodecs.writeU64(value1, out)
+                    LightningCodecs.writeU64(value2, out)
+                }
 
-                companion object : LightningSerializer<TestType3>() {
-                    override val tag: Long get() = 3
+                companion object : TlvValueReader<TestType3> {
+                    const val tag: Long = 3
                     override fun read(input: Input): TestType3 {
                         require(input.availableBytes == 49)
-                        return TestType3(PublicKey(bytes(input, 33)), u64(input), u64(input))
-                    }
-
-                    override fun write(message: TestType3, out: Output) {
-                        writeBytes(message.nodeId.value.toByteArray(), out)
-                        writeU64(message.value1, out)
-                        writeU64(message.value2, out)
+                        return TestType3(PublicKey(LightningCodecs.bytes(input, 33)), LightningCodecs.u64(input), LightningCodecs.u64(input))
                     }
                 }
             }
 
-            data class TestType254(val intValue: Int) : TestTlv(), LightningSerializable<TestType254> {
+            data class TestType254(val intValue: Int) : TestTlv() {
                 override val tag: Long get() = TestType254.tag
-                override fun serializer(): LightningSerializer<TestType254> = TestType254
+                override fun write(out: Output) = LightningCodecs.writeU16(intValue, out)
 
-                companion object : LightningSerializer<TestType254>() {
-                    override val tag: Long get() = 254
+                companion object : TlvValueReader<TestType254> {
+                    const val tag: Long = 254
                     override fun read(input: Input): TestType254 {
                         require(input.availableBytes == 2)
-                        return TestType254(u16(input))
-                    }
-
-                    override fun write(message: TestType254, out: Output) {
-                        writeU16(message.intValue, out)
+                        return TestType254(LightningCodecs.u16(input))
                     }
                 }
             }
@@ -375,10 +366,10 @@ class TlvTestsCommon : EclairTestSuite() {
 
         @Suppress("UNCHECKED_CAST")
         private val testTlvSerializers = mapOf(
-            TestTlv.TestType1.tag to TestTlv.TestType1.Companion as LightningSerializer<TestTlv>,
-            TestTlv.TestType2.tag to TestTlv.TestType2.Companion as LightningSerializer<TestTlv>,
-            TestTlv.TestType3.tag to TestTlv.TestType3.Companion as LightningSerializer<TestTlv>,
-            TestTlv.TestType254.tag to TestTlv.TestType254.Companion as LightningSerializer<TestTlv>,
+            TestTlv.TestType1.tag to TestTlv.TestType1.Companion as TlvValueReader<TestTlv>,
+            TestTlv.TestType2.tag to TestTlv.TestType2.Companion as TlvValueReader<TestTlv>,
+            TestTlv.TestType3.tag to TestTlv.TestType3.Companion as TlvValueReader<TestTlv>,
+            TestTlv.TestType254.tag to TestTlv.TestType254.Companion as TlvValueReader<TestTlv>,
         )
         val testTlvStreamSerializer = TlvStreamSerializer(false, testTlvSerializers)
         val lengthPrefixedTestTlvStreamSerializer = TlvStreamSerializer(true, testTlvSerializers)

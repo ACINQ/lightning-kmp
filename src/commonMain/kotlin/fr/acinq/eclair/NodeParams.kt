@@ -3,16 +3,72 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.Eclair.nodeFee
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.io.ByteVector32KSerializer
 import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.io.SatoshiKSerializer
+import fr.acinq.eclair.utils.toMilliSatoshi
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class NodeUri(@Serializable(with = PublicKeyKSerializer::class) val id: PublicKey, val host: String, val port: Int)
 
+/**
+ * When we send a trampoline payment, we start with a low fee.
+ * If that fails, we increase the fee(s) and retry (up to a point).
+ * This class encapsulates the fees and expiry to use at a particular attempt.
+ */
+@Serializable
+data class TrampolineFees(@Serializable(with = SatoshiKSerializer::class) val feeBase: Satoshi, val feeProportional: Long, val cltvExpiryDelta: CltvExpiryDelta) {
+    fun calculateFees(recipientAmount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase.toMilliSatoshi(), feeProportional, recipientAmount)
+}
+
+/**
+ * @param trampolineNode address of the trampoline node used for outgoing payments.
+ * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
+ */
+@Serializable
+data class WalletParams(val trampolineNode: NodeUri, val trampolineFees: List<TrampolineFees>)
+
+/**
+ * @param keyManager derive private keys and secrets from your seed.
+ * @param alias name of the lightning node.
+ * @param features features supported by the lightning node.
+ * @param dustLimit threshold below which outputs will not be generated in commitment or HTLC transactions (i.e. HTLCs below this amount plus HTLC transaction fees are not enforceable on-chain).
+ * @param onChainFeeConf on-chain feerates that will be applied to various transactions.
+ * @param maxHtlcValueInFlightMsat cap on the total value of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
+ * @param maxAcceptedHtlcs cap on the number of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
+ * @param expiryDeltaBlocks cltv-expiry-delta used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
+ * @param fulfillSafetyBeforeTimeoutBlocks number of blocks necessary to react to a malicious peer that doesn't acknowledge and sign our HTLC preimages.
+ * @param checkHtlcTimeoutAfterStartupDelaySeconds delay in seconds before we check for timed out HTLCs in our channels after a wallet restart.
+ * @param htlcMinimum minimum accepted htlc value.
+ * @param toRemoteDelayBlocks number of blocks our peer will have to wait before they get their main output back in case they force-close a channel.
+ * @param maxToLocalDelayBlocks maximum number of blocks we will have to wait before we get our main output back in case we force-close a channel.
+ * @param minDepthBlocks minimum depth of a transaction before we consider it safely confirmed.
+ * @param feeBase base fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
+ * @param feeProportionalMillionth proportional fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
+ * @param reserveToFundingRatio size of the channel reserve we required from our peer.
+ * @param maxReserveToFundingRatio maximum size of the channel reserve our peer can require from us.
+ * @param revocationTimeoutSeconds delay after which we disconnect from our peer if they don't send us a revocation after a new commitment is signed.
+ * @param authTimeoutSeconds timeout for the connection authentication phase.
+ * @param initTimeoutSeconds timeout for the connection initialization phase.
+ * @param pingIntervalSeconds delay between ping messages.
+ * @param pingTimeoutSeconds timeout when waiting for a response to our ping.
+ * @param pingDisconnect disconnect when a peer doesn't respond to our ping.
+ * @param autoReconnect automatically reconnect to our peers.
+ * @param initialRandomReconnectDelaySeconds delay before which we reconnect to our peers (will be randomized based on this value).
+ * @param maxReconnectIntervalSeconds maximum delay between reconnection attempts.
+ * @param chainHash bitcoin chain we're interested in (testnet or mainnet).
+ * @param channelFlags channel flags used to temporarily enable or disable channels.
+ * @param paymentRequestExpirySeconds our Bolt 11 invoices will only be valid for this duration.
+ * @param multiPartPaymentExpirySeconds number of seconds we will wait to receive all parts of a multi-part payment.
+ * @param minFundingSatoshis minimum channel size.
+ * @param maxFundingSatoshis maximum channel size.
+ * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
+ * @param enableTrampolinePayment enable trampoline payments.
+ */
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class NodeParams(
@@ -25,6 +81,7 @@ data class NodeParams(
     val maxAcceptedHtlcs: Int,
     val expiryDeltaBlocks: CltvExpiryDelta,
     val fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
+    val checkHtlcTimeoutAfterStartupDelaySeconds: Int,
     val htlcMinimum: MilliSatoshi,
     val toRemoteDelayBlocks: CltvExpiryDelta,
     val maxToLocalDelayBlocks: CltvExpiryDelta,
@@ -49,7 +106,6 @@ data class NodeParams(
     @Serializable(with = SatoshiKSerializer::class) val minFundingSatoshis: Satoshi,
     @Serializable(with = SatoshiKSerializer::class) val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
-    val trampolineNode: NodeUri,
     val enableTrampolinePayment: Boolean,
 ) {
     val nodePrivateKey get() = keyManager.nodeKey.privateKey

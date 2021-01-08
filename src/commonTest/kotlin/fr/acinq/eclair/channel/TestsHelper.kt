@@ -1,7 +1,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.eclair.*
+import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair
+import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
@@ -32,6 +35,10 @@ internal inline fun <reified T : Command> List<ChannelAction>.findCommandOpt(): 
 internal inline fun <reified T : Command> List<ChannelAction>.findCommand(): T = findCommandOpt<T>() ?: fail("cannot find command ${T::class}")
 internal inline fun <reified T : Command> List<ChannelAction>.hasCommand() = assertNotNull(findCommandOpt<T>())
 
+// Transactions
+internal fun List<ChannelAction>.findTxs(): List<Transaction> = filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+internal fun List<ChannelAction>.hasTx(tx: Transaction) = assertTrue(findTxs().contains(tx))
+
 // Errors
 internal inline fun <reified T : Throwable> List<ChannelAction>.findErrorOpt(): T? = filterIsInstance<ChannelAction.ProcessLocalError>().map { it.error }.filterIsInstance<T>().firstOrNull()
 internal inline fun <reified T : Throwable> List<ChannelAction>.findError(): T = findErrorOpt<T>() ?: fail("cannot find error ${T::class}")
@@ -46,30 +53,35 @@ internal inline fun <reified T : ChannelException> List<ChannelAction>.findComma
 internal inline fun <reified T : ChannelException> List<ChannelAction>.findCommandError(): T = findCommandErrorOpt<T>() ?: fail("cannot find command error ${T::class}")
 internal inline fun <reified T : ChannelException> List<ChannelAction>.hasCommandError() = assertNotNull(findCommandErrorOpt<T>())
 
+internal inline fun <reified T : ChannelAction> List<ChannelAction>.findOpt(): T? = filterIsInstance<T>().firstOrNull()
+internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = findOpt<T>() ?: fail("cannot find action ${T::class}")
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 
 fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
 fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
 
 object TestsHelper {
-    fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
-        var alice: ChannelState =
-            WaitForInit(
-                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
-                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
-            )
-        var bob: ChannelState =
-            WaitForInit(
-                StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
-                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
-            )
+    fun init(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = TestConstants.defaultBlockHeight,
+        fundingAmount: Satoshi = TestConstants.fundingAmount,
+        pushMsat: MilliSatoshi = TestConstants.pushMsat
+    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+        var alice: ChannelState = WaitForInit(
+            StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
+            currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+            currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+        )
+        var bob: ChannelState = WaitForInit(
+            StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
+            currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+            currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+        )
         val channelFlags = 0.toByte()
         var aliceChannelParams = TestConstants.Alice.channelParams
         val bobChannelParams = TestConstants.Bob.channelParams
         if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
-            aliceChannelParams = aliceChannelParams.copy(channelReserve = Satoshi(0))
+            aliceChannelParams = aliceChannelParams.copy(channelReserve = 0.sat)
         }
         val aliceInit = Init(ByteVector(aliceChannelParams.features.toByteArray()))
         val bobInit = Init(ByteVector(bobChannelParams.features.toByteArray()))
@@ -77,7 +89,7 @@ object TestsHelper {
             ChannelEvent.InitFunder(
                 ByteVector32.Zeroes,
                 fundingAmount,
-                TestConstants.pushMsat,
+                pushMsat,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -87,16 +99,21 @@ object TestsHelper {
             )
         )
         alice = ra.first
-        assertTrue { alice is WaitForAcceptChannel }
+        assertTrue(alice is WaitForAcceptChannel)
         val rb = bob.process(ChannelEvent.InitFundee(ByteVector32.Zeroes, bobChannelParams, aliceInit))
         bob = rb.first
-        assertTrue { bob is WaitForOpenChannel }
+        assertTrue(bob is WaitForOpenChannel)
         val open = ra.second.findOutgoingMessage<OpenChannel>()
-        return Triple(alice as WaitForAcceptChannel, bob as WaitForOpenChannel, open)
+        return Triple(alice, bob, open)
     }
 
-    fun reachNormal(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentHeight: Int = 0, fundingAmount: Satoshi = TestConstants.fundingSatoshis): Pair<Normal, Normal> {
-        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount)
+    fun reachNormal(
+        channelVersion: ChannelVersion = ChannelVersion.STANDARD,
+        currentHeight: Int = TestConstants.defaultBlockHeight,
+        fundingAmount: Satoshi = TestConstants.fundingAmount,
+        pushMsat: MilliSatoshi = TestConstants.pushMsat
+    ): Pair<Normal, Normal> {
+        val (a, b, open) = init(channelVersion, currentHeight, fundingAmount, pushMsat)
         var alice = a as ChannelState
         var bob = b as ChannelState
         var rb = bob.process(ChannelEvent.MessageReceived(open))
@@ -115,7 +132,7 @@ object TestsHelper {
             txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)),
             lockTime = 0
         )
-        ra = alice.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, Satoshi((100))))
+        ra = alice.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, 100.sat))
         alice = ra.first
         val created = ra.second.findOutgoingMessage<FundingCreated>()
         rb = bob.process(ChannelEvent.MessageReceived(created))
@@ -124,7 +141,7 @@ object TestsHelper {
         ra = alice.process(ChannelEvent.MessageReceived(signedBob))
         alice = ra.first
         val watchConfirmed = run {
-            val candidates = ra.second.filterIsInstance<ChannelAction.Blockchain.SendWatch>().map { it.watch }.filterIsInstance<WatchConfirmed>()
+            val candidates = ra.second.findWatches<WatchConfirmed>()
             if (candidates.isEmpty()) throw IllegalArgumentException("cannot find WatchConfirmed")
             candidates.first()
         }
@@ -152,75 +169,73 @@ object TestsHelper {
 
         // Bob is fundee and initiates the closing
         val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(bob2 is Normal)
         val shutdown = actions.findOutgoingMessage<Shutdown>()
 
         // Alice is funder, she will sign the first closing tx
         val (alice2, actions1) = alice1.process(ChannelEvent.MessageReceived(shutdown))
-        assertTrue { alice2 is Negotiating }
+        assertTrue(alice2 is Negotiating)
         val shutdown1 = actions1.findOutgoingMessage<Shutdown>()
         val closingSigned = actions1.findOutgoingMessage<ClosingSigned>()
 
-        val alice3 = (alice2 as Negotiating).updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
-        val bob3 = (bob2 as Normal).updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
+        val alice3 = alice2.updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
+        val bob3 = bob2.updateFeerate(if (tweakFees) FeeratePerKw(4_316.sat) else FeeratePerKw(5_000.sat))
 
         val (bob4, _) = bob3.process(ChannelEvent.MessageReceived(shutdown1))
-        assertTrue { bob4 is Negotiating }
-        return Triple(alice3, bob4 as Negotiating, closingSigned)
+        assertTrue(bob4 is Negotiating)
+        return Triple(alice3, bob4, closingSigned)
     }
 
     fun localClose(s: ChannelState): Pair<Closing, LocalCommitPublished> {
-        require(s is ChannelStateWithCommitments)
+        assertTrue(s is ChannelStateWithCommitments)
+        assertEquals(ChannelVersion.STANDARD, s.commitments.channelVersion)
         // an error occurs and alice publishes her commit tx
-        val sCommitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
+        val commitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        actions1.has<ChannelAction.Blockchain.PublishTx>()
-        assertTrue { s1 is Closing }; s1 as Closing
+        actions1.has<ChannelAction.Storage.StoreState>()
+        assertTrue(s1 is Closing)
 
         val localCommitPublished = s1.localCommitPublished
         assertNotNull(localCommitPublished)
-
-        assertEquals(actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>()[0], ChannelAction.Blockchain.PublishTx(localCommitPublished.commitTx))
+        assertEquals(commitTx, localCommitPublished.commitTx)
+        actions1.hasTx(commitTx)
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        assertEquals(
-            actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>()[1],
-            ChannelAction.Blockchain.PublishTx(localCommitPublished.claimMainDelayedOutputTx!!)
-        )
+        actions1.hasTx(localCommitPublished.claimMainDelayedOutputTx!!)
+        Transaction.correctlySpends(localCommitPublished.claimMainDelayedOutputTx!!, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // all htlcs success/timeout should be published
-        (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs)
-            .forEach { tx ->
-                actions1.contains(ChannelAction.Blockchain.PublishTx(tx))
-            }
-        // and their outputs should be claimed
-        localCommitPublished.claimHtlcDelayedTxs.forEach { tx ->
-            actions1.contains(ChannelAction.Blockchain.PublishTx(tx))
+        (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).forEach { tx ->
+            Transaction.correctlySpends(tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasTx(tx)
         }
+        // and their outputs should be claimed
+        localCommitPublished.claimHtlcDelayedTxs.forEach { tx -> actions1.hasTx(tx) }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-        val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
-        assertEquals(BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), watchConfirmedList[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), watchConfirmedList[1].event)
-        assertEquals(
-            localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it) }.toSet(),
-            actions1.findWatches<WatchConfirmed>().drop(2).map { it.event }.toSet()
-        )
+        val expectedWatchConfirmed = buildSet {
+            add(BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx))
+            add(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!))
+            addAll(localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it) })
+        }
+        assertEquals(expectedWatchConfirmed, actions1.findWatches<WatchConfirmed>().map { it.event }.toSet())
 
         // we watch outputs of the commitment tx that both parties may spend
-        val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).map { it.txIn.first().outPoint.index }
-        val spentWatches = htlcOutputIndexes.zip(actions1.findWatches<WatchSpent>())
-        spentWatches.forEach { (_, watch) ->
+        val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).map { it.txIn.find { txIn -> txIn.outPoint.txid == commitTx.txid }!!.outPoint.index }
+        val watchSpent = actions1.findWatches<WatchSpent>()
+        watchSpent.forEach { watch ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
-            assertEquals(watch.txId, sCommitTx.txid)
+            assertEquals(watch.txId, commitTx.txid)
         }
-        assertEquals(htlcOutputIndexes.toSet(), spentWatches.map { it.second.outputIndex.toLong() }.toSet())
+        assertEquals(htlcOutputIndexes.toSet(), watchSpent.map { it.outputIndex.toLong() }.toSet())
 
         return s1 to localCommitPublished
     }
 
     fun remoteClose(rCommitTx: Transaction, s: ChannelState): Pair<Closing, RemoteCommitPublished> {
-        require(s is ChannelStateWithCommitments)
+        assertTrue(s is ChannelStateWithCommitments)
+        assertEquals(ChannelVersion.STANDARD, s.commitments.channelVersion)
         // we make s believe r unilaterally closed the channel
-        val (s1, actions1) = s.process(ChannelEvent.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, rCommitTx)))
-        assertTrue { s1 is Closing }; s1 as Closing
+        val (s1, actions1) = s.process(ChannelEvent.WatchReceived(WatchEventSpent(s.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
+        assertTrue(s1 is Closing)
 
         val remoteCommitPublished = s1.remoteCommitPublished ?: s1.nextRemoteCommitPublished ?: s1.futureRemoteCommitPublished
         assertNotNull(remoteCommitPublished)
@@ -228,15 +243,15 @@ object TestsHelper {
 
         // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
         remoteCommitPublished.claimMainOutputTx?.let { tx ->
-            Transaction.correctlySpends(tx, listOf(rCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            assertEquals(ChannelAction.Blockchain.PublishTx(tx), actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first())
+            Transaction.correctlySpends(tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasTx(tx)
         }
         // all htlcs success/timeout should be claimed
-        val claimHtlcTxes = (remoteCommitPublished.claimHtlcSuccessTxs + remoteCommitPublished.claimHtlcTimeoutTxs)
-        claimHtlcTxes.forEach { tx ->
-            Transaction.correctlySpends(tx, listOf(rCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val claimHtlcTxs = (remoteCommitPublished.claimHtlcSuccessTxs + remoteCommitPublished.claimHtlcTimeoutTxs)
+        claimHtlcTxs.forEach { tx ->
+            Transaction.correctlySpends(tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasTx(tx)
         }
-        assertTrue { actions1.containsAll(claimHtlcTxes.map { ChannelAction.Blockchain.PublishTx(it) }) }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
@@ -246,15 +261,15 @@ object TestsHelper {
         }
 
         // we watch outputs of the commitment tx that both parties may spend
-        val htlcOutputIndexes = claimHtlcTxes.map { it.txIn.first().outPoint.index }
-        val spentWatches = htlcOutputIndexes.zip(actions1.findWatches<WatchSpent>())
-        spentWatches.forEach { (_, watch) ->
+        val htlcOutputIndexes = claimHtlcTxs.map { it.txIn.find { txIn -> txIn.outPoint.txid == rCommitTx.txid }!!.outPoint.index }
+        val watchSpent = actions1.findWatches<WatchSpent>()
+        watchSpent.forEach { watch ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, rCommitTx.txid)
         }
-        assertEquals(htlcOutputIndexes.toSet(), spentWatches.map { it.second.outputIndex.toLong() }.toSet())
+        assertEquals(htlcOutputIndexes.toSet(), watchSpent.map { it.outputIndex.toLong() }.toSet())
 
-        // s is now in CLOSING state with txes pending for confirmation before going in CLOSED state
+        // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
         return s1 to remoteCommitPublished
     }
 
@@ -301,6 +316,17 @@ object TestsHelper {
         val (payer0, _) = payer.process(ChannelEvent.MessageReceived(fulfillHtlc))
         assertTrue(payer0 is ChannelStateWithCommitments)
         assertTrue(payer0.commitments.remoteChanges.proposed.contains(fulfillHtlc))
+
+        return payer0 to payee0
+    }
+
+    fun failHtlc(id: Long, payer: ChannelState, payee: ChannelState): Pair<ChannelState, ChannelState> {
+        val (payee0, payeeActions0) = payee.process(ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure))))
+        val failHtlc = payeeActions0.findOutgoingMessage<UpdateFailHtlc>()
+
+        val (payer0, _) = payer.process(ChannelEvent.MessageReceived(failHtlc))
+        assertTrue(payer0 is ChannelStateWithCommitments)
+        assertTrue(payer0.commitments.remoteChanges.proposed.contains(failHtlc))
 
         return payer0 to payee0
     }

@@ -27,16 +27,16 @@ import kotlin.test.*
 @ExperimentalUnsignedTypes
 class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
-    private val defaultTrampolineParams = RouteCalculation.TrampolineParams(TestConstants.Bob.nodeParams.nodeId, RouteCalculation.defaultTrampolineFees)
+    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees)
 
     @Test
     fun `invalid payment amount`() = runSuspendTest {
         val (alice, _) = TestsHelper.reachNormal()
         val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true)
-        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), MilliSatoshi(-1), invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(), alice.currentBlockHeight)
-        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.InvalidPaymentAmount.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.InvalidPaymentAmount.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertNull(outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId))
     }
@@ -45,10 +45,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `no available channels`() = runSuspendTest {
         val (alice, _) = TestsHelper.reachNormal()
         val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true)
-        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to Offline(alice)), alice.currentBlockHeight)
-        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.NoAvailableChannels.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.NoAvailableChannels.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
@@ -65,10 +65,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val (alice, _) = TestsHelper.reachNormal()
         val amount = alice.commitments.availableBalanceForSend() + 10.msat
         val invoice = makeInvoice(amount = amount, supportsTrampoline = true)
-        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), amount, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
-        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.InsufficientBalance.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.InsufficientBalance.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
@@ -83,7 +83,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     fun `channel restrictions (maxAcceptedHtlcs)`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
         alice = alice.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxAcceptedHtlcs = 1)))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
             // Send payment 1 of 2: this should work because we're still under the maxAcceptedHtlcs.
@@ -124,11 +124,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
             val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
-            val expected = OutgoingPaymentHandler.Failure(
-                payment,
-                OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1))))
-            )
-            assertEquals(result2, expected)
+            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1)))))
+            assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -140,7 +137,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         var (alice, _) = TestsHelper.reachNormal()
         val maxHtlcValueInFlightMsat = 150_000L
         alice = alice.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat)))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
             // Send payment 1 of 2: this should work because we're still under the maxHtlcValueInFlightMsat.
@@ -181,11 +178,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
             val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
-            val expected = OutgoingPaymentHandler.Failure(
-                payment,
-                OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat))))
-            )
-            assertEquals(result2, expected)
+            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat)))))
+            assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -195,8 +189,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (single part)`() = runSuspendTest {
         val channels = makeChannels()
-        val trampolineParams = defaultTrampolineParams.copy(attempts = listOf(RouteCalculation.TrampolineFees(3.sat, 0.01f, CltvExpiryDelta(144))))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), trampolineParams)
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(3.sat, 10_000, CltvExpiryDelta(144))))
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = 195_000.msat, supportsTrampoline = true, privKey = recipientKey)
         val payment = SendPayment(UUID.randomUUID(), 200_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice)) // we slightly overpay the invoice amount
@@ -250,8 +244,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (multiple parts)`() = runSuspendTest {
         val channels = makeChannels()
-        val trampolineParams = defaultTrampolineParams.copy(attempts = listOf(RouteCalculation.TrampolineFees(10.sat, 0f, CltvExpiryDelta(144))))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), trampolineParams)
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
@@ -310,8 +304,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (multiple parts, legacy recipient)`() = runSuspendTest {
         val channels = makeChannels()
-        val trampolineParams = defaultTrampolineParams.copy(attempts = listOf(RouteCalculation.TrampolineFees(10.sat, 0f, CltvExpiryDelta(144))))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), trampolineParams)
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val extraHops = listOf(listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(42), 10.msat, 100, CltvExpiryDelta(48))))
         val invoice = makeInvoice(amount = null, supportsTrampoline = false, privKey = recipientKey, extraHops = extraHops)
@@ -362,10 +356,10 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful first attempt (multiple parts, recipient is our peer)`() = runSuspendTest {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val preimage = randomBytes32()
-        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix")
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -417,7 +411,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful second attempt`() = runSuspendTest {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
@@ -492,7 +486,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `successful second attempt (recipient is our peer)`() = runSuspendTest {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = TestConstants.Bob.nodeParams.nodePrivateKey)
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
@@ -534,13 +528,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `insufficient funds when retrying with higher fees`() = runSuspendTest {
         val channels = makeChannels()
-        val trampolineParams = defaultTrampolineParams.copy(
-            attempts = listOf(
-                RouteCalculation.TrampolineFees(10.sat, 0f, CltvExpiryDelta(144)),
-                RouteCalculation.TrampolineFees(100.sat, 0f, CltvExpiryDelta(144)),
+        val walletParams = defaultWalletParams.copy(
+            trampolineFees = listOf(
+                TrampolineFees(10.sat, 0, CltvExpiryDelta(144)),
+                TrampolineFees(100.sat, 0, CltvExpiryDelta(144)),
             )
         )
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), trampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = SendPayment(UUID.randomUUID(), 550_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -554,7 +548,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertNull(outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
         val fail = outgoingPaymentHandler.processAddSettled(adds1[2].first, createRemoteFailure(adds1[2].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeInsufficient))))
-        assertEquals(expected, fail)
+        assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 3)
@@ -563,13 +557,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `retries exhausted`() = runSuspendTest {
         val channels = makeChannels()
-        val trampolineParams = defaultTrampolineParams.copy(
-            attempts = listOf(
-                RouteCalculation.TrampolineFees(10.sat, 0f, CltvExpiryDelta(144)),
-                RouteCalculation.TrampolineFees(20.sat, 0f, CltvExpiryDelta(144)),
+        val walletParams = defaultWalletParams.copy(
+            trampolineFees = listOf(
+                TrampolineFees(10.sat, 0, CltvExpiryDelta(144)),
+                TrampolineFees(20.sat, 0, CltvExpiryDelta(144)),
             )
         )
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), trampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = SendPayment(UUID.randomUUID(), 220_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -587,7 +581,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val attempt2 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
         val fail = outgoingPaymentHandler.processAddSettled(adds2[0].first, createRemoteFailure(adds2[0].second, attempt2, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeInsufficient))))
-        assertEquals(expected, fail)
+        assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 2)
@@ -598,7 +592,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val fatalFailures = listOf(UnknownNextPeer, IncorrectOrUnknownPaymentDetails(50_000.msat, TestConstants.defaultBlockHeight.toLong()))
         fatalFailures.forEach { remoteFailure ->
             val channels = makeChannels()
-            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = SendPayment(UUID.randomUUID(), 50_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -610,7 +604,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
             val fail = outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.UnknownError, listOf(Either.Right(remoteFailure))))
-            assertEquals(expected, fail)
+            assertFailureEquals(expected, fail)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -619,7 +613,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     private suspend fun testLocalChannelFailures(invoice: PaymentRequest) {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPayment(UUID.randomUUID(), 5_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
         var progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
@@ -642,7 +636,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val (channelId, add) = filterAddHtlcCommands(progress).first()
         val fail = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 15), null), channels) as OutgoingPaymentHandler.Failure
         assertEquals(FinalFailure.InsufficientBalance, fail.failure.reason)
-        assertEquals(4, fail.failure.failures.filter { it.isLeft }.size)
+        assertEquals(4, fail.failure.failures.filter { it.isLocalFailure() }.size)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 4)
@@ -662,7 +656,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `local channel failure followed by success`() = runSuspendTest {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = SendPayment(UUID.randomUUID(), 5_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -691,7 +685,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `partial failure then fulfill (spec violation)`() = runSuspendTest {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = SendPayment(UUID.randomUUID(), 310_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -718,7 +712,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     @Test
     fun `partial fulfill then failure (spec violation)`() = runSuspendTest {
         val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, InMemoryPaymentsDb(), defaultTrampolineParams)
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = SendPayment(UUID.randomUUID(), 310_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -751,7 +745,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // Step 1: a payment attempt is made.
         val (adds, attempt) = run {
-            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, db)
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = SendPayment(UUID.randomUUID(), 550_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
@@ -764,17 +758,17 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // Step 2: the wallet restarts and payment fails.
         run {
-            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, db)
             assertNull(outgoingPaymentHandler.processAddFailed(adds[0].first, ChannelAction.ProcessCmdRes.AddFailed(adds[0].second, ChannelUnavailable(adds[0].first), null), channels))
             assertNull(outgoingPaymentHandler.processAddSettled(adds[1].first, createRemoteFailure(adds[1].second, attempt, TemporaryNodeFailure), channels, TestConstants.defaultBlockHeight))
-            val result = outgoingPaymentHandler.processAddSettled(adds[2].first, createRemoteFailure(adds[2].second, attempt, PermanentNodeFailure), channels, TestConstants.defaultBlockHeight)
+            val result = outgoingPaymentHandler.processAddSettled(adds[2].first, createRemoteFailure(adds[2].second, attempt, PermanentNodeFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
             val failures: List<Either<ChannelException, FailureMessage>> = listOf(
                 Either.Left(ChannelUnavailable(adds[0].first)),
                 // Since we've lost the shared secrets, we can't decrypt remote failures.
                 Either.Right(UnknownFailureMessage(0)),
                 Either.Right(UnknownFailureMessage(0))
             )
-            assertEquals(OutgoingPaymentHandler.Failure(attempt.request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures)), result)
+            assertFailureEquals(OutgoingPaymentHandler.Failure(attempt.request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures)), result)
         }
     }
 
@@ -788,7 +782,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // Step 1: a payment attempt is made.
         val adds = run {
-            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, db)
             val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
             val adds = filterAddHtlcCommands(progress)
             assertEquals(3, adds.size)
@@ -800,7 +794,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
         // Step 2: the wallet restarts and payment succeeds.
         run {
-            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, db, defaultTrampolineParams)
+            val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, db)
             val result1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[1].first, adds[1].second, preimage))
             assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), result1)
             val result2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[2].first, adds[2].second, preimage)) as OutgoingPaymentHandler.Success
@@ -905,6 +899,12 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertTrue(dbPayment.status is OutgoingPayment.Status.Succeeded)
         assertEquals(partsCount, dbPayment.parts.size)
         assertTrue(dbPayment.parts.all { it.status is OutgoingPayment.Part.Status.Succeeded })
+    }
+
+    private fun assertFailureEquals(f1: OutgoingPaymentHandler.Failure, f2: OutgoingPaymentHandler.Failure) {
+        val f1b = f1.copy(failure = f1.failure.copy(failures = f1.failure.failures.map { it.copy(completedAt = 0) }))
+        val f2b = f2.copy(failure = f2.failure.copy(failures = f2.failure.failures.map { it.copy(completedAt = 0) }))
+        assertEquals(f1b, f2b)
     }
 
 }

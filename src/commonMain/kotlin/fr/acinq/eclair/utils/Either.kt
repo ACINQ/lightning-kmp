@@ -19,7 +19,7 @@ sealed class Either<out A, out B> {
     }
 
     @Serializable(with = EitherSerializer::class)
-    data class Left<out A, out B>(val value: A) : Either<A, B>() {
+    data class Left<out A, Nothing>(val value: A) : Either<A, Nothing>() {
         override val isLeft = true
         override val isRight = false
         override val left: A? = value
@@ -27,7 +27,7 @@ sealed class Either<out A, out B> {
     }
 
     @Serializable(with = EitherSerializer::class)
-    data class Right<out A, out B>(val value: B) : Either<A, B>() {
+    data class Right<Nothing, out B>(val value: B) : Either<Nothing, B>() {
         override val isLeft = false
         override val isRight = true
         override val left = null
@@ -63,5 +63,11 @@ sealed class Either<out A, out B> {
             return either
         }
     }
-
 }
+
+@Suppress("UNCHECKED_CAST")
+fun <L, R, T> Either<L, R>.flatMap(f: (R) -> Either<L, T>): Either<L, T> =
+    this.fold({ this as Either<L, T> }, f)
+
+fun <L, R, T> Either<L, R>.map(f: (R) -> T): Either<L, T> =
+    flatMap { Either.Right(f(it)) }

@@ -93,7 +93,7 @@ fun String.asParam(): JsonRPCParam = JsonRPCString(this)
  * JSON-RPC result / error
  */
 @Serializable
-data class JsonRPCResponse(val id: Int = 0, val result: JsonElement = JsonNull, val error: JsonRPCError? = null)
+data class JsonRPCResponse(val id: Int? = 0, val result: JsonElement = JsonNull, val error: JsonRPCError? = null)
 
 @Serializable
 data class JsonRPCError(val code: Int, val message: String)

@@ -8,7 +8,7 @@ import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.utils.currentTimestampSeconds
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.ChannelUpdate
-import fr.acinq.eclair.wire.LightningSerializer
+import fr.acinq.eclair.wire.LightningCodecs
 import kotlin.experimental.or
 
 object Announcements {
@@ -100,17 +100,17 @@ object Announcements {
         unknownFields: ByteVector
     ): ByteVector32 {
         val out = ByteArrayOutput()
-        LightningSerializer.writeBytes(chainHash, out)
-        LightningSerializer.writeU64(shortChannelId.toLong(), out)
-        LightningSerializer.writeU32(timestampSeconds.toInt(), out)
-        LightningSerializer.writeByte(messageFlags.toInt(), out)
-        LightningSerializer.writeByte(channelFlags.toInt(), out)
-        LightningSerializer.writeU16(cltvExpiryDelta.toInt(), out)
-        LightningSerializer.writeU64(htlcMinimum.toLong(), out)
-        LightningSerializer.writeU32(feeBase.toLong().toInt(), out)
-        LightningSerializer.writeU32(feeProportionalMillionths.toInt(), out)
-        LightningSerializer.writeU64(htlcMaximum.toLong(), out)
-        LightningSerializer.writeBytes(unknownFields, out)
+        LightningCodecs.writeBytes(chainHash, out)
+        LightningCodecs.writeU64(shortChannelId.toLong(), out)
+        LightningCodecs.writeU32(timestampSeconds.toInt(), out)
+        LightningCodecs.writeByte(messageFlags.toInt(), out)
+        LightningCodecs.writeByte(channelFlags.toInt(), out)
+        LightningCodecs.writeU16(cltvExpiryDelta.toInt(), out)
+        LightningCodecs.writeU64(htlcMinimum.toLong(), out)
+        LightningCodecs.writeU32(feeBase.toLong().toInt(), out)
+        LightningCodecs.writeU32(feeProportionalMillionths.toInt(), out)
+        LightningCodecs.writeU64(htlcMaximum.toLong(), out)
+        LightningCodecs.writeBytes(unknownFields, out)
         return Crypto.sha256(Crypto.sha256(out.toByteArray())).toByteVector32()
     }
 

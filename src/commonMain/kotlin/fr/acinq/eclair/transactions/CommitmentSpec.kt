@@ -12,7 +12,6 @@ sealed class CommitmentOutput {
     object ToRemote : CommitmentOutput()
 
     data class ToLocalAnchor(val pub: PublicKey) : CommitmentOutput()
-
     data class ToRemoteAnchor(val pub: PublicKey) : CommitmentOutput()
 
     data class InHtlc(val incomingHtlc: IncomingHtlc) : CommitmentOutput()
