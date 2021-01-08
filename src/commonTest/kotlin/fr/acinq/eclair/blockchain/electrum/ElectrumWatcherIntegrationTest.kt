@@ -391,7 +391,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
         val fundTx = bitcoincli.fundTransaction(
             Transaction(
                 version = 2,
-                txIn = emptyList(),
+                txIn = listOf(),
                 txOut = listOf(TxOut(150000.sat, Script.pay2wpkh(privateKey.publicKey()))),
                 lockTime = (initialBlockCount + 5).toLong()
             ), true, 250.sat

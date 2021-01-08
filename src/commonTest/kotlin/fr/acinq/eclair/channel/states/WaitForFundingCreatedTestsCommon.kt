@@ -1,9 +1,6 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.TxOut
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchSpent
@@ -73,7 +70,7 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
             val accept = actions.findOutgoingMessage<AcceptChannel>()
             val (a1, actions2) = a.process(ChannelEvent.MessageReceived(accept))
             val fundingRequest = actions2.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>().first()
-            val fundingTx = Transaction(version = 2, txIn = listOf(), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
+            val fundingTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
             val (a2, actions3) = a1.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, Satoshi(0)))
             val fundingCreated = actions3.findOutgoingMessage<FundingCreated>()
             return Triple(a2 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)

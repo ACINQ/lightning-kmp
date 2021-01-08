@@ -10,9 +10,11 @@ import fr.acinq.eclair.serialization.v1.*
 import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.Tlv
 import fr.acinq.eclair.wire.UpdateMessage
+import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -49,12 +51,12 @@ object Serialization {
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    private val cbor = Cbor {
+    val cbor = Cbor {
         serializersModule = serializationModules
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    private fun serialize(state: ChannelStateWithCommitments): ByteArray {
+    fun serialize(state: ChannelStateWithCommitments): ByteArray {
         val raw = cbor.encodeToByteArray(ChannelStateWithCommitments.serializer(), state)
         val versioned = SerializedData(version = 1, data = raw.toByteVector())
         return cbor.encodeToByteArray(SerializedData.serializer(), versioned)
