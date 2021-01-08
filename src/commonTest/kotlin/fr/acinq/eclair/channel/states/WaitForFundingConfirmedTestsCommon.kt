@@ -155,7 +155,7 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `recv ChannelReestablish`() {
+    fun `on reconnection a zero-reserve channel needs to register a zero-confirmation watch on funding tx`() {
         val (alice, bob) = init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, TestConstants.fundingAmount, TestConstants.pushMsat)
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
         assertTrue { bob1 is Offline }
