@@ -2,6 +2,7 @@ package fr.acinq.eclair.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
+import fr.acinq.eclair.Eclair.randomKeyPath
 import fr.acinq.eclair.blockchain.WatchEvent
 import fr.acinq.eclair.blockchain.electrum.*
 import fr.acinq.eclair.blockchain.fee.*
@@ -453,7 +454,7 @@ class Peer(
                         logger.warning { "n:$remoteNodeId ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
                     }
                     msg is OpenChannel -> {
-                        val fundingKeyPath = KeyPath("/1/2/3")
+                        val fundingKeyPath = randomKeyPath(4)
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
                         val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
                         val localParams = LocalParams(
