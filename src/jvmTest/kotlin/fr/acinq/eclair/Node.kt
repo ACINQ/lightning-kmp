@@ -18,7 +18,7 @@ import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.io.*
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.serialization.eclairSerializersModule
+import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.utils.*
 import io.ktor.application.*
@@ -222,7 +222,7 @@ object Node {
                 }
                 install(ContentNegotiation) {
                     register(ContentType.Application.Json, SerializationConverter(Json {
-                        serializersModule = eclairSerializersModule
+                        serializersModule = Serialization.eclairSerializersModule
                     }))
                 }
                 routing {

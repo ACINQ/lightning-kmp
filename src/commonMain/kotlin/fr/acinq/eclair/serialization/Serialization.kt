@@ -8,13 +8,10 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.serialization.v1.*
 import fr.acinq.eclair.utils.toByteVector
-import fr.acinq.eclair.wire.Tlv
-import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.secp256k1.Hex
+import fr.acinq.eclair.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -33,7 +30,34 @@ object Serialization {
     @Serializable
     private data class SerializedData(val version: Int, @Serializable(with = ByteVectorKSerializer::class) val data: ByteVector)
 
-    val serializersModule = SerializersModule {
+    private val updateSerializersModule = SerializersModule {
+        polymorphic(UpdateMessage::class) {
+            subclass(UpdateAddHtlc.serializer())
+            subclass(UpdateFailHtlc.serializer())
+            subclass(UpdateFailMalformedHtlc.serializer())
+            subclass(UpdateFee.serializer())
+            subclass(UpdateFulfillHtlc.serializer())
+        }
+    }
+
+    private val tlvSerializersModule = SerializersModule {
+        polymorphic(Tlv::class) {
+            subclass(ChannelTlv.UpfrontShutdownScript.serializer())
+            subclass(ChannelTlv.ChannelVersionTlv.serializer())
+            subclass(InitTlv.Networks.serializer())
+            subclass(OnionTlv.AmountToForward.serializer())
+            subclass(OnionTlv.OutgoingCltv.serializer())
+            subclass(OnionTlv.OutgoingChannelId.serializer())
+            subclass(OnionTlv.PaymentData.serializer())
+            subclass(OnionTlv.InvoiceFeatures.serializer())
+            subclass(OnionTlv.OutgoingNodeId.serializer())
+            subclass(OnionTlv.InvoiceRoutingInfo.serializer())
+            subclass(OnionTlv.TrampolineOnion.serializer())
+            subclass(GenericTlv.serializer())
+        }
+    }
+    
+    private val serializersModule = SerializersModule {
         polymorphic(ChannelStateWithCommitments::class) {
             subclass(Normal::class)
             subclass(WaitForFundingConfirmed::class)
@@ -46,8 +70,15 @@ object Serialization {
     }
 
     private val serializationModules = SerializersModule {
-        include(Tlv.serializersModule)
-        include(UpdateMessage.serializersModule)
+        include(tlvSerializersModule)
+        include(updateSerializersModule)
+    }
+
+    // used by the "test node" JSON API
+    val eclairSerializersModule = SerializersModule {
+        include(serializersModule)
+        include(tlvSerializersModule)
+        include(updateSerializersModule)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -70,7 +101,7 @@ object Serialization {
     @OptIn(ExperimentalSerializationApi::class)
     fun deserialize(bin: ByteArray, nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments {
         val versioned = cbor.decodeFromByteArray(SerializedData.serializer(), bin)
-        return when(versioned.version) {
+        return when (versioned.version) {
             1 -> cbor.decodeFromByteArray(ChannelStateWithCommitments.serializer(), versioned.data.toByteArray()).export(nodeParams)
             else -> error("unknown serialization version ${versioned.version}")
         }

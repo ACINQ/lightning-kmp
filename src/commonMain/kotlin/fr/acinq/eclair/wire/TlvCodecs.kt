@@ -8,9 +8,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.serialization.ByteVectorKSerializer
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
 
 @OptIn(ExperimentalUnsignedTypes::class)
 interface Tlv {
@@ -26,25 +23,6 @@ interface Tlv {
         val out = ByteArrayOutput()
         write(out)
         return out.toByteArray()
-    }
-
-    companion object {
-        val serializersModule = SerializersModule {
-            polymorphic(Tlv::class) {
-                subclass(ChannelTlv.UpfrontShutdownScript.serializer())
-                subclass(ChannelTlv.ChannelVersionTlv.serializer())
-                subclass(InitTlv.Networks.serializer())
-                subclass(OnionTlv.AmountToForward.serializer())
-                subclass(OnionTlv.OutgoingCltv.serializer())
-                subclass(OnionTlv.OutgoingChannelId.serializer())
-                subclass(OnionTlv.PaymentData.serializer())
-                subclass(OnionTlv.InvoiceFeatures.serializer())
-                subclass(OnionTlv.OutgoingNodeId.serializer())
-                subclass(OnionTlv.InvoiceRoutingInfo.serializer())
-                subclass(OnionTlv.TrampolineOnion.serializer())
-                subclass(GenericTlv.serializer())
-            }
-        }
     }
 }
 
