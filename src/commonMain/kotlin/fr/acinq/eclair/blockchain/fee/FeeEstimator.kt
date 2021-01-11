@@ -16,7 +16,6 @@ interface FeeEstimator {
  * @param claimMainFeerate feerate used to claim our main output when a channel is force-closed (typically configured by the user, based on their preference).
  * @param fastFeerate feerate used to claim outputs quickly to avoid loss of funds: this one should not be set by the user (we should look at current on-chain fees).
  */
-@Serializable
 data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
 
 data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)

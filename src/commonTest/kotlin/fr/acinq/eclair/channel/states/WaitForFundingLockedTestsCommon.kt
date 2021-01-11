@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.processEx

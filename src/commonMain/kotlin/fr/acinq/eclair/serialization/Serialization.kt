@@ -23,7 +23,7 @@ object Serialization {
      *
      * @README DO NOT change the structure of this class !!
      *
-     * If a new serialization format is added, just change the `version` field and update serialize()/deserialized() methods
+     * If a new serialization format is added, just change the `version` field and update serialize()/deserialize() methods
      * @param version version of the serialization algorithm
      * @param data serialized data
      */
@@ -56,7 +56,7 @@ object Serialization {
             subclass(GenericTlv.serializer())
         }
     }
-    
+
     private val serializersModule = SerializersModule {
         polymorphic(ChannelStateWithCommitments::class) {
             subclass(Normal::class)
@@ -66,6 +66,7 @@ object Serialization {
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)
             subclass(Closing::class)
+            subclass(ErrorInformationLeak::class)
         }
     }
 

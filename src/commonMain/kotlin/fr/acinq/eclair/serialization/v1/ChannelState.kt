@@ -73,9 +73,9 @@ data class HtlcTxAndSigs(val txinfo: Transactions.TransactionWithInputInfo, @Ser
 
 @Serializable
 data class PublishableTxs(val commitTx: Transactions.TransactionWithInputInfo.CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>) {
-    constructor(from: fr.acinq.eclair.channel.PublishableTxs) : this(from.commitTx, from.htlcTxsAndSigs.map { HtlcTxAndSigs(it.txinfo, it.localSig, it.remoteSig) })
+    constructor(from: fr.acinq.eclair.channel.PublishableTxs) : this(from.commitTx, from.htlcTxsAndSigs.map { HtlcTxAndSigs(it) })
 
-    fun export() = fr.acinq.eclair.channel.PublishableTxs(commitTx, htlcTxsAndSigs.map { fr.acinq.eclair.channel.HtlcTxAndSigs(it.txinfo, it.localSig, it.remoteSig) })
+    fun export() = fr.acinq.eclair.channel.PublishableTxs(commitTx, htlcTxsAndSigs.map { it.export() })
 }
 
 @Serializable
@@ -106,7 +106,7 @@ data class LocalCommitPublished(
     val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     constructor(from: fr.acinq.eclair.channel.LocalCommitPublished) : this(from.commitTx, from.claimMainDelayedOutputTx, from.htlcSuccessTxs, from.htlcTimeoutTxs, from.claimHtlcDelayedTxs, from.irrevocablySpent)
 
@@ -119,7 +119,7 @@ data class RemoteCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val claimMainOutputTx: Transaction? = null,
     val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     constructor(from: fr.acinq.eclair.channel.RemoteCommitPublished) : this(from.commitTx, from.claimMainOutputTx, from.claimHtlcSuccessTxs, from.claimHtlcTimeoutTxs, from.irrevocablySpent)
 
@@ -134,7 +134,7 @@ data class RevokedCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val mainPenaltyTx: Transaction? = null,
     val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVectorKSerializer::class) ByteVector32> = emptyMap()
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
 ) {
     constructor(from: fr.acinq.eclair.channel.RevokedCommitPublished) : this(
         from.commitTx,
@@ -155,7 +155,7 @@ data class LocalParams constructor(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     @Serializable(with = KeyPathKSerializer::class) val fundingKeyPath: KeyPath,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+    val maxHtlcValueInFlightMsat: Long, 
     @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
@@ -186,7 +186,7 @@ data class LocalParams constructor(
 data class RemoteParams(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+    val maxHtlcValueInFlightMsat: Long, 
     @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
@@ -249,14 +249,6 @@ data class ClosingTxProposed(@Serializable(with = TransactionKSerializer::class)
     fun export() = fr.acinq.eclair.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
 }
 
-/**
- * about remoteNextCommitInfo:
- * we either:
- * - have built and signed their next commit tx with their next revocation hash which can now be discarded
- * - have their next per-commitment point
- * So, when we've signed and sent a commit message and are waiting for their revocation message,
- * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
- */
 @Serializable
 data class Commitments(
     val channelVersion: ChannelVersion,
@@ -269,7 +261,7 @@ data class Commitments(
     val remoteChanges: RemoteChanges,
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
-    val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymentId
+    val payments: Map<Long, UUID>,
     val remoteNextCommitInfo: Either<WaitingForRevocation, @Serializable(with = PublicKeyKSerializer::class) PublicKey>,
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
@@ -322,7 +314,6 @@ data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFe
     fun export() = fr.acinq.eclair.blockchain.fee.OnChainFeerates(mutualCloseFeerate, claimMainFeerate, fastFeerate)
 }
 
-/** Channel static parameters. */
 @Serializable
 data class StaticParams(@Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey) {
     constructor(from: fr.acinq.eclair.channel.StaticParams) : this(from.remoteNodeId)
@@ -330,7 +321,6 @@ data class StaticParams(@Serializable(with = PublicKeyKSerializer::class) val re
     fun export(nodeParams: NodeParams) = fr.acinq.eclair.channel.StaticParams(nodeParams, this.remoteNodeId)
 }
 
-/** Channel state. */
 @Serializable
 sealed class ChannelState {
     abstract val staticParams: StaticParams
@@ -365,8 +355,8 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             is fr.acinq.eclair.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
             is fr.acinq.eclair.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed(from)
             is fr.acinq.eclair.channel.WaitForFundingLocked -> WaitForFundingLocked(from)
-            is fr.acinq.eclair.channel.Offline -> error("not implemented")
-            is fr.acinq.eclair.channel.Syncing -> error("not implemented")
+            is fr.acinq.eclair.channel.Offline -> Offline(from)
+            is fr.acinq.eclair.channel.Syncing -> Syncing(from)
             is fr.acinq.eclair.channel.Normal -> Normal(from)
             is fr.acinq.eclair.channel.ShuttingDown -> ShuttingDown(from)
             is fr.acinq.eclair.channel.Negotiating -> Negotiating(from)
@@ -739,7 +729,7 @@ data class Negotiating(
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
-    val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
+    val closingTxProposed: List<List<ClosingTxProposed>>,
     @Serializable(with = TransactionKSerializer::class) val bestUnpublishedClosingTx: Transaction?
 ) : ChannelStateWithCommitments() {
     init {
@@ -776,9 +766,9 @@ data class Closing(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
-    val waitingSinceBlock: Long, // how long since we initiated the closing
-    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
+    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, 
+    val waitingSinceBlock: Long, 
+    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), 
     val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
     val remoteCommitPublished: RemoteCommitPublished? = null,
@@ -819,9 +809,6 @@ data class Closing(
     )
 }
 
-/**
- * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
- */
 @Serializable
 data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val commitments: Commitments get() = state.commitments
