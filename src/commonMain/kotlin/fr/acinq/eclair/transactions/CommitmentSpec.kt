@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
 sealed class CommitmentOutput {
@@ -18,7 +17,6 @@ sealed class CommitmentOutput {
     data class OutHtlc(val outgoingHtlc: OutgoingHtlc) : CommitmentOutput()
 }
 
-@Serializable
 sealed class DirectedHtlc {
     abstract val add: UpdateAddHtlc
 
@@ -33,16 +31,13 @@ sealed class DirectedHtlc {
     }
 }
 
-@Serializable
 data class IncomingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
 
-@Serializable
 data class OutgoingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
 
 fun Iterable<DirectedHtlc>.incomings(): List<UpdateAddHtlc> = mapNotNull { (it as? IncomingHtlc)?.add }
 fun Iterable<DirectedHtlc>.outgoings(): List<UpdateAddHtlc> = mapNotNull { (it as? OutgoingHtlc)?.add }
 
-@Serializable
 data class CommitmentSpec(
     val htlcs: Set<DirectedHtlc>,
     val feerate: FeeratePerKw,
