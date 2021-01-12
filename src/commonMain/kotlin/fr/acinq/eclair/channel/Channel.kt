@@ -6,6 +6,7 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
+import fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.Helpers.Closing.extractPreimages
@@ -206,7 +207,7 @@ sealed class ChannelState {
 
     internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
         require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
-        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE}" }
+        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK} blocks" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -230,7 +231,7 @@ sealed class ChannelState {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                 )
@@ -270,7 +271,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 remoteCommitPublished = remoteCommitPublished
             )
@@ -280,7 +281,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = fundingTx,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -289,7 +290,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
         }
@@ -317,7 +318,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 nextRemoteCommitPublished = remoteCommitPublished
             )
@@ -328,7 +329,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
@@ -359,7 +360,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
@@ -370,7 +371,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     currentOnChainFeerates = currentOnChainFeerates,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
@@ -414,7 +415,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     localCommitPublished = localCommitPublished
                 )
@@ -423,7 +424,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = fundingTx,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
@@ -431,7 +432,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
             }
@@ -468,7 +469,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                             currentOnChainFeerates,
                             commitments,
                             fundingTx = null,
-                            waitingSince = currentTimestampMillis(),
+                            waitingSinceBlock = currentBlockHeight.toLong(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                         )
@@ -1042,7 +1043,7 @@ data class WaitForRemotePublishFutureCommitment(
             commitments = commitments,
             currentOnChainFeerates = currentOnChainFeerates,
             fundingTx = null,
-            waitingSince = currentTimestampMillis(),
+            waitingSinceBlock = currentBlockHeight.toLong(),
             futureRemoteCommitPublished = remoteCommitPublished
         )
         val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
@@ -1532,7 +1533,7 @@ data class WaitForFundingConfirmed(
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
-    val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
+    val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
@@ -2385,7 +2386,7 @@ data class Closing(
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
-    val waitingSince: Long, // how long since we initiated the closing
+    val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
     val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
@@ -2809,8 +2810,8 @@ object Channel {
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
-    // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-    const val FUNDING_TIMEOUT_FUNDEE = 5 * 24 * 3600 // 5 days, in seconds
+    // as a fundee, we will wait that block count for the funding tx to confirm (funder will rely on the funding tx being double-spent)
+    const val FUNDING_TIMEOUT_FUNDEE_BLOCK = 720
 
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
