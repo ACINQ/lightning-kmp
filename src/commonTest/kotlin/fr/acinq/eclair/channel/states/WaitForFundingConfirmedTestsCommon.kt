@@ -5,17 +5,16 @@ import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.utils.currentTimestampMillis
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.FundingSigned
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     @Test
@@ -154,6 +153,41 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertTrue { alice1 is Offline }
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
         assertTrue { bob1 is Offline }
+    }
+
+    @Test
+    fun `recv Disconnected (get funding tx successful)`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice1, _) = alice.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline }
+
+        alice.fundingTx?.let {
+            val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(it.txid, it, currentTimestampMillis())))
+            assertTrue { alice2 is Offline }
+            assertTrue { actions2.isEmpty() }
+        } ?: fail("Alice's funding tx must not be null.")
+    }
+
+    @Test
+    fun `recv Disconnected (get funding tx error)`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice1, _) = alice.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline }
+
+        alice.fundingTx?.let {
+            val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(it.txid, null, currentTimestampMillis())))
+            assertTrue { alice2 is Offline }
+            assertTrue { actions2.isNotEmpty() }
+            actions2.hasTx(it)
+            val watchConfirmed = actions2.hasWatch<WatchConfirmed>()
+            assertEquals(it.txid, watchConfirmed.txId)
+            assertEquals(3, watchConfirmed.minDepth)
+            assertEquals(BITCOIN_TX_CONFIRMED(it), watchConfirmed.event)
+        } ?: fail("Alice's funding tx must not be null.")
     }
 
     companion object {

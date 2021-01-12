@@ -64,6 +64,7 @@ sealed class ChannelEvent {
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
     data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
+    data class GetFundingTxResponse(val getTxResponse: GetTxWithMetaResponse) : ChannelEvent()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
     data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelEvent()
@@ -193,6 +194,29 @@ sealed class ChannelState {
         return when (cmd) {
             is CMD_ADD_HTLC -> Pair(this, listOf(ChannelAction.ProcessCmdRes.AddFailed(cmd, error, channelUpdate)))
             else -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, error)))
+        }
+    }
+
+    internal fun handleGetFundingTx(channelId: ByteVector32, getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): List<ChannelAction> = when {
+        getTxResponse.tx_opt != null -> emptyList() // the funding tx exists, nothing to do
+        fundingTx_opt != null -> {
+            // if we are funder, we never give up
+            logger.info { "republishing the funding tx..." }
+            // TODO we should also check if the funding tx has been double-spent
+            //  see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
+            doPublish(fundingTx_opt, channelId)
+        }
+        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> { // TODO (now.seconds - lastBlockTimestamp.seconds) < 1.hour ?
+            // if we are fundee, we give up after some time
+            // NB: we want to be sure that the blockchain is in sync to prevent false negatives
+            logger.warning { "funding tx hasn't been published in ${currentTip.first - waitingSinceBlock} blocks" } // and blockchain is fresh from ${(now.seconds-lastBlockTimestamp.seconds).toMinutes} minutes ago" }
+            handleFundingTimeout()
+            emptyList()
+        }
+        else -> {
+            // let's wait a little longer
+            logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_FUNDEE_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
+            emptyList()
         }
     }
 
@@ -685,8 +709,8 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} offline processing ${event::class}" }
-        return when (event) {
-            is ChannelEvent.Connected -> {
+        return when {
+            event is ChannelEvent.Connected -> {
                 when {
                     state is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
@@ -720,7 +744,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     }
                 }
             }
-            is ChannelEvent.WatchReceived -> {
+            event is ChannelEvent.WatchReceived -> {
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent -> when {
@@ -755,7 +779,8 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> unhandled(event)
                 }
             }
-            is ChannelEvent.CheckHtlcTimeout -> {
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> Pair(this, handleGetFundingTx(channelId, event.getTxResponse, state.waitingSinceBlock, state.fundingTx))
+            event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -763,7 +788,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            is ChannelEvent.NewBlock -> {
+            event is ChannelEvent.NewBlock -> {
                 val (newState, actions) = state.process(event)
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -980,6 +1005,9 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     else -> unhandled(event)
                 }
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> {
+                Pair(this, handleGetFundingTx(channelId, event.getTxResponse, state.waitingSinceBlock, state.fundingTx))
+            }
             event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
@@ -1597,6 +1625,10 @@ data class WaitForFundingConfirmed(
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
                 is CMD_FORCECLOSE -> spendLocalCurrent()
                 else -> unhandled(event)
+            }
+            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
+                commitments.commitInput.outPoint.txid -> Pair(this, handleGetFundingTx(channelId, event.getTxResponse, waitingSinceBlock, fundingTx))
+                else -> Pair(this, listOf())
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
@@ -2628,6 +2660,10 @@ data class Closing(
                     is Either.Left -> handleCommandError(event.command, result.value)
                 }
                 else -> unhandled(event)
+            }
+            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
+                commitments.commitInput.outPoint.txid -> Pair(this, handleGetFundingTx(channelId, event.getTxResponse, waitingSinceBlock, fundingTx))
+                else -> Pair(this, listOf())
             }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
