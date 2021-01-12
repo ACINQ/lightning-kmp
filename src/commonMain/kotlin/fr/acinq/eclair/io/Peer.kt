@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
-import fr.acinq.eclair.blockchain.WatchEvent
+import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.electrum.*
 import fr.acinq.eclair.blockchain.fee.*
 import fr.acinq.eclair.channel.*
@@ -293,6 +293,11 @@ class Peer(
                 action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ChannelEvent.ExecuteCommand(action.command)))
                 action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
                 action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
+                action is ChannelAction.Blockchain.GetFundingTx -> {
+                    val getTxResponse= CompletableDeferred<GetTxWithMetaResponse>()
+                    watcher.send(GetTxWithMetaEvent(GetTxWithMeta(action.txid, getTxResponse)))
+                    input.send(WrappedChannelEvent(channelId, ChannelEvent.GetFundingTxResponse(getTxResponse.await())))
+                }
                 action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
                 action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "n:$remoteNodeId c:$actualChannelId command not executed" }
                 action is ChannelAction.ProcessCmdRes.AddFailed -> {

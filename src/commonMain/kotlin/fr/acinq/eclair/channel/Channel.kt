@@ -90,6 +90,7 @@ sealed class ChannelAction {
         data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feerate: FeeratePerKw) : Blockchain()
         data class SendWatch(val watch: Watch) : Blockchain()
         data class PublishTx(val tx: Transaction) : Blockchain()
+        data class GetFundingTx(val txid: ByteVector32) : Blockchain()
     }
 
     sealed class Storage : ChannelAction() {
@@ -628,9 +629,8 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
                         event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
-                        @Suppress("ControlFlowWithEmptyBody")
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
-                            // TODO ask watcher for the funding tx
+                            actions.add(ChannelAction.Blockchain.GetFundingTx(commitments.commitInput.outPoint.txid))
                         }
                         Pair(event.state, actions)
                     }
@@ -652,8 +652,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     staticParams.nodeParams.minDepthBlocks.toLong(),
                     BITCOIN_FUNDING_DEPTHOK
                 )
-                val actions = listOf(ChannelAction.Blockchain.SendWatch(watchSpent), ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                // TODO: ask watcher for the funding tx when restoring WaitForFundingConfirmed
+                val actions = listOf(
+                    ChannelAction.Blockchain.SendWatch(watchSpent),
+                    ChannelAction.Blockchain.SendWatch(watchConfirmed),
+                    ChannelAction.Blockchain.GetFundingTx(event.state.commitments.commitInput.outPoint.txid)
+                )
                 Pair(Offline(event.state), actions)
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())

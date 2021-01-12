@@ -344,9 +344,11 @@ class OfflineTestsCommon : EclairTestSuite() {
         // Alice's wallet restarts.
         val initState = WaitForInit(alice.staticParams, alice.currentTip, alice.currentOnChainFeerates)
         val (alice1, actions1) = initState.process(ChannelEvent.Restore(alice))
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.hasWatch<WatchSpent>()
         actions1.hasWatch<WatchConfirmed>()
+        val getFundingTx = actions1.find<ChannelAction.Blockchain.GetFundingTx>()
+        assertEquals(alice.commitments.commitInput.outPoint.txid, getFundingTx.txid)
         assertTrue(alice1 is Offline)
 
         val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
