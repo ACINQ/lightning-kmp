@@ -22,7 +22,6 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.count
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,6 +30,27 @@ import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class PeerTest : EclairTestSuite() {
+
+    fun buildOpenChannel(): OpenChannel = OpenChannel(
+        Block.RegtestGenesisBlock.hash,
+        randomBytes32(),
+        100_000.sat,
+        0.msat,
+        483.sat,
+        10_000,
+        1_000.sat,
+        1.msat,
+        TestConstants.feeratePerKw,
+        CltvExpiryDelta(144),
+        100,
+        randomKey().publicKey(),
+        randomKey().publicKey(),
+        randomKey().publicKey(),
+        randomKey().publicKey(),
+        randomKey().publicKey(),
+        randomKey().publicKey(),
+        0.toByte()
+    )
 
     @Test
     fun `init peer`() = runSuspendTest {
@@ -57,31 +77,32 @@ class PeerTest : EclairTestSuite() {
         val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
         val (alice, _, alice2bob, _) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
-        val open = OpenChannel(
-            Block.RegtestGenesisBlock.hash,
-            randomBytes32(),
-            100_000.sat,
-            0.msat,
-            483.sat,
-            10_000,
-            1_000.sat,
-            1.msat,
-            TestConstants.feeratePerKw,
-            CltvExpiryDelta(144),
-            100,
-            randomKey().publicKey(),
-            randomKey().publicKey(),
-            randomKey().publicKey(),
-            randomKey().publicKey(),
-            randomKey().publicKey(),
-            randomKey().publicKey(),
-            0.toByte()
-        )
+        val open = buildOpenChannel()
         alice.forward(open)
         alice2bob.expect<AcceptChannel>()
         // bob tries to open another channel with the same temporaryChannelId
         alice.forward(open.copy(firstPerCommitmentPoint = randomKey().publicKey()))
         assertEquals(1, alice.channels.size)
+    }
+
+    @Test
+    fun `generate random funding keys`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, _, alice2bob, _) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+        val open1 = buildOpenChannel()
+        alice.forward(open1)
+        alice2bob.expect<AcceptChannel>()
+
+        val open2 = buildOpenChannel()
+        alice.forward(open2)
+        alice2bob.expect<AcceptChannel>()
+
+        val open3 = buildOpenChannel()
+        alice.forward(open3)
+        alice2bob.expect<AcceptChannel>()
+
+        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.fundingKeyPath }.toSet().size)
     }
 
     @Test

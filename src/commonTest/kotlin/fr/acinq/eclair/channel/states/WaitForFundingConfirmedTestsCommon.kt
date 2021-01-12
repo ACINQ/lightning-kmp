@@ -11,9 +11,7 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.utils.currentTimestampMillis
 import fr.acinq.eclair.utils.sat
-import fr.acinq.eclair.wire.Error
-import fr.acinq.eclair.wire.FundingLocked
-import fr.acinq.eclair.wire.FundingSigned
+import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
 class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
@@ -188,6 +186,42 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
             assertEquals(3, watchConfirmed.minDepth)
             assertEquals(BITCOIN_TX_CONFIRMED(it), watchConfirmed.event)
         } ?: fail("Alice's funding tx must not be null.")
+    }
+
+    @Test
+    fun `on reconnection a zero-reserve channel needs to register a zero-confirmation watch on funding tx`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline }
+
+        val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
+        val remoteInit = Init(ByteVector(TestConstants.Bob.channelParams.features.toByteArray()))
+
+        val (bob2, actions2) = bob1.process(ChannelEvent.Connected(remoteInit, localInit))
+        assertTrue(bob2 is Syncing)
+        assertTrue(actions2.isEmpty())
+
+        val channelReestablishAlice = run {
+            val yourLastPerCommitmentSecret = alice.commitments.remotePerCommitmentSecrets.lastIndex?.let { alice.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+            val channelKeyPath = alice.keyManager.channelKeyPath(alice.commitments.localParams, alice.commitments.channelVersion)
+            val myCurrentPerCommitmentPoint = alice.keyManager.commitmentPoint(channelKeyPath, alice.commitments.localCommit.index)
+
+            ChannelReestablish(
+                channelId = alice.channelId,
+                nextLocalCommitmentNumber = alice.commitments.localCommit.index + 1,
+                nextRemoteRevocationNumber = alice.commitments.remoteCommit.index,
+                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                alice.commitments.remoteChannelData
+            )
+        }
+
+        val (bob3, actions3) = bob2.process(ChannelEvent.MessageReceived(channelReestablishAlice))
+        assertEquals(bob, bob3)
+        assertEquals(2, actions3.size)
+        actions3.hasOutgoingMessage<ChannelReestablish>()
+        val bobWatch = actions3.hasWatch<WatchConfirmed>()
+        assertEquals(0, bobWatch.minDepth)
     }
 
     companion object {

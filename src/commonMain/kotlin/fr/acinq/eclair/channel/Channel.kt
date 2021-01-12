@@ -869,7 +869,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             staticParams.nodeParams.minDepthBlocks
                         } else {
                             // when we're fundee we scale the min_depth confirmations depending on the funding amount
-                            Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.commitInput.txOut.amount)
+                            if (commitments.isZeroReserve) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.commitInput.txOut.amount)
                         }
                         // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
                         val watchConfirmed = WatchConfirmed(
