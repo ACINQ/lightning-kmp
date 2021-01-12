@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.KeyPath
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.utils.secure
 import kotlin.experimental.xor
@@ -20,6 +21,12 @@ object Eclair {
     fun randomBytes32(): ByteVector32 = ByteVector32(randomBytes(32))
     fun randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
     fun randomKey(): PrivateKey = PrivateKey(randomBytes32())
+
+    fun randomKeyPath(length: Int): KeyPath {
+        val path = mutableListOf<Long>()
+        repeat(length) { path.add(secureRandom.nextLong()) }
+        return KeyPath(path)
+    }
 
     fun toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 {
         require(fundingOutputIndex < 65536) { "fundingOutputIndex must not be greater than FFFF" }
