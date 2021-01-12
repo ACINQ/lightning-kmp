@@ -224,6 +224,50 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertEquals(0, bobWatch.minDepth)
     }
 
+    @Test
+    fun `get funding tx in Syncing state`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
+        val localInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
+        val remoteInit = Init(ByteVector(alice.commitments.localParams.features.toByteArray()))
+        val (bob2, _) = bob1.process(ChannelEvent.Connected(localInit, remoteInit))
+        assertTrue { bob2 is Syncing && bob2.state is WaitForFundingConfirmed }
+
+        // Actual test start here
+        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        val (bob3, _) = bob2.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertEquals(bob2, bob3)
+        // Fast forward 721 blocks later
+        val (bob4, _) = bob3.process(ChannelEvent.NewBlock(bob3.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // We give up, Channel is aborted
+        val (bob5, actions5) = bob4.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertTrue { bob5 is Aborted }
+        assertEquals(1, actions5.size)
+        val error = actions5.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
+    }
+
+    @Test
+    fun `get funding tx in Offline state`() {
+        val (_, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
+
+        // Actual test start here
+        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        val (bob2, _) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertEquals(bob1, bob2)
+        // Fast forward 721 blocks later
+        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // We give up, Channel is aborted
+        val (bob4, actions4) = bob3.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertTrue { bob4 is Aborted }
+        assertEquals(1, actions4.size)
+        val error = actions4.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
+    }
+
     companion object {
         fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
             val (alice, bob, fundingCreated) = WaitForFundingCreatedTestsCommon.init(channelVersion, fundingAmount, pushAmount)

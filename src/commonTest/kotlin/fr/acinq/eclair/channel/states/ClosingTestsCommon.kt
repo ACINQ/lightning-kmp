@@ -18,10 +18,7 @@ import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.sat
-import fr.acinq.eclair.utils.toMilliSatoshi
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
@@ -1255,6 +1252,52 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (alice0, _, _) = initMutualClose()
         val (alice1, _) = alice0.process(ChannelEvent.Disconnected)
         assertTrue { alice1 is Offline }
+    }
+
+    @Test
+    fun `restore closing state`() {
+        val (alice, bob) = reachNormal()
+        // we are notified afterwards from our watcher about the tx that we just published
+        val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+        assertTrue(bob1 is Closing)
+        assertNull(bob1.closingTypeAlreadyKnown())
+
+        val state = WaitForInit(bob.staticParams, bob.currentTip, bob.currentOnChainFeerates)
+        val (state1, actions) = state.process(ChannelEvent.Restore(bob1))
+        assertTrue { state1 is Closing }
+        assertEquals(5, actions.size)
+        val watchSpent = actions.hasWatch<WatchSpent>()
+        assertEquals(bob.commitments.commitInput.outPoint.txid, watchSpent.txId)
+        val remoteCommitPublished = bob1.remoteCommitPublished
+        assertNotNull(remoteCommitPublished)
+        val claimMainOutputTx = remoteCommitPublished.claimMainOutputTx
+        assertNotNull(claimMainOutputTx)
+        actions.hasTx(claimMainOutputTx)
+        val watches = actions.findWatches<WatchConfirmed>()
+        assertEquals(2, watches.size)
+        assertNotNull(watches.first { it.txId == remoteCommitPublished.commitTx.txid })
+        assertNotNull(watches.first { it.txId == claimMainOutputTx.txid })
+        actions.has<ChannelAction.Blockchain.GetFundingTx>()
+    }
+
+    @Test
+    fun `get funding tx`() {
+        val (alice, bob) = reachNormal()
+        // we are notified afterwards from our watcher about the tx that we just published
+        val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+        assertTrue(bob1 is Closing)
+
+        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        val (bob2, _) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertEquals(bob1, bob2)
+        // Fast forward 721 blocks later
+        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // We give up, Channel is aborted
+        val (bob4, actions4) = bob3.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertTrue { bob4 is Aborted }
+        assertEquals(1, actions4.size)
+        val error = actions4.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
     }
 
     companion object {

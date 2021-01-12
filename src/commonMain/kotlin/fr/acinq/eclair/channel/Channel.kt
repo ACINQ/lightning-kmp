@@ -197,26 +197,25 @@ sealed class ChannelState {
         }
     }
 
-    internal fun handleGetFundingTx(channelId: ByteVector32, getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): List<ChannelAction> = when {
-        getTxResponse.tx_opt != null -> emptyList() // the funding tx exists, nothing to do
+    internal fun handleGetFundingTx(channelId: ByteVector32, getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): Pair<ChannelState, List<ChannelAction>> = when {
+        getTxResponse.tx_opt != null -> Pair(this, emptyList()) // the funding tx exists, nothing to do
         fundingTx_opt != null -> {
             // if we are funder, we never give up
             logger.info { "republishing the funding tx..." }
             // TODO we should also check if the funding tx has been double-spent
             //  see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
-            doPublish(fundingTx_opt, channelId)
+            this to doPublish(fundingTx_opt, channelId)
         }
         (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> { // TODO (now.seconds - lastBlockTimestamp.seconds) < 1.hour ?
             // if we are fundee, we give up after some time
             // NB: we want to be sure that the blockchain is in sync to prevent false negatives
             logger.warning { "funding tx hasn't been published in ${currentTip.first - waitingSinceBlock} blocks" } // and blockchain is fresh from ${(now.seconds-lastBlockTimestamp.seconds).toMinutes} minutes ago" }
             handleFundingTimeout()
-            emptyList()
         }
         else -> {
             // let's wait a little longer
             logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_FUNDEE_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
-            emptyList()
+            Pair(this, emptyList())
         }
     }
 
@@ -779,7 +778,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> unhandled(event)
                 }
             }
-            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> Pair(this, handleGetFundingTx(channelId, event.getTxResponse, state.waitingSinceBlock, state.fundingTx))
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(channelId, event.getTxResponse, state.waitingSinceBlock, state.fundingTx)
             event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
@@ -1005,9 +1004,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     else -> unhandled(event)
                 }
-            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> {
-                Pair(this, handleGetFundingTx(channelId, event.getTxResponse, state.waitingSinceBlock, state.fundingTx))
-            }
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(channelId, event.getTxResponse, state.waitingSinceBlock, state.fundingTx)
             event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
@@ -1271,7 +1268,7 @@ data class WaitForFundingCreated(
                                         logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
                                         val watchSpent = WatchSpent(channelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                                         val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentBlockHeight.toLong(), null, Either.Right(fundingSigned))
                                         val actions = listOf(
                                             ChannelAction.Blockchain.SendWatch(watchSpent),
                                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -1525,7 +1522,7 @@ data class WaitForFundingSigned(
                         )
                         logger.info { "c:$channelId committing txid=${fundingTx.txid}" }
 
-                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentTimestampMillis(), null, Either.Left(lastSent))
+                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentBlockHeight.toLong(), null, Either.Left(lastSent))
                         val actions = listOf(
                             ChannelAction.Blockchain.SendWatch(watchSpent),
                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -1627,8 +1624,8 @@ data class WaitForFundingConfirmed(
                 else -> unhandled(event)
             }
             is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
-                commitments.commitInput.outPoint.txid -> Pair(this, handleGetFundingTx(channelId, event.getTxResponse, waitingSinceBlock, fundingTx))
-                else -> Pair(this, listOf())
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(channelId, event.getTxResponse, waitingSinceBlock, fundingTx)
+                else -> Pair(this, emptyList())
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
@@ -2662,8 +2659,8 @@ data class Closing(
                 else -> unhandled(event)
             }
             is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
-                commitments.commitInput.outPoint.txid -> Pair(this, handleGetFundingTx(channelId, event.getTxResponse, waitingSinceBlock, fundingTx))
-                else -> Pair(this, listOf())
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(channelId, event.getTxResponse, waitingSinceBlock, fundingTx)
+                else -> Pair(this, emptyList())
             }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
