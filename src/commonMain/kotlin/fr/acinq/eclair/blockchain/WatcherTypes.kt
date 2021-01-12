@@ -91,5 +91,5 @@ data class WatchEventSpentBasic(override val channelId: ByteVector32, override v
 data class WatchEventLost(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()
 
 data class PublishAsap(val tx: Transaction)
-data class GetTxWithMeta(val txid: ByteVector32, val response: CompletableDeferred<GetTxWithMetaResponse>)
+data class GetTxWithMeta(val channelId: ByteVector32, val txid: ByteVector32)
 data class GetTxWithMetaResponse(val txid: ByteVector32, val tx_opt: Transaction?, val lastBlockTimestamp: Long)
