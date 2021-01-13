@@ -206,7 +206,7 @@ sealed class ChannelState {
             //  see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
             this to listOf(ChannelAction.Blockchain.PublishTx(fundingTx_opt))
         }
-        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> { // TODO (now.seconds - lastBlockTimestamp.seconds) < 1.hour ?
+        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {
             // if we are fundee, we give up after some time
             // NB: we want to be sure that the blockchain is in sync to prevent false negatives
             logger.warning { "funding tx hasn't been published in ${currentTip.first - waitingSinceBlock} blocks" } // and blockchain is fresh from ${(now.seconds-lastBlockTimestamp.seconds).toMinutes} minutes ago" }
