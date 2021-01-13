@@ -500,4 +500,32 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertEquals(watchSpent, actions4.findWatches<WatchSpent>().map { OutPoint(lcp.commitTx, it.outputIndex.toLong()) }.toSet())
     }
 
+    @Test
+    fun `restore closing channel`() {
+        val bob = run {
+            val (alice, bob) = TestsHelper.reachNormal()
+            // alice publishes her commitment tx
+            val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+            assertTrue(bob1 is Closing)
+            assertNull(bob1.closingTypeAlreadyKnown())
+            bob1
+        }
+
+        val state = WaitForInit(bob.staticParams, bob.currentTip, bob.currentOnChainFeerates)
+        val (state1, actions) = state.process(ChannelEvent.Restore(bob))
+        assertTrue { state1 is Closing }
+        assertEquals(5, actions.size)
+        val watchSpent = actions.hasWatch<WatchSpent>()
+        assertEquals(bob.commitments.commitInput.outPoint.txid, watchSpent.txId)
+        val remoteCommitPublished = bob.remoteCommitPublished
+        assertNotNull(remoteCommitPublished)
+        val claimMainOutputTx = remoteCommitPublished.claimMainOutputTx
+        assertNotNull(claimMainOutputTx)
+        actions.hasTx(claimMainOutputTx)
+        val watches = actions.findWatches<WatchConfirmed>()
+        assertEquals(2, watches.size)
+        assertNotNull(watches.first { it.txId == remoteCommitPublished.commitTx.txid })
+        assertNotNull(watches.first { it.txId == claimMainOutputTx.txid })
+        actions.has<ChannelAction.Blockchain.GetFundingTx>()
+    }
 }
