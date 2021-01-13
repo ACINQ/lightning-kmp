@@ -469,6 +469,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
         runJob?.cancel()
         // Cancel broadcast channel
         watchNotificationsChannel.cancel()
+        txNotificationsChannel.cancel()
         // Cancel event channels
         eventChannel.cancel()
     }
