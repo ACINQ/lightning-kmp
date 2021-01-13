@@ -1260,7 +1260,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
         val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue { alice1 is Closing } ; alice1 as Closing
+        assertTrue(alice1 is Closing)
         assertEquals(5, actions1.size)
         // TODO alice2bob.expectMsgType[Error] it is not
         val commitTx = alice1.localCommitPublished?.commitTx
