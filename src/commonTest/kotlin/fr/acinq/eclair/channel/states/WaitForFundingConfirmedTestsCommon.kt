@@ -181,10 +181,6 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
             assertTrue { alice2 is Offline }
             assertTrue { actions2.isNotEmpty() }
             actions2.hasTx(it)
-            val watchConfirmed = actions2.hasWatch<WatchConfirmed>()
-            assertEquals(it.txid, watchConfirmed.txId)
-            assertEquals(3, watchConfirmed.minDepth)
-            assertEquals(BITCOIN_TX_CONFIRMED(it), watchConfirmed.event)
         } ?: fail("Alice's funding tx must not be null.")
     }
 
