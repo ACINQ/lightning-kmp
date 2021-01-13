@@ -208,7 +208,6 @@ sealed class ChannelState {
         }
         (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {
             // if we are fundee, we give up after some time
-            logger.warning { "funding tx hasn't been published in ${currentTip.first - waitingSinceBlock} blocks" }
             handleFundingTimeout()
         }
         else -> {
