@@ -1256,155 +1256,65 @@ class ClosingTestsCommon : EclairTestSuite() {
 
     @Test
     fun `recv GetTxResponse (funder, tx found)`() {
-        val (alice, _) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, _) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
-        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue(alice1 is Closing)
-        assertEquals(5, actions1.size)
-        // TODO alice2bob.expectMsgType[Error] it is not
-        val commitTx = alice1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = alice1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
 
         // test starts here
-        val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, fundingTx, currentTimestampMillis())))
-        assertEquals(alice1, alice2)
+        val (alice1, actions2) = alice.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, fundingTx, currentTimestampMillis())))
+        assertEquals(alice1, alice1)
         assertTrue { actions2.isEmpty() }
     }
 
     @Test
     fun `recv GetTxResponse (funder, tx not found)`() {
-        val (alice, _) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, _) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
-        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue { alice1 is Closing } ; alice1 as Closing
-        assertEquals(5, actions1.size)
-        // TODO alice2bob.expectMsgType[Error] it is not
-        val commitTx = alice1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = alice1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
 
         // test starts here
-        val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
-        assertEquals(alice1, alice2)
-        assertTrue { actions2.isNotEmpty() }
-        actions2.hasTx(fundingTx)
+        val (alice1, actions1) = alice.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
+        assertEquals(alice, alice1)
+        assertTrue { actions1.isNotEmpty() }
+        actions1.hasTx(fundingTx)
     }
 
     @Test
     fun `recv GetTxResponse (fundee, tx found)`() {
-        val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
-        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue { bob1 is Closing } ; bob1 as Closing
-        assertEquals(5, actions1.size)
-        // TODO alice2bob.expectMsgType[Error] it is not
-        val commitTx = bob1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
 
         // test starts here
-        val (bob2, actions2) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, fundingTx, currentTimestampMillis())))
-        assertEquals(bob1, bob2)
-        assertTrue { actions2.isEmpty() }
+        val (bob1, actions1) = bob.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, fundingTx, currentTimestampMillis())))
+        assertEquals(bob, bob1)
+        assertTrue { actions1.isEmpty() }
     }
 
     @Test
     fun `recv GetTxResponse (fundee, tx not found)`() {
-        val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
-        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue { bob1 is Closing } ; bob1 as Closing
-        assertEquals(5, actions1.size)
-        // TODO alice2bob.expectMsgType[Error] it is not
-        val commitTx = bob1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
 
         // test starts here
-        val (bob2, actions2) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
-        assertEquals(bob1, bob2)
-        assertTrue { actions2.isEmpty() }
+        val (bob1, actions1) = bob.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
+        assertEquals(bob, bob1)
+        assertTrue { actions1.isEmpty() }
     }
 
     @Test
     fun `recv GetTxResponse (fundee, tx not found, timeout)`() {
-        val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
-        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue { bob1 is Closing } ; bob1 as Closing
-        assertEquals(5, actions1.size)
-        // TODO alice2bob.expectMsgType[Error] it is not
-        val commitTx = bob1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
 
         // test starts here
-        val (bob2, _) = bob1.process(ChannelEvent.NewBlock(bob1.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
-        val (bob3, actions3) = bob2.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
-        assertTrue { bob3 is Aborted }
-        assertEquals(1, actions3.size)
-        val error = actions3.hasOutgoingMessage<Error>()
+        val (bob1, _) = bob.process(ChannelEvent.NewBlock(bob.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob2, actions2) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
+        assertTrue { bob2 is Aborted }
+        assertEquals(1, actions2.size)
+        val error = actions2.hasOutgoingMessage<Error>()
         assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
     }
 
@@ -1587,6 +1497,57 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
             // The only other possible actions are for settling htlcs
             assertEquals(actions.size - 1, actions.count { action -> action is ChannelAction.ProcessCmdRes })
+        }
+
+        fun initForceClose(): Pair<Closing, Closing> {
+            val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+            // funder
+            val alice1 = run {
+                val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+                assertTrue(alice1 is Closing)
+                assertEquals(5, actions1.size)
+                // TODO alice2bob.expectMsgType[Error] it is not
+                val commitTx = alice1.localCommitPublished?.commitTx
+                assertNotNull(commitTx)
+                val claimDelayedOutputTx = alice1.localCommitPublished?.claimMainDelayedOutputTx
+                assertNotNull(claimDelayedOutputTx)
+
+                val publishAsap = actions1.findTxs()
+                assertEquals(2, publishAsap.size)
+                assertEquals(commitTx.txid, publishAsap.first().txid)
+                assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+
+                assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
+                val watches = actions1.findWatches<WatchConfirmed>()
+                assertEquals(commitTx.txid, watches.first().txId)
+                assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+                alice1
+            }
+
+            // fundee
+            val bob1 = run {
+                val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+                assertTrue { bob1 is Closing } ; bob1 as Closing
+                assertEquals(5, actions1.size)
+                // TODO alice2bob.expectMsgType[Error] it is not
+                val commitTx = bob1.localCommitPublished?.commitTx
+                assertNotNull(commitTx)
+                val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
+                assertNotNull(claimDelayedOutputTx)
+
+                val publishAsap = actions1.findTxs()
+                assertEquals(2, publishAsap.size)
+                assertEquals(commitTx.txid, publishAsap.first().txid)
+                assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+
+                assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
+                val watches = actions1.findWatches<WatchConfirmed>()
+                assertEquals(commitTx.txid, watches.first().txId)
+                assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+                bob1
+            }
+
+            return alice1 to bob1
         }
     }
 }
