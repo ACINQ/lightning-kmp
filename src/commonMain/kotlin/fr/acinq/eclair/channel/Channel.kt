@@ -208,8 +208,7 @@ sealed class ChannelState {
         }
         (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {
             // if we are fundee, we give up after some time
-            // NB: we want to be sure that the blockchain is in sync to prevent false negatives
-            logger.warning { "funding tx hasn't been published in ${currentTip.first - waitingSinceBlock} blocks" } // and blockchain is fresh from ${(now.seconds-lastBlockTimestamp.seconds).toMinutes} minutes ago" }
+            logger.warning { "funding tx hasn't been published in ${currentTip.first - waitingSinceBlock} blocks" }
             handleFundingTimeout()
         }
         else -> {
