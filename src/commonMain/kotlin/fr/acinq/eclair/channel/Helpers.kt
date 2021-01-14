@@ -985,28 +985,4 @@ object Helpers {
                 }
             }
     }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): ByteArray {
-        val bin = ChannelStateWithCommitments.serialize(state)
-        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
-        // See https://en.wikipedia.org/wiki/Birthday_attack
-        val nonce = sha256(bin).take(12).toByteArray()
-        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return ciphertext + nonce + tag
-    }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    fun decrypt(key: ByteVector32, data: ByteArray): ChannelStateWithCommitments {
-        // nonce is 12B, tag is 16B
-        val ciphertext = data.dropLast(12 + 16)
-        val nonce = data.takeLast(12 + 16).take(12)
-        val tag = data.takeLast(16)
-        val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
-        return ChannelStateWithCommitments.deserialize(plaintext)
-    }
-
-    fun decrypt(key: PrivateKey, data: ByteArray): ChannelStateWithCommitments = decrypt(key.value, data)
-
-    fun decrypt(key: PrivateKey, data: ByteVector): ChannelStateWithCommitments = decrypt(key, data.toByteArray())
 }

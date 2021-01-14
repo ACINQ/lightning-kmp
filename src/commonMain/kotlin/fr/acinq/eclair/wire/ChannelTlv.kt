@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.channel.ChannelVersion
-import fr.acinq.eclair.io.ByteVectorKSerializer
+import fr.acinq.eclair.serialization.ByteVectorKSerializer
 import fr.acinq.eclair.utils.BitField
 import kotlinx.serialization.Serializable
 

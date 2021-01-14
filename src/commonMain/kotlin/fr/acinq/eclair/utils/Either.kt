@@ -18,6 +18,11 @@ sealed class Either<out A, out B> {
         is Right -> fb(this.value)
     }
 
+    fun <X, Y> transform(fa: (A) -> X, fb: (B) -> Y): Either<X, Y> = when (this) {
+        is Left -> Left(fa(this.value))
+        is Right -> Right(fb(this.value))
+    }
+
     @Serializable(with = EitherSerializer::class)
     data class Left<out A, Nothing>(val value: A) : Either<A, Nothing>() {
         override val isLeft = true

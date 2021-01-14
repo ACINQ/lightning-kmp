@@ -1,9 +1,6 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.TxOut
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.blockchain.WatchConfirmed
@@ -77,7 +74,7 @@ class WaitForFundingSignedTestsCommon : EclairTestSuite() {
             val accept = actionsBob1.findOutgoingMessage<AcceptChannel>()
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(accept))
             val fundingRequest = actionsAlice1.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>().first()
-            val fundingTx = Transaction(version = 2, txIn = listOf(), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
+            val fundingTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
             val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, 100.sat))
             assertTrue(alice2 is WaitForFundingSigned)
             val fundingCreated = actionsAlice2.findOutgoingMessage<FundingCreated>()

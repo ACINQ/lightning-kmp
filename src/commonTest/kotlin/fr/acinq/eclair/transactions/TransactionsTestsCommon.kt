@@ -122,7 +122,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             // ClaimP2WPKHOutputTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
             val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey()))
-            val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey(), finalPubKeyScript, feeratePerKw)
             assertTrue(claimP2WPKHOutputTx is Success, "is $claimP2WPKHOutputTx")
             // we use dummy signatures to compute the weight
@@ -135,7 +135,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             // ClaimHtlcDelayedTx
             // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the ClaimDelayedOutputTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
-            val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val claimHtlcDelayedTx = makeClaimLocalDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey(), finalPubKeyScript, feeratePerKw)
             assertTrue(claimHtlcDelayedTx is Success, "is $claimHtlcDelayedTx")
             // we use dummy signatures to compute the weight
@@ -148,7 +148,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             // MainPenaltyTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
-            val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val mainPenaltyTx = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey(), finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey(), feeratePerKw)
             assertTrue(mainPenaltyTx is Success, "is $mainPenaltyTx")
             // we use dummy signatures to compute the weight
@@ -164,7 +164,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val redeemScript = htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)
             val pubKeyScript = write(pay2wsh(redeemScript))
-            val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, 0, write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
             assertTrue(htlcPenaltyTx is Success, "is $htlcPenaltyTx")
             // we use dummy signatures to compute the weight
@@ -193,7 +193,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = outputs.map { it.output }, lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcSuccessTx =
                 makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcSuccessTx is Success, "is $claimHtlcSuccessTx")
@@ -223,7 +223,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val commitTx = Transaction(version = 0, txIn = emptyList(), txOut = outputs.map { it.output }, lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcTimeoutTx =
                 makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcTimeoutTx is Success, "is $claimHtlcTimeoutTx")

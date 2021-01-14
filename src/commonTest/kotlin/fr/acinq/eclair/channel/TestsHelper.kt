@@ -10,6 +10,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
@@ -128,7 +129,7 @@ object TestsHelper {
         }
         val fundingTx = Transaction(
             version = 2,
-            txIn = listOf(),
+            txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)),
             txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)),
             lockTime = 0
         )
@@ -382,5 +383,24 @@ object TestsHelper {
 
             return sender2 to receiver2
         }
+    }
+
+    // we check that serialization works by checking that deserialize(serialize(state)) == state
+    fun checkSerialization(state: ChannelStateWithCommitments) {
+        val serialized = Serialization.serialize(state)
+        val deserialized = Serialization.deserialize(serialized, state.staticParams.nodeParams)
+        assertEquals(deserialized, state, "serialization error")
+    }
+
+    fun checkSerialization(actions: List<ChannelAction>) {
+        // we check that serialization works everytime we're suppose to persist channel data
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
+    }
+
+    // test-specific extension that allows for extra checks during tests
+    fun ChannelState.processEx(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+        val result = this.process(event)
+        checkSerialization(result.second)
+        return result
     }
 }

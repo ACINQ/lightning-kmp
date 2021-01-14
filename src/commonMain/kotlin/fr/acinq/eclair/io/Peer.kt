@@ -12,6 +12,7 @@ import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.payment.*
+import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.eclair.wire.Ping
@@ -493,7 +494,7 @@ class Peer(
                         if (msg.channelData.isEmpty()) {
                             sendToPeer(Error(msg.channelId, "unknown channel"))
                         } else {
-                            when (val decrypted = runTrying { Helpers.decrypt(nodeParams.nodePrivateKey, msg.channelData) }) {
+                            when (val decrypted = runTrying { Serialization.decrypt(nodeParams.nodePrivateKey, msg.channelData, nodeParams) }) {
                                 is Try.Success -> {
                                     logger.warning { "n:$remoteNodeId restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result

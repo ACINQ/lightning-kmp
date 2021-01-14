@@ -4,19 +4,12 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.eclair.Eclair.secureRandom
-import fr.acinq.eclair.io.ByteVector32KSerializer
-import fr.acinq.eclair.io.ByteVectorKSerializer
 import fr.acinq.eclair.transactions.Transactions
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 
-@Serializable
-data class LocalKeyManager(@Serializable(with = ByteVectorKSerializer::class) val seed: ByteVector, @Serializable(with = ByteVector32KSerializer::class) val chainHash: ByteVector32) : KeyManager {
+data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
 
-    @Transient
     private val master = DeterministicWallet.generate(seed)
 
-    @Transient
     override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chainHash))
 
     override val nodeId: PublicKey get() = nodeKey.publicKey

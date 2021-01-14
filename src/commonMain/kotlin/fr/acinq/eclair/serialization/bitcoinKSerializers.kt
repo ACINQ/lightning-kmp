@@ -1,4 +1,4 @@
-package fr.acinq.eclair.io
+package fr.acinq.eclair.serialization
 
 import fr.acinq.bitcoin.*
 import fr.acinq.secp256k1.Hex
@@ -35,12 +35,7 @@ object ByteVector64KSerializer : AbstractStringKSerializer<ByteVector64>("ByteVe
 
 object PrivateKeyKSerializer : AbstractStringKSerializer<PrivateKey>("PrivateKey", { it.value.toHex() }, { PrivateKey(ByteVector32(it)) })
 
-object PublicKeyKSerializer : AbstractStringKSerializer<PublicKey>("PublicKey", { it.value.toHex() }, {
-    PublicKey(
-        ByteVector(it)
-    )
-})
-
+object PublicKeyKSerializer : AbstractStringKSerializer<PublicKey>("PublicKey", { it.value.toHex() }, { PublicKey(ByteVector(it)) })
 
 object SatoshiKSerializer : KSerializer<Satoshi> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Satoshi", PrimitiveKind.LONG)
@@ -52,9 +47,7 @@ object SatoshiKSerializer : KSerializer<Satoshi> {
     override fun deserialize(decoder: Decoder): Satoshi {
         return Satoshi(decoder.decodeLong())
     }
-
 }
-
 
 abstract class AbstractBtcSerializableKSerializer<T : BtcSerializable<T>>(
     val name: String,

@@ -2,7 +2,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.sha256
-import fr.acinq.eclair.io.ByteVector32KSerializer
+import fr.acinq.eclair.serialization.ByteVector32KSerializer
 import fr.acinq.eclair.utils.startsWith
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer

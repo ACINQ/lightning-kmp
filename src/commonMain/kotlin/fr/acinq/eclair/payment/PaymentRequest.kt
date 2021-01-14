@@ -6,9 +6,9 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomBytes32
-import fr.acinq.eclair.io.ByteVector32KSerializer
-import fr.acinq.eclair.io.ByteVectorKSerializer
-import fr.acinq.eclair.io.PublicKeyKSerializer
+import fr.acinq.eclair.serialization.ByteVector32KSerializer
+import fr.acinq.eclair.serialization.ByteVectorKSerializer
+import fr.acinq.eclair.serialization.PublicKeyKSerializer
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.LightningCodecs
 import kotlinx.serialization.Serializable

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.io.SatoshiKSerializer
+import fr.acinq.eclair.serialization.SatoshiKSerializer
 import fr.acinq.eclair.utils.sat
 import kotlinx.serialization.Serializable
 
@@ -16,24 +16,19 @@ interface FeeEstimator {
  * @param claimMainFeerate feerate used to claim our main output when a channel is force-closed (typically configured by the user, based on their preference).
  * @param fastFeerate feerate used to claim outputs quickly to avoid loss of funds: this one should not be set by the user (we should look at current on-chain fees).
  */
-@Serializable
 data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
 
-@Serializable
 data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)
 
-@Serializable
 data class OnChainFeeConf(val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double, val feerateTolerance: FeerateTolerance)
 
-@Serializable
 /** Fee rate in satoshi-per-bytes. */
-data class FeeratePerByte(@Serializable(with = SatoshiKSerializer::class) val feerate: Satoshi) {
+data class FeeratePerByte(val feerate: Satoshi) {
     constructor(feeratePerKw: FeeratePerKw) : this(FeeratePerKB(feeratePerKw).feerate / 1000)
 }
 
-@Serializable
 /** Fee rate in satoshi-per-kilo-bytes (1 kB = 1000 bytes). */
-data class FeeratePerKB(@Serializable(with = SatoshiKSerializer::class) val feerate: Satoshi) : Comparable<FeeratePerKB> {
+data class FeeratePerKB(val feerate: Satoshi) : Comparable<FeeratePerKB> {
     constructor(feeratePerByte: FeeratePerByte) : this(feeratePerByte.feerate * 1000)
     constructor(feeratePerKw: FeeratePerKw) : this(feeratePerKw.feerate * 4)
 
