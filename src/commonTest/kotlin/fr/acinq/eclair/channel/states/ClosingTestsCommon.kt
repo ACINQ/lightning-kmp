@@ -1505,8 +1505,11 @@ class ClosingTestsCommon : EclairTestSuite() {
             val alice1 = run {
                 val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(alice1 is Closing)
-                assertEquals(5, actions1.size)
-                // TODO alice2bob.expectMsgType[Error] it is not
+                assertEquals(6, actions1.size)
+
+                val error = actions1.hasOutgoingMessage<Error>()
+                assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
+
                 val commitTx = alice1.localCommitPublished?.commitTx
                 assertNotNull(commitTx)
                 val claimDelayedOutputTx = alice1.localCommitPublished?.claimMainDelayedOutputTx
@@ -1528,8 +1531,11 @@ class ClosingTestsCommon : EclairTestSuite() {
             val bob1 = run {
                 val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue { bob1 is Closing } ; bob1 as Closing
-                assertEquals(5, actions1.size)
-                // TODO alice2bob.expectMsgType[Error] it is not
+                assertEquals(6, actions1.size)
+
+                val error = actions1.hasOutgoingMessage<Error>()
+                assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
+
                 val commitTx = bob1.localCommitPublished?.commitTx
                 assertNotNull(commitTx)
                 val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
