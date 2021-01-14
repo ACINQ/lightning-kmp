@@ -1626,7 +1626,7 @@ data class WaitForFundingConfirmed(
                 }
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> spendLocalCurrent()
+                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
             is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
@@ -1717,7 +1717,7 @@ data class WaitForFundingLocked(
             }
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> spendLocalCurrent()
+                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
