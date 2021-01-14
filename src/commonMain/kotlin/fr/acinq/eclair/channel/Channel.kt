@@ -6,6 +6,7 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
+import fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.Helpers.Closing.extractPreimages
@@ -63,6 +64,7 @@ sealed class ChannelEvent {
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
     data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
+    data class GetFundingTxResponse(val getTxResponse: GetTxWithMetaResponse) : ChannelEvent()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
     data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelEvent()
@@ -89,6 +91,7 @@ sealed class ChannelAction {
         data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feerate: FeeratePerKw) : Blockchain()
         data class SendWatch(val watch: Watch) : Blockchain()
         data class PublishTx(val tx: Transaction) : Blockchain()
+        data class GetFundingTx(val txid: ByteVector32) : Blockchain()
     }
 
     sealed class Storage : ChannelAction() {
@@ -194,6 +197,26 @@ sealed class ChannelState {
         }
     }
 
+    internal fun handleGetFundingTx(getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): Pair<ChannelState, List<ChannelAction>> = when {
+        getTxResponse.tx_opt != null -> Pair(this, emptyList()) // the funding tx exists, nothing to do
+        fundingTx_opt != null -> {
+            // if we are funder, we never give up
+            logger.info { "republishing the funding tx..." }
+            // TODO we should also check if the funding tx has been double-spent
+            //  see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
+            this to listOf(ChannelAction.Blockchain.PublishTx(fundingTx_opt))
+        }
+        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {
+            // if we are fundee, we give up after some time
+            handleFundingTimeout()
+        }
+        else -> {
+            // let's wait a little longer
+            logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_FUNDEE_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
+            Pair(this, emptyList())
+        }
+    }
+
     internal fun handleFundingPublishFailed(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
         require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
         logger.error { "c:$channelId failed to publish funding tx" }
@@ -206,7 +229,7 @@ sealed class ChannelState {
 
     internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
         require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
-        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE}" }
+        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE_BLOCK blocks" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -230,7 +253,7 @@ sealed class ChannelState {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                 )
@@ -270,7 +293,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 remoteCommitPublished = remoteCommitPublished
             )
@@ -280,7 +303,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = fundingTx,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -289,7 +312,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
         }
@@ -317,7 +340,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 nextRemoteCommitPublished = remoteCommitPublished
             )
@@ -328,7 +351,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
@@ -359,7 +382,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
@@ -370,7 +393,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     currentOnChainFeerates = currentOnChainFeerates,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
@@ -414,7 +437,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     localCommitPublished = localCommitPublished
                 )
@@ -423,7 +446,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = fundingTx,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
@@ -431,7 +454,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
             }
@@ -468,7 +491,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                             currentOnChainFeerates,
                             commitments,
                             fundingTx = null,
-                            waitingSince = currentTimestampMillis(),
+                            waitingSinceBlock = currentBlockHeight.toLong(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                         )
@@ -627,9 +650,8 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
                         event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
-                        @Suppress("ControlFlowWithEmptyBody")
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
-                            // TODO ask watcher for the funding tx
+                            actions.add(ChannelAction.Blockchain.GetFundingTx(commitments.commitInput.outPoint.txid))
                         }
                         Pair(event.state, actions)
                     }
@@ -651,8 +673,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     staticParams.nodeParams.minDepthBlocks.toLong(),
                     BITCOIN_FUNDING_DEPTHOK
                 )
-                val actions = listOf(ChannelAction.Blockchain.SendWatch(watchSpent), ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                // TODO: ask watcher for the funding tx when restoring WaitForFundingConfirmed
+                val actions = listOf(
+                    ChannelAction.Blockchain.SendWatch(watchSpent),
+                    ChannelAction.Blockchain.SendWatch(watchConfirmed),
+                    ChannelAction.Blockchain.GetFundingTx(event.state.commitments.commitInput.outPoint.txid)
+                )
                 Pair(Offline(event.state), actions)
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
@@ -681,8 +706,8 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} offline processing ${event::class}" }
-        return when (event) {
-            is ChannelEvent.Connected -> {
+        return when {
+            event is ChannelEvent.Connected -> {
                 when {
                     state is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
@@ -716,7 +741,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     }
                 }
             }
-            is ChannelEvent.WatchReceived -> {
+            event is ChannelEvent.WatchReceived -> {
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent -> when {
@@ -751,7 +776,12 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> unhandled(event)
                 }
             }
-            is ChannelEvent.CheckHtlcTimeout -> {
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
+                event.getTxResponse,
+                state.waitingSinceBlock,
+                state.fundingTx
+            )
+            event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -759,7 +789,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            is ChannelEvent.NewBlock -> {
+            event is ChannelEvent.NewBlock -> {
                 val (newState, actions) = state.process(event)
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -976,6 +1006,11 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     else -> unhandled(event)
                 }
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
+                event.getTxResponse,
+                state.waitingSinceBlock,
+                state.fundingTx
+            )
             event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
@@ -1042,7 +1077,7 @@ data class WaitForRemotePublishFutureCommitment(
             commitments = commitments,
             currentOnChainFeerates = currentOnChainFeerates,
             fundingTx = null,
-            waitingSince = currentTimestampMillis(),
+            waitingSinceBlock = currentBlockHeight.toLong(),
             futureRemoteCommitPublished = remoteCommitPublished
         )
         val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
@@ -1239,7 +1274,7 @@ data class WaitForFundingCreated(
                                         logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
                                         val watchSpent = WatchSpent(channelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                                         val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentBlockHeight.toLong(), null, Either.Right(fundingSigned))
                                         val actions = listOf(
                                             ChannelAction.Blockchain.SendWatch(watchSpent),
                                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -1493,7 +1528,7 @@ data class WaitForFundingSigned(
                         )
                         logger.info { "c:$channelId committing txid=${fundingTx.txid}" }
 
-                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentTimestampMillis(), null, Either.Left(lastSent))
+                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentBlockHeight.toLong(), null, Either.Left(lastSent))
                         val actions = listOf(
                             ChannelAction.Blockchain.SendWatch(watchSpent),
                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -1532,7 +1567,7 @@ data class WaitForFundingConfirmed(
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
-    val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
+    val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
@@ -1591,8 +1626,12 @@ data class WaitForFundingConfirmed(
                 }
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> spendLocalCurrent()
+                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
+            }
+            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
+                else -> Pair(this, emptyList())
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
@@ -1605,7 +1644,10 @@ data class WaitForFundingConfirmed(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return when {
+            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
+        }
     }
 }
 
@@ -1675,7 +1717,7 @@ data class WaitForFundingLocked(
             }
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> spendLocalCurrent()
+                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
@@ -1689,7 +1731,10 @@ data class WaitForFundingLocked(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return when {
+            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
+        }
     }
 }
 
@@ -2385,7 +2430,7 @@ data class Closing(
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
-    val waitingSince: Long, // how long since we initiated the closing
+    val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
     val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
@@ -2625,6 +2670,10 @@ data class Closing(
                 }
                 else -> unhandled(event)
             }
+            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
+                else -> Pair(this, emptyList())
+            }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -2809,8 +2858,8 @@ object Channel {
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
-    // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-    const val FUNDING_TIMEOUT_FUNDEE = 5 * 24 * 3600 // 5 days, in seconds
+    // as a fundee, we will wait that block count for the funding tx to confirm (funder will rely on the funding tx being double-spent)
+    const val FUNDING_TIMEOUT_FUNDEE_BLOCK = 720
 
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()

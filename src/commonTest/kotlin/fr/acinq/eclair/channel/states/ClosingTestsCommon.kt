@@ -18,10 +18,7 @@ import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.utils.UUID
-import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.sat
-import fr.acinq.eclair.utils.toMilliSatoshi
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
@@ -1257,6 +1254,105 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue { alice1 is Offline }
     }
 
+    @Test
+    fun `recv GetTxResponse (funder, tx found)`() {
+        val (alice, _) = initForceClose()
+        val fundingTx = alice.fundingTx
+        assertNotNull(fundingTx)
+
+        // test starts here
+        val (alice1, actions2) = alice.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, fundingTx, currentTimestampMillis())))
+        assertEquals(alice1, alice1)
+        assertTrue { actions2.isEmpty() }
+    }
+
+    @Test
+    fun `recv GetTxResponse (funder, tx not found)`() {
+        val (alice, _) = initForceClose()
+        val fundingTx = alice.fundingTx
+        assertNotNull(fundingTx)
+
+        // test starts here
+        val (alice1, actions1) = alice.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
+        assertEquals(alice, alice1)
+        assertTrue { actions1.isNotEmpty() }
+        actions1.hasTx(fundingTx)
+    }
+
+    @Test
+    fun `recv GetTxResponse (fundee, tx found)`() {
+        val (alice, bob) = initForceClose()
+        val fundingTx = alice.fundingTx
+        assertNotNull(fundingTx)
+
+        // test starts here
+        val (bob1, actions1) = bob.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, fundingTx, currentTimestampMillis())))
+        assertEquals(bob, bob1)
+        assertTrue { actions1.isEmpty() }
+    }
+
+    @Test
+    fun `recv GetTxResponse (fundee, tx not found)`() {
+        val (alice, bob) = initForceClose()
+        val fundingTx = alice.fundingTx
+        assertNotNull(fundingTx)
+
+        // test starts here
+        val (bob1, actions1) = bob.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
+        assertEquals(bob, bob1)
+        assertTrue { actions1.isEmpty() }
+    }
+
+    @Test
+    fun `recv GetTxResponse (fundee, tx not found, timeout)`() {
+        val (alice, bob) = initForceClose()
+        val fundingTx = alice.fundingTx
+        assertNotNull(fundingTx)
+
+        // test starts here
+        val (bob1, _) = bob.process(ChannelEvent.NewBlock(bob.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob2, actions2) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
+        assertTrue { bob2 is Aborted }
+        assertEquals(1, actions2.size)
+        val error = actions2.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
+    }
+
+    @Test
+    fun `fetch unconfirmed funding tx after reconnection`() {
+        val (alice, bob) = reachNormal()
+        // alice publishes her commitment tx
+        val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+        assertTrue(bob1 is Closing)
+        assertNull(bob1.closingTypeAlreadyKnown())
+
+        val state = WaitForInit(bob.staticParams, bob.currentTip, bob.currentOnChainFeerates)
+        val (state1, actions) = state.process(ChannelEvent.Restore(bob1))
+        assertTrue(state1 is Closing)
+        val getFundingTx = actions.find<ChannelAction.Blockchain.GetFundingTx>()
+        assertEquals(getFundingTx.txid, bob.commitments.commitInput.outPoint.txid)
+    }
+
+    @Test
+    fun `abort channel if funding tx doesn't confirm`() {
+        val (alice, bob) = reachNormal()
+        // alice publishes her commitment tx
+        val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
+        assertTrue(bob1 is Closing)
+
+        // The funding tx isn't confirmed yet, but we give it 720 blocks to (hopefully) confirm. If it doesn't confirm within that delay, we will simply forget the channel.
+        val (bob2, _) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertEquals(bob1, bob2)
+        // Fast forward 721 blocks later
+        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // We give up, Channel is aborted
+        val (bob4, actions4) = bob3.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertTrue { bob4 is Aborted }
+        assertEquals(1, actions4.size)
+        val error = actions4.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
+    }
+
     companion object {
         fun initMutualClose(withPayments: Boolean = false): Triple<Closing, Closing, List<PublishableTxs>> {
             val (aliceInit, bobInit) = reachNormal()
@@ -1401,6 +1497,63 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
             // The only other possible actions are for settling htlcs
             assertEquals(actions.size - 1, actions.count { action -> action is ChannelAction.ProcessCmdRes })
+        }
+
+        fun initForceClose(): Pair<Closing, Closing> {
+            val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+            // funder
+            val alice1 = run {
+                val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+                assertTrue(alice1 is Closing)
+                assertEquals(6, actions1.size)
+
+                val error = actions1.hasOutgoingMessage<Error>()
+                assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
+
+                val commitTx = alice1.localCommitPublished?.commitTx
+                assertNotNull(commitTx)
+                val claimDelayedOutputTx = alice1.localCommitPublished?.claimMainDelayedOutputTx
+                assertNotNull(claimDelayedOutputTx)
+
+                val publishAsap = actions1.findTxs()
+                assertEquals(2, publishAsap.size)
+                assertEquals(commitTx.txid, publishAsap.first().txid)
+                assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+
+                assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
+                val watches = actions1.findWatches<WatchConfirmed>()
+                assertEquals(commitTx.txid, watches.first().txId)
+                assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+                alice1
+            }
+
+            // fundee
+            val bob1 = run {
+                val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+                assertTrue { bob1 is Closing } ; bob1 as Closing
+                assertEquals(6, actions1.size)
+
+                val error = actions1.hasOutgoingMessage<Error>()
+                assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
+
+                val commitTx = bob1.localCommitPublished?.commitTx
+                assertNotNull(commitTx)
+                val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
+                assertNotNull(claimDelayedOutputTx)
+
+                val publishAsap = actions1.findTxs()
+                assertEquals(2, publishAsap.size)
+                assertEquals(commitTx.txid, publishAsap.first().txid)
+                assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+
+                assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
+                val watches = actions1.findWatches<WatchConfirmed>()
+                assertEquals(commitTx.txid, watches.first().txId)
+                assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+                bob1
+            }
+
+            return alice1 to bob1
         }
     }
 }

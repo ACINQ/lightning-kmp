@@ -5,15 +5,13 @@ import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.utils.sat
+import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     @Test
@@ -45,20 +43,57 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         val fundingTx = alice.fundingTx!!
         val badOutputScript = Scripts.multiSig2of2(Eclair.randomKey().publicKey(), Eclair.randomKey().publicKey())
         val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updatePublicKeyScript(badOutputScript)))
-        val (bob1, actions) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
-        assertTrue { bob1 is Aborted }
-        actions.hasOutgoingMessage<Error>()
+
+        val (bob1, actions1) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
+        assertTrue(bob1 is Closing)
+
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(InvalidCommitmentSignature(bob.channelId, badFundingTx).message, error.toAscii())
+
+        val commitTx = bob1.localCommitPublished?.commitTx
+        assertNotNull(commitTx)
+        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
+        assertNotNull(claimDelayedOutputTx)
+
+        val publishAsap = actions1.findTxs()
+        assertEquals(2, publishAsap.size)
+        assertEquals(commitTx.txid, publishAsap.first().txid)
+        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+
+        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
+        val watches = actions1.findWatches<WatchConfirmed>()
+        assertEquals(commitTx.txid, watches.first().txId)
+        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
     }
 
     @Test
     fun `receive BITCOIN_FUNDING_DEPTHOK (bad funding amount)`() {
         val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val fundingTx = alice.fundingTx!!
+        val fundingTx = alice.fundingTx
+        assertNotNull(fundingTx)
         val badAmount = 1_234_567.sat
         val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updateAmount(badAmount)))
-        val (bob1, actions) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
-        assertTrue { bob1 is Aborted }
-        actions.hasOutgoingMessage<Error>()
+
+        val (bob1, actions1) = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
+        assertTrue(bob1 is Closing)
+
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(InvalidCommitmentSignature(bob.channelId, badFundingTx).message, error.toAscii())
+
+        val commitTx = bob1.localCommitPublished?.commitTx
+        assertNotNull(commitTx)
+        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
+        assertNotNull(claimDelayedOutputTx)
+
+        val publishAsap = actions1.findTxs()
+        assertEquals(2, publishAsap.size)
+        assertEquals(commitTx.txid, publishAsap.first().txid)
+        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+
+        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
+        val watches = actions1.findWatches<WatchConfirmed>()
+        assertEquals(commitTx.txid, watches.first().txId)
+        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
     }
 
     @Test
@@ -129,6 +164,16 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv CMD_FORCECLOSE (nothing at stake)`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, 0.msat)
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        assertTrue(bob1 is Aborted)
+        assertEquals(1, actions1.size)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
+    }
+
+    @Test
     fun `recv NewBlock`() {
         val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
         listOf(alice, bob).forEach { state ->
@@ -152,6 +197,37 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertTrue { alice1 is Offline }
         val (bob1, _) = bob.process(ChannelEvent.Disconnected)
         assertTrue { bob1 is Offline }
+    }
+
+    @Test
+    fun `recv Disconnected (get funding tx successful)`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice1, _) = alice.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline }
+
+        alice.fundingTx?.let {
+            val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(it.txid, it, currentTimestampMillis())))
+            assertTrue { alice2 is Offline }
+            assertTrue { actions2.isEmpty() }
+        } ?: fail("Alice's funding tx must not be null.")
+    }
+
+    @Test
+    fun `recv Disconnected (get funding tx error)`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice1, _) = alice.process(ChannelEvent.Disconnected)
+        assertTrue { alice1 is Offline }
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline }
+
+        alice.fundingTx?.let {
+            val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(it.txid, null, currentTimestampMillis())))
+            assertTrue { alice2 is Offline }
+            assertTrue { actions2.isNotEmpty() }
+            actions2.hasTx(it)
+        } ?: fail("Alice's funding tx must not be null.")
     }
 
     @Test
@@ -188,6 +264,50 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         actions3.hasOutgoingMessage<ChannelReestablish>()
         val bobWatch = actions3.hasWatch<WatchConfirmed>()
         assertEquals(0, bobWatch.minDepth)
+    }
+
+    @Test
+    fun `get funding tx in Syncing state`() {
+        val (alice, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
+        val localInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
+        val remoteInit = Init(ByteVector(alice.commitments.localParams.features.toByteArray()))
+        val (bob2, _) = bob1.process(ChannelEvent.Connected(localInit, remoteInit))
+        assertTrue { bob2 is Syncing && bob2.state is WaitForFundingConfirmed }
+
+        // Actual test start here
+        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        val (bob3, _) = bob2.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertEquals(bob2, bob3)
+        // Fast forward 721 blocks later
+        val (bob4, _) = bob3.process(ChannelEvent.NewBlock(bob3.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // We give up, Channel is aborted
+        val (bob5, actions5) = bob4.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertTrue { bob5 is Aborted }
+        assertEquals(1, actions5.size)
+        val error = actions5.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
+    }
+
+    @Test
+    fun `get funding tx in Offline state`() {
+        val (_, bob) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
+        assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
+
+        // Actual test start here
+        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        val (bob2, _) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertEquals(bob1, bob2)
+        // Fast forward 721 blocks later
+        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // We give up, Channel is aborted
+        val (bob4, actions4) = bob3.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
+        assertTrue { bob4 is Aborted }
+        assertEquals(1, actions4.size)
+        val error = actions4.hasOutgoingMessage<Error>()
+        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
     }
 
     companion object {

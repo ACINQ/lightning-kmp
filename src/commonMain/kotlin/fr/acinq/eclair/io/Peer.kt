@@ -3,7 +3,7 @@ package fr.acinq.eclair.io
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomKeyPath
-import fr.acinq.eclair.blockchain.WatchEvent
+import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.electrum.*
 import fr.acinq.eclair.blockchain.fee.*
 import fr.acinq.eclair.channel.*
@@ -114,10 +114,17 @@ class Peer(
             }
         }
         launch {
-            val sub = watcher.openNotificationsSubscription()
-            sub.consumeEach {
+            val watchNotifications = watcher.openWatchNotificationsSubscription()
+            watchNotifications.consumeEach {
                 logger.debug { "n:$remoteNodeId notification: $it" }
                 input.send(WrappedChannelEvent(it.channelId, ChannelEvent.WatchReceived(it)))
+            }
+        }
+        launch {
+            val txNotifications = watcher.openTxNotificationsSubscription()
+            txNotifications.consumeEach {
+                logger.debug { "n:$remoteNodeId tx: ${it.second} for channel: ${it.first}" }
+                input.send(WrappedChannelEvent(it.first, ChannelEvent.GetFundingTxResponse(it.second)))
             }
         }
         launch {
@@ -294,6 +301,7 @@ class Peer(
                 action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ChannelEvent.ExecuteCommand(action.command)))
                 action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
                 action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
+                action is ChannelAction.Blockchain.GetFundingTx -> watcher.send(GetTxWithMetaEvent(GetTxWithMeta(channelId, action.txid)))
                 action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
                 action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "n:$remoteNodeId c:$actualChannelId command not executed" }
                 action is ChannelAction.ProcessCmdRes.AddFailed -> {

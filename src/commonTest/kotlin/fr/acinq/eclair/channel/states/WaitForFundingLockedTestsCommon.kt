@@ -3,10 +3,12 @@ package fr.acinq.eclair.channel.states
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxOut
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
@@ -94,19 +96,31 @@ class WaitForFundingLockedTestsCommon : EclairTestSuite() {
             val (state1, actions1) = state.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
             assertTrue(state1 is Closing)
             assertNotNull(state1.localCommitPublished)
-            assertNull(actions1.findOutgoingMessageOpt<Error>())
+            val error = actions1.hasOutgoingMessage<Error>()
+            assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
             actions1.hasTx(commitTx)
             actions1.hasWatch<WatchConfirmed>()
         }
+    }
+
+    @Test
+    fun `recv CMD_FORCECLOSE (nothing at stake)`() {
+        val (_, bob, _) = init(pushMsat = 0.msat)
+        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        assertTrue(bob1 is Aborted)
+        assertEquals(1, actions1.size)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
     }
 
     companion object {
         fun init(
             channelVersion: ChannelVersion = ChannelVersion.STANDARD,
             currentHeight: Int = TestConstants.defaultBlockHeight,
-            fundingAmount: Satoshi = TestConstants.fundingAmount
+            fundingAmount: Satoshi = TestConstants.fundingAmount,
+            pushMsat: MilliSatoshi = TestConstants.pushMsat
         ): Triple<WaitForFundingLocked, WaitForFundingLocked, Pair<FundingLocked, FundingLocked>> {
-            val (alice, bob, open) = TestsHelper.init(channelVersion, currentHeight, fundingAmount)
+            val (alice, bob, open) = TestsHelper.init(channelVersion, currentHeight, fundingAmount, pushMsat)
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(open))
             val accept = actionsBob1.findOutgoingMessage<AcceptChannel>()
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(accept))
