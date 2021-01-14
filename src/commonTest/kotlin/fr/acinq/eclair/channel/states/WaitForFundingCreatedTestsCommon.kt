@@ -68,9 +68,8 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
 
     companion object {
         fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Triple<WaitForFundingSigned, WaitForFundingCreated, FundingCreated> {
-            val (a, b, open) = TestsHelper.init(channelVersion, 0, fundingAmount)
-            val open1 = open.copy(pushMsat = pushAmount)
-            val (b1, actions) = b.process(ChannelEvent.MessageReceived(open1))
+            val (a, b, open) = TestsHelper.init(channelVersion, 0, fundingAmount, pushAmount)
+            val (b1, actions) = b.process(ChannelEvent.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptChannel>()
             val (a1, actions2) = a.process(ChannelEvent.MessageReceived(accept))
             val fundingRequest = actions2.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>().first()
