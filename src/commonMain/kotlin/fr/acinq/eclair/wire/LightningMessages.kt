@@ -8,14 +8,11 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
-import fr.acinq.eclair.io.*
+import fr.acinq.eclair.serialization.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
 import kotlin.math.max
 import kotlin.native.concurrent.ThreadLocal
 
@@ -105,19 +102,7 @@ interface HasTimestamp : LightningMessage {
     val timestampSeconds: Long
 }
 
-interface UpdateMessage : LightningMessage {
-    companion object {
-        val serializersModule = SerializersModule {
-            polymorphic(UpdateMessage::class) {
-                subclass(UpdateAddHtlc.serializer())
-                subclass(UpdateFailHtlc.serializer())
-                subclass(UpdateFailMalformedHtlc.serializer())
-                subclass(UpdateFee.serializer())
-                subclass(UpdateFulfillHtlc.serializer())
-            }
-        }
-    }
-}
+interface UpdateMessage : LightningMessage
 
 interface HtlcSettlementMessage : UpdateMessage {
     val id: Long

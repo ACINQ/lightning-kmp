@@ -10,10 +10,6 @@ import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.ByteVector32KSerializer
-import fr.acinq.eclair.io.ByteVector64KSerializer
-import fr.acinq.eclair.io.ByteVectorKSerializer
-import fr.acinq.eclair.io.PublicKeyKSerializer
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions
@@ -29,26 +25,18 @@ import fr.acinq.eclair.transactions.incomings
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.Serializable
 import org.kodein.log.Logger
 
 // @formatter:off
-@Serializable
 data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
     val all: List<UpdateMessage> get() = proposed + signed + acked
 }
 
-@Serializable
 data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
-@Serializable
-data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64)
-@Serializable
+data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, val localSig: ByteVector64, val remoteSig: ByteVector64)
 data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
-@Serializable
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
-@Serializable
-data class RemoteCommit(val index: Long, val spec: CommitmentSpec, @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey)
-@Serializable
+data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
 data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
 // @formatter:on
 
@@ -60,7 +48,6 @@ data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: Co
  * So, when we've signed and sent a commit message and are waiting for their revocation message,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
-@Serializable
 data class Commitments(
     val channelVersion: ChannelVersion,
     val localParams: LocalParams,
@@ -73,11 +60,11 @@ data class Commitments(
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
     val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymentId
-    val remoteNextCommitInfo: Either<WaitingForRevocation, @Serializable(with = PublicKeyKSerializer::class) PublicKey>,
+    val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>,
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
-    @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
-    @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector = ByteVector.empty
+    val channelId: ByteVector32,
+    val remoteChannelData: ByteVector = ByteVector.empty
 ) {
     init {
         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }

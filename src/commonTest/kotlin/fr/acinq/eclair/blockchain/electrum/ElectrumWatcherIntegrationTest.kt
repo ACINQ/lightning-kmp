@@ -19,6 +19,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.consume
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,7 +53,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
         val (address, _) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -80,7 +82,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
         bitcoincli.generateBlocks(5)
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -132,7 +134,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
         val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
         Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchSpent(
                 ByteVector32.Zeroes,
@@ -189,7 +191,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
         val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
         Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchSpent(
                 ByteVector32.Zeroes,
@@ -255,7 +257,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchSpent(
                 ByteVector32.Zeroes,
@@ -299,7 +301,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
             }
         }
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -327,7 +329,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
         val tx = bitcoincli.sendToAddress(address, 1.0)
         val (tx1, tx2) = bitcoincli.createUnspentTxChain(tx, privateKey)
 
-        val listener = watcher.openNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsSubscription()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -355,7 +357,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
     fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
-        val watcherNotifications = watcher.openNotificationsSubscription()
+        val watcherNotifications = watcher.openWatchNotificationsSubscription()
 
         suspend fun awaitForBlockCount(height: Int) {
             do {
@@ -389,7 +391,7 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
         val fundTx = bitcoincli.fundTransaction(
             Transaction(
                 version = 2,
-                txIn = emptyList(),
+                txIn = listOf(),
                 txOut = listOf(TxOut(150000.sat, Script.pay2wpkh(privateKey.publicKey()))),
                 lockTime = (initialBlockCount + 5).toLong()
             ), true, 250.sat
@@ -484,9 +486,9 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
         // tx is in the blockchain
         val txid1 = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
-        val result1 = CompletableDeferred<GetTxWithMetaResponse>()
-        electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid1, result1)))
-        val res1 = result1.await()
+        val txNotification = electrumWatcher.openTxNotificationsSubscription()
+        electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(ByteVector32.Zeroes, txid1)))
+        val res1 = txNotification.consumeAsFlow().first().second
         assertEquals(res1.txid, txid1)
         assertEquals(
             res1.tx_opt,
@@ -496,9 +498,8 @@ class  ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
         // tx doesn't exist
         val txid2 = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-        val result2 = CompletableDeferred<GetTxWithMetaResponse>()
-        electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(txid2, result2)))
-        val res2 = result2.await()
+        electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(ByteVector32.Zeroes, txid2)))
+        val res2 = txNotification.consumeAsFlow().first().second
         assertEquals(res2.txid, txid2)
         assertNull(res2.tx_opt)
         assertTrue(res2.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync

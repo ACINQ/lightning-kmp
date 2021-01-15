@@ -3,7 +3,7 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.eclair.io.ByteVector32KSerializer
+import fr.acinq.eclair.serialization.ByteVector32KSerializer
 import kotlinx.serialization.Serializable
 
 /** Tlv types used inside Init messages. */

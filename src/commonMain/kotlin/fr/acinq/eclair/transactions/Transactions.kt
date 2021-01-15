@@ -23,6 +23,7 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.io.*
+import fr.acinq.eclair.serialization.*
 import fr.acinq.eclair.transactions.CommitmentOutput.InHtlc
 import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eclair.utils.*

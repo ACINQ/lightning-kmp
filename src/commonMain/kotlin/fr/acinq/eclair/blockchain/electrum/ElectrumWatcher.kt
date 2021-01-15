@@ -38,7 +38,7 @@ private data class AskForScriptHashHistory(val scriptHash: ByteVector32) : Watch
 private data class AskForTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : WatcherAction()
 private data class AskForMerkle(val txId: ByteVector32, val txheight: Int, val tx: Transaction) : WatcherAction()
 private data class NotifyWatch(val watchEvent: WatchEvent, val broadcastNotification: Boolean = true) : WatcherAction()
-private data class NotifyTxWithMeta(val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
+private data class NotifyTxWithMeta(val channelId: ByteVector32, val txWithMeta: GetTxWithMetaResponse) : WatcherAction()
 private data class PublishAsapAction(val tx: Transaction) : WatcherAction()
 private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
 
@@ -82,7 +82,7 @@ private data class WatcherDisconnected(
                         actions = buildList {
                             watches.mapNotNull { registerToScriptHash(it) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
-                            getTxQueue.forEach { add(AskForTransaction(it.txid, it.response)) }
+                            getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }
                     }
                 }
@@ -224,14 +224,8 @@ private data class WatcherRunning(
                                 }
                             }
                             is GetTxWithMeta -> {
-                                message.contextOpt.response.complete(
-                                    GetTxWithMetaResponse(
-                                        message.tx.txid,
-                                        message.tx,
-                                        tip.time
-                                    )
-                                )
-                                returnState()
+                                val getTxWithMeta = GetTxWithMetaResponse(message.tx.txid, message.tx, tip.time)
+                                returnState(action = NotifyTxWithMeta(message.contextOpt.channelId, getTxWithMeta))
                             }
                             else -> returnState()
                         }
@@ -246,14 +240,8 @@ private data class WatcherRunning(
                         newState(copy(sent = sent - tx))
                     }
                     message is ServerError && message.request is GetTransaction && message.request.contextOpt is GetTxWithMeta -> {
-                        message.request.contextOpt.response.complete(
-                            GetTxWithMetaResponse(
-                                message.request.txid,
-                                null,
-                                tip.time
-                            )
-                        )
-                        returnState()
+                        val getTxWithMeta = GetTxWithMetaResponse(message.request.txid, null, tip.time)
+                        returnState(action = NotifyTxWithMeta(message.request.contextOpt.channelId, getTxWithMeta))
                     }
                     message is GetMerkleResponse -> {
                         val (txid, _, txheight, pos, tx) = message
@@ -383,8 +371,10 @@ private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, 
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : CoroutineScope by scope {
-    private val notificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
-    fun openNotificationsSubscription() = notificationsChannel.openSubscription()
+    private val watchNotificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
+    fun openWatchNotificationsSubscription() = watchNotificationsChannel.openSubscription()
+    private val txNotificationsChannel = BroadcastChannel<Pair<ByteVector32, GetTxWithMetaResponse>>(Channel.BUFFERED)
+    fun openTxNotificationsSubscription() = txNotificationsChannel.openSubscription()
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
 
@@ -439,11 +429,11 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
                     )
                     is NotifyWatch -> {
                         if (action.broadcastNotification)
-                            notificationsChannel.send(action.watchEvent)
+                            watchNotificationsChannel.send(action.watchEvent)
                         else
                             eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
-                    is NotifyTxWithMeta -> TODO("implement this")
+                    is NotifyTxWithMeta -> txNotificationsChannel.send(action.channelId to action.txWithMeta)
                 }
             }
         }
@@ -472,7 +462,8 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channel
-        notificationsChannel.cancel()
+        watchNotificationsChannel.cancel()
+        txNotificationsChannel.cancel()
         // Cancel event channels
         eventChannel.cancel()
     }

@@ -9,7 +9,6 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.publishIfNeeded
 import fr.acinq.eclair.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.eclair.channel.Helpers.watchSpentIfNeeded
-import fr.acinq.eclair.io.*
 import fr.acinq.eclair.utils.BitField
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.wire.ClosingSigned
@@ -62,16 +61,13 @@ object CMD_FORCECLOSE : CloseCommand()
       888  .d88P d8888888888     888   d8888888888
       8888888P" d88P     888     888  d88P     888
  */
-@Serializable
 data class LocalCommitPublished(
-    @Serializable(with = TransactionKSerializer::class)
     val commitTx: Transaction,
-    @Serializable(with = TransactionKSerializer::class)
     val claimMainDelayedOutputTx: Transaction? = null,
-    val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
+    val htlcSuccessTxs: List<Transaction> = emptyList(),
+    val htlcTimeoutTxs: List<Transaction> = emptyList(),
+    val claimHtlcDelayedTxs: List<Transaction> = emptyList(),
+    val irrevocablySpent: Map<OutPoint, ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -167,15 +163,12 @@ data class LocalCommitPublished(
     }
 }
 
-@Serializable
 data class RemoteCommitPublished(
-    @Serializable(with = TransactionKSerializer::class)
     val commitTx: Transaction,
-    @Serializable(with = TransactionKSerializer::class)
     val claimMainOutputTx: Transaction? = null,
-    val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
+    val claimHtlcSuccessTxs: List<Transaction> = emptyList(),
+    val claimHtlcTimeoutTxs: List<Transaction> = emptyList(),
+    val irrevocablySpent: Map<OutPoint, ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -256,19 +249,14 @@ data class RemoteCommitPublished(
     }
 }
 
-@Serializable
 data class RevokedCommitPublished(
-    @Serializable(with = TransactionKSerializer::class)
     val commitTx: Transaction,
-    @Serializable(with = PrivateKeyKSerializer::class)
     val remotePerCommitmentSecret: PrivateKey,
-    @Serializable(with = TransactionKSerializer::class)
     val claimMainOutputTx: Transaction? = null,
-    @Serializable(with = TransactionKSerializer::class)
     val mainPenaltyTx: Transaction? = null,
-    val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
+    val htlcPenaltyTxs: List<Transaction> = emptyList(),
+    val claimHtlcDelayedPenaltyTxs: List<Transaction> = emptyList(),
+    val irrevocablySpent: Map<OutPoint, ByteVector32> = emptyMap()
 ) {
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
@@ -354,36 +342,34 @@ data class RevokedCommitPublished(
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
-@Serializable
 data class LocalParams constructor(
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
-    @Serializable(with = KeyPathKSerializer::class) val fundingKeyPath: KeyPath,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
+    val nodeId: PublicKey,
+    val fundingKeyPath: KeyPath,
+    val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
+    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
-    @Serializable(with = ByteVectorKSerializer::class) val defaultFinalScriptPubKey: ByteVector,
+    val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 )
 
 @OptIn(ExperimentalUnsignedTypes::class)
-@Serializable
 data class RemoteParams(
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
+    val nodeId: PublicKey,
+    val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
+    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    @Serializable(with = PublicKeyKSerializer::class) val fundingPubKey: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
+    val fundingPubKey: PublicKey,
+    val revocationBasepoint: PublicKey,
+    val paymentBasepoint: PublicKey,
+    val delayedPaymentBasepoint: PublicKey,
+    val htlcBasepoint: PublicKey,
     val features: Features
 )
 
@@ -426,5 +412,4 @@ object ChannelFlags {
     const val Empty = 0x00.toByte()
 }
 
-@Serializable
-data class ClosingTxProposed(@Serializable(with = TransactionKSerializer::class) val unsignedTx: Transaction, val localClosingSigned: ClosingSigned)
+data class ClosingTxProposed(val unsignedTx: Transaction, val localClosingSigned: ClosingSigned)

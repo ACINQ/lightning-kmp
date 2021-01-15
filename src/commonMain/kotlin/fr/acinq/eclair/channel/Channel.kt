@@ -6,6 +6,7 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
+import fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
 import fr.acinq.eclair.channel.Helpers.Closing.extractPreimages
@@ -14,20 +15,14 @@ import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.*
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
 import org.kodein.log.Logger
 
 /*
@@ -36,12 +31,10 @@ import org.kodein.log.Logger
  */
 
 /** Channel Events (inputs to be fed to the state machine). */
-@Serializable
 sealed class ChannelEvent {
-    @Serializable
     data class InitFunder(
-        @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
-        @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+        val temporaryChannelId: ByteVector32,
+        val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
         val initialFeerate: FeeratePerKw,
         val fundingTxFeerate: FeeratePerKw,
@@ -63,6 +56,7 @@ sealed class ChannelEvent {
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
     data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
+    data class GetFundingTxResponse(val getTxResponse: GetTxWithMetaResponse) : ChannelEvent()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
     data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelEvent()
@@ -89,6 +83,7 @@ sealed class ChannelAction {
         data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feerate: FeeratePerKw) : Blockchain()
         data class SendWatch(val watch: Watch) : Blockchain()
         data class PublishTx(val tx: Transaction) : Blockchain()
+        data class GetFundingTx(val txid: ByteVector32) : Blockchain()
     }
 
     sealed class Storage : ChannelAction() {
@@ -135,11 +130,9 @@ sealed class ChannelAction {
 }
 
 /** Channel static parameters. */
-@Serializable
-data class StaticParams(val nodeParams: NodeParams, @Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey)
+data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 
 /** Channel state. */
-@Serializable
 sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
@@ -176,10 +169,10 @@ sealed class ChannelState {
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         this is ChannelStateWithCommitments && this.isZeroReserve -> actions.map {
             when {
-                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Helpers.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
                 else -> it
             }
         }
@@ -191,6 +184,26 @@ sealed class ChannelState {
         return when (cmd) {
             is CMD_ADD_HTLC -> Pair(this, listOf(ChannelAction.ProcessCmdRes.AddFailed(cmd, error, channelUpdate)))
             else -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, error)))
+        }
+    }
+
+    internal fun handleGetFundingTx(getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): Pair<ChannelState, List<ChannelAction>> = when {
+        getTxResponse.tx_opt != null -> Pair(this, emptyList()) // the funding tx exists, nothing to do
+        fundingTx_opt != null -> {
+            // if we are funder, we never give up
+            logger.info { "republishing the funding tx..." }
+            // TODO we should also check if the funding tx has been double-spent
+            //  see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
+            this to listOf(ChannelAction.Blockchain.PublishTx(fundingTx_opt))
+        }
+        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {
+            // if we are fundee, we give up after some time
+            handleFundingTimeout()
+        }
+        else -> {
+            // let's wait a little longer
+            logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_FUNDEE_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
+            Pair(this, emptyList())
         }
     }
 
@@ -206,7 +219,7 @@ sealed class ChannelState {
 
     internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
         require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
-        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=${Channel.FUNDING_TIMEOUT_FUNDEE}" }
+        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE_BLOCK blocks" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -230,7 +243,7 @@ sealed class ChannelState {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                 )
@@ -247,7 +260,6 @@ sealed class ChannelState {
     }
 }
 
-@Serializable
 sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
@@ -270,7 +282,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 remoteCommitPublished = remoteCommitPublished
             )
@@ -280,7 +292,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = fundingTx,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -289,7 +301,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
         }
@@ -317,7 +329,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 nextRemoteCommitPublished = remoteCommitPublished
             )
@@ -328,7 +340,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
                 fundingTx = null,
-                waitingSince = currentTimestampMillis(),
+                waitingSinceBlock = currentBlockHeight.toLong(),
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
@@ -359,7 +371,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
@@ -370,7 +382,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     currentOnChainFeerates = currentOnChainFeerates,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
@@ -414,7 +426,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     localCommitPublished = localCommitPublished
                 )
@@ -423,7 +435,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = fundingTx,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
@@ -431,7 +443,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
                     fundingTx = null,
-                    waitingSince = currentTimestampMillis(),
+                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
             }
@@ -468,7 +480,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                             currentOnChainFeerates,
                             commitments,
                             fundingTx = null,
-                            waitingSince = currentTimestampMillis(),
+                            waitingSinceBlock = currentBlockHeight.toLong(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                         )
@@ -489,48 +501,9 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
-
-    companion object {
-        val serializersModule = SerializersModule {
-            polymorphic(ChannelStateWithCommitments::class) {
-                subclass(Normal::class)
-                subclass(WaitForFundingConfirmed::class)
-                subclass(WaitForFundingLocked::class)
-                subclass(WaitForRemotePublishFutureCommitment::class)
-                subclass(ShuttingDown::class)
-                subclass(Negotiating::class)
-                subclass(Closing::class)
-            }
-        }
-
-        private val serializationModules = SerializersModule {
-            include(Tlv.serializersModule)
-            include(KeyManager.serializersModule)
-            include(UpdateMessage.serializersModule)
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        private val cbor = Cbor {
-            serializersModule = serializationModules
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        fun serialize(state: ChannelStateWithCommitments): ByteArray {
-            return cbor.encodeToByteArray(serializer(), state)
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        fun deserialize(bin: ByteArray): ChannelStateWithCommitments {
-            return cbor.decodeFromByteArray(serializer(), bin)
-        }
-
-        @OptIn(ExperimentalSerializationApi::class)
-        fun deserialize(bin: ByteVector): ChannelStateWithCommitments = deserialize(bin.toByteArray())
-    }
 }
 
-@Serializable
-data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
+data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.InitFundee -> {
@@ -627,9 +600,8 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
                         event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
-                        @Suppress("ControlFlowWithEmptyBody")
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
-                            // TODO ask watcher for the funding tx
+                            actions.add(ChannelAction.Blockchain.GetFundingTx(commitments.commitInput.outPoint.txid))
                         }
                         Pair(event.state, actions)
                     }
@@ -651,8 +623,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     staticParams.nodeParams.minDepthBlocks.toLong(),
                     BITCOIN_FUNDING_DEPTHOK
                 )
-                val actions = listOf(ChannelAction.Blockchain.SendWatch(watchSpent), ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                // TODO: ask watcher for the funding tx when restoring WaitForFundingConfirmed
+                val actions = listOf(
+                    ChannelAction.Blockchain.SendWatch(watchSpent),
+                    ChannelAction.Blockchain.SendWatch(watchConfirmed),
+                    ChannelAction.Blockchain.GetFundingTx(event.state.commitments.commitInput.outPoint.txid)
+                )
                 Pair(Offline(event.state), actions)
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
@@ -668,7 +643,6 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     }
 }
 
-@Serializable
 data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -681,8 +655,8 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} offline processing ${event::class}" }
-        return when (event) {
-            is ChannelEvent.Connected -> {
+        return when {
+            event is ChannelEvent.Connected -> {
                 when {
                     state is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
@@ -716,7 +690,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     }
                 }
             }
-            is ChannelEvent.WatchReceived -> {
+            event is ChannelEvent.WatchReceived -> {
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent -> when {
@@ -751,7 +725,12 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> unhandled(event)
                 }
             }
-            is ChannelEvent.CheckHtlcTimeout -> {
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
+                event.getTxResponse,
+                state.waitingSinceBlock,
+                state.fundingTx
+            )
+            event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -759,7 +738,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            is ChannelEvent.NewBlock -> {
+            event is ChannelEvent.NewBlock -> {
                 val (newState, actions) = state.process(event)
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -782,7 +761,6 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
  * we send ours (for example, to extract encrypted backup data from extra fields)
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
-@Serializable
 data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -801,7 +779,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     waitForTheirReestablishMessage -> {
                         val nextState = if (!event.message.channelData.isEmpty()) {
                             logger.info { "c:${state.channelId} channel_reestablish includes a peer backup" }
-                            when (val decrypted = runTrying { Helpers.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData) }) {
+                            when (val decrypted = runTrying { Serialization.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData, staticParams.nodeParams) }) {
                                 is Try.Success -> {
                                     if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
                                         logger.warning { "c:${state.channelId} they have a more recent commitment, using it instead" }
@@ -976,6 +954,11 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     else -> unhandled(event)
                 }
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
+                event.getTxResponse,
+                state.waitingSinceBlock,
+                state.fundingTx
+            )
             event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
@@ -1004,10 +987,9 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
 
 }
 
-@Serializable
 data class WaitForRemotePublishFutureCommitment(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish
@@ -1042,7 +1024,7 @@ data class WaitForRemotePublishFutureCommitment(
             commitments = commitments,
             currentOnChainFeerates = currentOnChainFeerates,
             fundingTx = null,
-            waitingSince = currentTimestampMillis(),
+            waitingSinceBlock = currentBlockHeight.toLong(),
             futureRemoteCommitPublished = remoteCommitPublished
         )
         val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
@@ -1051,12 +1033,11 @@ data class WaitForRemotePublishFutureCommitment(
     }
 }
 
-@Serializable
 data class WaitForOpenChannel(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteInit: Init
 ) : ChannelState() {
@@ -1152,18 +1133,17 @@ data class WaitForOpenChannel(
     }
 }
 
-@Serializable
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
     val initialFeerate: FeeratePerKw,
-    @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
+    val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
     val lastSent: AcceptChannel
@@ -1239,7 +1219,7 @@ data class WaitForFundingCreated(
                                         logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
                                         val watchSpent = WatchSpent(channelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                                         val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentTimestampMillis() / 1000, null, Either.Right(fundingSigned))
+                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentBlockHeight.toLong(), null, Either.Right(fundingSigned))
                                         val actions = listOf(
                                             ChannelAction.Blockchain.SendWatch(watchSpent),
                                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -1274,10 +1254,9 @@ data class WaitForFundingCreated(
     }
 }
 
-@Serializable
 data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     val initFunder: ChannelEvent.InitFunder,
     val lastSent: OpenChannel
@@ -1346,18 +1325,17 @@ data class WaitForAcceptChannel(
     }
 }
 
-@Serializable
 data class WaitForFundingInternal(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
     val initialFeerate: FeeratePerKw,
-    @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
+    val remoteFirstPerCommitmentPoint: PublicKey,
     val channelVersion: ChannelVersion,
     val lastSent: OpenChannel
 ) : ChannelState() {
@@ -1437,16 +1415,15 @@ data class WaitForFundingInternal(
     }
 }
 
-@Serializable
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
+    val channelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction,
-    @Serializable(with = SatoshiKSerializer::class) val fundingTxFee: Satoshi,
+    val fundingTx: Transaction,
+    val fundingTxFee: Satoshi,
     val localSpec: CommitmentSpec,
     val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx,
     val remoteCommit: RemoteCommit,
@@ -1493,7 +1470,7 @@ data class WaitForFundingSigned(
                         )
                         logger.info { "c:$channelId committing txid=${fundingTx.txid}" }
 
-                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentTimestampMillis(), null, Either.Left(lastSent))
+                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, fundingTx, currentBlockHeight.toLong(), null, Either.Left(lastSent))
                         val actions = listOf(
                             ChannelAction.Blockchain.SendWatch(watchSpent),
                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
@@ -1525,14 +1502,13 @@ data class WaitForFundingSigned(
     }
 }
 
-@Serializable
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
-    val waitingSince: Long, // how long have we been waiting for the funding tx to confirm
+    val fundingTx: Transaction?,
+    val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
@@ -1591,8 +1567,12 @@ data class WaitForFundingConfirmed(
                 }
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> spendLocalCurrent()
+                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
+            }
+            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
+                else -> Pair(this, emptyList())
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
@@ -1605,14 +1585,16 @@ data class WaitForFundingConfirmed(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return when {
+            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
+        }
     }
 }
 
-@Serializable
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
@@ -1675,7 +1657,7 @@ data class WaitForFundingLocked(
             }
             is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> spendLocalCurrent()
+                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
@@ -1689,14 +1671,16 @@ data class WaitForFundingLocked(
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return when {
+            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
+        }
     }
 }
 
-@Serializable
 data class Normal(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
@@ -1999,10 +1983,9 @@ data class Normal(
     }
 }
 
-@Serializable
 data class ShuttingDown(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
@@ -2197,16 +2180,15 @@ data class ShuttingDown(
     }
 }
 
-@Serializable
 data class Negotiating(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
-    @Serializable(with = TransactionKSerializer::class) val bestUnpublishedClosingTx: Transaction?
+    val bestUnpublishedClosingTx: Transaction?
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
@@ -2378,16 +2360,15 @@ data class NextRemoteClose(override val remoteCommit: RemoteCommit, override val
 data class RecoveryClose(val remoteCommitPublished: RemoteCommitPublished) : ClosingType()
 data class RevokedClose(val revokedCommitPublished: RevokedCommitPublished) : ClosingType()
 
-@Serializable
 data class Closing(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
-    val waitingSince: Long, // how long since we initiated the closing
-    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
-    val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
+    val waitingSinceBlock: Long, // how many blocks since we initiated the closing
+    val mutualCloseProposed: List<Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
+    val mutualClosePublished: List<Transaction> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
     val remoteCommitPublished: RemoteCommitPublished? = null,
     val nextRemoteCommitPublished: RemoteCommitPublished? = null,
@@ -2625,6 +2606,10 @@ data class Closing(
                 }
                 else -> unhandled(event)
             }
+            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
+                else -> Pair(this, emptyList())
+            }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -2733,7 +2718,6 @@ data class Closing(
 /**
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
  */
-@Serializable
 data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -2757,8 +2741,7 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
 /**
  * Channel has been aborted before it was funded (because we did not receive a FundingCreated or FundingSigned message for example)
  */
-@Serializable
-data class Aborted(override val staticParams: StaticParams, override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
+data class Aborted(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
     }
@@ -2768,10 +2751,9 @@ data class Aborted(override val staticParams: StaticParams, override val current
     }
 }
 
-@Serializable
 data class ErrorInformationLeak(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments
 ) : ChannelStateWithCommitments() {
@@ -2809,8 +2791,8 @@ object Channel {
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
-    // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-    const val FUNDING_TIMEOUT_FUNDEE = 5 * 24 * 3600 // 5 days, in seconds
+    // as a fundee, we will wait that block count for the funding tx to confirm (funder will rely on the funding tx being double-spent)
+    const val FUNDING_TIMEOUT_FUNDEE_BLOCK = 720
 
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
