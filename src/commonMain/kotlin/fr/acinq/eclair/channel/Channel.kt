@@ -1756,7 +1756,7 @@ data class Normal(
                             }
                         }
                     }
-                    else -> unhandled(event)
+                    is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 }
             }
             is ChannelEvent.MessageReceived -> {
