@@ -47,7 +47,6 @@ class ElectrumClientIntegrationTest : EclairTestSuite() {
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
         val client =
             ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
-        client.sendMessage(AskForStatusUpdate)
 
         client.connectionState.first { it == Connection.CLOSED }
         client.connectionState.first { it == Connection.ESTABLISHING }
