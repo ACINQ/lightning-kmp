@@ -156,8 +156,6 @@ class Peer(
                 previousState = it
             }
         }
-
-        watcher.client.sendMessage(AskForStatusUpdate)
     }
 
     private suspend fun updateEstimateFees() {
