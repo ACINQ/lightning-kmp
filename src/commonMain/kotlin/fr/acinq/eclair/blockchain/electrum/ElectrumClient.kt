@@ -29,6 +29,7 @@ internal sealed class ClientEvent
 internal data class Start(val serverAddress: ServerAddress) : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
+internal object Close : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
 internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest) : ClientEvent()
 internal object AskForStatus : ClientEvent()
@@ -160,6 +161,10 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
             state = ClientClosed
             actions = listOf(BroadcastStatus(Connection.CLOSED), Shutdown)
         }
+        Close -> newState {
+            state = ClientClosed
+            actions = listOf(BroadcastStatus(Connection.CLOSED))
+        }
         AskForStatus, AskForHeader -> returnState() // TODO something else ?
         else -> {
             logger.warning { "cannot process event ${event::class} in state ${this::class}" }
@@ -241,7 +246,7 @@ class ElectrumClient(
 
     fun disconnect() {
         pingJob?.cancel()
-        connectionJob?.cancel() ?: launch { eventChannel.send(Disconnected) }
+        connectionJob?.cancel() ?: launch { eventChannel.send(Close) }
         if (this::socket.isInitialized) socket.close()
     }
 
