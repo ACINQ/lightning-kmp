@@ -228,7 +228,7 @@ class ElectrumClient(
                     is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> _connectionState.value = action.connection
                     StartPing -> pingJob = pingScheduler()
-                    is Shutdown -> closeConnection()
+                    is Shutdown -> disconnect()
                 }
             }
         }
@@ -240,7 +240,9 @@ class ElectrumClient(
     }
 
     fun disconnect() {
-        launch { eventChannel.send(Disconnected) }
+        pingJob?.cancel()
+        connectionJob?.cancel() ?: launch { eventChannel.send(Disconnected) }
+        if (this::socket.isInitialized) socket.close()
     }
 
     private var connectionJob: Job? = null
@@ -259,12 +261,6 @@ class ElectrumClient(
             logger.warning { ex.message }
             eventChannel.send(Disconnected)
         }
-    }
-
-    private fun closeConnection() {
-        pingJob?.cancel()
-        connectionJob?.cancel()
-        if (this::socket.isInitialized) socket.close()
     }
 
     private suspend fun send(message: ByteArray) {
@@ -298,7 +294,7 @@ class ElectrumClient(
 
     fun stop() {
         logger.info { "electrum client stopping" }
-        closeConnection()
+        disconnect()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels
