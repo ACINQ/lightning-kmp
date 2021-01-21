@@ -16,6 +16,7 @@ import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.eclair.wire.Ping
+import fr.acinq.eclair.wire.Shutdown
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -280,7 +281,18 @@ class Peer(
 
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        logger.info { "n:$remoteNodeId sending $msg" }
+        // We don't want to log the encrypted channel backups, they take a lot of space.
+        // We only keep the first bytes to help correlate mobile/server backups.
+        val msgToLog = when (msg) {
+            is FundingSigned -> msg.copy(channelData = msg.truncateChannelData())
+            is CommitSig -> msg.copy(channelData = msg.truncateChannelData())
+            is RevokeAndAck -> msg.copy(channelData = msg.truncateChannelData())
+            is ChannelReestablish -> msg.copy(channelData = msg.truncateChannelData())
+            is Shutdown -> msg.copy(channelData = msg.truncateChannelData())
+            is ClosingSigned -> msg.copy(channelData = msg.truncateChannelData())
+            else -> msg
+        }
+        logger.info { "n:$remoteNodeId sending $msgToLog" }
         output.send(encoded)
     }
 

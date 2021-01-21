@@ -14,6 +14,7 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.native.concurrent.ThreadLocal
 
 interface LightningMessage {
@@ -118,6 +119,16 @@ interface HasChannelId : LightningMessage {
 
 interface HasChainHash : LightningMessage {
     val chainHash: ByteVector32
+}
+
+interface HasEncryptedChannelData : LightningMessage {
+    val channelData: ByteVector
+
+    /** Truncate channel data for logging purposes. */
+    fun truncateChannelData(): ByteVector {
+        val len = min(channelData.size(), 10)
+        return channelData.take(len)
+    }
 }
 
 interface ChannelMessage
@@ -424,8 +435,8 @@ data class FundingCreated(
 data class FundingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : ChannelMessage, HasChannelId {
+    @Serializable(with = ByteVectorKSerializer::class) override val channelData: ByteVector = ByteVector.empty
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = FundingSigned.type
 
     override fun write(out: Output) {
@@ -602,8 +613,8 @@ data class CommitSig(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
     val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : HtlcMessage, HasChannelId {
+    @Serializable(with = ByteVectorKSerializer::class) override val channelData: ByteVector = ByteVector.empty
+) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = CommitSig.type
 
     override fun write(out: Output) {
@@ -635,8 +646,8 @@ data class RevokeAndAck(
     override val channelId: ByteVector32,
     val perCommitmentSecret: PrivateKey,
     val nextPerCommitmentPoint: PublicKey,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : HtlcMessage, HasChannelId {
+    @Serializable(with = ByteVectorKSerializer::class) override val channelData: ByteVector = ByteVector.empty
+) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = RevokeAndAck.type
 
     override fun write(out: Output) {
@@ -693,8 +704,8 @@ data class ChannelReestablish(
     val nextRemoteRevocationNumber: Long,
     @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
     @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : HasChannelId {
+    @Serializable(with = ByteVectorKSerializer::class) override val channelData: ByteVector = ByteVector.empty
+) : HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ChannelReestablish.type
 
     override fun write(out: Output) {
@@ -867,8 +878,8 @@ data class ChannelUpdate(
 data class Shutdown(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : ChannelMessage, HasChannelId {
+    @Serializable(with = ByteVectorKSerializer::class) override val channelData: ByteVector = ByteVector.empty
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = Shutdown.type
 
     override fun write(out: Output) {
@@ -897,8 +908,8 @@ data class ClosingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = SatoshiKSerializer::class) val feeSatoshis: Satoshi,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : ChannelMessage, HasChannelId {
+    @Serializable(with = ByteVectorKSerializer::class) override val channelData: ByteVector = ByteVector.empty
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ClosingSigned.type
 
     override fun write(out: Output) {
