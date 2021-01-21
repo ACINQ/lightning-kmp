@@ -29,7 +29,6 @@ internal sealed class ClientEvent
 internal data class Start(val serverAddress: ServerAddress) : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
-internal object Close : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
 internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest) : ClientEvent()
 internal object AskForStatus : ClientEvent()
@@ -161,10 +160,6 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
             state = ClientClosed
             actions = listOf(BroadcastStatus(Connection.CLOSED), Shutdown)
         }
-        Close -> newState {
-            state = ClientClosed
-            actions = listOf(BroadcastStatus(Connection.CLOSED))
-        }
         AskForStatus, AskForHeader -> returnState() // TODO something else ?
         else -> {
             logger.warning { "cannot process event ${event::class} in state ${this::class}" }
@@ -233,7 +228,7 @@ class ElectrumClient(
                     is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> _connectionState.value = action.connection
                     StartPing -> pingJob = pingScheduler()
-                    is Shutdown -> disconnect()
+                    is Shutdown -> closeConnection()
                 }
             }
         }
@@ -245,9 +240,7 @@ class ElectrumClient(
     }
 
     fun disconnect() {
-        pingJob?.cancel()
-        connectionJob?.cancel() ?: launch { eventChannel.send(Close) }
-        if (this::socket.isInitialized) socket.close()
+        launch { eventChannel.send(Disconnected) }
     }
 
     private var connectionJob: Job? = null
@@ -266,6 +259,12 @@ class ElectrumClient(
             logger.warning { ex.message }
             eventChannel.send(Disconnected)
         }
+    }
+
+    private fun closeConnection() {
+        pingJob?.cancel()
+        connectionJob?.cancel()
+        if (this::socket.isInitialized) socket.close()
     }
 
     private suspend fun send(message: ByteArray) {
@@ -299,7 +298,7 @@ class ElectrumClient(
 
     fun stop() {
         logger.info { "electrum client stopping" }
-        disconnect()
+        closeConnection()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels
