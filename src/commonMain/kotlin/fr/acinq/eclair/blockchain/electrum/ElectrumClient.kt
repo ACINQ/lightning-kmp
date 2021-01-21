@@ -27,6 +27,7 @@ import kotlin.time.seconds
  */
 internal sealed class ClientEvent
 internal data class Start(val serverAddress: ServerAddress) : ClientEvent()
+internal object Stop : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
@@ -156,7 +157,7 @@ internal object ClientClosed : ClientState() {
 
 private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
-        Disconnected -> newState {
+        Stop, Disconnected -> newState {
             state = ClientClosed
             actions = listOf(BroadcastStatus(Connection.CLOSED), Shutdown)
         }
@@ -228,7 +229,7 @@ class ElectrumClient(
                     is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> _connectionState.value = action.connection
                     StartPing -> pingJob = pingScheduler()
-                    is Shutdown -> closeConnection()
+                    is Shutdown -> cancelSocketUsage()
                 }
             }
         }
@@ -240,7 +241,7 @@ class ElectrumClient(
     }
 
     fun disconnect() {
-        launch { eventChannel.send(Disconnected) }
+        launch { eventChannel.send(Stop) }
     }
 
     private var connectionJob: Job? = null
@@ -258,13 +259,13 @@ class ElectrumClient(
         } catch (ex: TcpSocket.IOException) {
             logger.warning { ex.message }
             eventChannel.send(Disconnected)
+            socket.close()
         }
     }
 
-    private fun closeConnection() {
+    private fun cancelSocketUsage() {
         pingJob?.cancel()
         connectionJob?.cancel()
-        if (this::socket.isInitialized) socket.close()
     }
 
     private suspend fun send(message: ByteArray) {
@@ -298,7 +299,7 @@ class ElectrumClient(
 
     fun stop() {
         logger.info { "electrum client stopping" }
-        closeConnection()
+        cancelSocketUsage()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels
