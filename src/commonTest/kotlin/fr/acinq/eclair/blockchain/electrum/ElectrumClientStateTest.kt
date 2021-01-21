@@ -3,6 +3,7 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.Connection
 import fr.acinq.eclair.utils.ServerAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -73,16 +74,26 @@ class ElectrumClientStateTest : EclairTestSuite() {
 
     @Test
     fun `unhandled events`() {
-        val states = listOf(
-            ClientRunning(0, testBlockHeader), WaitingForVersion, WaitingForTip, ClientClosed
-        )
-        states.forEach { state ->
-            state.process(Disconnected).let { (newState, actions) ->
-                assertEquals(ClientClosed, newState)
-                assertEquals(2, actions.size)
-                assertTrue { actions[0] is BroadcastStatus }
-                assertTrue { actions[1] is Shutdown }
+        listOf(
+            WaitingForConnection, WaitingForVersion, WaitingForTip, ClientRunning(0, testBlockHeader), ClientClosed
+        ).forEach { state ->
+            listOf(Stop, Disconnected).forEach { event ->
+                state.process(event).let { (nextState, actions) ->
+                    assertEquals(ClientClosed, nextState)
+                    assertEquals(2, actions.size)
+                    assertTrue(actions[0] is BroadcastStatus)
+                    assertEquals(Connection.CLOSED, (actions[0] as BroadcastStatus).connection)
+                    assertTrue(actions[1] is Shutdown)
+                }
             }
+
+            if (state !is ClientRunning)
+                listOf(AskForStatus, AskForHeader).forEach { event ->
+                    state.process(event).let { (nextState, actions) ->
+                        assertEquals(state, nextState)
+                        assertTrue(actions.isEmpty())
+                    }
+                }
         }
     }
 }
