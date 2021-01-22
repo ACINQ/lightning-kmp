@@ -30,7 +30,6 @@ data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 object Connect : PeerEvent()
-object Disconnect : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -189,6 +188,13 @@ class Peer(
             _connectionState.value = Connection.CLOSED
             return@launch
         }
+
+        fun closeSocket() {
+            logger.warning { "n:$remoteNodeId disconnect peer from TCP socket" }
+            socket.close()
+            _connectionState.value = Connection.CLOSED
+        }
+
         val priv = nodeParams.nodePrivateKey
         val pub = priv.publicKey()
         val keyPair = Pair(pub.value.toByteArray(), priv.value.toByteArray())
@@ -201,7 +207,7 @@ class Peer(
             )
         } catch (ex: TcpSocket.IOException) {
             logger.warning { "n:$remoteNodeId ${ex.message}" }
-            _connectionState.value = Connection.CLOSED
+            closeSocket()
             return@launch
         }
         val session = LightningSession(enc, dec, ck)
@@ -215,6 +221,7 @@ class Peer(
                 session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "n:$remoteNodeId ${ex.message}" }
+                closeSocket()
             }
         }
         logger.info { "n:$remoteNodeId sending init $ourInit" }
@@ -244,7 +251,7 @@ class Peer(
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "n:$remoteNodeId ${ex.message}" }
             } finally {
-                _connectionState.value = Connection.CLOSED
+                closeSocket()
             }
         }
 
@@ -269,7 +276,7 @@ class Peer(
     }
 
     fun disconnect() {
-        launch { input.send(Disconnect) }
+        launch { connectionJob?.cancelAndJoin() }
     }
 
     suspend fun send(event: PeerEvent) {
@@ -606,11 +613,6 @@ class Peer(
             }
             event is Connect && connectionState.value == Connection.CLOSED -> {
                 connectionJob = establishConnection()
-            }
-            event is Disconnect -> {
-                logger.warning { "n:$remoteNodeId disconnect peer from TCP socket" }
-                connectionJob?.cancel()
-                _connectionState.value = Connection.CLOSED
             }
             event is Disconnected -> {
                 logger.warning { "n:$remoteNodeId disconnecting channels" }
