@@ -169,10 +169,10 @@ sealed class ChannelState {
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         this is ChannelStateWithCommitments && this.isZeroReserve -> actions.map {
             when {
-                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
-                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this).toByteVector()))
+                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
                 else -> it
             }
         }
@@ -794,7 +794,9 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     state
                                 }
                             }
-                        } else state
+                        } else {
+                            state
+                        }
 
                         val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
                         val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, nextState.commitments.channelVersion)

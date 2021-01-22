@@ -50,7 +50,7 @@ class OfflineTestsCommon : EclairTestSuite() {
         // alice didn't receive any update or sig
         assertEquals(
             ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint),
-            channelReestablishA.copy(channelData = ByteVector.empty)
+            channelReestablishA.copy(channelData = EncryptedChannelData.empty)
         )
         assertEquals(
             ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint),

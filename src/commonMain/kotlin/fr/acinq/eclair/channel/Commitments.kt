@@ -64,7 +64,7 @@ data class Commitments(
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
     val channelId: ByteVector32,
-    val remoteChannelData: ByteVector = ByteVector.empty
+    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     init {
         require(channelVersion.hasStaticRemotekey) { "invalid channel version $channelVersion (static_remote_key is not set)" }

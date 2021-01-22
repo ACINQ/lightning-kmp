@@ -281,18 +281,7 @@ class Peer(
 
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        // We don't want to log the encrypted channel backups, they take a lot of space.
-        // We only keep the first bytes to help correlate mobile/server backups.
-        val msgToLog = when (msg) {
-            is FundingSigned -> msg.copy(channelData = msg.truncateChannelData())
-            is CommitSig -> msg.copy(channelData = msg.truncateChannelData())
-            is RevokeAndAck -> msg.copy(channelData = msg.truncateChannelData())
-            is ChannelReestablish -> msg.copy(channelData = msg.truncateChannelData())
-            is Shutdown -> msg.copy(channelData = msg.truncateChannelData())
-            is ClosingSigned -> msg.copy(channelData = msg.truncateChannelData())
-            else -> msg
-        }
-        logger.info { "n:$remoteNodeId sending $msgToLog" }
+        logger.info { "n:$remoteNodeId sending $msg" }
         output.send(encoded)
     }
 
