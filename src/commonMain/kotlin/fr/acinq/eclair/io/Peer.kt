@@ -548,6 +548,15 @@ class Peer(
                         logger.info { "n:$remoteNodeId c:${msg.channelId} new state: ${state1::class}" }
                         processActions(msg.channelId, actions)
                     }
+                    msg is ChannelUpdate -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} for channel ${msg.shortChannelId}" }
+                        _channels.values.filterIsInstance<Normal>().find { it.shortChannelId == msg.shortChannelId }?.let { state ->
+                            val event1 = ChannelEvent.MessageReceived(msg)
+                            val (state1, actions) = state.process(event1)
+                            _channels = _channels + (state.channelId to state1)
+                            processActions(state.channelId, actions)
+                        }
+                    }
                     msg is PayToOpenRequest -> {
                         logger.info { "n:$remoteNodeId received pay-to-open request" }
                         processIncomingPayment(Either.Left(msg))
@@ -567,7 +576,28 @@ class Peer(
                 logger.info { "n:$remoteNodeId c:${event.watch.channelId} new state: ${state1::class}" }
             }
             event is ReceivePayment -> {
-                val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description)
+                // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
+                // channels to maximize the likelihood of success on the first payment attempt
+                val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
+                    when (channelState) {
+                        is Normal -> channelState.remoteChannelUpdate
+                        is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
+                        is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
+                        else -> null
+                    }
+                }
+                val extraHops = listOf(
+                    listOf(
+                        PaymentRequest.TaggedField.ExtraHop(
+                            nodeId = walletParams.trampolineNode.id,
+                            shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
+                            feeBase = remoteChannelUpdates.map { it.feeBaseMsat }.maxOrNull() ?: 1_000.msat,
+                            feeProportionalMillionths = remoteChannelUpdates.map { it.feeProportionalMillionths }.maxOrNull() ?: 100,
+                            cltvExpiryDelta = remoteChannelUpdates.map { it.cltvExpiryDelta }.maxOrNull() ?: CltvExpiryDelta(144)
+                        )
+                    )
+                )
+                val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description, extraHops)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 event.result.complete(pr)
             }

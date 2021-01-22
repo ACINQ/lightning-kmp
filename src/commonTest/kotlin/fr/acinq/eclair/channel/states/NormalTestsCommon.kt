@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
@@ -15,6 +16,7 @@ import fr.acinq.eclair.channel.TestsHelper.processEx
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.signAndRevack
 import fr.acinq.eclair.crypto.sphinx.Sphinx
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -1292,6 +1294,28 @@ class NormalTestsCommon : EclairTestSuite() {
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertTrue(error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252"))
+    }
+
+    @Test
+    fun `recv ChannelUpdate`() {
+        val (alice, bob) = reachNormal()
+        assertNull(alice.remoteChannelUpdate)
+        assertNull(bob.remoteChannelUpdate)
+        val aliceUpdate = Announcements.makeChannelUpdate(alice.staticParams.nodeParams.chainHash, alice.privateKey, alice.staticParams.remoteNodeId, alice.shortChannelId, CltvExpiryDelta(36), 5.msat, 15.msat, 150, 150_000.msat)
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(aliceUpdate))
+        assertTrue(bob1 is Normal)
+        assertEquals(bob1.remoteChannelUpdate, aliceUpdate)
+        actions1.has<ChannelAction.Storage.StoreState>()
+
+        val aliceUpdateOtherChannel = Announcements.makeChannelUpdate(alice.staticParams.nodeParams.chainHash, alice.privateKey, alice.staticParams.remoteNodeId, ShortChannelId(7), CltvExpiryDelta(12), 1.msat, 10.msat, 50, 15_000.msat)
+        val (bob2, actions2) = bob1.processEx(ChannelEvent.MessageReceived(aliceUpdateOtherChannel))
+        assertEquals(bob1, bob2)
+        assertTrue(actions2.isEmpty())
+
+        val bobUpdate = Announcements.makeChannelUpdate(bob.staticParams.nodeParams.chainHash, bob.privateKey, bob.staticParams.remoteNodeId, bob.shortChannelId, CltvExpiryDelta(24), 1.msat, 5.msat, 10, 125_000.msat)
+        val (bob3, actions3) = bob2.processEx(ChannelEvent.MessageReceived(bobUpdate))
+        assertEquals(bob1, bob3)
+        assertTrue(actions3.isEmpty())
     }
 
     @Test

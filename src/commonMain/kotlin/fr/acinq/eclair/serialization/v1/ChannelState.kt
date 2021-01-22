@@ -13,7 +13,6 @@ import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.eclair.wire.*
 import kotlinx.serialization.Serializable
 
-
 @Serializable
 sealed class DirectedHtlc {
     abstract val add: UpdateAddHtlc
@@ -155,7 +154,7 @@ data class LocalParams constructor(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     @Serializable(with = KeyPathKSerializer::class) val fundingKeyPath: KeyPath,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: Long, 
+    val maxHtlcValueInFlightMsat: Long,
     @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
@@ -186,7 +185,7 @@ data class LocalParams constructor(
 data class RemoteParams(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
-    val maxHtlcValueInFlightMsat: Long, 
+    val maxHtlcValueInFlightMsat: Long,
     @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
@@ -663,6 +662,7 @@ data class Normal(
     val buried: Boolean,
     val channelAnnouncement: ChannelAnnouncement?,
     val channelUpdate: ChannelUpdate,
+    val remoteChannelUpdate: ChannelUpdate?,
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?
 ) : ChannelStateWithCommitments() {
@@ -675,6 +675,7 @@ data class Normal(
         from.buried,
         from.channelAnnouncement,
         from.channelUpdate,
+        from.remoteChannelUpdate,
         from.localShutdown,
         from.remoteShutdown
     )
@@ -688,6 +689,7 @@ data class Normal(
         buried,
         channelAnnouncement,
         channelUpdate,
+        remoteChannelUpdate,
         localShutdown,
         remoteShutdown
     )
@@ -766,9 +768,9 @@ data class Closing(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?, 
-    val waitingSinceBlock: Long, 
-    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(), 
+    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
+    val waitingSinceBlock: Long,
+    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
     val remoteCommitPublished: RemoteCommitPublished? = null,
@@ -820,7 +822,6 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
 
     override fun export(nodeParams: NodeParams) = fr.acinq.eclair.channel.Closed(state.export(nodeParams))
 }
-
 
 @Serializable
 data class ErrorInformationLeak(

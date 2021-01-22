@@ -360,7 +360,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val preimage = randomBytes32()
         val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix")
+        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix", listOf())
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
         val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
