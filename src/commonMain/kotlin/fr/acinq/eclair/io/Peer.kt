@@ -16,6 +16,7 @@ import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.eclair.wire.Ping
+import fr.acinq.eclair.wire.Shutdown
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel

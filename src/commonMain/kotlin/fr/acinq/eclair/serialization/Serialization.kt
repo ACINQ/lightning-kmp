@@ -16,7 +16,6 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 
-
 object Serialization {
     /**
      * Versioned serialized data.
@@ -112,26 +111,26 @@ object Serialization {
     private fun deserialize(bin: ByteVector, nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments = deserialize(bin.toByteArray(), nodeParams)
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): ByteArray {
+    fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
         val bin = serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
         // See https://en.wikipedia.org/wiki/Birthday_attack
         val nonce = Crypto.sha256(bin).take(12).toByteArray()
         val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return ciphertext + nonce + tag
+        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun encrypt(key: ByteVector32, state: fr.acinq.eclair.channel.ChannelStateWithCommitments): ByteArray {
+    fun encrypt(key: ByteVector32, state: fr.acinq.eclair.channel.ChannelStateWithCommitments): EncryptedChannelData {
         val bin = serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
         // See https://en.wikipedia.org/wiki/Birthday_attack
         val nonce = Crypto.sha256(bin).take(12).toByteArray()
         val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return ciphertext + nonce + tag
+        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
     }
 
-    fun encrypt(key: PrivateKey, state: fr.acinq.eclair.channel.ChannelStateWithCommitments): ByteArray = encrypt(key.value, state)
+    fun encrypt(key: PrivateKey, state: fr.acinq.eclair.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, state)
 
     @OptIn(ExperimentalSerializationApi::class)
     fun decrypt(key: ByteVector32, data: ByteArray, nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments {
@@ -144,6 +143,5 @@ object Serialization {
     }
 
     fun decrypt(key: PrivateKey, data: ByteArray, nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments = decrypt(key.value, data, nodeParams)
-
-    fun decrypt(key: PrivateKey, data: ByteVector, nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments = decrypt(key, data.toByteArray(), nodeParams)
+    fun decrypt(key: PrivateKey, backup: EncryptedChannelData, nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray(), nodeParams)
 }

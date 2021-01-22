@@ -341,7 +341,7 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
             val expected = FundingSigned(
                 ByteVector32("2056b684b3a084f17467369e894502541d7e3207bb66ef614d55368d9575c365"),
                 ByteVector64("cf6739d3421d0e7e3b890f974547c0828a03539147e49ae9b80a523ceb8a7397513cf247fdb414fead296b04e5d5fe8e7156836f53559c031d90463dfa633c3b"),
-                ByteVector.empty
+                EncryptedChannelData.empty
             )
             assertEquals(expected, decoded)
             val reencoded = LightningMessage.encode(decoded)
@@ -358,7 +358,7 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
             val expected = FundingSigned(
                 ByteVector32("2056b684b3a084f17467369e894502541d7e3207bb66ef614d55368d9575c365"),
                 ByteVector64("cf6739d3421d0e7e3b890f974547c0828a03539147e49ae9b80a523ceb8a7397513cf247fdb414fead296b04e5d5fe8e7156836f53559c031d90463dfa633c3b"),
-                ByteVector("0101010101010101")
+                EncryptedChannelData(ByteVector("0101010101010101"))
             )
             assertEquals(expected, decoded)
             val reencoded = LightningMessage.encode(decoded)
@@ -376,7 +376,7 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
             val expected = FundingSigned(
                 ByteVector32("2056b684b3a084f17467369e894502541d7e3207bb66ef614d55368d9575c365"),
                 ByteVector64("cf6739d3421d0e7e3b890f974547c0828a03539147e49ae9b80a523ceb8a7397513cf247fdb414fead296b04e5d5fe8e7156836f53559c031d90463dfa633c3b"),
-                ByteArray(1300) { 1.toByte() }.toByteVector()
+                EncryptedChannelData(ByteArray(1300) { 1.toByte() }.toByteVector())
             )
             assertEquals(expected, decoded)
             val reencoded = LightningMessage.encode(decoded)
@@ -478,42 +478,42 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
             Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray(), Hex.decode("deadbeef")) to FundingSigned(channelId, signature),
             Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("")) to FundingSigned(channelId, signature),
             Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("deadbeef")) to FundingSigned(channelId, signature),
-            Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to FundingSigned(channelId, signature, ByteVector("cccccccccccccc")),
-            Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to FundingSigned(channelId, signature, ByteVector("cccccccccccccc")),
+            Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to FundingSigned(channelId, signature, EncryptedChannelData(ByteVector("cccccccccccccc"))),
+            Pair(Hex.decode("0023") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to FundingSigned(channelId, signature, EncryptedChannelData(ByteVector("cccccccccccccc"))),
             Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray(), Hex.decode("")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
             Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray(), Hex.decode("deadbeef")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
             Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
             Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("deadbeef")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
-            Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 bbbbbbbbbbbbbb"), Hex.decode("")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, ByteVector("bbbbbbbbbbbbbb")),
-            Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 bbbbbbbbbbbbbb"), Hex.decode("deadbeef")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, ByteVector("bbbbbbbbbbbbbb")),
+            Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 bbbbbbbbbbbbbb"), Hex.decode("")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, EncryptedChannelData(ByteVector("bbbbbbbbbbbbbb"))),
+            Pair(Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 bbbbbbbbbbbbbb"), Hex.decode("deadbeef")) to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, EncryptedChannelData(ByteVector("bbbbbbbbbbbbbb"))),
 
             Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000"), Hex.decode("")) to CommitSig(channelId, signature, listOf()),
             Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000"), Hex.decode("deadbeef")) to CommitSig(channelId, signature, listOf()),
             Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 00"), Hex.decode("")) to CommitSig(channelId, signature, listOf()),
             Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 00"), Hex.decode("deadbeef")) to CommitSig(channelId, signature, listOf()),
-            Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 07 cccccccccccccc"), Hex.decode("")) to CommitSig(channelId, signature, listOf(), ByteVector("cccccccccccccc")),
-            Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to CommitSig(channelId, signature, listOf(), ByteVector("cccccccccccccc")),
+            Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 07 cccccccccccccc"), Hex.decode("")) to CommitSig(channelId, signature, listOf(), EncryptedChannelData(ByteVector("cccccccccccccc"))),
+            Pair(Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to CommitSig(channelId, signature, listOf(), EncryptedChannelData(ByteVector("cccccccccccccc"))),
 
             Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray(), Hex.decode("")) to RevokeAndAck(channelId, key, point),
             Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray(), Hex.decode("deadbeef")) to RevokeAndAck(channelId, key, point),
             Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("")) to RevokeAndAck(channelId, key, point),
             Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("deadbeef")) to RevokeAndAck(channelId, key, point),
-            Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to RevokeAndAck(channelId, key, point, ByteVector("cccccccccccccc")),
-            Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to RevokeAndAck(channelId, key, point, ByteVector("cccccccccccccc")),
+            Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to RevokeAndAck(channelId, key, point, EncryptedChannelData(ByteVector("cccccccccccccc"))),
+            Pair(Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to RevokeAndAck(channelId, key, point, EncryptedChannelData(ByteVector("cccccccccccccc"))),
 
             Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData, Hex.decode("")) to Shutdown(channelId, randomData.toByteVector()),
             Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData, Hex.decode("deadbeef")) to Shutdown(channelId, randomData.toByteVector()),
             Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData + Hex.decode("fe47010000 00"), Hex.decode("")) to Shutdown(channelId, randomData.toByteVector()),
             Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData + Hex.decode("fe47010000 00"), Hex.decode("deadbeef")) to Shutdown(channelId, randomData.toByteVector()),
-            Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to Shutdown(channelId, randomData.toByteVector(), ByteVector("cccccccccccccc")),
-            Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to Shutdown(channelId, randomData.toByteVector(), ByteVector("cccccccccccccc")),
+            Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to Shutdown(channelId, randomData.toByteVector(), EncryptedChannelData(ByteVector("cccccccccccccc"))),
+            Pair(Hex.decode("0026") + channelId.toByteArray()+ Hex.decode("002a")  + randomData + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to Shutdown(channelId, randomData.toByteVector(), EncryptedChannelData(ByteVector("cccccccccccccc"))),
 
             Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray(), Hex.decode("")) to ClosingSigned(channelId, 123456789.sat, signature),
             Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray(), Hex.decode("deadbeef")) to ClosingSigned(channelId, 123456789.sat, signature),
             Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("")) to ClosingSigned(channelId, 123456789.sat, signature),
             Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 00"), Hex.decode("deadbeef")) to ClosingSigned(channelId, 123456789.sat, signature),
-            Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to ClosingSigned(channelId, 123456789.sat, signature, ByteVector("cccccccccccccc")),
-            Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to ClosingSigned(channelId, 123456789.sat, signature, ByteVector("cccccccccccccc"))
+            Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("")) to ClosingSigned(channelId, 123456789.sat, signature, EncryptedChannelData(ByteVector("cccccccccccccc"))),
+            Pair(Hex.decode("0027") + channelId.toByteArray()+ Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc"), Hex.decode("deadbeef")) to ClosingSigned(channelId, 123456789.sat, signature, EncryptedChannelData(ByteVector("cccccccccccccc")))
         )
         //@formatter:on
 

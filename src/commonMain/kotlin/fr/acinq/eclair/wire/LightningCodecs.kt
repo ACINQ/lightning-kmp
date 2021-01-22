@@ -212,14 +212,14 @@ object LightningCodecs {
         }
     }
 
-    fun writeChannelData(msg: ByteVector, out: Output) = writeChannelData(msg.toByteArray(), out)
+    fun writeChannelData(msg: EncryptedChannelData, out: Output) = writeChannelData(msg.data.toByteArray(), out)
 
-    fun channelData(input: Input): ByteArray {
-        if (input.availableBytes <= 5) return ByteArray(0)
+    fun channelData(input: Input): EncryptedChannelData {
+        if (input.availableBytes <= 5) return EncryptedChannelData.empty
         val magic = bytes(input, 5)
-        if (!channelDataMagic.contentEquals(magic)) return ByteArray(0)
+        if (!channelDataMagic.contentEquals(magic)) return EncryptedChannelData.empty
         val length = bigSize(input)
-        return bytes(input, length)
+        return EncryptedChannelData(bytes(input, length).toByteVector())
     }
 
 }

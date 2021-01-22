@@ -608,7 +608,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob2, actions2) = bob1.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
         val blob = Serialization.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
-        assertEquals(blob.toByteVector(), commitSig.channelData)
+        assertEquals(blob, commitSig.channelData)
     }
 
     @Test
@@ -848,7 +848,7 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob4, actions5) = bob3.processEx(ChannelEvent.MessageReceived(commitSig1))
         val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
         val blob = Serialization.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
-        assertEquals(blob.toByteVector(), revack1.channelData)
+        assertEquals(blob, revack1.channelData)
     }
 
     @Test

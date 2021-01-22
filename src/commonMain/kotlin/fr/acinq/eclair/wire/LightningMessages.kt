@@ -14,6 +14,7 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.native.concurrent.ThreadLocal
 
 interface LightningMessage {
@@ -118,6 +119,29 @@ interface HasChannelId : LightningMessage {
 
 interface HasChainHash : LightningMessage {
     val chainHash: ByteVector32
+}
+
+@Serializable
+data class EncryptedChannelData(@Serializable(with = ByteVectorKSerializer::class) val data: ByteVector) {
+    /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
+    override fun toString(): String {
+        val bytes = data.take(min(data.size(), 10))
+        return if (bytes.isEmpty()) {
+            ""
+        } else {
+            "$bytes (truncated)"
+        }
+    }
+
+    fun isEmpty(): Boolean = data.isEmpty()
+
+    companion object {
+        val empty: EncryptedChannelData = EncryptedChannelData(ByteVector.empty)
+    }
+}
+
+interface HasEncryptedChannelData : LightningMessage {
+    val channelData: EncryptedChannelData
 }
 
 interface ChannelMessage
@@ -424,14 +448,14 @@ data class FundingCreated(
 data class FundingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : ChannelMessage, HasChannelId {
+    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = FundingSigned.type
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(signature, out)
-        LightningCodecs.writeChannelData(channelData.toByteArray(), out)
+        LightningCodecs.writeChannelData(channelData, out)
     }
 
     companion object : LightningMessageReader<FundingSigned> {
@@ -441,7 +465,7 @@ data class FundingSigned(
             return FundingSigned(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 ByteVector64(LightningCodecs.bytes(input, 64)),
-                LightningCodecs.channelData(input).toByteVector()
+                LightningCodecs.channelData(input)
             )
         }
     }
@@ -602,8 +626,8 @@ data class CommitSig(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
     val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : HtlcMessage, HasChannelId {
+    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = CommitSig.type
 
     override fun write(out: Output) {
@@ -625,7 +649,7 @@ data class CommitSig(
             for (i in 1..numHtlcs) {
                 htlcSigs += ByteVector64(LightningCodecs.bytes(input, 64))
             }
-            return CommitSig(channelId, sig, htlcSigs.toList(), LightningCodecs.channelData(input).toByteVector())
+            return CommitSig(channelId, sig, htlcSigs.toList(), LightningCodecs.channelData(input))
         }
     }
 }
@@ -635,8 +659,8 @@ data class RevokeAndAck(
     override val channelId: ByteVector32,
     val perCommitmentSecret: PrivateKey,
     val nextPerCommitmentPoint: PublicKey,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : HtlcMessage, HasChannelId {
+    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = RevokeAndAck.type
 
     override fun write(out: Output) {
@@ -654,7 +678,7 @@ data class RevokeAndAck(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 PrivateKey(LightningCodecs.bytes(input, 32)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.channelData(input).toByteVector()
+                LightningCodecs.channelData(input)
             )
         }
     }
@@ -693,8 +717,8 @@ data class ChannelReestablish(
     val nextRemoteRevocationNumber: Long,
     @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
     @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : HasChannelId {
+    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+) : HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ChannelReestablish.type
 
     override fun write(out: Output) {
@@ -716,7 +740,7 @@ data class ChannelReestablish(
                 LightningCodecs.u64(input),
                 PrivateKey(LightningCodecs.bytes(input, 32)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.channelData(input).toByteVector()
+                LightningCodecs.channelData(input)
             )
         }
     }
@@ -867,8 +891,8 @@ data class ChannelUpdate(
 data class Shutdown(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : ChannelMessage, HasChannelId {
+    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = Shutdown.type
 
     override fun write(out: Output) {
@@ -885,7 +909,7 @@ data class Shutdown(
             return Shutdown(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input))),
-                LightningCodecs.channelData(input).toByteVector()
+                LightningCodecs.channelData(input)
             )
         }
     }
@@ -897,8 +921,8 @@ data class ClosingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = SatoshiKSerializer::class) val feeSatoshis: Satoshi,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    @Serializable(with = ByteVectorKSerializer::class) val channelData: ByteVector = ByteVector.empty
-) : ChannelMessage, HasChannelId {
+    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ClosingSigned.type
 
     override fun write(out: Output) {
@@ -916,7 +940,7 @@ data class ClosingSigned(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 Satoshi(LightningCodecs.u64(input)),
                 ByteVector64(LightningCodecs.bytes(input, 64)),
-                LightningCodecs.channelData(input).toByteVector()
+                LightningCodecs.channelData(input)
             )
         }
     }

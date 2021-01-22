@@ -266,7 +266,7 @@ data class Commitments(
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
     @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
-    @Serializable(with = ByteVectorKSerializer::class) val remoteChannelData: ByteVector = ByteVector.empty
+    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     constructor(from: fr.acinq.eclair.channel.Commitments) : this(
         ChannelVersion(from.channelVersion),
