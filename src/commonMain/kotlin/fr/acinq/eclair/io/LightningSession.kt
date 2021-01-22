@@ -12,7 +12,8 @@ class LightningSession(val enc: CipherState, val dec: CipherState, ck: ByteArray
         val cipherlen = readBytes(18)
         val (tmp, plainlen) = decryptor.decryptWithAd(ByteArray(0), cipherlen)
         decryptor = tmp
-        val length = Pack.int16BE(plainlen)
+        // length is encoded as a signed int16 and returned as a Short, we need an unsigned int16
+        val length = Pack.int16BE(plainlen).toInt() and 0xffff
         val cipherbytes = readBytes(length + 16)
         val (tmp1, plainbytes) = decryptor.decryptWithAd(ByteArray(0), cipherbytes)
         decryptor = tmp1
@@ -20,6 +21,7 @@ class LightningSession(val enc: CipherState, val dec: CipherState, ck: ByteArray
     }
 
     suspend fun send(data: ByteArray, write: suspend (ByteArray, flush: Boolean) -> Unit) {
+        // the conversion here is not lossy if data.size() fits on 2 bytes, which it should
         val plainlen = Pack.writeInt16BE(data.size.toShort())
         val (tmp, cipherlen) = encryptor.encryptWithAd(ByteArray(0), plainlen)
         encryptor = tmp
