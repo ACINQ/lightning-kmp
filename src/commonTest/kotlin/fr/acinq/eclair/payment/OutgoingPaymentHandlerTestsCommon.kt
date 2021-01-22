@@ -27,7 +27,7 @@ import kotlin.test.*
 @ExperimentalUnsignedTypes
 class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
-    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees)
+    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
 
     @Test
     fun `invalid payment amount`() = runSuspendTest {

@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.InvoiceDefaultRoutingFees
 import fr.acinq.eclair.NodeUri
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.InMemoryDatabases
@@ -186,9 +187,7 @@ class PeerTest : EclairTestSuite() {
             assertEquals(1, invoice.routingInfo.size)
             assertEquals(1, invoice.routingInfo[0].hints.size)
             val extraHop = invoice.routingInfo[0].hints[0]
-            assertEquals(1_000.msat, extraHop.feeBase)
-            assertEquals(100, extraHop.feeProportionalMillionths)
-            assertEquals(CltvExpiryDelta(144), extraHop.cltvExpiryDelta)
+            assertEquals(TestConstants.Bob.walletParams.invoiceDefaultRoutingFees, InvoiceDefaultRoutingFees(extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta))
         }
         run {
             val aliceUpdate = Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.privateKey, alice0.staticParams.remoteNodeId, alice0.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)

@@ -591,9 +591,9 @@ class Peer(
                         PaymentRequest.TaggedField.ExtraHop(
                             nodeId = walletParams.trampolineNode.id,
                             shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
-                            feeBase = remoteChannelUpdates.map { it.feeBaseMsat }.maxOrNull() ?: 1_000.msat,
-                            feeProportionalMillionths = remoteChannelUpdates.map { it.feeProportionalMillionths }.maxOrNull() ?: 100,
-                            cltvExpiryDelta = remoteChannelUpdates.map { it.cltvExpiryDelta }.maxOrNull() ?: CltvExpiryDelta(144)
+                            feeBase = remoteChannelUpdates.map { it.feeBaseMsat }.maxOrNull() ?: walletParams.invoiceDefaultRoutingFees.feeBase,
+                            feeProportionalMillionths = remoteChannelUpdates.map { it.feeProportionalMillionths }.maxOrNull() ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
+                            cltvExpiryDelta = remoteChannelUpdates.map { it.cltvExpiryDelta }.maxOrNull() ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
                         )
                     )
                 )
