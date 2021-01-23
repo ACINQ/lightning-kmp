@@ -36,7 +36,7 @@ object TestConstants {
     object Alice {
         private val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-        val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees)
+        val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "alice",
@@ -104,7 +104,7 @@ object TestConstants {
     object Bob {
         private val seed = ByteVector32("0202020202020202020202020202020202020202020202020202020202020202")
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-        val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees)
+        val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
             keyManager = keyManager,
             alias = "bob",

@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.eclair.CltvExpiryDelta
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.InvoiceDefaultRoutingFees
 import fr.acinq.eclair.NodeUri
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.db.InMemoryDatabases
@@ -14,6 +15,7 @@ import fr.acinq.eclair.io.BytesReceived
 import fr.acinq.eclair.io.ReceivePayment
 import fr.acinq.eclair.io.SendPayment
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.io.peer.*
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -164,6 +166,44 @@ class PeerTest : EclairTestSuite() {
     fun `restore channel (bundled)`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         newPeers(this, Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams), listOf(alice0 to bob0))
+    }
+
+    @Test
+    fun `invoice routing hints`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
+        val walletParams = Pair(
+            // Alice must declare Bob as her trampoline node to enable direct payments.
+            TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)),
+            TestConstants.Bob.walletParams
+        )
+        val (_, bob, _, _) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
+
+        run {
+            val deferredInvoice = CompletableDeferred<PaymentRequest>()
+            bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "default routing hints", deferredInvoice))
+            val invoice = deferredInvoice.await()
+            // The routing hint uses default values since no channel update has been sent by Alice yet.
+            assertEquals(1, invoice.routingInfo.size)
+            assertEquals(1, invoice.routingInfo[0].hints.size)
+            val extraHop = invoice.routingInfo[0].hints[0]
+            assertEquals(TestConstants.Bob.walletParams.invoiceDefaultRoutingFees, InvoiceDefaultRoutingFees(extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta))
+        }
+        run {
+            val aliceUpdate = Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.privateKey, alice0.staticParams.remoteNodeId, alice0.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
+            bob.forward(aliceUpdate)
+
+            val deferredInvoice = CompletableDeferred<PaymentRequest>()
+            bob.send(ReceivePayment(randomBytes32(), 5_000_000.msat, "updated routing hints", deferredInvoice))
+            val invoice = deferredInvoice.await()
+            // The routing hint uses values from Alice's channel update.
+            assertEquals(1, invoice.routingInfo.size)
+            assertEquals(1, invoice.routingInfo[0].hints.size)
+            val extraHop = invoice.routingInfo[0].hints[0]
+            assertEquals(50.msat, extraHop.feeBase)
+            assertEquals(250, extraHop.feeProportionalMillionths)
+            assertEquals(CltvExpiryDelta(48), extraHop.cltvExpiryDelta)
+        }
     }
 
     @Test

@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.serialization.*
 import fr.acinq.eclair.utils.*
 import fr.acinq.secp256k1.Hex
@@ -834,6 +835,8 @@ data class ChannelUpdate(
 
     /** BOLT 7: A node MAY create and send a channel_update with the disable bit set to signal the temporary unavailability of a channel */
     fun isEnabled(): Boolean = (channelFlags.toInt() and 2) == 0
+
+    fun isRemote(localNodeId: PublicKey, remoteNodeId: PublicKey): Boolean = isNode1() != Announcements.isNode1(localNodeId, remoteNodeId)
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(signature, out)

@@ -131,7 +131,7 @@ object Node {
         val electrumServerAddress = parseElectrumServerAddress(config.getString("phoenix.electrum-server"))
         val keyManager = LocalKeyManager(seed, chainHash)
         logger.info { "node ${keyManager.nodeId} is starting" }
-        val walletParams = WalletParams(NodeUri(nodeId, nodeAddress, nodePort), TestConstants.trampolineFees)
+        val walletParams = WalletParams(NodeUri(nodeId, nodeAddress, nodePort), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         // We only support anchor_outputs commitments, so we should anchor_outputs to mandatory.
         // However we're currently only connecting to the Acinq node, which will reject mandatory anchors but will always use anchor_outputs when opening channels to us.
         // We will change that and set this feature to mandatory once the Acinq node is ready to publicly activate anchor_outputs.

@@ -27,7 +27,7 @@ import kotlin.test.*
 @ExperimentalUnsignedTypes
 class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
-    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees)
+    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
 
     @Test
     fun `invalid payment amount`() = runSuspendTest {
@@ -360,7 +360,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val preimage = randomBytes32()
         val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix")
+        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix", listOf())
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
         val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress

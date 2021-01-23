@@ -217,7 +217,7 @@ sealed class ChannelState {
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 
-    internal fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
+    private fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
         require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
         logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE_BLOCK blocks" }
         val exc = FundingTxTimedout(channelId)
@@ -1639,6 +1639,7 @@ data class WaitForFundingLocked(
                         null,
                         initialChannelUpdate,
                         null,
+                        null,
                         null
                     )
                     val actions = listOf(
@@ -1689,6 +1690,7 @@ data class Normal(
     val buried: Boolean,
     val channelAnnouncement: ChannelAnnouncement?,
     val channelUpdate: ChannelUpdate,
+    val remoteChannelUpdate: ChannelUpdate?,
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?
 ) : ChannelStateWithCommitments() {
@@ -1841,6 +1843,14 @@ data class Normal(
                             }
                             actions.add(0, ChannelAction.Storage.StoreState(nextState))
                             Pair(nextState, actions)
+                        }
+                    }
+                    is ChannelUpdate -> {
+                        if (event.message.shortChannelId == shortChannelId && event.message.isRemote(staticParams.nodeParams.nodeId, staticParams.remoteNodeId)) {
+                            val nextState = this.copy(remoteChannelUpdate = event.message)
+                            Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+                        } else {
+                            Pair(this, listOf())
                         }
                     }
                     is Shutdown -> {

@@ -65,21 +65,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 
-    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: String, expirySeconds: Long? = null, timestampSeconds: Long = currentTimestampSeconds()): PaymentRequest {
+    suspend fun createInvoice(
+        paymentPreimage: ByteVector32,
+        amount: MilliSatoshi?,
+        description: String,
+        extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>,
+        expirySeconds: Long? = null,
+        timestampSeconds: Long = currentTimestampSeconds()
+    ): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         val invoiceFeatures = PaymentRequest.invoiceFeatures(nodeParams.features)
-        // we add one extra hop which uses a virtual channel with a "peer id"
-        val extraHops = listOf(
-            listOf(
-                PaymentRequest.TaggedField.ExtraHop(
-                    nodeId = walletParams.trampolineNode.id,
-                    shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
-                    feeBase = MilliSatoshi(1000),
-                    feeProportionalMillionths = 100,
-                    cltvExpiryDelta = CltvExpiryDelta(144)
-                )
-            )
-        )
         logger.debug { "h:$paymentHash using routing hints $extraHops" }
         val pr = PaymentRequest.create(
             nodeParams.chainHash,

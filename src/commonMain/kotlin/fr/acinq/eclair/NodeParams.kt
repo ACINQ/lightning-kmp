@@ -20,10 +20,22 @@ data class TrampolineFees(val feeBase: Satoshi, val feeProportional: Long, val c
 }
 
 /**
+ * When we create an invoice, we need to add a routing hint since we only have private channels.
+ * This routing hint contains routing fees that should be paid by the sender, set by our peer.
+ * When we have a channel, we'll take them from our peer's channel update, but when we don't have any channel we'll use these default values.
+ */
+data class InvoiceDefaultRoutingFees(val feeBase: MilliSatoshi, val feeProportional: Long, val cltvExpiryDelta: CltvExpiryDelta)
+
+/**
  * @param trampolineNode address of the trampoline node used for outgoing payments.
  * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
+ * @param invoiceDefaultRoutingFees default routing fees set in invoices when we don't have any channel.
  */
-data class WalletParams(val trampolineNode: NodeUri, val trampolineFees: List<TrampolineFees>)
+data class WalletParams(
+    val trampolineNode: NodeUri,
+    val trampolineFees: List<TrampolineFees>,
+    val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees
+)
 
 /**
  * @param keyManager derive private keys and secrets from your seed.
