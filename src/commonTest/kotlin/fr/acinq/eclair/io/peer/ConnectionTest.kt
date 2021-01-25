@@ -18,17 +18,6 @@ import kotlin.time.ExperimentalTime
 class ConnectionTest : EclairTestSuite() {
 
     @Test
-    fun disconnect() = runSuspendTest {
-        val (alice0, bob0) = reachNormal()
-        val peer = newPeer(alice0.staticParams.nodeParams, TestConstants.Alice.walletParams, bob0) { channels.addOrUpdateChannel(alice0) }
-
-        peer.disconnect()
-        // Wait until alice is Offline
-        peer.channelsFlow.first { it.values.size == 1 && it.values.all { channelState -> channelState is Offline } }
-        assertEquals(Connection.CLOSED, peer.connectionState.value)
-    }
-
-    @Test
     fun `connection lost`() = runSuspendTest {
         val (alice0, bob0) = reachNormal()
         val peer = newPeer(alice0.staticParams.nodeParams, TestConstants.Alice.walletParams, bob0) { channels.addOrUpdateChannel(alice0) }
