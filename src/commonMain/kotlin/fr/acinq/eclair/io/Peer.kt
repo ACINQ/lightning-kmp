@@ -192,7 +192,7 @@ class Peer(
         }
 
         fun closeSocket() {
-            logger.warning { "n:$remoteNodeId close TCP socket" }
+            logger.warning { "n:$remoteNodeId closing TCP socket" }
             socket.close()
             _connectionState.value = Connection.CLOSED
         }
