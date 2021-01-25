@@ -24,6 +24,7 @@ import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlin.time.ExperimentalTime
+import kotlin.time.seconds
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
@@ -151,6 +152,7 @@ class Peer(
         launch {
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
+                logger.info { "n:$remoteNodeId connection state changed: $it" }
                 if (it == Connection.CLOSED) send(Disconnected)
                 previousState = it
             }
@@ -190,7 +192,7 @@ class Peer(
         }
 
         fun closeSocket() {
-            logger.warning { "n:$remoteNodeId disconnect peer from TCP socket" }
+            logger.warning { "n:$remoteNodeId close TCP socket" }
             socket.close()
             _connectionState.value = Connection.CLOSED
         }
@@ -212,10 +214,6 @@ class Peer(
         }
         val session = LightningSession(enc, dec, ck)
 
-        suspend fun receive(): ByteArray {
-            return session.receive { size -> socket.receiveFully(size) }
-        }
-
         suspend fun send(message: ByteArray) {
             try {
                 session.send(message) { data, flush -> socket.send(data, flush) }
@@ -224,28 +222,27 @@ class Peer(
                 closeSocket()
             }
         }
+
         logger.info { "n:$remoteNodeId sending init $ourInit" }
         send(LightningMessage.encode(ourInit))
 
         suspend fun doPing() {
             val ping = Hex.decode("0012000a0004deadbeef")
             while (isActive) {
-                delay(30000)
+                delay(30.seconds)
                 send(ping)
             }
         }
-
         suspend fun checkPaymentsTimeout() {
             while (isActive) {
-                delay(timeMillis = 30_000)
+                delay(30.seconds)
                 input.send(CheckPaymentsTimeout)
             }
         }
-
         suspend fun listen() {
             try {
                 while (isActive) {
-                    val received = receive()
+                    val received = session.receive { size -> socket.receiveFully(size) }
                     input.send(BytesReceived(received))
                 }
             } catch (ex: TcpSocket.IOException) {
@@ -254,21 +251,15 @@ class Peer(
                 closeSocket()
             }
         }
-
         suspend fun respond() {
-            for (msg in output) {
-                send(msg)
-            }
+            output.consumeEach { send(it) }
         }
 
-        coroutineScope {
-            launch { doPing() }
-            launch { checkPaymentsTimeout() }
-            launch { respond() }
+        launch { doPing() }
+        launch { checkPaymentsTimeout() }
+        launch { respond() }
 
-            listen()
-            cancel()
-        }
+        listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     fun connect() {
@@ -276,7 +267,10 @@ class Peer(
     }
 
     fun disconnect() {
-        launch { connectionJob?.cancelAndJoin() }
+        launch {
+            connectionJob?.cancelAndJoin()
+            connectionJob = null
+        }
     }
 
     suspend fun send(event: PeerEvent) {
