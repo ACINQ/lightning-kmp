@@ -30,7 +30,7 @@ kotlin {
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val secp256k1Version = "0.4.1"
     val serializationVersion = "1.0.0"
-    val coroutineVersion = "1.4.2"
+    val coroutineVersion = "1.4.2-native-mt"
 
     val commonMain by sourceSets.getting {
         dependencies {
