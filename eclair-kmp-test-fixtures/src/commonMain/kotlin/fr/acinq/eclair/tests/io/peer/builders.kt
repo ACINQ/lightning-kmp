@@ -169,9 +169,9 @@ public fun buildPeer(
     walletParams: WalletParams,
     databases: InMemoryDatabases = InMemoryDatabases()
 ): Peer {
-    val electrum = ElectrumClient(TcpSocket.Builder(), scope)
+    val electrum = ElectrumClient(scope)
     val watcher = ElectrumWatcher(electrum, scope)
-    val peer = Peer(TcpSocket.Builder(), nodeParams, walletParams, watcher, databases, scope)
+    val peer = Peer(nodeParams, walletParams, watcher, databases, scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),

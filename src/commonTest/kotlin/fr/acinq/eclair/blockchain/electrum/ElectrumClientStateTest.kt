@@ -7,7 +7,6 @@ import fr.acinq.eclair.utils.Connection
 import fr.acinq.eclair.utils.ServerAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFails
 import kotlin.test.assertTrue
 
 class ElectrumClientStateTest : EclairTestSuite() {
@@ -27,7 +26,10 @@ class ElectrumClientStateTest : EclairTestSuite() {
             assertTrue { actions.isEmpty() }
         }
 
-        WaitingForConnection.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))).let { (newState, actions) ->
+        WaitingForConnection.process(Start(
+            ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES),
+            TcpSocket.Builder()
+        )).let { (newState, actions) ->
             assertEquals(WaitingForConnection, newState)
             assertTrue { actions.isEmpty() }
         }
@@ -54,7 +56,10 @@ class ElectrumClientStateTest : EclairTestSuite() {
 
     @Test
     fun `ClientClosed state`() {
-        ClientClosed.process(Start(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))).let { (newState, actions) ->
+        ClientClosed.process(Start(
+            ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES),
+            TcpSocket.Builder()
+        )).let { (newState, actions) ->
             assertEquals(WaitingForConnection, newState)
             assertEquals(2, actions.size)
             assertTrue(actions[0] is BroadcastStatus)

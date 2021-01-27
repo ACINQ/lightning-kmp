@@ -47,7 +47,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for confirmed transactions`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, _) = bitcoincli.getNewAddress()
@@ -74,7 +74,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for confirmed transactions created while being offline`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, _) = bitcoincli.getNewAddress()
@@ -102,7 +102,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for spent transactions`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -159,7 +159,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for spent transactions before client is connected`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this)
+        val client = ElectrumClient(this)
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -218,7 +218,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for spent transactions while being offline`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -277,7 +277,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runSuspendTest(timeout = 50.seconds) {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -322,7 +322,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -355,7 +355,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
 
     @Test
     fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
         val watcherNotifications = watcher.openWatchNotificationsSubscription()
 
@@ -479,7 +479,7 @@ class ElectrumWatcherIntegrationTest : EclairTestSuite() {
     @Test
     fun `get transaction`() = runSuspendTest(timeout = 50.seconds) {
         // Run on a production server
-        val electrumClient = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
+        val electrumClient = ElectrumClient(this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
         val electrumWatcher = ElectrumWatcher(electrumClient, this)
 
         delay(1_000) // Wait for the electrum client to be ready

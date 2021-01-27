@@ -26,7 +26,7 @@ import kotlin.time.seconds
     Events
  */
 internal sealed class ClientEvent
-internal data class Start(val serverAddress: ServerAddress) : ClientEvent()
+internal data class Start(val serverAddress: ServerAddress, val socketBuilder: TcpSocket.Builder) : ClientEvent()
 internal object Stop : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
@@ -39,7 +39,7 @@ internal object AskForHeader : ClientEvent()
     Actions
  */
 internal sealed class ElectrumClientAction
-internal data class ConnectionAttempt(val serverAddress: ServerAddress) : ElectrumClientAction()
+internal data class ConnectionAttempt(val serverAddress: ServerAddress, val socketBuilder: TcpSocket.Builder) : ElectrumClientAction()
 internal data class SendRequest(val request: String) : ElectrumClientAction()
 internal data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction()
 internal data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction()
@@ -148,7 +148,7 @@ internal object ClientClosed : ClientState() {
                 state = WaitingForConnection
                 actions = listOf(
                     BroadcastStatus(Connection.ESTABLISHING),
-                    ConnectionAttempt(event.serverAddress)
+                    ConnectionAttempt(event.serverAddress, event.socketBuilder)
                 )
             }
             else -> unhandled(event)
@@ -181,7 +181,6 @@ private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientSt
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
-    private val socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 
@@ -223,7 +222,7 @@ class ElectrumClient(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is ConnectionAttempt -> connectionJob = establishConnection(action.serverAddress)
+                    is ConnectionAttempt -> connectionJob = establishConnection(action.serverAddress, action.socketBuilder)
                     is SendRequest -> send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
@@ -235,8 +234,8 @@ class ElectrumClient(
         }
     }
 
-    fun connect(serverAddress: ServerAddress) {
-        if (state == ClientClosed) launch { eventChannel.send(Start(serverAddress)) }
+    fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder = TcpSocket.Builder()) {
+        if (state == ClientClosed) launch { eventChannel.send(Start(serverAddress, socketBuilder)) }
         else logger.warning { "electrum client is already running" }
     }
 
@@ -245,7 +244,7 @@ class ElectrumClient(
     }
 
     private var connectionJob: Job? = null
-    private fun establishConnection(serverAddress: ServerAddress) = launch {
+    private fun establishConnection(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder) = launch {
         try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }

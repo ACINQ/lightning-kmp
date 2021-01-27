@@ -31,7 +31,7 @@ sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object Connect : PeerEvent()
+data class Connect(val socketBuilder: TcpSocket.Builder) : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -51,7 +51,6 @@ data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) :
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
-    val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
@@ -181,7 +180,7 @@ class Peer(
     }
 
     private var connectionJob: Job? = null
-    private fun establishConnection() = launch {
+    private fun establishConnection(socketBuilder: TcpSocket.Builder) = launch {
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
         val socket = try {
@@ -263,8 +262,8 @@ class Peer(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    fun connect() {
-        launch { input.send(Connect) }
+    fun connect(socketBuilder: TcpSocket.Builder = TcpSocket.Builder()) {
+        launch { input.send(Connect(socketBuilder)) }
     }
 
     fun disconnect() {
@@ -637,7 +636,7 @@ class Peer(
                 }
             }
             event is Connect && connectionState.value == Connection.CLOSED -> {
-                connectionJob = establishConnection()
+                connectionJob = establishConnection(event.socketBuilder)
             }
             event is Disconnected -> {
                 logger.warning { "n:$remoteNodeId disconnecting channels" }
