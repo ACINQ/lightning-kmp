@@ -48,7 +48,7 @@ private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
  *                   ElectrumClient
  *                         ^
  *                         |
- *  -> Start               | subscriptions:
+ *  -> Connect             | subscriptions:
  *      |                  | - status
  *      |                  | - header
  *      |                  | - addresses
