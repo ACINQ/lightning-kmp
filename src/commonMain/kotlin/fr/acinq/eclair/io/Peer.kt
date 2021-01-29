@@ -3,20 +3,25 @@ package fr.acinq.eclair.io
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomKeyPath
-import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.GetTxWithMeta
+import fr.acinq.eclair.blockchain.WatchEvent
 import fr.acinq.eclair.blockchain.electrum.*
-import fr.acinq.eclair.blockchain.fee.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.db.OutgoingPayment
-import fr.acinq.eclair.payment.*
+import fr.acinq.eclair.payment.IncomingPaymentHandler
+import fr.acinq.eclair.payment.OutgoingPaymentFailure
+import fr.acinq.eclair.payment.OutgoingPaymentHandler
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.eclair.wire.Ping
-import fr.acinq.eclair.wire.Shutdown
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -66,7 +71,7 @@ class Peer(
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    public val output = Channel<ByteArray>(BUFFERED)
+    public val output = BroadcastChannel<ByteArray>(BUFFERED)
 
     private val logger by eclairLogger()
 
@@ -253,7 +258,7 @@ class Peer(
             }
         }
         suspend fun respond() {
-            output.consumeEach { send(it) }
+            output.openSubscription().consumeEach { send(it) }
         }
 
         launch { doPing() }
