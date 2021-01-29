@@ -265,7 +265,7 @@ class ElectrumClient(
         var closed = false
         suspend fun closeSocket() {
             if (closed) {
-                logger.warning { "TCP socket already closed." }
+                logger.warning { "TCP socket is already closed." }
                 return
             }
             logger.warning { "closing TCP socket." }
@@ -283,26 +283,34 @@ class ElectrumClient(
             }
         }
 
-        launch { output.openSubscription().consumeEach { send(it) } }
+        suspend fun ping() {
+                while (isActive) {
+                    delay(30.seconds)
+                    send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
+                }
+        }
 
-        // Electrum Server Ping
-        launch {
-            while (isActive) {
-                delay(30.seconds)
-                send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
+        suspend fun respond() {
+            output.openSubscription().consumeEach { send(it) }
+        }
+
+        suspend fun listen() {
+            try {
+                socket.linesFlow().collect {
+                    val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
+                    eventChannel.send(ReceivedResponse(electrumResponse))
+                }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning {ex.message}
+            } finally {
+                closeSocket()
             }
         }
 
-        try {
-            socket.linesFlow().collect {
-                val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
-                eventChannel.send(ReceivedResponse(electrumResponse))
-            }
-        } catch (ex: TcpSocket.IOException) {
-            logger.warning {ex.message}
-        } finally {
-            closeSocket()
-        }
+        launch { ping() }
+        launch { respond() }
+
+        listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))

@@ -215,10 +215,16 @@ class Peer(
             return@launch
         }
 
+        var closed = false
         fun closeSocket() {
+            if (closed) {
+                logger.warning { "TCP socket is already closed." }
+                return
+            }
             logger.warning { "n:$remoteNodeId closing TCP socket" }
             socket.close()
             _connectionState.value = Connection.CLOSED
+            closed = true
         }
 
         val priv = nodeParams.nodePrivateKey
