@@ -36,7 +36,6 @@ sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object Connect : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -56,17 +55,23 @@ data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) :
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
-    val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
+    socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
         private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
     }
+
+    public var socketBuilder = socketBuilder
+        set(value) {
+            logger.debug { "n:$remoteNodeId swap socket builder=$value" }
+            field = value
+        }
 
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
@@ -185,6 +190,19 @@ class Peer(
         )
     }
 
+    fun connect() {
+        if (connectionState.value == Connection.CLOSED) connectionJob = establishConnection()
+        else logger.warning { "Peer is already connecting / connected" }
+    }
+
+    fun disconnect() {
+        launch {
+            connectionJob?.cancel()
+            connectionJob = null
+        }
+    }
+
+
     private var connectionJob: Job? = null
     private fun establishConnection() = launch {
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
@@ -266,17 +284,6 @@ class Peer(
         launch { respond() }
 
         listen() // This suspends until the coroutines is cancelled or the socket is closed
-    }
-
-    fun connect() {
-        launch { input.send(Connect) }
-    }
-
-    fun disconnect() {
-        launch {
-            connectionJob?.cancelAndJoin()
-            connectionJob = null
-        }
     }
 
     suspend fun send(event: PeerEvent) {
@@ -640,9 +647,6 @@ class Peer(
                     processActions(event.channelId, actions)
                     _channels = _channels + (event.channelId to state1)
                 }
-            }
-            event is Connect && connectionState.value == Connection.CLOSED -> {
-                connectionJob = establishConnection()
             }
             event is Disconnected -> {
                 logger.warning { "n:$remoteNodeId disconnecting channels" }

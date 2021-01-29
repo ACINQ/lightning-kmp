@@ -178,9 +178,15 @@ private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientSt
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
-    private val socketBuilder: TcpSocket.Builder,
+    socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
+
+    var socketBuilder = socketBuilder
+        set(value) {
+            logger.debug { "swap socket builder=$value" }
+            field = value
+        }
 
     private val json = Json { ignoreUnknownKeys = true }
 
