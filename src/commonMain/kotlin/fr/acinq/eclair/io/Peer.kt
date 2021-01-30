@@ -76,9 +76,7 @@ class Peer(
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    private val output = MutableSharedFlow<ByteArray>(64)
-    // For test purpose only
-    fun subscribeToOutput() : SharedFlow<ByteArray> = output
+    public val output = BroadcastChannel<ByteArray>(BUFFERED)
 
     private val logger by eclairLogger()
 
@@ -284,7 +282,7 @@ class Peer(
             }
         }
         suspend fun respond() {
-            output.collect { send(it) }
+            output.openSubscription().consumeEach { send(it) }
         }
 
         launch { doPing() }
@@ -303,7 +301,7 @@ class Peer(
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         logger.info { "n:$remoteNodeId sending $msg" }
-        output.emit(encoded)
+        output.send(encoded)
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
@@ -468,7 +466,7 @@ class Peer(
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                        output.emit(LightningMessage.encode(pong))
+                        output.send(LightningMessage.encode(pong))
                     }
                     msg is Pong -> {
                         logger.debug { "n:$remoteNodeId received pong" }

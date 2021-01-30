@@ -24,9 +24,14 @@ import fr.acinq.eclair.wire.ChannelReestablish
 import fr.acinq.eclair.wire.FundingLocked
 import fr.acinq.eclair.wire.Init
 import fr.acinq.eclair.wire.LightningMessage
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 public suspend fun newPeers(
@@ -46,14 +51,16 @@ public suspend fun newPeers(
 
     // Create collectors for Alice and Bob output messages
     val bob2alice = flow {
-        bob.subscribeToOutput().collect { bytes ->
+        while (scope.isActive) {
+            val bytes = bob.output.openSubscription().receive()
             val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
             println("Bob sends $msg")
             emit(msg)
         }
     }
     val alice2bob = flow {
-        alice.subscribeToOutput().collect { bytes ->
+        while (scope.isActive) {
+            val bytes = alice.output.openSubscription().receive()
             val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
             println("Alice sends $msg")
             emit(msg)
@@ -79,7 +86,8 @@ public suspend fun newPeers(
             val aliceFundingLocked = alice2bob.expect<FundingLocked>()
             bob.forward(aliceFundingLocked)
         }
-        listOf(bobInit, aliceInit).joinAll()
+        bobInit.join()
+        aliceInit.join()
     }
 
     // Wait until the Peers are ready
