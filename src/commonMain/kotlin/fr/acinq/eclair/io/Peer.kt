@@ -27,6 +27,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlin.time.ExperimentalTime
@@ -76,7 +77,8 @@ class Peer(
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    public val output = BroadcastChannel<ByteArray>(BUFFERED)
+    private val output = Channel<ByteArray>(BUFFERED)
+    public val outputLightningMessages: ReceiveChannel<ByteArray> = output
 
     private val logger by eclairLogger()
 
@@ -215,16 +217,14 @@ class Peer(
             return@launch
         }
 
-        var closed = false
         fun closeSocket() {
-            if (closed) {
+            if (_connectionState.value == Connection.CLOSED) {
                 logger.warning { "TCP socket is already closed." }
                 return
             }
             logger.warning { "n:$remoteNodeId closing TCP socket" }
             socket.close()
             _connectionState.value = Connection.CLOSED
-            closed = true
         }
 
         val priv = nodeParams.nodePrivateKey
@@ -282,7 +282,7 @@ class Peer(
             }
         }
         suspend fun respond() {
-            output.openSubscription().consumeEach { send(it) }
+            for(msg in output) send(msg)
         }
 
         launch { doPing() }
