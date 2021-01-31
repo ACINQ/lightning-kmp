@@ -212,7 +212,7 @@ class Peer(
         val socket = try {
             socketBuilder.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port)
         } catch (ex: TcpSocket.IOException) {
-            logger.warning { "n:$remoteNodeId ${ex.message}" }
+            logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
             _connectionState.value = Connection.CLOSED
             return@launch
         }
@@ -225,6 +225,7 @@ class Peer(
             logger.warning { "n:$remoteNodeId closing TCP socket" }
             socket.close()
             _connectionState.value = Connection.CLOSED
+            cancel()
         }
 
         val priv = nodeParams.nodePrivateKey
@@ -238,7 +239,7 @@ class Peer(
                 { b -> socket.send(b) }
             )
         } catch (ex: TcpSocket.IOException) {
-            logger.warning { "n:$remoteNodeId ${ex.message}" }
+            logger.warning { "n:$remoteNodeId TCP handshake: ${ex.message}" }
             closeSocket()
             return@launch
         }
@@ -248,7 +249,7 @@ class Peer(
             try {
                 session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { "n:$remoteNodeId ${ex.message}" }
+                logger.warning { "n:$remoteNodeId TCP send: ${ex.message}" }
                 closeSocket()
             }
         }
@@ -276,7 +277,7 @@ class Peer(
                     input.send(BytesReceived(received))
                 }
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { "n:$remoteNodeId ${ex.message}" }
+                logger.warning { "n:$remoteNodeId TCP receive: ${ex.message}" }
             } finally {
                 closeSocket()
             }
