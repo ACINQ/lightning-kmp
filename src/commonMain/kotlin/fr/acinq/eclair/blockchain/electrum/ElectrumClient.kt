@@ -12,10 +12,12 @@ import fr.acinq.eclair.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
 import kotlinx.serialization.json.Json
 import kotlin.native.concurrent.ThreadLocal
 import kotlin.time.ExperimentalTime
@@ -26,13 +28,11 @@ import kotlin.time.seconds
     Events
  */
 internal sealed class ClientEvent
-internal data class Start(val serverAddress: ServerAddress) : ClientEvent()
-internal object Stop : ClientEvent()
+internal data class Connect(val serverAddress: ServerAddress) : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
 internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest) : ClientEvent()
-internal object AskForStatus : ClientEvent()
 internal object AskForHeader : ClientEvent()
 
 /*
@@ -44,8 +44,6 @@ internal data class SendRequest(val request: String) : ElectrumClientAction()
 internal data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction()
 internal data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction()
 internal data class BroadcastStatus(val connection: Connection) : ElectrumClientAction()
-internal object StartPing : ElectrumClientAction()
-internal object Shutdown : ElectrumClientAction()
 
 /**
  * [ElectrumClient] State
@@ -66,7 +64,7 @@ internal object WaitingForConnection : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
         Connected -> newState {
             state = WaitingForVersion
-            actions = listOf(StartPing, SendRequest(version.asJsonRPCRequest()))
+            actions = listOf(SendRequest(version.asJsonRPCRequest()))
         }
         else -> unhandled(event)
     }
@@ -113,7 +111,6 @@ internal object WaitingForTip : ClientState() {
 
 internal data class ClientRunning(val height: Int, val tip: BlockHeader, val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()) : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
-        is AskForStatus -> returnState(BroadcastStatus(Connection.ESTABLISHED))
         is AskForHeader -> returnState(SendHeader(height, tip))
         is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
         is ReceivedResponse -> when (val response = event.response) {
@@ -144,7 +141,7 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader, val req
 internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
-            is Start -> newState {
+            is Connect -> newState {
                 state = WaitingForConnection
                 actions = listOf(
                     BroadcastStatus(Connection.ESTABLISHING),
@@ -157,11 +154,11 @@ internal object ClientClosed : ClientState() {
 
 private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
-        Stop, Disconnected -> newState {
+        Disconnected -> newState {
             state = ClientClosed
-            actions = listOf(BroadcastStatus(Connection.CLOSED), Shutdown)
+            actions = listOf(BroadcastStatus(Connection.CLOSED))
         }
-        AskForStatus, AskForHeader -> returnState() // TODO something else ?
+        AskForHeader -> returnState() // TODO something else ?
         else -> {
             logger.warning { "cannot process event ${event::class} in state ${this::class}" }
             returnState()
@@ -181,36 +178,41 @@ private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientSt
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
-    private val socketBuilder: TcpSocket.Builder,
+    socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 
-    private lateinit var socket: TcpSocket
+    var socketBuilder = socketBuilder
+        set(value) {
+            logger.debug { "swap socket builder=$value" }
+            field = value
+        }
+
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val eventChannel: Channel<ClientEvent> = Channel(Channel.BUFFERED)
+    private val eventChannel: Channel<ClientEvent> = Channel(BUFFERED)
+    private val output: BroadcastChannel<ByteArray> = BroadcastChannel(BUFFERED)
 
     private val _connectionState = MutableStateFlow(Connection.CLOSED)
     val connectionState: StateFlow<Connection> get() = _connectionState
 
-    private val notificationsChannel = BroadcastChannel<ElectrumMessage>(Channel.BUFFERED)
+    private val notificationsChannel = BroadcastChannel<ElectrumMessage>(BUFFERED)
 
     fun openNotificationsSubscription() = notificationsChannel.openSubscription()
 
     private var state: ClientState = ClientClosed
-        set(value) {
-            if (value != field) logger.debug {
-                """Updated State: 
-                |prev: $field
-                |new:  $value""".trimMargin()
-            }
-            field = value
-        }
 
-    var runJob: Job? = null
+    private var runJob: Job? = null
 
     init {
         logger.info { "initializing electrum client" }
+        launch {
+            var previousState = connectionState.value
+            connectionState.filter { it != previousState }.collect {
+                logger.info { "connection state changed: $it" }
+                previousState = it
+            }
+        }
         runJob = launch { run() }
     }
 
@@ -224,56 +226,91 @@ class ElectrumClient(
                 yield()
                 when (action) {
                     is ConnectionAttempt -> connectionJob = establishConnection(action.serverAddress)
-                    is SendRequest -> send(action.request.encodeToByteArray())
+                    is SendRequest -> output.send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> _connectionState.value = action.connection
-                    StartPing -> pingJob = pingScheduler()
-                    is Shutdown -> cancelSocketUsage()
                 }
             }
         }
     }
 
     fun connect(serverAddress: ServerAddress) {
-        if (state == ClientClosed) launch { eventChannel.send(Start(serverAddress)) }
+        if (state == ClientClosed) launch { eventChannel.send(Connect(serverAddress)) }
         else logger.warning { "electrum client is already running" }
     }
 
     fun disconnect() {
-        launch { eventChannel.send(Stop) }
+        launch {
+            connectionJob?.cancel()
+            connectionJob = null
+        }
     }
 
     private var connectionJob: Job? = null
     private fun establishConnection(serverAddress: ServerAddress) = launch {
-        try {
+        val socket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socket = socketBuilder.connect(host, port, tls)
-            logger.info { "connected to electrumx instance" }
-            eventChannel.send(Connected)
-            socket.linesFlow().collect {
-                val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
-                eventChannel.send(ReceivedResponse(electrumResponse))
-            }
+            socketBuilder.connect(host, port, tls)
         } catch (ex: TcpSocket.IOException) {
             logger.warning { ex.message }
             eventChannel.send(Disconnected)
+            return@launch
+        }
+
+        logger.info { "connected to electrumx instance" }
+        eventChannel.send(Connected)
+
+        var closed = false
+        suspend fun closeSocket() {
+            if (closed) {
+                logger.warning { "TCP socket is already closed." }
+                return
+            }
+            logger.warning { "closing TCP socket." }
             socket.close()
+            eventChannel.send(Disconnected)
+            closed = true
         }
-    }
 
-    private fun cancelSocketUsage() {
-        pingJob?.cancel()
-        connectionJob?.cancel()
-    }
-
-    private suspend fun send(message: ByteArray) {
-        try {
-            socket.send(message)
-        } catch (ex: TcpSocket.IOException) {
-            logger.warning { ex.message }
+        suspend fun send(message: ByteArray) {
+            try {
+                socket.send(message)
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { ex.message }
+                closeSocket()
+            }
         }
+
+        suspend fun ping() {
+                while (isActive) {
+                    delay(30.seconds)
+                    send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
+                }
+        }
+
+        suspend fun respond() {
+            output.openSubscription().consumeEach { send(it) }
+        }
+
+        suspend fun listen() {
+            try {
+                socket.linesFlow().collect {
+                    val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
+                    eventChannel.send(ReceivedResponse(electrumResponse))
+                }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning {ex.message}
+            } finally {
+                closeSocket()
+            }
+        }
+
+        launch { ping() }
+        launch { respond() }
+
+        listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
@@ -281,7 +318,6 @@ class ElectrumClient(
     fun sendMessage(message: ElectrumMessage) {
         launch {
             when (message) {
-                is AskForStatusUpdate -> eventChannel.send(AskForStatus)
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
                 else -> logger.warning{ "sendMessage does not support message: ${message::class}" }
@@ -289,17 +325,9 @@ class ElectrumClient(
         }
     }
 
-    private var pingJob: Job? = null
-    private fun pingScheduler() = launch {
-        while (isActive) {
-            delay(30.seconds)
-            eventChannel.send(SendElectrumApiCall(Ping))
-        }
-    }
-
     fun stop() {
         logger.info { "electrum client stopping" }
-        cancelSocketUsage()
+        connectionJob?.cancel()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels

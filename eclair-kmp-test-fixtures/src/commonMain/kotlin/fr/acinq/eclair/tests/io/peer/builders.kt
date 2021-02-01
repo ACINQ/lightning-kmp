@@ -52,7 +52,7 @@ public suspend fun newPeers(
     // Create collectors for Alice and Bob output messages
     val bob2alice = flow {
         while (scope.isActive) {
-            val bytes = bob.output.receive()
+            val bytes = bob.outputLightningMessages.receive()
             val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
             println("Bob sends $msg")
             emit(msg)
@@ -60,7 +60,7 @@ public suspend fun newPeers(
     }
     val alice2bob = flow {
         while (scope.isActive) {
-            val bytes = alice.output.receive()
+            val bytes = alice.outputLightningMessages.receive()
             val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
             println("Alice sends $msg")
             emit(msg)
@@ -171,7 +171,7 @@ public fun buildPeer(
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope)
     val watcher = ElectrumWatcher(electrum, scope)
-    val peer = Peer(TcpSocket.Builder(), nodeParams, walletParams, watcher, databases, scope)
+    val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),

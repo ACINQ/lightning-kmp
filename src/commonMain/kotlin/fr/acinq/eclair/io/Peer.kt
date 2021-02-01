@@ -3,25 +3,31 @@ package fr.acinq.eclair.io
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomKeyPath
-import fr.acinq.eclair.blockchain.*
+import fr.acinq.eclair.blockchain.GetTxWithMeta
+import fr.acinq.eclair.blockchain.WatchEvent
 import fr.acinq.eclair.blockchain.electrum.*
-import fr.acinq.eclair.blockchain.fee.*
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.crypto.noise.*
 import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.IncomingPayment
 import fr.acinq.eclair.db.OutgoingPayment
-import fr.acinq.eclair.payment.*
+import fr.acinq.eclair.payment.IncomingPaymentHandler
+import fr.acinq.eclair.payment.OutgoingPaymentFailure
+import fr.acinq.eclair.payment.OutgoingPaymentHandler
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
 import fr.acinq.eclair.wire.Ping
-import fr.acinq.eclair.wire.Shutdown
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlin.time.ExperimentalTime
@@ -31,7 +37,6 @@ sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
-object Connect : PeerEvent()
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
@@ -51,11 +56,11 @@ data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) :
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
-    val socketBuilder: TcpSocket.Builder,
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
+    socketBuilder: TcpSocket.Builder,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
@@ -63,10 +68,17 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
+    public var socketBuilder = socketBuilder
+        set(value) {
+            logger.debug { "n:$remoteNodeId swap socket builder=$value" }
+            field = value
+        }
+
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    public val output = Channel<ByteArray>(BUFFERED)
+    private val output = Channel<ByteArray>(BUFFERED)
+    public val outputLightningMessages: ReceiveChannel<ByteArray> = output
 
     private val logger by eclairLogger()
 
@@ -180,6 +192,19 @@ class Peer(
         )
     }
 
+    fun connect() {
+        if (connectionState.value == Connection.CLOSED) connectionJob = establishConnection()
+        else logger.warning { "Peer is already connecting / connected" }
+    }
+
+    fun disconnect() {
+        launch {
+            connectionJob?.cancel()
+            connectionJob = null
+        }
+    }
+
+
     private var connectionJob: Job? = null
     private fun establishConnection() = launch {
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
@@ -187,15 +212,20 @@ class Peer(
         val socket = try {
             socketBuilder.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port)
         } catch (ex: TcpSocket.IOException) {
-            logger.warning { "n:$remoteNodeId ${ex.message}" }
+            logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
             _connectionState.value = Connection.CLOSED
             return@launch
         }
 
         fun closeSocket() {
+            if (_connectionState.value == Connection.CLOSED) {
+                logger.warning { "TCP socket is already closed." }
+                return
+            }
             logger.warning { "n:$remoteNodeId closing TCP socket" }
             socket.close()
             _connectionState.value = Connection.CLOSED
+            cancel()
         }
 
         val priv = nodeParams.nodePrivateKey
@@ -209,7 +239,7 @@ class Peer(
                 { b -> socket.send(b) }
             )
         } catch (ex: TcpSocket.IOException) {
-            logger.warning { "n:$remoteNodeId ${ex.message}" }
+            logger.warning { "n:$remoteNodeId TCP handshake: ${ex.message}" }
             closeSocket()
             return@launch
         }
@@ -219,7 +249,7 @@ class Peer(
             try {
                 session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { "n:$remoteNodeId ${ex.message}" }
+                logger.warning { "n:$remoteNodeId TCP send: ${ex.message}" }
                 closeSocket()
             }
         }
@@ -247,13 +277,13 @@ class Peer(
                     input.send(BytesReceived(received))
                 }
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { "n:$remoteNodeId ${ex.message}" }
+                logger.warning { "n:$remoteNodeId TCP receive: ${ex.message}" }
             } finally {
                 closeSocket()
             }
         }
         suspend fun respond() {
-            output.consumeEach { send(it) }
+            for(msg in output) send(msg)
         }
 
         launch { doPing() }
@@ -261,17 +291,6 @@ class Peer(
         launch { respond() }
 
         listen() // This suspends until the coroutines is cancelled or the socket is closed
-    }
-
-    fun connect() {
-        launch { input.send(Connect) }
-    }
-
-    fun disconnect() {
-        launch {
-            connectionJob?.cancelAndJoin()
-            connectionJob = null
-        }
     }
 
     suspend fun send(event: PeerEvent) {
@@ -635,9 +654,6 @@ class Peer(
                     processActions(event.channelId, actions)
                     _channels = _channels + (event.channelId to state1)
                 }
-            }
-            event is Connect && connectionState.value == Connection.CLOSED -> {
-                connectionJob = establishConnection()
             }
             event is Disconnected -> {
                 logger.warning { "n:$remoteNodeId disconnecting channels" }

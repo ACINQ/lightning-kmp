@@ -22,7 +22,6 @@ import kotlinx.serialization.json.*
  */
 sealed class ElectrumMessage
 sealed class ElectrumSubscription : ElectrumMessage()
-object AskForStatusUpdate : ElectrumSubscription()
 object AskForHeaderSubscriptionUpdate : ElectrumSubscription()
 data class SendElectrumRequest(val electrumRequest: ElectrumRequest) : ElectrumMessage()
 
