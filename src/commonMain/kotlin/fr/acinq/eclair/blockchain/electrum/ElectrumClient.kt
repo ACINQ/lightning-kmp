@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.io.linesFlow
+import fr.acinq.eclair.io.send
 import fr.acinq.eclair.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
