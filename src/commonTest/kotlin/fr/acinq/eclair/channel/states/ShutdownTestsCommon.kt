@@ -354,7 +354,10 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val (alice, _) = init()
         val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val htlcExpiry = alice.commitments.localCommit.spec.htlcs.map { it.add.cltvExpiry }.first()
-        val (alice1, actions1) = alice.processEx(ChannelEvent.NewBlock(htlcExpiry.toLong().toInt(), alice.currentTip.second))
+        val (alice1, actions1) = run {
+            val (tmp, _) = alice.processEx(ChannelEvent.NewBlock(htlcExpiry.toLong().toInt(), alice.currentTip.second))
+            tmp.processEx(ChannelEvent.CheckHtlcTimeout)
+        }
         assertTrue(alice1 is Closing)
         assertNotNull(alice1.localCommitPublished)
         actions1.hasTx(commitTx)

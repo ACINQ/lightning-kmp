@@ -1938,7 +1938,7 @@ data class Normal(
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> {
                 logger.info { "c:$channelId new tip ${event.height} ${event.Header.hash}" }
-                this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
+                Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             }
             is ChannelEvent.SetOnChainFeerates -> {
                 logger.info { "c:$channelId using on-chain fee rates ${event.feerates}" }
@@ -2164,7 +2164,7 @@ data class ShuttingDown(
                 else -> unhandled(event)
             }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
+            is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
@@ -2319,7 +2319,7 @@ data class Negotiating(
                 else -> unhandled(event)
             }
             event is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
-            event is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
+            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             event is ChannelEvent.ExecuteCommand && event.command is CMD_ADD_HTLC -> handleCommandError(event.command, ChannelUnavailable(channelId))
@@ -2623,7 +2623,7 @@ data class Closing(
                 else -> Pair(this, emptyList())
             }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
+            is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
