@@ -22,7 +22,7 @@ class SqliteChannelsDbTestsJvm : EclairTestSuite() {
             db.addOrUpdateChannel(alice)
             val (bob, _) = TestsHelper.reachNormal(ChannelVersion.STANDARD, 2, 2000000.sat)
             db.addOrUpdateChannel(bob)
-            assertEquals(db.listLocalChannels(), listOf(alice, bob))
+            assertEquals(db.listLocalChannels(), listOf(alice.copy(doCheckForTimedOutHtlcs = false), bob.copy(doCheckForTimedOutHtlcs = false)))
         }
     }
 }

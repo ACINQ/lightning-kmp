@@ -137,6 +137,7 @@ sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
     abstract val currentOnChainFeerates: OnChainFeerates
+    abstract val doCheckForTimedOutHtlcs: Boolean
     val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
@@ -159,6 +160,8 @@ sealed class ChannelState {
     }
 
     abstract fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>>
+
+    abstract fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean): ChannelState
 
     internal fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "unhandled event ${event::class} in state ${this::class}" }
@@ -463,6 +466,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(currentBlockHeight.toLong())
         val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(currentBlockHeight.toLong(), staticParams.nodeParams.fulfillSafetyBeforeTimeoutBlocks)
         val channelEx: ChannelException? = when {
+            !doCheckForTimedOutHtlcs -> null
             timedOutOutgoing.isNotEmpty() -> HtlcsTimedOutDownstream(channelId, timedOutOutgoing)
             almostTimedOutIncoming.isNotEmpty() -> FulfilledHtlcsWillTimeout(channelId, almostTimedOutIncoming)
             else -> null
@@ -504,6 +508,8 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 }
 
 data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.InitFundee -> {
@@ -647,11 +653,14 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
+    override val doCheckForTimedOutHtlcs: Boolean get() = state.doCheckForTimedOutHtlcs
     override val commitments: Commitments get() = state.commitments
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         return Offline(state.updateCommitments(input))
     }
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = state.updateDoCheckForTimedOutHtlcs(doCheck)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} offline processing ${event::class}" }
@@ -765,11 +774,14 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
+    override val doCheckForTimedOutHtlcs: Boolean get() = state.doCheckForTimedOutHtlcs
     override val commitments: Commitments get() = state.commitments
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         return Syncing(state.updateCommitments(input), waitForTheirReestablishMessage)
     }
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean): ChannelState = state.updateDoCheckForTimedOutHtlcs(doCheck)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} syncing processing ${event::class}" }
@@ -853,7 +865,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     // would punish us by taking all the funds in the channel
                                     val exc = PleasePublishYourCommitment(state.channelId)
                                     val error = Error(state.channelId, exc.message.encodeToByteArray().toByteVector())
-                                    val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
+                                    val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.doCheckForTimedOutHtlcs, state.commitments, event.message)
                                     val actions = listOf(
                                         ChannelAction.Storage.StoreState(nextState),
                                         ChannelAction.Message.Send(error)
@@ -879,7 +891,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
                                 val exc = PleasePublishYourCommitment(state.channelId)
                                 val error = Error(state.channelId, exc.message.encodeToByteArray().toByteVector())
-                                val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.commitments, event.message)
+                                val nextState = WaitForRemotePublishFutureCommitment(staticParams, state.currentTip, state.currentOnChainFeerates, state.doCheckForTimedOutHtlcs, state.commitments, event.message)
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreState(nextState),
                                     ChannelAction.Message.Send(error)
@@ -993,10 +1005,13 @@ data class WaitForRemotePublishFutureCommitment(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
+    override val doCheckForTimedOutHtlcs: Boolean,
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this.copy(doCheckForTimedOutHtlcs = doCheck)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -1043,6 +1058,10 @@ data class WaitForOpenChannel(
     val localParams: LocalParams,
     val remoteInit: Init
 ) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived ->
@@ -1150,6 +1169,10 @@ data class WaitForFundingCreated(
     val channelVersion: ChannelVersion,
     val lastSent: AcceptChannel
 ) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived ->
@@ -1263,6 +1286,9 @@ data class WaitForAcceptChannel(
     val initFunder: ChannelEvent.InitFunder,
     val lastSent: OpenChannel
 ) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     private val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
@@ -1341,6 +1367,9 @@ data class WaitForFundingInternal(
     val channelVersion: ChannelVersion,
     val lastSent: OpenChannel
 ) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MakeFundingTxResponse -> {
@@ -1433,6 +1462,9 @@ data class WaitForFundingSigned(
     val channelVersion: ChannelVersion,
     val lastSent: FundingCreated
 ) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived && event.message is FundingSigned -> {
@@ -1514,6 +1546,9 @@ data class WaitForFundingConfirmed(
     val deferred: FundingLocked?,
     val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
@@ -1602,6 +1637,9 @@ data class WaitForFundingLocked(
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
 ) : ChannelStateWithCommitments() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
@@ -1633,6 +1671,7 @@ data class WaitForFundingLocked(
                         staticParams,
                         currentTip,
                         currentOnChainFeerates,
+                        doCheckForTimedOutHtlcs,
                         commitments.copy(remoteNextCommitInfo = Either.Right(event.message.nextPerCommitmentPoint)),
                         shortChannelId,
                         buried = false,
@@ -1685,6 +1724,7 @@ data class Normal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
+    override val doCheckForTimedOutHtlcs: Boolean,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val buried: Boolean,
@@ -1695,6 +1735,8 @@ data class Normal(
     val remoteShutdown: Shutdown?
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this.copy(doCheckForTimedOutHtlcs = doCheck)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
@@ -1821,7 +1863,7 @@ data class Normal(
 
                                 if (commitments1.remoteCommit.spec.htlcs.isNotEmpty()) {
                                     // we just signed htlcs that need to be resolved now
-                                    ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown)
+                                    ShuttingDown(staticParams, currentTip, currentOnChainFeerates, doCheckForTimedOutHtlcs, commitments1, localShutdown, remoteShutdown)
                                 } else {
                                     logger.warning { "c:$channelId we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
                                     val closingTxProposed = if (isFunder) {
@@ -1836,7 +1878,7 @@ data class Normal(
                                     } else {
                                         listOf(listOf())
                                     }
-                                    Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed, bestUnpublishedClosingTx = null)
+                                    Negotiating(staticParams, currentTip, currentOnChainFeerates, doCheckForTimedOutHtlcs, commitments1, localShutdown, remoteShutdown, closingTxProposed, bestUnpublishedClosingTx = null)
                                 }
                             } else {
                                 this.copy(commitments = commitments1)
@@ -1907,6 +1949,7 @@ data class Normal(
                                             staticParams,
                                             currentTip,
                                             currentOnChainFeerates,
+                                            doCheckForTimedOutHtlcs,
                                             commitments1,
                                             localShutdown,
                                             event.message,
@@ -1917,13 +1960,23 @@ data class Normal(
                                         Pair(nextState, actions)
                                     }
                                     commitments1.hasNoPendingHtlcs() -> {
-                                        val nextState = Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, event.message, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
+                                        val nextState = Negotiating(
+                                            staticParams,
+                                            currentTip,
+                                            currentOnChainFeerates,
+                                            doCheckForTimedOutHtlcs,
+                                            commitments1,
+                                            localShutdown,
+                                            event.message,
+                                            closingTxProposed = listOf(listOf()),
+                                            bestUnpublishedClosingTx = null
+                                        )
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
                                     }
                                     else -> {
                                         // there are some pending signed htlcs, we need to fail/fulfill them
-                                        val nextState = ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, event.message)
+                                        val nextState = ShuttingDown(staticParams, currentTip, currentOnChainFeerates, doCheckForTimedOutHtlcs, commitments1, localShutdown, event.message)
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
                                     }
@@ -1935,7 +1988,7 @@ data class Normal(
                     else -> unhandled(event)
                 }
             }
-            is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelEvent.CheckHtlcTimeout -> this.copy(doCheckForTimedOutHtlcs = true).checkHtlcTimeout()
             is ChannelEvent.NewBlock -> {
                 logger.info { "c:$channelId new tip ${event.height} ${event.Header.hash}" }
                 this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
@@ -1999,11 +2052,14 @@ data class ShuttingDown(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
+    override val doCheckForTimedOutHtlcs: Boolean,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this.copy(doCheckForTimedOutHtlcs = doCheck)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
@@ -2046,6 +2102,7 @@ data class ShuttingDown(
                                         staticParams,
                                         currentTip,
                                         currentOnChainFeerates,
+                                        doCheckForTimedOutHtlcs,
                                         commitments1,
                                         localShutdown,
                                         remoteShutdown,
@@ -2060,7 +2117,17 @@ data class ShuttingDown(
                                     Pair(nextState, actions)
                                 }
                                 commitments1.hasNoPendingHtlcs() -> {
-                                    val nextState = Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
+                                    val nextState = Negotiating(
+                                        staticParams,
+                                        currentTip,
+                                        currentOnChainFeerates,
+                                        doCheckForTimedOutHtlcs,
+                                        commitments1,
+                                        localShutdown,
+                                        remoteShutdown,
+                                        closingTxProposed = listOf(listOf()),
+                                        bestUnpublishedClosingTx = null
+                                    )
                                     val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(revocation))
                                     Pair(nextState, actions)
                                 }
@@ -2094,6 +2161,7 @@ data class ShuttingDown(
                                         staticParams,
                                         currentTip,
                                         currentOnChainFeerates,
+                                        doCheckForTimedOutHtlcs,
                                         commitments1,
                                         localShutdown,
                                         remoteShutdown,
@@ -2104,7 +2172,17 @@ data class ShuttingDown(
                                     Pair(nextState, actions1)
                                 }
                                 commitments1.hasNoPendingHtlcs() -> {
-                                    val nextState = Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
+                                    val nextState = Negotiating(
+                                        staticParams,
+                                        currentTip,
+                                        currentOnChainFeerates,
+                                        doCheckForTimedOutHtlcs,
+                                        commitments1,
+                                        localShutdown,
+                                        remoteShutdown,
+                                        closingTxProposed = listOf(listOf()),
+                                        bestUnpublishedClosingTx = null
+                                    )
                                     actions1.add(ChannelAction.Storage.StoreState(nextState))
                                     Pair(nextState, actions1)
                                 }
@@ -2163,7 +2241,7 @@ data class ShuttingDown(
                 }
                 else -> unhandled(event)
             }
-            is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelEvent.CheckHtlcTimeout -> this.copy(doCheckForTimedOutHtlcs = true).checkHtlcTimeout()
             is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
@@ -2196,6 +2274,7 @@ data class Negotiating(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
+    override val doCheckForTimedOutHtlcs: Boolean,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
@@ -2208,6 +2287,8 @@ data class Negotiating(
     }
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this.copy(doCheckForTimedOutHtlcs = doCheck)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -2318,7 +2399,7 @@ data class Negotiating(
                 }
                 else -> unhandled(event)
             }
-            event is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
+            event is ChannelEvent.CheckHtlcTimeout -> this.copy(doCheckForTimedOutHtlcs = true).checkHtlcTimeout()
             event is ChannelEvent.NewBlock -> this.copy(currentTip = Pair(event.height, event.Header)).checkHtlcTimeout()
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
@@ -2387,6 +2468,9 @@ data class Closing(
     val futureRemoteCommitPublished: RemoteCommitPublished? = null,
     val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
 ) : ChannelStateWithCommitments() {
+    override val doCheckForTimedOutHtlcs: Boolean get() = false
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
 
     private val spendingTxs: List<Transaction> by lazy {
         mutualClosePublished + revokedCommitPublished.map { it.commitTx } +
@@ -2734,11 +2818,15 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
+    override val doCheckForTimedOutHtlcs: Boolean get() = state.doCheckForTimedOutHtlcs
     override val commitments: Commitments get() = state.commitments
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         return this.copy(state = state.updateCommitments(input) as Closing)
     }
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
@@ -2754,6 +2842,10 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
  * Channel has been aborted before it was funded (because we did not receive a FundingCreated or FundingSigned message for example)
  */
 data class Aborted(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean) = this
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
     }
@@ -2769,6 +2861,10 @@ data class ErrorInformationLeak(
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments
 ) : ChannelStateWithCommitments() {
+    override val doCheckForTimedOutHtlcs: Boolean = false
+
+    override fun updateDoCheckForTimedOutHtlcs(doCheck: Boolean): ChannelState = this
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this, listOf())
     }

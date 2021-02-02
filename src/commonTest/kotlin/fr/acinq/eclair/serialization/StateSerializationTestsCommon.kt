@@ -15,11 +15,11 @@ class StateSerializationTestsCommon : EclairTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val bytes = Serialization.serialize(alice)
         val check = Serialization.deserialize(bytes, alice.staticParams.nodeParams)
-        assertEquals(alice, check)
+        assertEquals(alice.copy(doCheckForTimedOutHtlcs = false), check)
 
         val bytes1 = Serialization.serialize(bob)
         val check1 = Serialization.deserialize(bytes1, bob.staticParams.nodeParams)
-        assertEquals(bob, check1)
+        assertEquals(bob.copy(doCheckForTimedOutHtlcs = false), check1)
     }
 
     @Test
@@ -28,10 +28,10 @@ class StateSerializationTestsCommon : EclairTestSuite() {
         val priv = randomKey()
         val bytes = Serialization.encrypt(priv, alice)
         val check = Serialization.decrypt(priv, bytes, alice.staticParams.nodeParams)
-        assertEquals(alice, check)
+        assertEquals(alice.copy(doCheckForTimedOutHtlcs = false), check)
 
         val bytes1 = Serialization.encrypt(priv, bob)
         val check1 = Serialization.decrypt(priv, bytes1, bob.staticParams.nodeParams)
-        assertEquals(bob, check1)
+        assertEquals(bob.copy(doCheckForTimedOutHtlcs = false), check1)
     }
 }

@@ -112,7 +112,8 @@ object TestsHelper {
         channelVersion: ChannelVersion = ChannelVersion.STANDARD,
         currentHeight: Int = TestConstants.defaultBlockHeight,
         fundingAmount: Satoshi = TestConstants.fundingAmount,
-        pushMsat: MilliSatoshi = TestConstants.pushMsat
+        pushMsat: MilliSatoshi = TestConstants.pushMsat,
+        checkForTimedOutHtlcs: Boolean = true
     ): Pair<Normal, Normal> {
         val (a, b, open) = init(channelVersion, currentHeight, fundingAmount, pushMsat)
         var alice = a as ChannelState
@@ -161,6 +162,12 @@ object TestsHelper {
         rb = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
         bob = rb.first
 
+        if (checkForTimedOutHtlcs) {
+            ra = alice.process(ChannelEvent.CheckHtlcTimeout)
+            alice = ra.first
+            rb = bob.process(ChannelEvent.CheckHtlcTimeout)
+            bob = rb.first
+        }
         return Pair(alice as Normal, bob as Normal)
     }
 
@@ -389,7 +396,7 @@ object TestsHelper {
     fun checkSerialization(state: ChannelStateWithCommitments) {
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized, state.staticParams.nodeParams)
-        assertEquals(deserialized, state, "serialization error")
+        assertEquals(deserialized, state.updateDoCheckForTimedOutHtlcs(false), "serialization error")
     }
 
     fun checkSerialization(actions: List<ChannelAction>) {

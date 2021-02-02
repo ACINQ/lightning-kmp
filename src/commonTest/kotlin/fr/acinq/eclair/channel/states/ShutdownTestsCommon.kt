@@ -344,21 +344,27 @@ class ShutdownTestsCommon : EclairTestSuite() {
 
         run {
             val (alice1, actions1) = alice.processEx(ChannelEvent.CheckHtlcTimeout)
-            assertEquals(alice, alice1)
+            assertEquals(alice.copy(doCheckForTimedOutHtlcs = true), alice1)
             assertTrue(actions1.isEmpty())
         }
     }
 
     @Test
     fun `recv NewBlock (an htlc timed out)`() {
-        val (alice, _) = init()
+        val (alice, _) = init(checkForTimedOutHtlcs = false)
         val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val htlcExpiry = alice.commitments.localCommit.spec.htlcs.map { it.add.cltvExpiry }.first()
+
+        // before we've told Alice to explicitly check for timed-out htlcs, she will do nothing
         val (alice1, actions1) = alice.processEx(ChannelEvent.NewBlock(htlcExpiry.toLong().toInt(), alice.currentTip.second))
-        assertTrue(alice1 is Closing)
-        assertNotNull(alice1.localCommitPublished)
-        actions1.hasTx(commitTx)
-        actions1.hasOutgoingMessage<Error>()
+        assertTrue(alice1 is ShuttingDown)
+        assertTrue(actions1.isEmpty())
+
+        val (alice2, actions2) = alice1.processEx(ChannelEvent.CheckHtlcTimeout)
+        assertTrue(alice2 is Closing)
+        assertNotNull(alice2.localCommitPublished)
+        actions2.hasTx(commitTx)
+        actions2.hasOutgoingMessage<Error>()
     }
 
     @Test
@@ -488,8 +494,8 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val r1 = randomBytes32()
         val r2 = randomBytes32()
 
-        fun init(currentBlockHeight: Int = TestConstants.defaultBlockHeight): Pair<ShuttingDown, ShuttingDown> {
-            val (alice, bob) = reachNormal(ChannelVersion.STANDARD)
+        fun init(currentBlockHeight: Int = TestConstants.defaultBlockHeight, checkForTimedOutHtlcs: Boolean = true): Pair<ShuttingDown, ShuttingDown> {
+            val (alice, bob) = reachNormal(ChannelVersion.STANDARD, checkForTimedOutHtlcs = checkForTimedOutHtlcs)
             val (_, cmdAdd1) = makeCmdAdd(300_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r1)
             val (alice1, actions) = alice.processEx(ChannelEvent.ExecuteCommand(cmdAdd1))
             val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()

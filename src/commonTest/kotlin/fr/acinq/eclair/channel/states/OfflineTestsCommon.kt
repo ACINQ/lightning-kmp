@@ -455,13 +455,13 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertTrue(alice2 is Offline)
 
         // alice restarted after the htlc timed out
-        val alice3 = alice2.copy(state = (alice2.state as Normal).copy(currentTip = alice2.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())))
-        val (alice4, actions) = alice3.processEx(ChannelEvent.CheckHtlcTimeout)
-        assertTrue(alice4 is Closing)
-        assertNotNull(alice4.localCommitPublished)
+        val alice4 = alice2.copy(state = (alice2.state as Normal).copy(currentTip = alice2.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())))
+        val (alice5, actions) = alice4.processEx(ChannelEvent.CheckHtlcTimeout)
+        assertTrue(alice5 is Closing)
+        assertNotNull(alice5.localCommitPublished)
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
-        val lcp = alice4.localCommitPublished!!
+        val lcp = alice5.localCommitPublished!!
         actions.hasTx(lcp.commitTx)
         assertEquals(1, lcp.htlcTimeoutTxs.size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
@@ -481,12 +481,13 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertTrue(bob3 is Offline)
 
         // bob restarts when the fulfilled htlc is close to timing out: alice hasn't signed, so bob closes the channel
-        val (bob4, actions4) = bob3.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt(), bob3.state.currentTip.second))
-        assertTrue(bob4 is Closing)
-        assertNotNull(bob4.localCommitPublished)
+        val (bob4, _) = bob3.processEx(ChannelEvent.CheckHtlcTimeout)
+        val (bob5, actions4) = bob4.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt(), bob3.state.currentTip.second))
+        assertTrue(bob5 is Closing)
+        assertNotNull(bob5.localCommitPublished)
         actions4.has<ChannelAction.Storage.StoreState>()
 
-        val lcp = bob4.localCommitPublished!!
+        val lcp = bob5.localCommitPublished!!
         assertNotNull(lcp.claimMainDelayedOutputTx)
         assertEquals(1, lcp.htlcSuccessTxs.size)
         Transaction.correctlySpends(lcp.htlcSuccessTxs.first(), lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

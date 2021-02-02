@@ -446,7 +446,7 @@ data class WaitForRemotePublishFutureCommitment(
     )
 
     override fun export(nodeParams: NodeParams) =
-        fr.acinq.eclair.channel.WaitForRemotePublishFutureCommitment(staticParams.export(nodeParams), currentTip, currentOnChainFeerates.export(), commitments.export(), remoteChannelReestablish)
+        fr.acinq.eclair.channel.WaitForRemotePublishFutureCommitment(staticParams.export(nodeParams), currentTip, currentOnChainFeerates.export(), false, commitments.export(), remoteChannelReestablish)
 }
 
 @Serializable
@@ -684,6 +684,7 @@ data class Normal(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
+        false,
         commitments.export(),
         shortChannelId,
         buried,
@@ -717,6 +718,7 @@ data class ShuttingDown(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
+        false,
         commitments.export(),
         localShutdown,
         remoteShutdown
@@ -754,6 +756,7 @@ data class Negotiating(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
+        false,
         commitments.export(),
         localShutdown,
         remoteShutdown,
