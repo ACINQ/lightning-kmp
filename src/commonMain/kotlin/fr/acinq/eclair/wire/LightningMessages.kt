@@ -1014,12 +1014,7 @@ data class PayToOpenRequest(
             require(requests.map { it.feeThresholdSatoshis }.toSet().size == 1) { "all pay-to-open fee rates must be equal" }
             require(requests.map { it.feeProportionalMillionths }.toSet().size == 1) { "all pay-to-open fee rates must be equal" }
             val totalAmount = requests.map { it.amountMsat }.sum()
-            val fees = when {
-                // for tiny amounts there is no fee
-                totalAmount < requests.first().feeThresholdSatoshis -> 0.sat
-                // NB: this fee is proportional, which allows us to sum them in case of multipart payments
-                else -> totalAmount.truncateToSatoshi() * requests.first().feeProportionalMillionths / 1_000_000
-            }
+            val fees = requests.map { it.feeSatoshis }.sum()
             return Pair(totalAmount, fees)
         }
     }
