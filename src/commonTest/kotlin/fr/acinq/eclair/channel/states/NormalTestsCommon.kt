@@ -1813,7 +1813,10 @@ class NormalTestsCommon : EclairTestSuite() {
         actions3.hasOutgoingMessage<CommitSig>()
 
         // fulfilled htlc is close to timing out and alice still hasn't signed, so bob closes the channel
-        val (bob4, actions4) = bob3.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+        val (bob4, actions4) = run {
+            val (tmp, _) = bob3.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+            tmp.processEx(ChannelEvent.CheckHtlcTimeout)
+        }
         checkFulfillTimeout(bob4, actions4)
     }
 
@@ -1849,7 +1852,10 @@ class NormalTestsCommon : EclairTestSuite() {
         val (bob4, _) = bob3.processEx(ChannelEvent.MessageReceived(ack))
 
         // fulfilled htlc is close to timing out and alice has revoked her previous commitment but not signed the new one, so bob closes the channel
-        val (bob5, actions5) = bob4.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+        val (bob5, actions5) = run {
+            val (tmp, _) = bob4.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+            tmp.processEx(ChannelEvent.CheckHtlcTimeout)
+        }
         checkFulfillTimeout(bob5, actions5)
     }
 
