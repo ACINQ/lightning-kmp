@@ -192,7 +192,7 @@ class ElectrumClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val eventChannel: Channel<ClientEvent> = Channel(BUFFERED)
-    private val output: BroadcastChannel<ByteArray> = BroadcastChannel(BUFFERED)
+    private val output: Channel<ByteArray> = Channel(BUFFERED)
 
     private val _connectionState = MutableStateFlow(Connection.CLOSED)
     val connectionState: StateFlow<Connection> get() = _connectionState
@@ -244,7 +244,6 @@ class ElectrumClient(
     fun disconnect() {
         launch {
             connectionJob?.cancel()
-            connectionJob = null
         }
     }
 
@@ -271,28 +270,28 @@ class ElectrumClient(
             }
             logger.warning { "closing TCP socket." }
             socket.close()
-            eventChannel.send(Disconnected)
-            closed = true
+            _connectionState.value = Connection.CLOSED
+            if(isActive) cancel()
         }
 
         suspend fun send(message: ByteArray) {
             try {
                 socket.send(message)
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { ex.message }
+                logger.warning { "TCP send: ${ex.message}" }
                 closeSocket()
             }
         }
 
         suspend fun ping() {
-                while (isActive) {
-                    delay(30.seconds)
-                    send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
-                }
+            while (isActive) {
+                delay(30.seconds)
+                send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
+            }
         }
 
         suspend fun respond() {
-            output.openSubscription().consumeEach { send(it) }
+            for (msg in output) { send(msg) }
         }
 
         suspend fun listen() {
@@ -302,7 +301,7 @@ class ElectrumClient(
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
             } catch (ex: TcpSocket.IOException) {
-                logger.warning {ex.message}
+                logger.warning { "TCP receive: ${ex.message}" }
             } finally {
                 closeSocket()
             }

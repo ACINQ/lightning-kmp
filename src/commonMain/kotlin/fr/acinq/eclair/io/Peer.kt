@@ -200,7 +200,6 @@ class Peer(
     fun disconnect() {
         launch {
             connectionJob?.cancel()
-            connectionJob = null
         }
     }
 
@@ -218,14 +217,11 @@ class Peer(
         }
 
         fun closeSocket() {
-            if (_connectionState.value == Connection.CLOSED) {
-                logger.warning { "TCP socket is already closed." }
-                return
-            }
-            logger.warning { "n:$remoteNodeId closing TCP socket" }
+            if (_connectionState.value == Connection.CLOSED) return
+            logger.warning { "closing TCP socket." }
             socket.close()
             _connectionState.value = Connection.CLOSED
-            cancel()
+            if(isActive) cancel()
         }
 
         val priv = nodeParams.nodePrivateKey
