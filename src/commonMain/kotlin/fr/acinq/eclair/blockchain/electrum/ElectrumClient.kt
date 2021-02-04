@@ -29,7 +29,6 @@ import kotlin.time.seconds
     Events
  */
 internal sealed class ClientEvent
-internal data class Connect(val serverAddress: ServerAddress) : ClientEvent()
 internal object Connected : ClientEvent()
 internal object Disconnected : ClientEvent()
 internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
@@ -222,13 +221,15 @@ class ElectrumClient(
     }
 
     fun connect(serverAddress: ServerAddress) {
-        if (_connectionState.value == Connection.CLOSED) launch { connectionJob = establishConnection(serverAddress) }
+        if (_connectionState.value == Connection.CLOSED) {
+            connectionJob = establishConnection(serverAddress)
+        }
         else logger.warning { "electrum client is already running" }
     }
 
     fun disconnect() {
         launch {
-            connectionJob?.cancel()
+            connectionJob?.cancelAndJoin()
         }
     }
 
@@ -240,7 +241,7 @@ class ElectrumClient(
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socketBuilder?.connect(host, port, tls) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
-            ex.message?.let {  logger.warning { it } }
+            logger.warning { "TCP connect: ${ex.message}" }
             _connectionState.value = Connection.CLOSED
             return@launch
         }
@@ -252,8 +253,8 @@ class ElectrumClient(
             if (_connectionState.value == Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
             socket.close()
-            _connectionState.value = Connection.CLOSED
             if(isActive) cancel()
+            _connectionState.value = Connection.CLOSED
         }
 
         suspend fun send(message: ByteArray) {
@@ -291,7 +292,8 @@ class ElectrumClient(
 
         launch { ping() }
         launch { respond() }
-        launch { listen() }.join() // This suspends until the coroutines is cancelled or the socket is closed
+
+        listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
