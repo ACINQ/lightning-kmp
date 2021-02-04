@@ -291,8 +291,7 @@ class ElectrumClient(
 
         launch { ping() }
         launch { respond() }
-
-        listen() // This suspends until the coroutines is cancelled or the socket is closed
+        launch { listen() }.join() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     fun sendElectrumRequest(request: ElectrumRequest): Unit = sendMessage(SendElectrumRequest(request))
