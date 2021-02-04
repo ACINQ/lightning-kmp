@@ -61,16 +61,6 @@ internal sealed class ClientState {
     abstract fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>>
 }
 
-internal object WaitingForConnection : ClientState() {
-    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
-        Connected -> newState {
-            state = WaitingForVersion
-            actions = listOf(SendRequest(version.asJsonRPCRequest()))
-        }
-        else -> unhandled(event)
-    }
-}
-
 internal object WaitingForVersion : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
         event is ReceivedResponse && event.response is Either.Right -> {
@@ -142,12 +132,9 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader, val req
 internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
-            is Connect -> newState {
-                state = WaitingForConnection
-                actions = listOf(
-                    BroadcastStatus(Connection.ESTABLISHING),
-                    ConnectionAttempt(event.serverAddress)
-                )
+            Connected -> newState {
+                state = WaitingForVersion
+                actions = listOf(SendRequest(version.asJsonRPCRequest()))
             }
             else -> unhandled(event)
         }
@@ -155,10 +142,7 @@ internal object ClientClosed : ClientState() {
 
 private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
-        Disconnected -> newState {
-            state = ClientClosed
-            actions = listOf(BroadcastStatus(Connection.CLOSED))
-        }
+        Disconnected -> ClientClosed to emptyList()
         AskForHeader -> returnState() // TODO something else ?
         else -> {
             logger.warning { "cannot process event ${event::class} in state ${this::class}" }
@@ -211,6 +195,7 @@ class ElectrumClient(
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
                 logger.info { "connection state changed: $it" }
+                if (it == Connection.CLOSED) eventChannel.send(Disconnected)
                 previousState = it
             }
         }
@@ -230,14 +215,14 @@ class ElectrumClient(
                     is SendRequest -> output.send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
-                    is BroadcastStatus -> _connectionState.value = action.connection
+                    is BroadcastStatus -> if (_connectionState.value != action.connection) _connectionState.value = action.connection
                 }
             }
         }
     }
 
     fun connect(serverAddress: ServerAddress) {
-        if (state == ClientClosed) launch { eventChannel.send(Connect(serverAddress)) }
+        if (_connectionState.value == Connection.CLOSED) launch { connectionJob = establishConnection(serverAddress) }
         else logger.warning { "electrum client is already running" }
     }
 
@@ -249,6 +234,7 @@ class ElectrumClient(
 
     private var connectionJob: Job? = null
     private fun establishConnection(serverAddress: ServerAddress) = launch {
+        _connectionState.value = Connection.ESTABLISHING
         val socket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
@@ -262,12 +248,8 @@ class ElectrumClient(
         logger.info { "connected to electrumx instance" }
         eventChannel.send(Connected)
 
-        var closed = false
-        suspend fun closeSocket() {
-            if (closed) {
-                logger.warning { "TCP socket is already closed." }
-                return
-            }
+        fun closeSocket() {
+            if (_connectionState.value == Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
             socket.close()
             _connectionState.value = Connection.CLOSED
