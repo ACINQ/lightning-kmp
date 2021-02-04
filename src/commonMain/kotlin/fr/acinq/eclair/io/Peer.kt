@@ -60,7 +60,7 @@ class Peer(
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
-    socketBuilder: TcpSocket.Builder,
+    socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
@@ -68,7 +68,7 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
-    public var socketBuilder = socketBuilder
+    public var socketBuilder: TcpSocket.Builder? = socketBuilder
         set(value) {
             logger.debug { "n:$remoteNodeId swap socket builder=$value" }
             field = value
@@ -209,8 +209,8 @@ class Peer(
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
         val socket = try {
-            socketBuilder.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port)
-        } catch (ex: TcpSocket.IOException) {
+            socketBuilder?.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port) ?: error("socket builder is null.")
+        } catch (ex: Throwable) {
             logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
             _connectionState.value = Connection.CLOSED
             return@launch

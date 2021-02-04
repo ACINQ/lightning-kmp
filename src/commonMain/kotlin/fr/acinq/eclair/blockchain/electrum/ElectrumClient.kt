@@ -163,11 +163,11 @@ private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientSt
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
-    socketBuilder: TcpSocket.Builder,
+    socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
 
-    var socketBuilder = socketBuilder
+    var socketBuilder: TcpSocket.Builder? = socketBuilder
         set(value) {
             logger.debug { "swap socket builder=$value" }
             field = value
@@ -238,10 +238,10 @@ class ElectrumClient(
         val socket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socketBuilder.connect(host, port, tls)
-        } catch (ex: TcpSocket.IOException) {
-            logger.warning { ex.message }
-            eventChannel.send(Disconnected)
+            socketBuilder?.connect(host, port, tls) ?: error("socket builder is null.")
+        } catch (ex: Throwable) {
+            ex.message?.let {  logger.warning { it } }
+            _connectionState.value = Connection.CLOSED
             return@launch
         }
 
