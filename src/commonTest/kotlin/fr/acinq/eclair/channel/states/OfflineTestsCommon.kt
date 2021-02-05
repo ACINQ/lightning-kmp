@@ -481,7 +481,10 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertTrue(bob3 is Offline)
 
         // bob restarts when the fulfilled htlc is close to timing out: alice hasn't signed, so bob closes the channel
-        val (bob4, actions4) = bob3.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt(), bob3.state.currentTip.second))
+        val (bob4, actions4) = run {
+            val (tmp, _) = bob3.processEx(ChannelEvent.NewBlock(htlc.cltvExpiry.toLong().toInt(), bob3.state.currentTip.second))
+            tmp.processEx(ChannelEvent.CheckHtlcTimeout)
+        }
         assertTrue(bob4 is Closing)
         assertNotNull(bob4.localCommitPublished)
         actions4.has<ChannelAction.Storage.StoreState>()
