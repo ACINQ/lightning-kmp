@@ -39,7 +39,6 @@ internal object AskForHeader : ClientEvent()
     Actions
  */
 internal sealed class ElectrumClientAction
-internal data class ConnectionAttempt(val serverAddress: ServerAddress) : ElectrumClientAction()
 internal data class SendRequest(val request: String) : ElectrumClientAction()
 internal data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction()
 internal data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction()
@@ -210,7 +209,6 @@ class ElectrumClient(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is ConnectionAttempt -> connectionJob = establishConnection(action.serverAddress)
                     is SendRequest -> output.send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
@@ -221,20 +219,19 @@ class ElectrumClient(
     }
 
     fun connect(serverAddress: ServerAddress) {
-        if (_connectionState.value == Connection.CLOSED) {
-            connectionJob = establishConnection(serverAddress)
-        }
+        if (_connectionState.value == Connection.CLOSED) establishConnection(serverAddress)
         else logger.warning { "electrum client is already running" }
     }
 
-    suspend fun disconnect() {
-        connectionJob?.cancelAndJoin()
+    fun disconnect() {
+        socket?.close()
+        socket = null
     }
 
-    private var connectionJob: Job? = null
+    private var socket: TcpSocket? = null
     private fun establishConnection(serverAddress: ServerAddress) = launch {
         _connectionState.value = Connection.ESTABLISHING
-        val socket = try {
+        socket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socketBuilder?.connect(host, port, tls) ?: error("socket builder is null.")
@@ -244,20 +241,23 @@ class ElectrumClient(
             return@launch
         }
 
+        val requiredSocket = socket
+        requireNotNull(requiredSocket) { "TCP socket is null." }
+
         logger.info { "connected to electrumx instance" }
         eventChannel.send(Connected)
 
         fun closeSocket() {
             if (_connectionState.value == Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
-            socket.close()
-            if(isActive) cancel()
+            requiredSocket.close()
             _connectionState.value = Connection.CLOSED
+            cancel()
         }
 
         suspend fun send(message: ByteArray) {
             try {
-                socket.send(message)
+                requiredSocket.send(message)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
                 closeSocket()
@@ -277,7 +277,7 @@ class ElectrumClient(
 
         suspend fun listen() {
             try {
-                socket.linesFlow().collect {
+                requiredSocket.linesFlow().collect {
                     val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
@@ -308,7 +308,7 @@ class ElectrumClient(
 
     fun stop() {
         logger.info { "electrum client stopping" }
-        connectionJob?.cancel()
+        socket?.close()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels
