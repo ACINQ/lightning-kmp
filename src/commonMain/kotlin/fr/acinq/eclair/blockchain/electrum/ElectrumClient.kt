@@ -227,10 +227,8 @@ class ElectrumClient(
         else logger.warning { "electrum client is already running" }
     }
 
-    fun disconnect() {
-        launch {
-            connectionJob?.cancelAndJoin()
-        }
+    suspend fun disconnect() {
+        connectionJob?.cancelAndJoin()
     }
 
     private var connectionJob: Job? = null

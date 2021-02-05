@@ -197,10 +197,8 @@ class Peer(
         else logger.warning { "Peer is already connecting / connected" }
     }
 
-    fun disconnect() {
-        launch {
-            connectionJob?.cancelAndJoin()
-        }
+    suspend fun disconnect() {
+        connectionJob?.cancelAndJoin()
     }
 
 
