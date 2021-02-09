@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
@@ -21,6 +22,7 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
@@ -186,8 +188,15 @@ class ShutdownTestsCommon : EclairTestSuite() {
         val fulfill = actions1.findOutgoingMessage<UpdateFulfillHtlc>()
         val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(fulfill))
         val (_, alice2) = signAndRevack(bob1, alice1)
-        val (alice3, _) = alice2.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
-        assertTrue { alice3 is ShuttingDown && alice3.commitments.remoteNextCommitInfo.isLeft }
+        val (alice3, actions3) = alice2.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        assertTrue(alice3 is ShuttingDown)
+        assertTrue(alice3.commitments.remoteNextCommitInfo.isLeft)
+        actions3.hasOutgoingMessage<CommitSig>()
+        actions3.has<ChannelAction.Storage.StoreState>()
+        // we still have 1 HTLC in the commit tx
+        val htlcInfos = actions3.find<ChannelAction.Storage.StoreHtlcInfos>()
+        assertEquals(htlcInfos.htlcs.size, 1)
+        assertEquals(htlcInfos.htlcs.first().paymentHash, sha256(r2).toByteVector32())
     }
 
     @Test

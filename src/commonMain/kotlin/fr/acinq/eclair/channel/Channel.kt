@@ -1786,7 +1786,7 @@ data class Normal(
                                     logger.info { "c:$channelId adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                     ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                                 }
-                                val nextState = this.copy(commitments = result.value.first)
+                                val nextState = this.copy(commitments = commitments1)
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreHtlcInfos(htlcInfos),
                                     ChannelAction.Storage.StoreState(nextState),
@@ -2195,8 +2195,21 @@ data class ShuttingDown(
                     is Either.Left -> handleCommandError(event.command, result.value)
                     is Either.Right -> {
                         val commitments1 = result.value.first
+                        val nextRemoteCommit = commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit
+                        val nextCommitNumber = nextRemoteCommit.index
+                        // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
+                        // counterparty, so only htlcs above remote's dust_limit matter
+                        val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
+                        val htlcInfos = trimmedHtlcs.map { it.add }.map {
+                            logger.info { "c:$channelId adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
+                            ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
+                        }
                         val nextState = this.copy(commitments = commitments1)
-                        val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(result.value.second))
+                        val actions = listOf(
+                            ChannelAction.Storage.StoreHtlcInfos(htlcInfos),
+                            ChannelAction.Storage.StoreState(nextState),
+                            ChannelAction.Message.Send(result.value.second)
+                        )
                         Pair(nextState, actions)
                     }
                 }
