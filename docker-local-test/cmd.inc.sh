@@ -23,7 +23,7 @@ function btc_create {
         -p 18444:18444 \
         -p 29000:29000 \
         -p 29001:29001 \
-        ruimarinho/bitcoin-core:latest \
+        ruimarinho/bitcoin-core:0.20.1 \
         -printtoconsole \
         -regtest=1 \
         -server=1 \
