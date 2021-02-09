@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.io.linesFlow
+import fr.acinq.eclair.io.value
 import fr.acinq.eclair.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -240,23 +241,24 @@ class ElectrumClient(
             return@launch
         }
 
-        val requiredSocket = socket
-        requireNotNull(requiredSocket) { "TCP socket is null." }
-
         logger.info { "connected to electrumx instance" }
         eventChannel.send(Connected)
 
         fun closeSocket() {
             if (_connectionState.value == Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
-            requiredSocket.close()
+            try {
+                socket.value.close()
+            } catch (ex: IllegalStateException) {
+                logger.warning { "socket has already been closed." }
+            }
             _connectionState.value = Connection.CLOSED
             cancel()
         }
 
         suspend fun send(message: ByteArray) {
             try {
-                requiredSocket.send(message)
+                socket.value.send(message)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
                 closeSocket()
@@ -276,7 +278,7 @@ class ElectrumClient(
 
         suspend fun listen() {
             try {
-                requiredSocket.linesFlow().collect {
+                socket.value.linesFlow().collect {
                     val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
