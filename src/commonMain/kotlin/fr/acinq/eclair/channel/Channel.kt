@@ -702,7 +702,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                                 currentOnChainFeerates,
                                 state.commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 state.closingTxProposed.flatten().map { it.unsignedTx },
                                 listOf(watch.tx)
                             )
@@ -956,6 +956,41 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     else -> unhandled(event)
                 }
+            event is ChannelEvent.WatchReceived -> {
+                val watch = event.watch
+                when {
+                    watch is WatchEventSpent -> when {
+                        state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
+                            logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
+                            val nextState = Closing(
+                                staticParams,
+                                currentTip,
+                                currentOnChainFeerates,
+                                state.commitments,
+                                null,
+                                currentBlockHeight.toLong(),
+                                state.closingTxProposed.flatten().map { it.unsignedTx },
+                                listOf(watch.tx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(watch.tx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
+                            )
+                            Pair(nextState, actions)
+                        }
+                        watch.tx.txid == state.commitments.remoteCommit.txid -> state.handleRemoteSpentCurrent(watch.tx)
+                        watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.handleRemoteSpentNext(watch.tx)
+                        state is WaitForRemotePublishFutureCommitment -> state.handleRemoteSpentFuture(watch.tx)
+                        else -> state.handleRemoteSpentOther(watch.tx)
+                    }
+                    watch is WatchEventConfirmed && (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) -> {
+                        // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
+                        Pair(this, listOf())
+                    }
+                    else -> unhandled(event)
+                }
+            }
             event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
                 event.getTxResponse,
                 state.waitingSinceBlock,
@@ -2234,7 +2269,7 @@ data class Negotiating(
                                 currentOnChainFeerates,
                                 commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 this.closingTxProposed.flatten().map { it.unsignedTx },
                                 listOf(signedClosingTx)
                             )
@@ -2255,7 +2290,7 @@ data class Negotiating(
                                 currentOnChainFeerates,
                                 commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
                                 listOf(signedClosingTx)
                             )
@@ -2301,7 +2336,7 @@ data class Negotiating(
                             currentOnChainFeerates,
                             commitments,
                             null,
-                            currentTimestampMillis(),
+                            currentBlockHeight.toLong(),
                             this.closingTxProposed.flatten().map { it.unsignedTx },
                             listOf(watch.tx)
                         )
@@ -2341,7 +2376,7 @@ data class Negotiating(
                     currentOnChainFeerates,
                     commitments,
                     null,
-                    currentTimestampMillis(),
+                    currentBlockHeight.toLong(),
                     this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
                     listOf(bestUnpublishedClosingTx)
                 )
