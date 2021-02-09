@@ -51,5 +51,3 @@ fun TcpSocket.linesFlow(): Flow<String> =
     }
         .decodeToString()
         .splitByLines()
-
-val TcpSocket?.value get() = this ?: error("socket is null")

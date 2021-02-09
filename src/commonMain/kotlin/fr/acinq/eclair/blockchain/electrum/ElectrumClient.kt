@@ -8,7 +8,6 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.eclair.io.TcpSocket
 import fr.acinq.eclair.io.linesFlow
-import fr.acinq.eclair.io.value
 import fr.acinq.eclair.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -224,11 +223,14 @@ class ElectrumClient(
     }
 
     fun disconnect() {
-        socket?.close()
-        socket = null
+        if (this::socket.isInitialized) socket.close()
     }
 
-    private var socket: TcpSocket? = null
+    // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
+    //
+    // This shouldn't be used outside the establishedConnection() function
+    // Except from the disconnect() one that check if the lateinit var has been initialized
+    private lateinit var socket: TcpSocket
     private fun establishConnection(serverAddress: ServerAddress) = launch {
         _connectionState.value = Connection.ESTABLISHING
         socket = try {
@@ -247,18 +249,14 @@ class ElectrumClient(
         fun closeSocket() {
             if (_connectionState.value == Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
-            try {
-                socket.value.close()
-            } catch (ex: IllegalStateException) {
-                logger.warning { "socket has already been closed." }
-            }
+            socket.close()
             _connectionState.value = Connection.CLOSED
             cancel()
         }
 
         suspend fun send(message: ByteArray) {
             try {
-                socket.value.send(message)
+                socket.send(message)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
                 closeSocket()
@@ -278,7 +276,7 @@ class ElectrumClient(
 
         suspend fun listen() {
             try {
-                socket.value.linesFlow().collect {
+                socket.linesFlow().collect {
                     val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
@@ -309,7 +307,7 @@ class ElectrumClient(
 
     fun stop() {
         logger.info { "electrum client stopping" }
-        socket?.close()
+        disconnect()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel broadcast channels

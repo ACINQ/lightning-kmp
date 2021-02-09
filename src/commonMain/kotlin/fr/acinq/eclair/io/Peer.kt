@@ -198,11 +198,14 @@ class Peer(
     }
 
     fun disconnect() {
-        socket?.close()
-        socket = null
+        if (this::socket.isInitialized) socket.close()
     }
 
-    private var socket: TcpSocket? = null
+    // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
+    //
+    // This shouldn't be used outside the establishedConnection() function
+    // Except from the disconnect() one that check if the lateinit var has been initialized
+    private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
@@ -217,11 +220,7 @@ class Peer(
         fun closeSocket() {
             if (_connectionState.value == Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
-            try {
-                socket.value.close()
-            } catch (ex: IllegalStateException) {
-                logger.warning { "socket has already been closed." }
-            }
+            socket.close()
             _connectionState.value = Connection.CLOSED
             cancel()
         }
@@ -233,8 +232,8 @@ class Peer(
             handshake(
                 keyPair,
                 remoteNodeId.value.toByteArray(),
-                { s -> socket.value.receiveFully(s) },
-                { b -> socket.value.send(b) }
+                { s -> socket.receiveFully(s) },
+                { b -> socket.send(b) }
             )
         } catch (ex: TcpSocket.IOException) {
             logger.warning { "n:$remoteNodeId TCP handshake: ${ex.message}" }
@@ -245,7 +244,7 @@ class Peer(
 
         suspend fun send(message: ByteArray) {
             try {
-                session.send(message) { data, flush -> socket.value.send(data, flush) }
+                session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "n:$remoteNodeId TCP send: ${ex.message}" }
                 closeSocket()
@@ -271,7 +270,7 @@ class Peer(
         suspend fun listen() {
             try {
                 while (isActive) {
-                    val received = session.receive { size -> socket.value.receiveFully(size) }
+                    val received = session.receive { size -> socket.receiveFully(size) }
                     input.send(BytesReceived(received))
                 }
             } catch (ex: TcpSocket.IOException) {
