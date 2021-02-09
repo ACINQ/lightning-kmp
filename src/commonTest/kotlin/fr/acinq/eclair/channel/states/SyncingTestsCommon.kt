@@ -28,7 +28,7 @@ class SyncingTestsCommon : EclairTestSuite() {
         val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val (bob1, actions) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, aliceCommitTx)))
         assertTrue(bob1 is Closing)
-        // we published our a tx to claim our main output
+        // we published a tx to claim our main output
         val claimTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.first()
         Transaction.correctlySpends(claimTx, alice.commitments.localCommit.publishableTxs.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val watches = actions.findWatches<WatchConfirmed>()

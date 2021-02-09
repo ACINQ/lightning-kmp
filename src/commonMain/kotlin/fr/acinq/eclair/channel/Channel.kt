@@ -702,7 +702,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                                 currentOnChainFeerates,
                                 state.commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 state.closingTxProposed.flatten().map { it.unsignedTx },
                                 listOf(watch.tx)
                             )
@@ -968,7 +968,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 currentOnChainFeerates,
                                 state.commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 state.closingTxProposed.flatten().map { it.unsignedTx },
                                 listOf(watch.tx)
                             )
@@ -2269,7 +2269,7 @@ data class Negotiating(
                                 currentOnChainFeerates,
                                 commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 this.closingTxProposed.flatten().map { it.unsignedTx },
                                 listOf(signedClosingTx)
                             )
@@ -2290,7 +2290,7 @@ data class Negotiating(
                                 currentOnChainFeerates,
                                 commitments,
                                 null,
-                                currentTimestampMillis(),
+                                currentBlockHeight.toLong(),
                                 this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
                                 listOf(signedClosingTx)
                             )
@@ -2336,7 +2336,7 @@ data class Negotiating(
                             currentOnChainFeerates,
                             commitments,
                             null,
-                            currentTimestampMillis(),
+                            currentBlockHeight.toLong(),
                             this.closingTxProposed.flatten().map { it.unsignedTx },
                             listOf(watch.tx)
                         )
@@ -2376,7 +2376,7 @@ data class Negotiating(
                     currentOnChainFeerates,
                     commitments,
                     null,
-                    currentTimestampMillis(),
+                    currentBlockHeight.toLong(),
                     this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
                     listOf(bestUnpublishedClosingTx)
                 )
