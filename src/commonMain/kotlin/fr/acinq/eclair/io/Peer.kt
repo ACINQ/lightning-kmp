@@ -77,8 +77,8 @@ class Peer(
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    private val output = Channel<ByteArray>(BUFFERED)
-    public val outputLightningMessages: ReceiveChannel<ByteArray> = output
+    private var output = Channel<ByteArray>(BUFFERED)
+    public val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
     private val logger by eclairLogger()
 
@@ -199,6 +199,7 @@ class Peer(
 
     fun disconnect() {
         if (this::socket.isInitialized) socket.close()
+        output.close()
     }
 
     // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
@@ -280,6 +281,8 @@ class Peer(
             }
         }
         suspend fun respond() {
+            // Reset the output channel to avoid sending obsolete messages
+            output = Channel(BUFFERED)
             for(msg in output) send(msg)
         }
 
@@ -298,8 +301,9 @@ class Peer(
 
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        logger.info { "n:$remoteNodeId sending $msg" }
-        output.send(encoded)
+        // Avoids polluting the logs with pongs
+        if (msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
+        if (!output.isClosedForSend) output.send(encoded)
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
@@ -464,7 +468,7 @@ class Peer(
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                        output.send(LightningMessage.encode(pong))
+                        sendToPeer(pong)
                     }
                     msg is Pong -> {
                         logger.debug { "n:$remoteNodeId received pong" }
