@@ -134,20 +134,20 @@ class PeerTest : EclairTestSuite() {
         val syncChannels = peer.channelsFlow
             .first { it.values.size == 1 && it.values.all { channelState -> channelState is Syncing } }
             .map { it.value as Syncing }
-        assertEquals(alice2.channelId, syncChannels.first().channelId)
+        assertEquals(alice2.channelId, syncChannels.first().state.channelId)
 
         val syncState = syncChannels.first()
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
-        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(syncState.commitments.localParams, syncState.commitments.channelVersion)
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, syncState.commitments.localCommit.index)
+        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(syncState.state.commitments.localParams, syncState.state.commitments.channelVersion)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, syncState.state.commitments.localCommit.index)
 
         val channelReestablish = ChannelReestablish(
-            channelId = syncState.channelId,
-            nextLocalCommitmentNumber = syncState.commitments.localCommit.index + 1,
-            nextRemoteRevocationNumber = syncState.commitments.remoteCommit.index,
+            channelId = syncState.state.channelId,
+            nextLocalCommitmentNumber = syncState.state.commitments.localCommit.index + 1,
+            nextRemoteRevocationNumber = syncState.state.commitments.remoteCommit.index,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-            syncState.commitments.remoteChannelData
+            syncState.state.commitments.remoteChannelData
         )
 
         val reestablishMsg = LightningMessage.encode(channelReestablish)
