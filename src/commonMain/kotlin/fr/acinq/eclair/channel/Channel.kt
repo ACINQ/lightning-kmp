@@ -218,11 +218,12 @@ sealed class ChannelState {
     }
 
     private fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
-        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE_BLOCK blocks" }
-        val exc = FundingTxTimedout(channelId)
-        val error = Error(channelId, exc.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return when (this) {
+            is ChannelStateWithCommitments -> this.handleFundingTimeout()
+            is Offline -> this.state.handleFundingTimeout()
+            is Syncing -> this.state.handleFundingTimeout()
+            else -> error("${this::class} does not handle funding tx timeouts")
+        }
     }
 
     internal fun doPublish(tx: Transaction, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
@@ -501,6 +502,13 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
+
+    fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
+        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE_BLOCK blocks" }
+        val exc = FundingTxTimedout(channelId)
+        val error = Error(channelId, exc.message)
+        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+    }
 }
 
 data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
@@ -643,15 +651,10 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     }
 }
 
-data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCommitments() {
+data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-    override val commitments: Commitments get() = state.commitments
-
-    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
-        return Offline(state.updateCommitments(input))
-    }
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} offline processing ${event::class}" }
@@ -725,7 +728,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
                     else -> unhandled(event)
                 }
             }
-            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == state.commitments.commitInput.outPoint.txid -> handleGetFundingTx(
                 event.getTxResponse,
                 state.waitingSinceBlock,
                 state.fundingTx
@@ -761,15 +764,10 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCom
  * we send ours (for example, to extract encrypted backup data from extra fields)
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
-data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelStateWithCommitments() {
+data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-    override val commitments: Commitments get() = state.commitments
-
-    override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
-        return Syncing(state.updateCommitments(input), waitForTheirReestablishMessage)
-    }
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${state.channelId} syncing processing ${event::class}" }
@@ -820,7 +818,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             staticParams.nodeParams.minDepthBlocks
                         } else {
                             // when we're fundee we scale the min_depth confirmations depending on the funding amount
-                            if (commitments.isZeroReserve) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.commitInput.txOut.amount)
+                            if (state.commitments.isZeroReserve) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.commitInput.txOut.amount)
                         }
                         // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
                         val watchConfirmed = WatchConfirmed(
@@ -991,7 +989,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     else -> unhandled(event)
                 }
             }
-            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == commitments.commitInput.outPoint.txid -> handleGetFundingTx(
+            event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == state.commitments.commitInput.outPoint.txid -> handleGetFundingTx(
                 event.getTxResponse,
                 state.waitingSinceBlock,
                 state.fundingTx
@@ -1012,7 +1010,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
                 }
             }
-            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
+            event is ChannelEvent.Disconnected -> Pair(Offline(state), listOf())
             else -> unhandled(event)
         }
     }

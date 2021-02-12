@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel.states
 
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
@@ -25,12 +26,12 @@ class SyncingTestsCommon : EclairTestSuite() {
             val (alice, bob) = reachNormal()
             disconnect(alice, bob)
         }
-        val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
-        val (bob1, actions) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, aliceCommitTx)))
+        val aliceCommitTx = alice.state.commitments.localCommit.publishableTxs.commitTx.tx
+        val (bob1, actions) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.state.channelId, BITCOIN_FUNDING_SPENT, aliceCommitTx)))
         assertTrue(bob1 is Closing)
         // we published a tx to claim our main output
         val claimTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.first()
-        Transaction.correctlySpends(claimTx, alice.commitments.localCommit.publishableTxs.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(claimTx, alice.state.commitments.localCommit.publishableTxs.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val watches = actions.findWatches<WatchConfirmed>()
         assertEquals(watches.map { it.txId }.toSet(), setOf(aliceCommitTx.txid, claimTx.txid))
     }
@@ -47,7 +48,7 @@ class SyncingTestsCommon : EclairTestSuite() {
             val (alice3, bob3, _) = disconnect(alice2, bob2)
             Triple(alice3, bob3, alice.commitments.localCommit.publishableTxs.commitTx.tx)
         }
-        val (bob1, actions) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+        val (bob1, actions) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.state.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
         assertTrue(bob1 is Closing)
         val claimTxs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(claimTxs.size, 2)

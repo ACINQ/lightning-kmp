@@ -338,6 +338,8 @@ sealed class ChannelState {
             is fr.acinq.eclair.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
             is fr.acinq.eclair.channel.WaitForFundingCreated -> WaitForFundingCreated(from)
             is fr.acinq.eclair.channel.WaitForFundingSigned -> WaitForFundingSigned(from)
+            is fr.acinq.eclair.channel.Offline -> Offline(from)
+            is fr.acinq.eclair.channel.Syncing -> Syncing(from)
             is fr.acinq.eclair.channel.ChannelStateWithCommitments -> ChannelStateWithCommitments.import(from)
         }
     }
@@ -354,8 +356,6 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             is fr.acinq.eclair.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
             is fr.acinq.eclair.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed(from)
             is fr.acinq.eclair.channel.WaitForFundingLocked -> WaitForFundingLocked(from)
-            is fr.acinq.eclair.channel.Offline -> Offline(from)
-            is fr.acinq.eclair.channel.Syncing -> Syncing(from)
             is fr.acinq.eclair.channel.Normal -> Normal(from)
             is fr.acinq.eclair.channel.ShuttingDown -> ShuttingDown(from)
             is fr.acinq.eclair.channel.Negotiating -> Negotiating(from)
@@ -385,29 +385,21 @@ data class WaitForInit(
 }
 
 @Serializable
-data class Offline(val state: ChannelStateWithCommitments) : ChannelStateWithCommitments() {
+data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-    override val commitments: Commitments get() = state.commitments
 
-    constructor(from: fr.acinq.eclair.channel.Offline) : this(import(from.state))
-
-    override fun export(nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments =
-        fr.acinq.eclair.channel.Offline(state.export(nodeParams))
+    constructor(from: fr.acinq.eclair.channel.Offline) : this(ChannelStateWithCommitments.import(from.state))
 }
 
 @Serializable
-data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelStateWithCommitments() {
+data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-    override val commitments: Commitments get() = state.commitments
 
-    constructor(from: fr.acinq.eclair.channel.Syncing) : this(import(from.state), from.waitForTheirReestablishMessage)
-
-    override fun export(nodeParams: NodeParams): fr.acinq.eclair.channel.ChannelStateWithCommitments =
-        fr.acinq.eclair.channel.Syncing(state.export(nodeParams), waitForTheirReestablishMessage)
+    constructor(from: fr.acinq.eclair.channel.Syncing) : this(ChannelStateWithCommitments.import(from.state), from.waitForTheirReestablishMessage)
 }
 
 @Serializable
