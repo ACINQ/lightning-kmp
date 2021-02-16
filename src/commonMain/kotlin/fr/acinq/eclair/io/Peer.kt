@@ -60,7 +60,7 @@ class Peer(
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
-    socketBuilder: TcpSocket.Builder,
+    socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
@@ -68,7 +68,7 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
-    public var socketBuilder = socketBuilder
+    public var socketBuilder: TcpSocket.Builder? = socketBuilder
         set(value) {
             logger.debug { "n:$remoteNodeId swap socket builder=$value" }
             field = value
@@ -77,8 +77,8 @@ class Peer(
     public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
-    private val output = Channel<ByteArray>(BUFFERED)
-    public val outputLightningMessages: ReceiveChannel<ByteArray> = output
+    private var output = Channel<ByteArray>(BUFFERED)
+    public val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
     private val logger by eclairLogger()
 
@@ -193,36 +193,34 @@ class Peer(
     }
 
     fun connect() {
-        if (connectionState.value == Connection.CLOSED) connectionJob = establishConnection()
+        if (connectionState.value == Connection.CLOSED) establishConnection()
         else logger.warning { "Peer is already connecting / connected" }
     }
 
     fun disconnect() {
-        launch {
-            connectionJob?.cancel()
-            connectionJob = null
-        }
+        if (this::socket.isInitialized) socket.close()
+        output.close()
     }
 
-
-    private var connectionJob: Job? = null
+    // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
+    //
+    // This shouldn't be used outside the establishedConnection() function
+    // Except from the disconnect() one that check if the lateinit var has been initialized
+    private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
-        val socket = try {
-            socketBuilder.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port)
-        } catch (ex: TcpSocket.IOException) {
+        socket = try {
+            socketBuilder?.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port) ?: error("socket builder is null.")
+        } catch (ex: Throwable) {
             logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
             _connectionState.value = Connection.CLOSED
             return@launch
         }
 
         fun closeSocket() {
-            if (_connectionState.value == Connection.CLOSED) {
-                logger.warning { "TCP socket is already closed." }
-                return
-            }
-            logger.warning { "n:$remoteNodeId closing TCP socket" }
+            if (_connectionState.value == Connection.CLOSED) return
+            logger.warning { "closing TCP socket." }
             socket.close()
             _connectionState.value = Connection.CLOSED
             cancel()
@@ -283,6 +281,8 @@ class Peer(
             }
         }
         suspend fun respond() {
+            // Reset the output channel to avoid sending obsolete messages
+            output = Channel(BUFFERED)
             for(msg in output) send(msg)
         }
 
@@ -301,8 +301,9 @@ class Peer(
 
     private suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        logger.info { "n:$remoteNodeId sending $msg" }
-        output.send(encoded)
+        // Avoids polluting the logs with pongs
+        if (msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
+        if (!output.isClosedForSend) output.send(encoded)
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
@@ -467,7 +468,7 @@ class Peer(
                     }
                     msg is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                        output.send(LightningMessage.encode(pong))
+                        sendToPeer(pong)
                     }
                     msg is Pong -> {
                         logger.debug { "n:$remoteNodeId received pong" }
