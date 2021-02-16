@@ -119,7 +119,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
      * This is very similar to the processing of an htlc.
      */
     suspend fun process(payToOpenRequest: PayToOpenRequest, currentBlockHeight: Int): ProcessAddResult {
-        logger.info { "h:${payToOpenRequest.paymentHash} received pay-to-open amount=${payToOpenRequest.amountMsat} funding=${payToOpenRequest.fundingSatoshis} fees=${payToOpenRequest.feeSatoshis}" }
+        logger.info { "h:${payToOpenRequest.paymentHash} received pay-to-open amount=${payToOpenRequest.amountMsat} funding=${payToOpenRequest.fundingSatoshis} fees=${payToOpenRequest.payToOpenFeeSatoshis}" }
         return when (val res = toPaymentPart(privateKey, payToOpenRequest)) {
             is Either.Left -> res.value
             is Either.Right -> processPaymentPart(res.value, currentBlockHeight)
@@ -152,6 +152,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     }
                 } else {
                     val payment = pending[paymentPart.paymentHash]?.add(paymentPart) ?: PendingPayment(paymentPart)
+                    val payToOpenMinAmount = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenMinAmountMsat }.firstOrNull()
                     when {
                         paymentPart.totalAmount != payment.totalAmount -> {
                             // Bolt 04:
@@ -172,7 +173,29 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             pending[paymentPart.paymentHash] = payment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
+                        payToOpenMinAmount is MilliSatoshi && payment.amountReceived < payToOpenMinAmount -> {
+                            // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
+                            // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
+                            // rejected pay-to-open parts as they arrived, but it would have caused two issues:
+                            // - in case there is a mix of htlc parts and pay-to-open parts, the htlc parts would have been accepted and we
+                            // would have waited for a timeout before failing them (since the payment would never complete)
+                            // - if we rejected each pay-to-open part individually, we wouldn't have been able to emit a single event
+                            //   regarding the failed pay-to-open
+                            // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
+                            // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
+                            logger.warning { "h:${paymentPart.paymentHash} amount received is too low for a pay-to-open (minimum ${payToOpenMinAmount}, received ${payment.amountReceived})" }
+                            val actions = payment.parts.map { part ->
+                                val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
+                                when (part) {
+                                    is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
+                                    is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
+                                }
+                            }
+                            pending.remove(paymentPart.paymentHash)
+                            return ProcessAddResult.Rejected(actions, incomingPayment)
+                        }
                         else -> {
+                            // We have received all the payment parts.
                             logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived})" }
                             val actions = payment.parts.map { part ->
                                 when (part) {
