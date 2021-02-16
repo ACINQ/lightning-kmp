@@ -24,9 +24,14 @@ class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
     override suspend fun send(bytes: ByteArray?, flush: Boolean): Unit =
         suspendCancellableCoroutine { continuation ->
             val pinned = bytes?.pin()
-            val data = pinned?.let { dispatch_data_create(pinned.addressOf(0), bytes.size.convert(), dispatch_get_main_queue(), ({})) }
+            val data = pinned?.let {
+                dispatch_data_create(
+                    pinned.addressOf(0),
+                    bytes.size.convert(),
+                    dispatch_get_main_queue(),
+                    ({ pinned.unpin() }))
+            }
             nw_connection_send(connection, data, null, flush) { error ->
-                pinned?.unpin()
                 if (error != null) continuation.resumeWithException(error.toIOException())
                 else continuation.resume(Unit)
             }
