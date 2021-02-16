@@ -1,9 +1,7 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumWatcher
@@ -98,17 +96,20 @@ object Node {
         .withFallback(ConfigFactory.parseFile(File(datadir, "phoenix.conf")))
         .withFallback(ConfigFactory.load())
 
-    fun getSeed(datadir: File): ByteVector32 {
-        val seedPath = File(datadir, "seed.dat")
-        return if (seedPath.exists()) {
-            ByteVector32(Files.readAllBytes(seedPath.toPath()))
+    fun getSeed(datadir: File): ByteVector64 {
+        val mnemonicsPath = File(datadir, "mnemonics.txt")
+        val mnemonics = if (mnemonicsPath.exists()) {
+            String(Files.readAllBytes(mnemonicsPath.toPath())).split(" ", "\n", "\r").filterNot { it.isBlank() }
         } else {
             datadir.mkdirs()
-            val seed = randomBytes32()
+            val entropy = randomBytes32()
+            val mnemonics = MnemonicCode.toMnemonics(entropy.toByteArray())
             logger.warning { "no seed was found, creating new one" }
-            Files.write(seedPath.toPath(), seed.toByteArray())
-            seed
+            Files.write(mnemonicsPath.toPath(), mnemonics.joinToString(" ").toByteArray())
+            mnemonics
         }
+        MnemonicCode.validate(mnemonics)
+        return MnemonicCode.toSeed(mnemonics, "").toByteVector64()
     }
 
     @JvmStatic
@@ -196,8 +197,6 @@ object Node {
             override val channels = SqliteChannelsDb(nodeParams, DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
             override val payments = InMemoryPaymentsDb()
         }
-        // remote node on regtest is initialized with the following seed: 0202020202020202020202020202020202020202020202020202020202020202
-//        val nodeId = PublicKey.fromHex("039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
         Class.forName("org.sqlite.JDBC")
 
