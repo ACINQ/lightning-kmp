@@ -186,10 +186,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             chainHash = ByteVector32.Zeroes,
             fundingSatoshis = 100_000.sat,
             amountMsat = defaultAmount,
-            feeSatoshis = 100.sat,
+            payToOpenMinAmountMsat = 1_000_000.msat,
+            payToOpenFeeSatoshis = 100.sat,
             paymentHash = ByteVector32.One, // <-- not associated to a pending invoice
-            feeThresholdSatoshis = 1_000.sat,
-            feeProportionalMillionths = 100,
             expireAt = Long.MAX_VALUE,
             finalPacket = OutgoingPacket.buildPacket(
                 paymentHash = ByteVector32.One, // <-- has to be the same as the one above otherwise encryption fails
@@ -247,6 +246,32 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `receive pay-to-open payment with an amount too low`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+        val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret), payToOpenMinAmount = defaultAmount + 1.msat) // <--- just below the min pay-to-open amount
+        val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+        result as IncomingPaymentHandler.ProcessAddResult.Rejected
+        assertEquals(incomingPayment, result.incomingPayment)
+        val expected = PayToOpenResponseEvent(
+            PayToOpenResponse(
+                payToOpenRequest.chainHash,
+                payToOpenRequest.paymentHash,
+                PayToOpenResponse.Result.Failure(
+                    OutgoingPacket.buildHtlcFailure(
+                        paymentHandler.nodeParams.nodePrivateKey,
+                        payToOpenRequest.paymentHash,
+                        payToOpenRequest.finalPacket,
+                        CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
+                    ).right!!
+                )
+            )
+        )
+        assertEquals(setOf(expected), result.actions.toSet())
+    }
+
+    @Test
     fun `receive pay-to-open trampoline payment with an incorrect payment secret`() = runSuspendTest {
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val trampolineHops = listOf(
@@ -256,10 +281,9 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             chainHash = ByteVector32.Zeroes,
             fundingSatoshis = 100_000.sat,
             amountMsat = defaultAmount,
-            feeSatoshis = 100.sat,
+            payToOpenMinAmountMsat = 1_000_000.msat,
+            payToOpenFeeSatoshis = 100.sat,
             paymentHash = incomingPayment.paymentHash,
-            feeThresholdSatoshis = 1_000.sat,
-            feeProportionalMillionths = 100,
             expireAt = Long.MAX_VALUE,
             finalPacket = OutgoingPacket.buildPacket(
                 paymentHash = incomingPayment.paymentHash,
@@ -439,6 +463,51 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(totalAmount - expectedFees, result.received.amount)
             assertEquals(IncomingPayment.ReceivedWith.NewChannel(expectedFees, channelId = null), result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
+
+    @Test
+    fun `receive multipart payment with a mix of HTLC and pay-to-open (amount too low)`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val totalAmount = amount1 + amount2
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
+            assertTrue { result.actions.isEmpty() }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret), payToOpenMinAmount = 200_000.msat)
+            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+            val expected = setOf(
+                WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))),
+                PayToOpenResponseEvent(
+                    PayToOpenResponse(
+                        payToOpenRequest.chainHash,
+                        payToOpenRequest.paymentHash,
+                        PayToOpenResponse.Result.Failure(
+                            OutgoingPacket.buildHtlcFailure(
+                                paymentHandler.nodeParams.nodePrivateKey,
+                                payToOpenRequest.paymentHash,
+                                payToOpenRequest.finalPacket,
+                                CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong()))
+                            ).right!!
+                        )
+                    )
+                )
+            )
+            assertEquals(expected, result.actions.toSet())
         }
     }
 
@@ -903,15 +972,14 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             return FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
         }
 
-        private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: FinalPayload): PayToOpenRequest {
+        private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {
             return PayToOpenRequest(
                 chainHash = ByteVector32.Zeroes,
                 fundingSatoshis = 100_000.sat,
                 amountMsat = finalPayload.amount,
-                feeSatoshis = finalPayload.amount.truncateToSatoshi() * 0.1, // 10%
+                payToOpenMinAmountMsat = payToOpenMinAmount,
+                payToOpenFeeSatoshis = finalPayload.amount.truncateToSatoshi() * 0.1, // 10%
                 paymentHash = incomingPayment.paymentHash,
-                feeThresholdSatoshis = 1.sat,
-                feeProportionalMillionths = 100_000, // 10%
                 expireAt = Long.MAX_VALUE,
                 finalPacket = OutgoingPacket.buildPacket(
                     paymentHash = incomingPayment.paymentHash,

@@ -957,10 +957,9 @@ data class ClosingSigned(
  * @param chainHash chain we're on.
  * @param fundingSatoshis total capacity of the channel our peer will open to us (some of the funds may be on their side).
  * @param amountMsat payment amount covered by this new channel: we will receive push_msat = amountMsat - fees.
- * @param feeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
+ * @param payToOpenMinAmountMsat minimum amount for a pay-to-open to be attempted, this should be compared to the total amount in the case of an AMP payment.
+ * @param payToOpenFeeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
  * @param paymentHash payment hash.
- * @param feeThresholdSatoshis if amountMsat is below this threshold, feeSatoshis will be 0.
- * @param feeProportionalMillionths the fee will be amountMsat * feeProportionalMillionths / 1_000_000.
  * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
  * @param finalPacket onion packet that we would have received if there had been a channel to forward the payment to.
  */
@@ -969,17 +968,16 @@ data class PayToOpenRequest(
     override val chainHash: ByteVector32,
     val fundingSatoshis: Satoshi,
     val amountMsat: MilliSatoshi,
-    val feeSatoshis: Satoshi,
+    val payToOpenMinAmountMsat: MilliSatoshi,
+    val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
-    val feeThresholdSatoshis: Satoshi,
-    val feeProportionalMillionths: Long,
     val expireAt: Long,
     val finalPacket: OnionRoutingPacket
 ) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenRequest.type
 
     override fun write(out: Output) {
-        TODO("Not yet implemented")
+        TODO("Not implemented (not needed)")
     }
 
     companion object : LightningMessageReader<PayToOpenRequest> {
@@ -990,10 +988,9 @@ data class PayToOpenRequest(
                 chainHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 fundingSatoshis = Satoshi(LightningCodecs.u64(input)),
                 amountMsat = MilliSatoshi(LightningCodecs.u64(input)),
-                feeSatoshis = Satoshi(LightningCodecs.u64(input)),
+                payToOpenMinAmountMsat = MilliSatoshi(LightningCodecs.u64(input)),
+                payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                feeThresholdSatoshis = Satoshi(LightningCodecs.u64(input)),
-                feeProportionalMillionths = LightningCodecs.u32(input).toLong(),
                 expireAt = LightningCodecs.u32(input).toLong(),
                 finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input)
             )
@@ -1002,8 +999,7 @@ data class PayToOpenRequest(
         /**
          * We use this method for non-trampoline multipart payments.
          * The aggregation is done by the wallet, which may receive several pay-to-open requests for the same payment.
-         * Combining the requests allows us to create a single channel, and protects us from some edge cases (e.g. since small payments are free,
-         * users could aggressively split their payments to stay below a certain threshold).
+         * Combining the requests allows us to create a single channel.
          *
          * We return the total amount for this set of pay-to-open requests, and the fee that will be deducted when the channel will be opened.
          */
@@ -1011,10 +1007,9 @@ data class PayToOpenRequest(
             require(requests.isNotEmpty()) { "there needs to be at least one pay-to-open request" }
             require(requests.map { it.chainHash }.toSet().size == 1) { "all pay-to-open chain hash must be equal" }
             require(requests.map { it.paymentHash }.toSet().size == 1) { "all pay-to-open payment hash must be equal" }
-            require(requests.map { it.feeThresholdSatoshis }.toSet().size == 1) { "all pay-to-open fee rates must be equal" }
-            require(requests.map { it.feeProportionalMillionths }.toSet().size == 1) { "all pay-to-open fee rates must be equal" }
+            require(requests.map { it.payToOpenMinAmountMsat }.toSet().size == 1) { "all pay-to-open min amounts must be equal" }
             val totalAmount = requests.map { it.amountMsat }.sum()
-            val fees = requests.map { it.feeSatoshis }.sum()
+            val fees = requests.map { it.payToOpenFeeSatoshis }.sum()
             return Pair(totalAmount, fees)
         }
     }
