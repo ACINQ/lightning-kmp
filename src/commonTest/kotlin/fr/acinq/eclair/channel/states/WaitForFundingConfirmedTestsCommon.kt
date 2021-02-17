@@ -6,11 +6,12 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.processEx
-import fr.acinq.eclair.io.WrappedChannelEvent
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.utils.*
+import fr.acinq.eclair.utils.currentTimestampMillis
+import fr.acinq.eclair.utils.msat
+import fr.acinq.eclair.utils.sat
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
@@ -278,11 +279,11 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertTrue { bob2 is Syncing && bob2.state is WaitForFundingConfirmed }
 
         // Actual test start here
-        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        // Nothing happens, we need to wait 2016 blocks for the funding tx to be confirmed
         val (bob3, _) = bob2.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertEquals(bob2, bob3)
-        // Fast forward 721 blocks later
-        val (bob4, _) = bob3.processEx(ChannelEvent.NewBlock(bob3.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // Fast forward after the funding timeout
+        val (bob4, _) = bob3.processEx(ChannelEvent.NewBlock(bob3.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         // We give up, Channel is aborted
         val (bob5, actions5) = bob4.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertTrue { bob5 is Aborted }
@@ -298,11 +299,11 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
 
         // Actual test start here
-        // Nothing happens, we need to wait 720 blocks for the funding tx to be confirmed
+        // Nothing happens, we need to wait 2016 blocks for the funding tx to be confirmed
         val (bob2, _) = bob1.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertEquals(bob1, bob2)
-        // Fast forward 721 blocks later
-        val (bob3, _) = bob2.processEx(ChannelEvent.NewBlock(bob2.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // Fast forward after the funding timeout
+        val (bob3, _) = bob2.processEx(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         // We give up, Channel is aborted
         val (bob4, actions4) = bob3.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertTrue { bob4 is Aborted }

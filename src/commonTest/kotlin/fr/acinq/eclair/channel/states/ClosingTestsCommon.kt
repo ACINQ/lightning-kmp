@@ -1311,7 +1311,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertNotNull(fundingTx)
 
         // test starts here
-        val (bob1, _) = bob.process(ChannelEvent.NewBlock(bob.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob1, _) = bob.process(ChannelEvent.NewBlock(bob.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         val (bob2, actions2) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
         assertTrue { bob2 is Aborted }
         assertEquals(1, actions2.size)
@@ -1341,11 +1341,11 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (bob1, _) = bob.process(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
         assertTrue(bob1 is Closing)
 
-        // The funding tx isn't confirmed yet, but we give it 720 blocks to (hopefully) confirm. If it doesn't confirm within that delay, we will simply forget the channel.
+        // The funding tx isn't confirmed yet, but we give it 2016 blocks to (hopefully) confirm. If it doesn't confirm within that delay, we will simply forget the channel.
         val (bob2, _) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertEquals(bob1, bob2)
-        // Fast forward 721 blocks later
-        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + 721, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        // Fast forward after the funding timeout.
+        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         // We give up, Channel is aborted
         val (bob4, actions4) = bob3.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertTrue { bob4 is Aborted }
@@ -1531,7 +1531,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             // fundee
             val bob1 = run {
                 val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-                assertTrue { bob1 is Closing } ; bob1 as Closing
+                assertTrue(bob1 is Closing)
                 assertEquals(6, actions1.size)
 
                 val error = actions1.hasOutgoingMessage<Error>()

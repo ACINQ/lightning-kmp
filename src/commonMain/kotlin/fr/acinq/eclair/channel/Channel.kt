@@ -2837,7 +2837,7 @@ object Channel {
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
     // as a fundee, we will wait that block count for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-    const val FUNDING_TIMEOUT_FUNDEE_BLOCK = 720
+    const val FUNDING_TIMEOUT_FUNDEE_BLOCK = 2016
 
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
