@@ -152,7 +152,7 @@ object Node {
                 )
             ),
             dustLimit = 546.sat,
-            maxRemoteDustLimit = 1000.sat,
+            maxRemoteDustLimit = 600.sat,
             onChainFeeConf = OnChainFeeConf(
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
