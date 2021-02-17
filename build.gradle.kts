@@ -9,7 +9,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.eclair"
-    version = (project.findProperty("publishVersion") as? String?) ?: "1.0-beta7"
+    version = (project.findProperty("publishVersion") as? String?) ?: "snapshot"
 
     repositories {
         mavenLocal()
