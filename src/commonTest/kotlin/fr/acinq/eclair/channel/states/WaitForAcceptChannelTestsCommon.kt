@@ -39,7 +39,7 @@ class WaitForAcceptChannelTestsCommon : EclairTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (invalid dust limit)`() {
+    fun `recv AcceptChannel (dust limit too low)`() {
         val (alice, _, accept) = init()
         // we don't want their dust limit to be below 546
         val lowDustLimitSatoshis = 545.sat
@@ -49,6 +49,17 @@ class WaitForAcceptChannelTestsCommon : EclairTestSuite() {
         assertTrue(alice1 is Aborted)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).message))
+    }
+
+    @Test
+    fun `recv AcceptChannel (dust limit too high)`() {
+        val (alice, _, accept) = init()
+        // we don't want their dust limit to be too high
+        val highDustLimitSatoshis = 2000.sat
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = highDustLimitSatoshis)))
+        assertTrue(alice1 is Aborted)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, highDustLimitSatoshis, alice.staticParams.nodeParams.maxRemoteDustLimit).message))
     }
 
     @Test
@@ -98,7 +109,8 @@ class WaitForAcceptChannelTestsCommon : EclairTestSuite() {
         val (alice, _, accept) = init()
         val open = alice.lastSent
         val dustTooBig = open.channelReserveSatoshis + 1.sat
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = dustTooBig)))
+        val aliceDustLimitTolerance = alice.copy(staticParams = alice.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(maxRemoteDustLimit = 15_000.sat)))
+        val (alice1, actions1) = aliceDustLimitTolerance.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = dustTooBig)))
         assertTrue(alice1 is Aborted)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).message))

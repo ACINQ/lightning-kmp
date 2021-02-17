@@ -16,7 +16,6 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance
 import fr.acinq.eclair.blockchain.fee.OnChainFeerates
 import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.*
@@ -27,7 +26,6 @@ import fr.acinq.eclair.transactions.Transactions.commitTxFee
 import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlin.math.max
 import kotlin.native.concurrent.ThreadLocal
 
@@ -91,6 +89,10 @@ object Helpers {
             return Either.Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
         }
 
+        if (open.dustLimitSatoshis > nodeParams.maxRemoteDustLimit) {
+            return Either.Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.maxRemoteDustLimit))
+        }
+
         if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
             // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
         } else {
@@ -134,6 +136,10 @@ object Helpers {
         // only enforce dust limit check on mainnet
         if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash && accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) {
             return Either.Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))
+        }
+
+        if (accept.dustLimitSatoshis > nodeParams.maxRemoteDustLimit) {
+            return Either.Left(DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, nodeParams.maxRemoteDustLimit))
         }
 
         // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.

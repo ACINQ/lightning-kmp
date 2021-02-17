@@ -56,6 +56,7 @@ object TestConstants {
                 )
             ),
             dustLimit = 1_100.sat,
+            maxRemoteDustLimit = 1_500.sat,
             onChainFeeConf = OnChainFeeConf(
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
@@ -124,6 +125,7 @@ object TestConstants {
                 )
             ),
             dustLimit = 1_000.sat,
+            maxRemoteDustLimit = 1_500.sat,
             onChainFeeConf = OnChainFeeConf(
                 closeOnOfflineMismatch = true,
                 updateFeeMinDiffRatio = 0.1,
