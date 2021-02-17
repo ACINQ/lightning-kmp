@@ -129,6 +129,17 @@ class WaitForOpenChannelTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv OpenChannel (dust limit too high)`() {
+        val (_, bob, open) = TestsHelper.init(ChannelVersion.STANDARD, TestConstants.defaultBlockHeight, TestConstants.fundingAmount)
+        val dustLimitTooHigh = 2000.sat
+        val open1 = open.copy(dustLimitSatoshis = dustLimitTooHigh)
+        val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
+        val error = actions.findOutgoingMessage<Error>()
+        assertEquals(error, Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, dustLimitTooHigh, bob.staticParams.nodeParams.maxRemoteDustLimit).message))
+        assertTrue { bob1 is Aborted }
+    }
+
+    @Test
     fun `recv OpenChannel (toLocal + toRemote below reserve)`() {
         val (_, bob, open) = TestsHelper.init(ChannelVersion.STANDARD, TestConstants.defaultBlockHeight, TestConstants.fundingAmount)
         val fundingAmount = open.channelReserveSatoshis + 499.sat

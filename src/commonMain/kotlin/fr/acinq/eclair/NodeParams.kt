@@ -42,6 +42,7 @@ data class WalletParams(
  * @param alias name of the lightning node.
  * @param features features supported by the lightning node.
  * @param dustLimit threshold below which outputs will not be generated in commitment or HTLC transactions (i.e. HTLCs below this amount plus HTLC transaction fees are not enforceable on-chain).
+ * @param maxRemoteDustLimit maximum dust limit we let our peer use for his commitment (in theory it should always be 546 sats).
  * @param onChainFeeConf on-chain feerates that will be applied to various transactions.
  * @param maxHtlcValueInFlightMsat cap on the total value of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
  * @param maxAcceptedHtlcs cap on the number of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
@@ -80,6 +81,7 @@ data class NodeParams(
     val alias: String,
     val features: Features,
     val dustLimit: Satoshi,
+    val maxRemoteDustLimit: Satoshi,
     val onChainFeeConf: OnChainFeeConf,
     val maxHtlcValueInFlightMsat: Long,
     val maxAcceptedHtlcs: Int,
