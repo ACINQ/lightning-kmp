@@ -1,8 +1,10 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.eclair.channel.ChannelOrigin
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.serialization.ByteVectorKSerializer
 import fr.acinq.eclair.utils.BitField
@@ -48,6 +50,31 @@ sealed class ChannelTlv : Tlv {
                 val len = input.availableBytes
                 val buffer = LightningCodecs.bytes(input, len)
                 return ChannelVersionTlv(ChannelVersion(BitField.from(buffer)))
+            }
+        }
+    }
+
+    @Serializable
+    data class ChannelOriginTlv(val channelOrigin: ChannelOrigin) : ChannelTlv() {
+        override val tag: Long get() = ChannelOriginTlv.tag
+
+        override fun write(out: Output) {
+            TODO("Not implemented (not needed)")
+        }
+
+        companion object : TlvValueReader<ChannelOriginTlv> {
+            const val tag: Long = 0x47000003
+
+            override fun read(input: Input): ChannelOriginTlv {
+                val origin = when(LightningCodecs.u16(input)) {
+                    1 -> ChannelOrigin.PayToOpenOrigin(ByteVector32(LightningCodecs.bytes(input, 32)))
+                    2 -> {
+                        val len = LightningCodecs.bigSize(input)
+                        ChannelOrigin.SwapInOrigin(LightningCodecs.bytes(input, len).decodeToString())
+                    }
+                    else -> TODO("Unsupported channel origin discriminator")
+                }
+                return ChannelOriginTlv(origin)
             }
         }
     }
