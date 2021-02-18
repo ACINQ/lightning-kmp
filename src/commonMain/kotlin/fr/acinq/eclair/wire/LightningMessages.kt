@@ -281,7 +281,8 @@ data class OpenChannel(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             ChannelTlv.UpfrontShutdownScript.tag to ChannelTlv.UpfrontShutdownScript.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
+            ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>
         )
         LightningCodecs.writeBytes(chainHash, out)
         LightningCodecs.writeBytes(temporaryChannelId, out)

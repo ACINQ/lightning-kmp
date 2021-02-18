@@ -413,3 +413,10 @@ object ChannelFlags {
 }
 
 data class ClosingTxProposed(val unsignedTx: Transaction, val localClosingSigned: ClosingSigned)
+
+/** This gives the reason for creating a new channel */
+@Serializable
+sealed class ChannelOrigin {
+    data class PayToOpenOrigin(val paymentHash: ByteVector32) : ChannelOrigin()
+    data class SwapInOrigin(val bitcoinAddress: String) : ChannelOrigin()
+}
