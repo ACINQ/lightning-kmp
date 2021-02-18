@@ -33,27 +33,6 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
-    // this type should not be needed: unfortunately Phoenix previously used a value that was not a valid tlv in message extensions,
-    // so it's needed for backwards-compatibility until we can deprecate the old value.
-    @Serializable
-    data class ChannelVersionTlvLegacy(val channelVersion: ChannelVersion) : ChannelTlv() {
-        override val tag: Long get() = ChannelVersionTlvLegacy.tag
-
-        override fun write(out: Output) {
-            LightningCodecs.writeBytes(channelVersion.bits.bytes, out)
-        }
-
-        companion object : TlvValueReader<ChannelVersionTlvLegacy> {
-            const val tag: Long = 0x47000000
-
-            override fun read(input: Input): ChannelVersionTlvLegacy {
-                val len = 4 // len is missing, value is always 4 bytes
-                val buffer = LightningCodecs.bytes(input, len)
-                return ChannelVersionTlvLegacy(ChannelVersion(BitField.from(buffer)))
-            }
-        }
-    }
-
     @Serializable
     data class ChannelVersionTlv(val channelVersion: ChannelVersion) : ChannelTlv() {
         override val tag: Long get() = ChannelVersionTlv.tag

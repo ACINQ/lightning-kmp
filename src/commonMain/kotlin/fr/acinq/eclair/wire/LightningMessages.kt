@@ -273,7 +273,7 @@ data class OpenChannel(
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
-    val channelVersion: ChannelVersion? get() = tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion ?: tlvStream.get<ChannelTlv.ChannelVersionTlvLegacy>()?.channelVersion
+    val channelVersion: ChannelVersion? get() = tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelVersion
 
     override val type: Long get() = OpenChannel.type
 
@@ -311,8 +311,7 @@ data class OpenChannel(
             @Suppress("UNCHECKED_CAST")
             val readers = mapOf(
                 ChannelTlv.UpfrontShutdownScript.tag to ChannelTlv.UpfrontShutdownScript.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvValueReader<ChannelTlv>
+                ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
             )
             return OpenChannel(
                 ByteVector32(LightningCodecs.bytes(input, 32)),

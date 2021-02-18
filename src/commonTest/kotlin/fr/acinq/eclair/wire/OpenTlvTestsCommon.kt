@@ -10,15 +10,12 @@ class OpenTlvTestsCommon : EclairTestSuite() {
     @Test
     fun `channel version TLV`() {
         val testCases = listOf(
-            Triple(ChannelVersion.STANDARD, Hex.decode("fe47000000 00000007"), Hex.decode("fe47000000 00000001")),
             Triple(ChannelVersion.STANDARD, Hex.decode("fe47000001 04 00000007"), Hex.decode("fe47000000 00000001")),
-            Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000000 0000000f"), Hex.decode("fe47000000 0000000f")),
             Triple(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE, Hex.decode("fe47000001 04 0000000f"), Hex.decode("fe47000000 0000000f"))
         )
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            ChannelTlv.ChannelVersionTlvLegacy.tag to ChannelTlv.ChannelVersionTlvLegacy.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
         )
         val tlvStreamSerializer = TlvStreamSerializer(false, readers)
@@ -27,7 +24,6 @@ class OpenTlvTestsCommon : EclairTestSuite() {
             val decoded = tlvStreamSerializer.read(it.second)
             val version = decoded.records.mapNotNull { record ->
                 when (record) {
-                    is ChannelTlv.ChannelVersionTlvLegacy -> record.channelVersion
                     is ChannelTlv.ChannelVersionTlv -> record.channelVersion
                     else -> null
                 }
