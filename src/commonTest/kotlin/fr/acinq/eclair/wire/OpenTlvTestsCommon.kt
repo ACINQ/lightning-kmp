@@ -49,13 +49,13 @@ class OpenTlvTestsCommon : EclairTestSuite() {
 
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
-            val version = decoded.records.mapNotNull { record ->
+            val channelOrigin = decoded.records.mapNotNull { record ->
                 when (record) {
                     is ChannelTlv.ChannelOriginTlv -> record.channelOrigin
                     else -> null
                 }
             }.first()
-            assertEquals(it.first, version)
+            assertEquals(it.first, channelOrigin)
         }
     }
 }
