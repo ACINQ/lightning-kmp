@@ -81,7 +81,7 @@ class TlvStreamSerializer<T : Tlv>(private val lengthPrefixed: Boolean, private 
             previousTag = tag
 
             val reader = readers[tag]
-            val length = if (tag == ChannelTlv.ChannelVersionTlvLegacy.tag) 4 else LightningCodecs.bigSize(input)
+            val length = LightningCodecs.bigSize(input)
             val data = LightningCodecs.bytes(input, length)
             reader?.let {
                 records.add(reader.read(data))
