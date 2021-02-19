@@ -1,0 +1,13 @@
+package = swift.phoenix_crypto
+language = Objective-C
+
+headers = PhoenixCrypto/PhoenixCrypto-Swift.h
+headerFilter = PhoenixCrypto/*
+
+staticLibraries = libPhoenixCrypto.a
+libraryPaths.ios_x64 = PhoenixCrypto/build/Release-iphonesimulator
+libraryPaths.ios_arm64 = PhoenixCrypto/build/Release-iphoneos
+
+linkerOpts = -L/usr/lib/swift
+linkerOpts.ios_x64 = -ios_simulator_version_min 13.0.0 -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator/
+linkerOpts.ios_arm64 = -iphoneos_version_min 13.0.0 -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos/

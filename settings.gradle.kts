@@ -9,5 +9,6 @@ pluginManagement {
 }
 
 include(
+    ":PhoenixCrypto",
     ":eclair-kmp-test-fixtures"
 )
