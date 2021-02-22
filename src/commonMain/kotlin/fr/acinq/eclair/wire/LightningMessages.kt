@@ -71,6 +71,9 @@ interface LightningMessage {
                 PayToOpenRequest.type -> PayToOpenRequest.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
+                SwapInResponse.type -> SwapInResponse.read(stream)
+                SwapInPending.type -> SwapInPending.read(stream)
+                SwapInConfirmed.type -> SwapInConfirmed.read(stream)
                 else -> {
                     logger.warning { "cannot decode ${Hex.encode(input)}" }
                     null
@@ -1080,4 +1083,91 @@ object UnsetFCMToken : LightningMessage {
     override val type: Long get() = 35019
 
     override fun write(out: Output) {}
+}
+@OptIn(ExperimentalUnsignedTypes::class)
+data class SwapInRequest(
+    override val chainHash: ByteVector32
+) : LightningMessage, HasChainHash {
+    override val type: Long get() = SwapInRequest.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(chainHash, out)
+    }
+
+    companion object : LightningMessageReader<SwapInRequest> {
+        const val type: Long = 35007
+
+        override fun read(input: Input): SwapInRequest {
+            TODO("Not implemented (not needed)")
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class SwapInResponse(
+    override val chainHash: ByteVector32,
+    val bitcoinAddress: String
+) : LightningMessage, HasChainHash {
+    override val type: Long get() = SwapInResponse.type
+
+    override fun write(out: Output) {
+        TODO("Not implemented (not needed)")
+    }
+
+    companion object : LightningMessageReader<SwapInResponse> {
+        const val type: Long = 35009
+
+        override fun read(input: Input): SwapInResponse {
+            return SwapInResponse(
+                chainHash = ByteVector32(LightningCodecs.bytes(input, 32)),
+                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class SwapInPending(
+    val bitcoinAddress: String,
+    val amount: Satoshi
+) : LightningMessage {
+    override val type: Long get() = SwapInPending.type
+
+    override fun write(out: Output) {
+        TODO("Not implemented (not needed)")
+    }
+
+    companion object : LightningMessageReader<SwapInPending> {
+        const val type: Long = 35005
+
+        override fun read(input: Input): SwapInPending {
+            return SwapInPending(
+                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString(),
+                amount = Satoshi(LightningCodecs.u64(input))
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class SwapInConfirmed(
+    val bitcoinAddress: String,
+    val amount: MilliSatoshi
+) : LightningMessage {
+    override val type: Long get() = SwapInConfirmed.type
+
+    override fun write(out: Output) {
+        TODO("Not implemented (not needed)")
+    }
+
+    companion object : LightningMessageReader<SwapInConfirmed> {
+        const val type: Long = 35015
+
+        override fun read(input: Input): SwapInConfirmed {
+            return SwapInConfirmed(
+                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString(),
+                amount = MilliSatoshi(LightningCodecs.u64(input))
+            )
+        }
+    }
 }

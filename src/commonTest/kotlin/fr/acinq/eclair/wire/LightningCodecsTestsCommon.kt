@@ -8,6 +8,7 @@ import fr.acinq.eclair.Eclair.randomBytes
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomBytes64
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.assertArrayEquals
@@ -523,5 +524,29 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
             val encoded = LightningMessage.encode(it.value)
             assertArrayEquals(it.key.first, encoded)
         }
+    }
+
+    @Test
+    fun `encode - decode swap-in messages`() {
+        assertArrayEquals(
+            a = Hex.decode("88bf000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"),
+            b = LightningMessage.encode(SwapInRequest(Block.LivenetGenesisBlock.blockId))
+        )
+
+        assertEquals(
+            expected = SwapInResponse(Block.LivenetGenesisBlock.blockId, "bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv"),
+            actual = LightningMessage.decode(Hex.decode("88c1000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076"))
+        )
+
+        assertEquals(
+            expected = SwapInPending("bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv", Satoshi(123456)),
+            actual = LightningMessage.decode(Hex.decode("88bd002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076000000000001e240"))
+        )
+
+        assertEquals(
+            expected = SwapInConfirmed("39gzznpTuzhtjdN5R2LZu8GgWLR9NovLdi", MilliSatoshi(42_000_000)),
+            actual = LightningMessage.decode(Hex.decode("88c700223339677a7a6e7054757a68746a644e3552324c5a75384767574c52394e6f764c6469000000000280de80"))
+        )
+
     }
 }

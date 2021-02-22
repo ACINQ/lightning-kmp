@@ -54,6 +54,11 @@ data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : P
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 
+object SendSwapInRequest: PeerEvent()
+data class SwapInResponseEvent(val swapInResponse: SwapInResponse): PeerListenerEvent()
+data class SwapInPendingEvent(val swapInPending: SwapInPending): PeerListenerEvent()
+data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed): PeerListenerEvent()
+
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
     val nodeParams: NodeParams,
@@ -580,8 +585,20 @@ class Peer(
                         }
                     }
                     msg is PayToOpenRequest -> {
-                        logger.info { "n:$remoteNodeId received pay-to-open request" }
+                        logger.info { "n:$remoteNodeId received ${msg::class}" }
                         processIncomingPayment(Either.Left(msg))
+                    }
+                    msg is SwapInResponse -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress}" }
+                        listenerEventChannel.send(SwapInResponseEvent(msg))
+                    }
+                    msg is SwapInPending -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
+                        listenerEventChannel.send(SwapInPendingEvent(msg))
+                    }
+                    msg is SwapInConfirmed -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
+                        listenerEventChannel.send(SwapInConfirmedEvent(msg))
                     }
                     else -> logger.warning { "n:$remoteNodeId received unhandled message ${Hex.encode(event.data)}" }
                 }
@@ -624,7 +641,7 @@ class Peer(
                 event.result.complete(pr)
             }
             event is PayToOpenResponseEvent -> {
-                logger.info { "n:$remoteNodeId sending pay-to-open response" }
+                logger.info { "n:$remoteNodeId sending ${event.payToOpenResponse::class}" }
                 sendToPeer(event.payToOpenResponse)
             }
             event is SendPayment -> {
@@ -640,6 +657,11 @@ class Peer(
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
+            }
+            event is SendSwapInRequest -> {
+                val msg = SwapInRequest(nodeParams.chainHash)
+                logger.info { "n:$remoteNodeId sending ${msg::class}" }
+                sendToPeer(msg)
             }
             event is WrappedChannelEvent && event.channelId == ByteVector32.Zeroes -> {
                 // this is for all channels
