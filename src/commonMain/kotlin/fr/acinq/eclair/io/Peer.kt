@@ -192,7 +192,6 @@ class Peer(
         )
     }
 
-    @ExperimentalUnsignedTypes
     fun connect() {
         if (connectionState.value == Connection.CLOSED) establishConnection()
         else logger.warning { "Peer is already connecting / connected" }
@@ -208,7 +207,6 @@ class Peer(
     // This shouldn't be used outside the establishedConnection() function
     // Except from the disconnect() one that check if the lateinit var has been initialized
     private lateinit var socket: TcpSocket
-    @ExperimentalUnsignedTypes
     private fun establishConnection() = launch {
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
