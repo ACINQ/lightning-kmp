@@ -3,9 +3,11 @@ package fr.acinq.eclair.crypto.noise
 import swift.phoenix_crypto.*
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.autoreleasepool
+import kotlinx.cinterop.pin
 import kotlinx.cinterop.usePinned
+import platform.Foundation.create
 import platform.Foundation.NSData
-import platform.Foundation.NSMutableData
 import platform.posix.memcpy
 
 fun NSData.toByteArray(): ByteArray {
@@ -20,17 +22,15 @@ fun NSData.toByteArray(): ByteArray {
 }
 
 fun ByteArray.toNSData(): NSData {
-    val size = this.size.toULong()
-    val mData = NSMutableData()
-    mData.setLength(size)
-    if (size > 0uL) {
-        this.usePinned { pinned ->
-            memcpy(mData.mutableBytes, pinned.addressOf(0), size)
-        }
-    }
-    val data = mData.copy() as NSData
-    return data
+    if (isEmpty()) return NSData()
+    val pinned = pin()
+    return NSData.create(
+        bytesNoCopy = pinned.addressOf(0),
+        length = size.toULong(),
+        deallocator = { _, _ -> pinned.unpin() }
+    )
 }
+
 
 actual object Chacha20Poly1305CipherFunctions : CipherFunctions {
     override fun name() = "ChaChaPoly"
@@ -40,26 +40,28 @@ actual object Chacha20Poly1305CipherFunctions : CipherFunctions {
 
     // Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique.
     override fun encrypt(k: ByteArray, n: Long, ad: ByteArray, plaintext: ByteArray): ByteArray {
-
-        val ciphertextAndMac = NativeChaChaPoly.chachapoly_encryptWithKey(
-            key = k.toNSData(),
-            nonce = nonce(n).toNSData(),
-            authenticatedData = ad.toNSData(),
-            plaintext = plaintext.toNSData()
-        )
-        return ciphertextAndMac.toByteArray()
+        autoreleasepool {
+            val ciphertextAndMac = NativeChaChaPoly.chachapoly_encryptWithKey(
+                key = k.toNSData(),
+                nonce = nonce(n).toNSData(),
+                authenticatedData = ad.toNSData(),
+                plaintext = plaintext.toNSData()
+            )
+            return ciphertextAndMac.toByteArray()
+        }
     }
 
     // Decrypts ciphertext using a cipher key k of 32 bytes, an 8-byte unsigned integer nonce n, and associated data ad.
     @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray {
-
-        val plaintext = NativeChaChaPoly.chachapoly_decryptWithKey(
-            key = k.toNSData(),
-            nonce = nonce(n).toNSData(),
-            authenticatedData = ad.toNSData(),
-            ciphertextAndTag = ciphertextAndMac.toNSData()
-        )
-        return plaintext.toByteArray()
+        autoreleasepool {
+            val plaintext = NativeChaChaPoly.chachapoly_decryptWithKey(
+                key = k.toNSData(),
+                nonce = nonce(n).toNSData(),
+                authenticatedData = ad.toNSData(),
+                ciphertextAndTag = ciphertextAndMac.toNSData()
+            )
+            return plaintext.toByteArray()
+        }
     }
 }
