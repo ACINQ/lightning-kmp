@@ -1784,6 +1784,7 @@ data class Normal(
                         when {
                             this.localShutdown != null -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId), channelUpdate)
                             this.commitments.localHasUnsignedOutgoingHtlcs() -> handleCommandError(event.command, CannotCloseWithUnsignedOutgoingHtlcs(channelId), channelUpdate)
+                            this.commitments.localHasUnsignedOutgoingUpdateFee() -> handleCommandError(event.command, CannotCloseWithUnsignedOutgoingUpdateFee(channelId), channelUpdate)
                             !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey) -> handleCommandError(event.command, InvalidFinalScript(channelId), channelUpdate)
                             else -> {
                                 val shutdown = Shutdown(channelId, localScriptPubkey)
@@ -1896,20 +1897,21 @@ data class Normal(
                         //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
                         //    we have no pending unsigned htlcs
                         //      we already sent a shutdown message
-                        //        there are pending signed htlcs    => send our shutdown message, go to SHUTDOWN
-                        //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
+                        //        there are pending signed changes  => send our shutdown message, go to SHUTDOWN
+                        //        there are no changes              => send our shutdown message, go to NEGOTIATING
                         //      we did not send a shutdown message
-                        //        there are pending signed htlcs    => go to SHUTDOWN
-                        //        there are no htlcs                => go to NEGOTIATING
+                        //        there are pending signed changes  => go to SHUTDOWN
+                        //        there are no changes              => go to NEGOTIATING
                         when {
                             !Helpers.Closing.isValidFinalScriptPubkey(event.message.scriptPubKey) -> handleLocalError(event, InvalidFinalScript(channelId))
                             commitments.remoteHasUnsignedOutgoingHtlcs() -> handleLocalError(event, CannotCloseWithUnsignedOutgoingHtlcs(channelId))
+                            commitments.remoteHasUnsignedOutgoingUpdateFee() -> handleLocalError(event, CannotCloseWithUnsignedOutgoingUpdateFee(channelId))
                             commitments.localHasUnsignedOutgoingHtlcs() -> {
                                 require(localShutdown == null) { "can't have pending unsigned outgoing htlcs after having sent Shutdown" }
                                 // are we in the middle of a signature?
                                 when (commitments.remoteNextCommitInfo) {
                                     is Either.Left -> {
-                                        // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
+                                        // yes, let's just schedule a new signature ASAP, which will include all pending unsigned changes
                                         val commitments1 = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.value.copy(reSignAsap = true)))
                                         val newState = this.copy(commitments = commitments1, remoteShutdown = event.message)
                                         Pair(newState, listOf())
@@ -1922,13 +1924,13 @@ data class Normal(
                                 }
                             }
                             else -> {
-                                // so we don't have any unsigned outgoing htlcs
+                                // so we don't have any unsigned outgoing changes
                                 val actions = mutableListOf<ChannelAction>()
                                 val localShutdown = this.localShutdown ?: Shutdown(channelId, commitments.localParams.defaultFinalScriptPubKey)
                                 if (this.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))
                                 val commitments1 = commitments.copy(remoteChannelData = event.message.channelData)
                                 when {
-                                    commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isFunder -> {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                             keyManager,
                                             commitments1,
@@ -1949,13 +1951,13 @@ data class Normal(
                                         actions.addAll(listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned)))
                                         Pair(nextState, actions)
                                     }
-                                    commitments1.hasNoPendingHtlcs() -> {
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
                                         val nextState = Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, event.message, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
                                     }
                                     else -> {
-                                        // there are some pending signed htlcs, we need to fail/fulfill them
+                                        // there are some pending changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
                                         val nextState = ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, event.message)
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
@@ -2067,7 +2069,7 @@ data class ShuttingDown(
                         is Either.Right -> {
                             val (commitments1, revocation) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isFunder -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                         keyManager,
                                         commitments1,
@@ -2092,7 +2094,7 @@ data class ShuttingDown(
                                     )
                                     Pair(nextState, actions)
                                 }
-                                commitments1.hasNoPendingHtlcs() -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
                                     val nextState = Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
                                     val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(revocation))
                                     Pair(nextState, actions)
@@ -2115,7 +2117,7 @@ data class ShuttingDown(
                             val (commitments1, actions) = result.value
                             val actions1 = actions.toMutableList()
                             when {
-                                commitments1.hasNoPendingHtlcs() && commitments1.localParams.isFunder -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isFunder -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                         keyManager,
                                         commitments1,
@@ -2136,7 +2138,7 @@ data class ShuttingDown(
                                     actions1.addAll(listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned)))
                                     Pair(nextState, actions1)
                                 }
-                                commitments1.hasNoPendingHtlcs() -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
                                     val nextState = Negotiating(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingTxProposed = listOf(listOf()), bestUnpublishedClosingTx = null)
                                     actions1.add(ChannelAction.Storage.StoreState(nextState))
                                     Pair(nextState, actions1)

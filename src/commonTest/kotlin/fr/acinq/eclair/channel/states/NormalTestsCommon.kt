@@ -1395,6 +1395,19 @@ class NormalTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv CMD_CLOSE (with unsigned fee update)`() {
+        val (alice, _) = reachNormal()
+        val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw(20_000.sat), false)))
+        actions1.hasOutgoingMessage<UpdateFee>()
+        val (alice2, actions2) = alice1.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        actions2.hasCommandError<CannotCloseWithUnsignedOutgoingUpdateFee>()
+        val (alice3, _) = alice2.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val (alice4, actions4) = alice3.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice4 is Normal)
+        actions4.hasOutgoingMessage<Shutdown>()
+    }
+
+    @Test
     fun `recv Shutdown (no pending htlcs)`() {
         val (alice, bob) = reachNormal()
         val (alice1, actions1) = alice.processEx(ChannelEvent.MessageReceived(Shutdown(alice.channelId, bob.commitments.localParams.defaultFinalScriptPubKey)))
@@ -1435,6 +1448,42 @@ class NormalTestsCommon : EclairTestSuite() {
         actions1.hasOutgoingMessage<Error>()
         assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         actions1.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv Shutdown (with unsigned fee update)`() {
+        val (alice, bob) = reachNormal()
+        val (alice1, aliceActions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw(20_000.sat), true)))
+        val updateFee = aliceActions1.hasOutgoingMessage<UpdateFee>()
+        val (alice2, aliceActions2) = alice1.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sigAlice = aliceActions2.hasOutgoingMessage<CommitSig>()
+
+        // Bob initiates a close before receiving the signature.
+        val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(updateFee))
+        val (bob2, bobActions2) = bob1.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        val shutdownBob = bobActions2.hasOutgoingMessage<Shutdown>()
+
+        val (bob3, bobActions3) = bob2.processEx(ChannelEvent.MessageReceived(sigAlice))
+        val revBob = bobActions3.hasOutgoingMessage<RevokeAndAck>()
+        bobActions3.hasCommand<CMD_SIGN>()
+        val (bob4, bobActions4) = bob3.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sigBob = bobActions4.hasOutgoingMessage<CommitSig>()
+
+        val (alice3, aliceActions3) = alice2.processEx(ChannelEvent.MessageReceived(shutdownBob))
+        val shutdownAlice = aliceActions3.hasOutgoingMessage<Shutdown>()
+        val (alice4, _) = alice3.processEx(ChannelEvent.MessageReceived(revBob))
+        val (alice5, aliceActions5) = alice4.processEx(ChannelEvent.MessageReceived(sigBob))
+        assertTrue(alice5 is Negotiating)
+        val revAlice = aliceActions5.hasOutgoingMessage<RevokeAndAck>()
+        val closingAlice = aliceActions5.hasOutgoingMessage<ClosingSigned>()
+
+        val (bob5, _) = bob4.processEx(ChannelEvent.MessageReceived(shutdownAlice))
+        val (bob6, _) = bob5.processEx(ChannelEvent.MessageReceived(revAlice))
+        val (bob7, bobActions7) = bob6.processEx(ChannelEvent.MessageReceived(closingAlice))
+        assertTrue(bob7 is Closing)
+        val closingBob = bobActions7.hasOutgoingMessage<ClosingSigned>()
+        val (alice6, _) = alice5.processEx(ChannelEvent.MessageReceived(closingBob))
+        assertTrue(alice6 is Closing)
     }
 
     @Test
