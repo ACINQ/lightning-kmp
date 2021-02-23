@@ -10,10 +10,7 @@ actual object Chacha20Poly1305CipherFunctions : CipherFunctions {
 
     // Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique.
     override fun encrypt(k: ByteArray, n: Long, ad: ByteArray, plaintext: ByteArray): ByteArray {
-        val (ciphertext, mac) = ChaCha20Poly1305.encrypt(
-            k,
-            nonce(n), plaintext, ad
-        )
+        val (ciphertext, mac) = ChaCha20Poly1305.encrypt(k, nonce(n), plaintext, ad)
         return ciphertext + mac
     }
 
@@ -22,9 +19,6 @@ actual object Chacha20Poly1305CipherFunctions : CipherFunctions {
     override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray {
         val ciphertext = ciphertextAndMac.dropLast(16).toByteArray()
         val mac = ciphertextAndMac.takeLast(16).toByteArray()
-        return ChaCha20Poly1305.decrypt(
-            k,
-            nonce(n), ciphertext, ad, mac
-        )
+        return ChaCha20Poly1305.decrypt(k, nonce(n), ciphertext, ad, mac)
     }
 }
