@@ -99,7 +99,18 @@ kotlin {
 
     if (currentOs.isMacOsX) {
         ios {
+            val platform = when (name) {
+                "iosX64" -> "iphonesimulator"
+                "iosArm64" -> "iphoneos"
+                else -> error("Unsupported target $name")
+            }
+
             compilations["main"].cinterops.create("ios_network_framework")
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                val interopTask = tasks[interopProcessingTaskName]
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+            }
             compilations["main"].defaultSourceSet {
                 dependsOn(nativeMain)
             }
