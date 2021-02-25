@@ -252,8 +252,8 @@ class ClosingTestsCommon : EclairTestSuite() {
             val (nodes2, _, _) = addHtlc(95_000_000.msat, alice1, bob1)
             val (alice2, bob2) = nodes2
             val (alice3, _) = crossSign(alice2, bob2)
-            val (aliceClosing, remoteCommitPublished) = localClose(alice3)
-            Triple(aliceClosing, remoteCommitPublished, CMD_FULFILL_HTLC(htlc.id, preimage, commit = true))
+            val (aliceClosing, localCommitPublished) = localClose(alice3)
+            Triple(aliceClosing, localCommitPublished, CMD_FULFILL_HTLC(htlc.id, preimage, commit = true))
         }
 
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
@@ -283,6 +283,46 @@ class ClosingTestsCommon : EclairTestSuite() {
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), 250, 0, localCommitPublished.claimMainDelayedOutputTx!!)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
+    }
+
+    @Test
+    fun `recv BITCOIN_TX_CONFIRMED (local commit) followed by UpdateFailHtlc not acked by remote`() {
+        val (alice0, bob0) = reachNormal()
+        val (aliceClosing, localCommitPublished, htlc) = run {
+            // An HTLC Alice -> Bob is cross-signed that will be failed later.
+            val (nodes1, _, htlc) = addHtlc(25_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = failHtlc(htlc.id, alice2, bob2)
+            val (bob4, bobActions4) = bob3.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+            val sigBob = bobActions4.hasOutgoingMessage<CommitSig>()
+            val (alice4, aliceActions4) = alice3.processEx(ChannelEvent.MessageReceived(sigBob))
+            val revAlice = aliceActions4.hasOutgoingMessage<RevokeAndAck>()
+            aliceActions4.hasCommand<CMD_SIGN>()
+            val (alice5, aliceActions5) = alice4.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+            val sigAlice = aliceActions5.hasOutgoingMessage<CommitSig>()
+            val (bob5, _) = bob4.processEx(ChannelEvent.MessageReceived(revAlice))
+            val (_, bobActions6) = bob5.processEx(ChannelEvent.MessageReceived(sigAlice))
+            bobActions6.hasOutgoingMessage<RevokeAndAck>()
+            // alice closes before receiving Bob's revocation
+            val (aliceClosing, localCommitPublished) = localClose(alice5)
+            Triple(aliceClosing, localCommitPublished, htlc)
+        }
+
+        assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
+        assertTrue(localCommitPublished.htlcSuccessTxs.isEmpty())
+        assertTrue(localCommitPublished.htlcTimeoutTxs.isEmpty())
+        assertTrue(localCommitPublished.claimHtlcDelayedTxs.isEmpty())
+
+        val (alice1, actions1) = aliceClosing.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx)))
+        assertTrue(alice1 is Closing)
+        // when the commit tx is confirmed, alice knows that the htlc will never reach the chain
+        assertEquals(2, actions1.size)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        val addFailed = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().firstOrNull()
+        assertNotNull(addFailed)
+        assertEquals(htlc, addFailed.htlc)
+        assertTrue(addFailed.result is ChannelAction.HtlcResult.Fail.OnChainFail)
     }
 
     @Test
