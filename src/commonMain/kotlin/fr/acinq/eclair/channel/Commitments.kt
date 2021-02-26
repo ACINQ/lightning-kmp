@@ -78,6 +78,11 @@ data class Commitments(
 
     fun hasNoPendingHtlcs(): Boolean = localCommit.spec.htlcs.isEmpty() && remoteCommit.spec.htlcs.isEmpty() && remoteNextCommitInfo.isRight
 
+    fun hasNoPendingHtlcsOrFeeUpdate(): Boolean {
+        val hasNoPendingFeeUpdate = (localChanges.signed + localChanges.acked + remoteChanges.signed + remoteChanges.acked).find { it is UpdateFee } == null
+        return hasNoPendingHtlcs() && hasNoPendingFeeUpdate
+    }
+
     /**
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
@@ -439,6 +444,10 @@ data class Commitments(
     fun localHasUnsignedOutgoingHtlcs(): Boolean = localChanges.proposed.find { it is UpdateAddHtlc } != null
 
     fun remoteHasUnsignedOutgoingHtlcs(): Boolean = remoteChanges.proposed.find { it is UpdateAddHtlc } != null
+
+    fun localHasUnsignedOutgoingUpdateFee(): Boolean = localChanges.proposed.find { it is UpdateFee } != null
+
+    fun remoteHasUnsignedOutgoingUpdateFee(): Boolean = remoteChanges.proposed.find { it is UpdateFee } != null
 
     fun localHasChanges(): Boolean = remoteChanges.acked.isNotEmpty() || localChanges.proposed.isNotEmpty()
 
