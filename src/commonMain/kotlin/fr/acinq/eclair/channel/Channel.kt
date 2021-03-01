@@ -15,6 +15,7 @@ import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -704,10 +705,10 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                                 currentTip,
                                 currentOnChainFeerates,
                                 state.commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                state.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(watch.tx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(watch.tx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -965,10 +966,10 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 currentTip,
                                 currentOnChainFeerates,
                                 state.commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                state.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(watch.tx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(watch.tx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -2266,10 +2267,10 @@ data class Negotiating(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                this.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(signedClosingTx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(signedClosingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -2287,10 +2288,10 @@ data class Negotiating(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
-                                listOf(signedClosingTx)
+                                fundingTx =null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
+                                mutualClosePublished = listOf(signedClosingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -2333,10 +2334,10 @@ data class Negotiating(
                             currentTip,
                             currentOnChainFeerates,
                             commitments,
-                            null,
-                            currentBlockHeight.toLong(),
-                            this.closingTxProposed.flatten().map { it.unsignedTx },
-                            listOf(watch.tx)
+                            fundingTx = null,
+                            waitingSinceBlock = currentBlockHeight.toLong(),
+                            mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx },
+                            mutualClosePublished = listOf(watch.tx)
                         )
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
@@ -2373,10 +2374,10 @@ data class Negotiating(
                     currentTip,
                     currentOnChainFeerates,
                     commitments,
-                    null,
-                    currentBlockHeight.toLong(),
-                    this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
-                    listOf(bestUnpublishedClosingTx)
+                    fundingTx = null,
+                    waitingSinceBlock = currentBlockHeight.toLong(),
+                    mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
+                    mutualClosePublished = listOf(bestUnpublishedClosingTx)
                 )
                 val actions = listOf(
                     ChannelAction.Storage.StoreState(nextState),

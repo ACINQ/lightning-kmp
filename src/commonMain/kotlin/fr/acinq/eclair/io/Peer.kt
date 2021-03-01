@@ -2,6 +2,7 @@ package fr.acinq.eclair.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
+import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKeyPath
 import fr.acinq.eclair.blockchain.GetTxWithMeta
 import fr.acinq.eclair.blockchain.WatchEvent
@@ -53,6 +54,7 @@ data class PaymentReceived(val incomingPayment: IncomingPayment, val received: I
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
+data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
@@ -168,6 +170,108 @@ class Peer(
                 logger.info { "n:$remoteNodeId connection state changed: $it" }
                 if (it == Connection.CLOSED) send(Disconnected)
                 previousState = it
+            }
+        }
+        launch {
+            // OutgoingPayment.id is of type UUID.
+            // Normally this comes from payment.request.paymentId.
+            // In the case of a ChannelClosing payment, we will derive the id from the channelId.
+            val deriveDbId = { channelId: ByteVector32 ->
+                UUID.fromBytes(channelId.take(16).toByteArray())
+            }
+
+            // When a channel transitions from X to Closing (where X != Closing),
+            // and Closing.commitments reflects a local balance,
+            // we want to inject an OutgoingPayment to balance the ledger.
+            // This properly balances the ledger, as the lightning balance has changed.
+            suspend fun handleChannelTransitionToClosing(
+                channelId: ByteVector32,
+                oldChannel: ChannelState,
+                newChannel: Closing
+            ): Unit {
+                logger.debug { "?!? [$channelId] handleChannelTransitionToClosing" }
+                require(oldChannel !is Closing) { "Invalid parameter" }
+
+                val balance = newChannel.commitments.availableBalanceForSend()
+                logger.debug { "?!? [$channelId] balance = $balance" }
+                if (balance > 0.msat) {
+                    val dbId = deriveDbId(channelId)
+                    val fundingKeyPath = newChannel.commitments.localParams.fundingKeyPath
+                    val fundingPubKey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
+                    val pubKey = fundingPubKey.publicKey
+                    val closingAddress = pubKey.toString() // Todo: fix this
+                    val payment = OutgoingPayment(
+                        id = dbId,
+                        recipientAmount = balance,
+                        recipient = pubKey,
+                        details = OutgoingPayment.Details.ChannelClosing(
+                            closingAddress = closingAddress,
+                            fundingKeyPath = fundingKeyPath.toString(),
+                            paymentHash = randomBytes32()
+                        ),
+                        parts = listOf<OutgoingPayment.Part>(),
+                        status = OutgoingPayment.Status.Pending
+                    )
+                    logger.info { "?!? [$channelId] adding OutgoingPayment to database" }
+                    db.payments.addOutgoingPayment(payment)
+                    listenerEventChannel.send(ChannelClosing(channelId))
+                }
+            }
+
+            // When a channel transitions from X to Closed (where X != Closed),
+            // we want to mark the ChannelClosing payment as completed.
+            // Because the transactions have been mined to minDepth now.
+            suspend fun handleChannelTransitionToClosed(
+                channelId: ByteVector32,
+                @Suppress("UNUSED_PARAMETER") oldChannel: Closing,
+                @Suppress("UNUSED_PARAMETER") newChannel: Closed
+            ): Unit {
+                logger.debug { "?!? [$channelId] handleChannelTransitionToClosed" }
+
+                val txids = mutableListOf<ByteVector32>()
+                oldChannel.localCommitPublished?.let {
+                    val confirmedTxids = it.irrevocablySpent.values.toSet()
+                    val txs = listOfNotNull(it.commitTx, it.claimMainDelayedOutputTx) + it.htlcSuccessTxs + it.htlcTimeoutTxs
+                    txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
+                }
+                listOfNotNull(
+                    oldChannel.remoteCommitPublished,
+                    oldChannel.nextRemoteCommitPublished,
+                    oldChannel.futureRemoteCommitPublished
+                ).forEach {
+                    val confirmedTxids = it.irrevocablySpent.values.toSet()
+                    val txs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
+                    txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
+                }
+                oldChannel.revokedCommitPublished.forEach {
+                    val confirmedTxids = it.irrevocablySpent.values.toSet()
+                    val txs = listOfNotNull(it.commitTx, it.claimMainOutputTx, it.mainPenaltyTx) + it.htlcPenaltyTxs + it.claimHtlcDelayedPenaltyTxs
+                    txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
+                }
+                logger.debug { "?!? [$channelId] updateOutgoingPayment with txids: $txids" }
+                db.payments.updateOutgoingPayment(
+                    id = deriveDbId(channelId),
+                    completed =  OutgoingPayment.Status.Completed.Mined(txids)
+                )
+                listenerEventChannel.send(ChannelClosing(channelId))
+            }
+
+            var oldChannels = channelsFlow.value
+            channelsFlow.collect { newChannels ->
+                for ((channelId, newChannel) in newChannels) {
+                    val oldChannel = oldChannels[channelId]
+                    if (oldChannel != null) {
+                        when {
+                            newChannel is Closing && oldChannel !is Closing -> {
+                                handleChannelTransitionToClosing(channelId, oldChannel, newChannel)
+                            }
+                            newChannel is Closed && oldChannel is Closing -> {
+                                handleChannelTransitionToClosed(channelId, oldChannel, newChannel)
+                            }
+                        }
+                    }
+                } // </for>
+                oldChannels = newChannels
             }
         }
     }

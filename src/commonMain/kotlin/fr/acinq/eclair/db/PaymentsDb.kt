@@ -40,11 +40,8 @@ interface OutgoingPaymentsDb {
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
 
-    /** Mark an outgoing payment as failed. */
-    suspend fun updateOutgoingPayment(id: UUID, failure: FinalFailure, completedAt: Long = currentTimestampMillis())
-
-    /** Mark an outgoing payment as succeeded. This should delete all intermediate failed payment parts and only keep the successful ones. */
-    suspend fun updateOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
+    /** Mark an outgoing payment as completed (failed, succeeded, mined). */
+    suspend fun updateOutgoingPayment(id: UUID, completed: OutgoingPayment.Status.Completed)
 
     /** Add new partial payments to a pending outgoing payment. */
     suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>)
@@ -65,7 +62,7 @@ interface OutgoingPaymentsDb {
     suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<OutgoingPayment>
 }
 
-enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut }
+enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing }
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
@@ -74,8 +71,7 @@ sealed class WalletPayment {
         fun completedAt(payment: WalletPayment): Long = when (payment) {
             is IncomingPayment -> payment.received?.receivedAt ?: 0
             is OutgoingPayment -> when (val status = payment.status) {
-                is OutgoingPayment.Status.Succeeded -> status.completedAt
-                is OutgoingPayment.Status.Failed -> status.completedAt
+                is OutgoingPayment.Status.Completed -> status.completedAt
                 else -> 0
             }
         }
@@ -159,7 +155,7 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
 
     val paymentHash: ByteVector32 = details.paymentHash
     val fees: MilliSatoshi = when (status) {
-        is Status.Failed -> 0.msat
+        is Status.Completed.Failed -> 0.msat
         else -> parts.filter { it.status is Part.Status.Succeeded || it.status == Part.Status.Pending }.map { it.amount }.sum() - recipientAmount
     }
 
@@ -179,17 +175,24 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         /** Swaps out send a lightning payment to a swap server, which will send an on-chain transaction to a given address. */
         data class SwapOut(val address: String, override val paymentHash: ByteVector32) : Details()
 
+        data class ChannelClosing(val closingAddress: String, val fundingKeyPath: String?, override val paymentHash: ByteVector32) : Details()
+
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
             is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
             is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
             is SwapOut -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapOut)
+            is ChannelClosing -> filters.isEmpty() || filters.contains(PaymentTypeFilter.ChannelClosing)
         }
     }
 
     sealed class Status {
         object Pending : Status()
-        data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
-        data class Failed(val reason: FinalFailure, val completedAt: Long = currentTimestampMillis()) : Status()
+        sealed class Completed : Status() {
+            abstract val completedAt: Long
+            data class Succeeded(val preimage: ByteVector32, override val completedAt: Long = currentTimestampMillis()) : Completed()
+            data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
+            data class Mined(val txids: List<ByteVector32>, override val completedAt: Long = currentTimestampMillis()) : Completed()
+        }
     }
 
     /**
