@@ -115,7 +115,7 @@ class Peer(
             electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
                     currentTipFlow.value = msg.height to msg.header
-                    send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
+                    input.send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
                 }
         }
         launch {
@@ -166,7 +166,7 @@ class Peer(
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
                 logger.info { "n:$remoteNodeId connection state changed: $it" }
-                if (it == Connection.CLOSED) send(Disconnected)
+                if (it == Connection.CLOSED) input.send(Disconnected)
                 previousState = it
             }
         }
@@ -259,7 +259,7 @@ class Peer(
             val ping = Hex.decode("0012000a0004deadbeef")
             while (isActive) {
                 delay(30.seconds)
-                send(ping)
+                output.send(ping)
             }
         }
         suspend fun checkPaymentsTimeout() {
