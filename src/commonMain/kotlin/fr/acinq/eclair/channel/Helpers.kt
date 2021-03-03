@@ -933,10 +933,10 @@ object Helpers {
          */
         fun overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: RemoteCommit?, revokedCommitPublished: List<RevokedCommitPublished>, tx: Transaction): Set<UpdateAddHtlc> = when {
             localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> {
-                // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
-                val mostRecentRemoteCommit = nextRemoteCommit ?: remoteCommit
+                // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
+                val htlcsInRemoteCommit = remoteCommit.spec.htlcs + nextRemoteCommit?.spec?.htlcs.orEmpty()
                 // NB: from the point of view of the remote, their incoming htlcs are our outgoing htlcs
-                mostRecentRemoteCommit.spec.htlcs.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
+                htlcsInRemoteCommit.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
             }
             remoteCommit.txid == tx.txid -> when (nextRemoteCommit) {
                 null -> emptySet() // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
