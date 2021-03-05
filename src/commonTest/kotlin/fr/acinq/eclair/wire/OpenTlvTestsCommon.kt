@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.ChannelOrigin
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.sat
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,8 +38,14 @@ class OpenTlvTestsCommon : EclairTestSuite() {
     @Test
     fun `channel origin TLV`() {
         val testCases = listOf(
-            Pair(ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281")), Hex.decode("fe47000003 22 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281")),
-            Pair(ChannelOrigin.SwapInOrigin("3AuM8hSkXBetjdHxWthRFiH6hYhqF2Prjr"), Hex.decode("fe47000003 25 0002 223341754d3868536b584265746a644878577468524669483668596871463250726a72")),
+            Pair(
+                ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat),
+                Hex.decode("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2")
+            ),
+            Pair(
+                ChannelOrigin.SwapInOrigin("3AuM8hSkXBetjdHxWthRFiH6hYhqF2Prjr", 420.sat),
+                Hex.decode("fe47000005 2d 0002 223341754d3868536b584265746a644878577468524669483668596871463250726a72 00000000000001a4")
+            )
         )
 
         @Suppress("UNCHECKED_CAST")

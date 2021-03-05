@@ -2,6 +2,7 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.eclair.channel.ChannelOrigin
@@ -63,14 +64,20 @@ sealed class ChannelTlv : Tlv {
         }
 
         companion object : TlvValueReader<ChannelOriginTlv> {
-            const val tag: Long = 0x47000003
+            const val tag: Long = 0x47000005
 
             override fun read(input: Input): ChannelOriginTlv {
-                val origin = when(LightningCodecs.u16(input)) {
-                    1 -> ChannelOrigin.PayToOpenOrigin(ByteVector32(LightningCodecs.bytes(input, 32)))
+                val origin = when (LightningCodecs.u16(input)) {
+                    1 -> ChannelOrigin.PayToOpenOrigin(
+                        paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
+                        fee = Satoshi(LightningCodecs.u64(input))
+                    )
                     2 -> {
                         val len = LightningCodecs.bigSize(input)
-                        ChannelOrigin.SwapInOrigin(LightningCodecs.bytes(input, len).decodeToString())
+                        ChannelOrigin.SwapInOrigin(
+                            bitcoinAddress = LightningCodecs.bytes(input, len).decodeToString(),
+                            fee = Satoshi(LightningCodecs.u64(input))
+                        )
                     }
                     else -> TODO("Unsupported channel origin discriminator")
                 }
