@@ -39,7 +39,7 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
         actions1.hasWatch<WatchConfirmed>()
         actions1.has<ChannelAction.ChannelId.IdSwitch>()
         actions1.has<ChannelAction.Storage.StoreState>()
-        actions1.has<ChannelAction.Storage.StoreIncomingAmount>()
+        actions1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushMsat, ChannelOrigin.PayToOpenOrigin(ByteVector32.One, 42.sat)))
     }
 
     @Test
