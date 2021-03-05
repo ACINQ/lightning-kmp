@@ -66,7 +66,8 @@ object TestsHelper {
         channelVersion: ChannelVersion = ChannelVersion.STANDARD,
         currentHeight: Int = TestConstants.defaultBlockHeight,
         fundingAmount: Satoshi = TestConstants.fundingAmount,
-        pushMsat: MilliSatoshi = TestConstants.pushMsat
+        pushMsat: MilliSatoshi = TestConstants.pushMsat,
+        channelOrigin: ChannelOrigin? = null
     ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
         var alice: ChannelState = WaitForInit(
             StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
@@ -96,7 +97,8 @@ object TestsHelper {
                 aliceChannelParams,
                 bobInit,
                 channelFlags,
-                channelVersion
+                channelVersion,
+                channelOrigin
             )
         )
         alice = ra.first

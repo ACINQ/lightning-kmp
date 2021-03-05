@@ -30,6 +30,19 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv FundingCreated (with channel origin)`() {
+        val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat, ChannelOrigin.PayToOpenOrigin(ByteVector32.One))
+        val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
+        assertTrue { bob1 is WaitForFundingConfirmed }
+        actions1.findOutgoingMessage<FundingSigned>()
+        actions1.hasWatch<WatchSpent>()
+        actions1.hasWatch<WatchConfirmed>()
+        actions1.has<ChannelAction.ChannelId.IdSwitch>()
+        actions1.has<ChannelAction.Storage.StoreState>()
+        actions1.has<ChannelAction.Storage.PaymentReceived>()
+    }
+
+    @Test
     fun `recv FundingCreated (funder can't pay fees)`() {
         val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, 1_000_100.sat, 1_000_000.sat.toMilliSatoshi())
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
@@ -64,8 +77,8 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
     }
 
     companion object {
-        fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi): Triple<WaitForFundingSigned, WaitForFundingCreated, FundingCreated> {
-            val (a, b, open) = TestsHelper.init(channelVersion, 0, fundingAmount, pushAmount)
+        fun init(channelVersion: ChannelVersion, fundingAmount: Satoshi, pushAmount: MilliSatoshi, channelOrigin: ChannelOrigin? = null): Triple<WaitForFundingSigned, WaitForFundingCreated, FundingCreated> {
+            val (a, b, open) = TestsHelper.init(channelVersion, 0, fundingAmount, pushAmount, channelOrigin)
             val (b1, actions) = b.process(ChannelEvent.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptChannel>()
             val (a1, actions2) = a.process(ChannelEvent.MessageReceived(accept))
