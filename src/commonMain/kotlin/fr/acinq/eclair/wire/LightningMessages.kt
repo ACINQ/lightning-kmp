@@ -1084,6 +1084,7 @@ object UnsetFCMToken : LightningMessage {
 
     override fun write(out: Output) {}
 }
+
 @OptIn(ExperimentalUnsignedTypes::class)
 data class SwapInRequest(
     override val chainHash: ByteVector32
