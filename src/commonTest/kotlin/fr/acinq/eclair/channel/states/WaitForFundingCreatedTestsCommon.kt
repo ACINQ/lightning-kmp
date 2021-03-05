@@ -31,7 +31,7 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
 
     @Test
     fun `recv FundingCreated (with channel origin)`() {
-        val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat, ChannelOrigin.PayToOpenOrigin(ByteVector32.One))
+        val (_, bob, fundingCreated) = init(ChannelVersion.STANDARD, TestConstants.fundingAmount, TestConstants.pushMsat, ChannelOrigin.PayToOpenOrigin(ByteVector32.One, 42.sat))
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         assertTrue { bob1 is WaitForFundingConfirmed }
         actions1.findOutgoingMessage<FundingSigned>()
