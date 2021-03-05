@@ -92,8 +92,8 @@ sealed class ChannelAction {
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
-        data class PaymentReceived(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
-        data class PaymentSent(val amount: MilliSatoshi) : Storage()
+        data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
+        data class StoreOutgoingAmount(val amount: MilliSatoshi) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -157,13 +157,13 @@ sealed class ChannelState {
             val (newState, actions) = processInternal(event)
             val actions1 = when {
                 this is WaitForFundingCreated && newState is WaitForFundingConfirmed -> {
-                    actions + ChannelAction.Storage.PaymentReceived(pushAmount, channelOrigin)
+                    actions + ChannelAction.Storage.StoreIncomingAmount(pushAmount, channelOrigin)
                 }
                 // we only want to fire the PaymentSent event when we transition to Closing for the first time
                 this is WaitForInit && newState is Closing -> actions
                 this is Closing && newState is Closing -> actions
                 this is ChannelStateWithCommitments && newState is Closing -> {
-                    actions + ChannelAction.Storage.PaymentSent(this.commitments.localCommit.spec.toLocal)
+                    actions + ChannelAction.Storage.StoreOutgoingAmount(this.commitments.localCommit.spec.toLocal)
                 }
                 else -> actions
             }

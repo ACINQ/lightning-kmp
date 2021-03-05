@@ -39,7 +39,7 @@ class WaitForFundingCreatedTestsCommon : EclairTestSuite() {
         actions1.hasWatch<WatchConfirmed>()
         actions1.has<ChannelAction.ChannelId.IdSwitch>()
         actions1.has<ChannelAction.Storage.StoreState>()
-        actions1.has<ChannelAction.Storage.PaymentReceived>()
+        actions1.has<ChannelAction.Storage.StoreIncomingAmount>()
     }
 
     @Test

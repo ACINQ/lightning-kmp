@@ -1547,7 +1547,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(alice1 is Closing)
                 assertEquals(7, actions1.size)
-                assertTrue(actions1.contains(ChannelAction.Storage.PaymentSent(alice1.commitments.localCommit.spec.toLocal)))
+                assertTrue(actions1.contains(ChannelAction.Storage.StoreOutgoingAmount(alice1.commitments.localCommit.spec.toLocal)))
 
                 val error = actions1.hasOutgoingMessage<Error>()
                 assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
@@ -1574,7 +1574,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(bob1 is Closing)
                 assertEquals(7, actions1.size)
-                assertTrue(actions1.contains(ChannelAction.Storage.PaymentSent(bob1.commitments.localCommit.spec.toLocal)))
+                assertTrue(actions1.contains(ChannelAction.Storage.StoreOutgoingAmount(bob1.commitments.localCommit.spec.toLocal)))
 
                 val error = actions1.hasOutgoingMessage<Error>()
                 assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
