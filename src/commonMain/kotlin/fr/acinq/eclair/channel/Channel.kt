@@ -561,9 +561,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
                     // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
                     tlvStream = TlvStream(
-                        listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)) +
-                                if (event.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) listOf(ChannelTlv.ChannelVersionTlv(event.channelVersion)) else listOf<ChannelTlv>() +
-                                        if (event.channelOrigin != null) listOf(ChannelTlv.ChannelOriginTlv(event.channelOrigin)) else listOf()
+                        buildList {
+                            add(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))
+                            if (event.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) add(ChannelTlv.ChannelVersionTlv(event.channelVersion))
+                            if (event.channelOrigin != null) add(ChannelTlv.ChannelOriginTlv(event.channelOrigin))
+                        }
                     )
                 )
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnChainFeerates, event, open)
