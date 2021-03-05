@@ -41,7 +41,8 @@ sealed class ChannelEvent {
         val localParams: LocalParams,
         val remoteInit: Init,
         val channelFlags: Byte,
-        val channelVersion: ChannelVersion
+        val channelVersion: ChannelVersion,
+        val channelOrigin: ChannelOrigin? = null
     ) : ChannelEvent() {
         init {
             require(channelVersion.hasStaticRemotekey) { "channel version $channelVersion is invalid (static_remote_key is not set)" }
@@ -91,6 +92,8 @@ sealed class ChannelAction {
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
+        data class PaymentReceived(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
+        data class PaymentSent(val amount: MilliSatoshi) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -152,7 +155,20 @@ sealed class ChannelState {
     fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return try {
             val (newState, actions) = processInternal(event)
-            Pair(newState, newState.updateActions(actions))
+            val actions1 = when {
+                this is WaitForFundingCreated && newState is WaitForFundingConfirmed -> {
+                    actions + ChannelAction.Storage.PaymentReceived(pushAmount, channelOrigin)
+                }
+                // we only want to fire the PaymentSent event when we transition to Closing for the first time
+                this is WaitForInit && newState is Closing -> actions
+                this is Closing && newState is Closing -> actions
+                this is ChannelStateWithCommitments && newState is Closing -> {
+                    actions + ChannelAction.Storage.PaymentSent(this.commitments.localCommit.spec.toLocal)
+                }
+                else -> actions
+            }
+            val actions2 = newState.updateActions(actions1)
+            Pair(newState, actions2)
         } catch (t: Throwable) {
             handleLocalError(event, t)
         }
@@ -174,6 +190,7 @@ sealed class ChannelState {
                 it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
                 it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
                 else -> it
+
             }
         }
         else -> actions
@@ -544,11 +561,9 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
                     // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
                     tlvStream = TlvStream(
-                        if (event.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
-                            listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelVersionTlv(event.channelVersion))
-                        } else {
-                            listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))
-                        }
+                        listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)) +
+                                if (event.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) listOf(ChannelTlv.ChannelVersionTlv(event.channelVersion)) else listOf<ChannelTlv>() +
+                                        if (event.channelOrigin != null) listOf(ChannelTlv.ChannelOriginTlv(event.channelOrigin)) else listOf()
                     )
                 )
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnChainFeerates, event, open)
@@ -1091,6 +1106,7 @@ data class WaitForOpenChannel(
                                 return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, err.value.message))))
                             }
                         }
+                        val channelOrigin = event.message.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin
 
                         val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
                         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
@@ -1143,6 +1159,7 @@ data class WaitForOpenChannel(
                             event.message.firstPerCommitmentPoint,
                             event.message.channelFlags,
                             channelVersion,
+                            channelOrigin,
                             accept
                         )
                         Pair(nextState, listOf(ChannelAction.Message.Send(accept)))
@@ -1181,6 +1198,7 @@ data class WaitForFundingCreated(
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
+    val channelOrigin: ChannelOrigin?,
     val lastSent: AcceptChannel
 ) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
@@ -1254,7 +1272,16 @@ data class WaitForFundingCreated(
                                         logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
                                         val watchSpent = WatchSpent(channelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                                         val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                                        val nextState = WaitForFundingConfirmed(staticParams, currentTip, currentOnChainFeerates, commitments, null, currentBlockHeight.toLong(), null, Either.Right(fundingSigned))
+                                        val nextState = WaitForFundingConfirmed(
+                                            staticParams,
+                                            currentTip,
+                                            currentOnChainFeerates,
+                                            commitments,
+                                            null,
+                                            currentBlockHeight.toLong(),
+                                            null,
+                                            Either.Right(fundingSigned)
+                                        )
                                         val actions = listOf(
                                             ChannelAction.Blockchain.SendWatch(watchSpent),
                                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
