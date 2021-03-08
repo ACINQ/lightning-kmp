@@ -256,10 +256,10 @@ class Peer(
         send(LightningMessage.encode(ourInit))
 
         suspend fun doPing() {
-            val ping = Hex.decode("0012000a0004deadbeef")
+            val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
                 delay(30.seconds)
-                output.send(ping)
+                sendToPeer(ping)
             }
         }
         suspend fun checkPaymentsTimeout() {
