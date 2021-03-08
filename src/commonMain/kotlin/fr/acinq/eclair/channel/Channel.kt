@@ -9,6 +9,7 @@ import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
+import fr.acinq.eclair.channel.Helpers.Closing.btcAddressFromScriptPubKey
 import fr.acinq.eclair.channel.Helpers.Closing.extractPreimages
 import fr.acinq.eclair.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
@@ -93,7 +94,8 @@ sealed class ChannelAction {
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
-        data class StoreOutgoingAmount(val amount: MilliSatoshi) : Storage()
+        data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isLocalWallet: Boolean) : Storage()
+        data class CompleteChannelClosing(val txids: List<ByteVector32>) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -163,7 +165,65 @@ sealed class ChannelState {
                 this is WaitForInit && newState is Closing -> actions
                 this is Closing && newState is Closing -> actions
                 this is ChannelStateWithCommitments && newState is Closing -> {
-                    actions + ChannelAction.Storage.StoreOutgoingAmount(this.commitments.localCommit.spec.toLocal)
+                    val channelBalance = commitments.localCommit.spec.toLocal
+                    if (channelBalance > 0.msat) {
+                        val defaultScriptPubKey = commitments.localParams.defaultFinalScriptPubKey
+                        val localShutdown = when (this) {
+                            is Normal -> this.localShutdown
+                            is Negotiating -> this.localShutdown
+                            is ShuttingDown -> this.localShutdown
+                            else -> null
+                        }
+                        if (localShutdown != null && localShutdown.scriptPubKey != defaultScriptPubKey) {
+                            // Non-default output address
+                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
+                                scriptPubKey = localShutdown.scriptPubKey,
+                                chainHash = staticParams.nodeParams.chainHash
+                            ) ?: "unknown"
+                            actions + ChannelAction.Storage.StoreChannelClosing(
+                                amount = channelBalance,
+                                closingAddress = btcAddr,
+                                isLocalWallet = false
+                            )
+                        } else {
+                            // Default output address
+                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
+                                scriptPubKey = defaultScriptPubKey,
+                                chainHash = staticParams.nodeParams.chainHash
+                            ) ?: "unknown"
+                            actions + ChannelAction.Storage.StoreChannelClosing(
+                                amount = channelBalance,
+                                closingAddress = btcAddr,
+                                isLocalWallet = true
+                            )
+                        }
+                    } else /* channelBalance <= 0.msat */ {
+                        actions
+                    }
+                }
+                this is Closing && newState is Closed -> {
+                    // We want to give the user the list of btc transactions for their outputs
+                    val txids = mutableListOf<ByteVector32>()
+                    localCommitPublished?.let {
+                        val confirmedTxids = it.irrevocablySpent.values.toSet()
+                        val txs = listOfNotNull(it.commitTx, it.claimMainDelayedOutputTx) + it.htlcSuccessTxs + it.htlcTimeoutTxs
+                        txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
+                    }
+                    listOfNotNull(
+                        remoteCommitPublished,
+                        nextRemoteCommitPublished,
+                        futureRemoteCommitPublished
+                    ).forEach {
+                        val confirmedTxids = it.irrevocablySpent.values.toSet()
+                        val txs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
+                        txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
+                    }
+                    revokedCommitPublished.forEach {
+                        val confirmedTxids = it.irrevocablySpent.values.toSet()
+                        val txs = listOfNotNull(it.commitTx, it.claimMainOutputTx, it.mainPenaltyTx) + it.htlcPenaltyTxs + it.claimHtlcDelayedPenaltyTxs
+                        txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
+                    }
+                    actions + ChannelAction.Storage.CompleteChannelClosing(txids)
                 }
                 else -> actions
             }

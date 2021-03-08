@@ -357,6 +357,46 @@ object Helpers {
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
 
+        fun btcAddressFromScriptPubKey(scriptPubKey: ByteVector, chainHash: ByteVector32): String? {
+            return runTrying {
+                val script = Script.parse(scriptPubKey)
+                when {
+                    Script.isPay2pkh(script) -> {
+                        // OP_DUP OP_HASH160 OP_PUSHDATA(20) OP_EQUALVERIFY OP_CHECKSIG
+                        val opPushData = script[2] as OP_PUSHDATA
+                        val prefix = when (chainHash) {
+                            Block.LivenetGenesisBlock.hash -> Base58.Prefix.PubkeyAddress
+                            Block.TestnetGenesisBlock.hash -> Base58.Prefix.PubkeyAddressTestnet
+                            else -> Base58.Prefix.PubkeyAddressSegnet
+                        }
+                        Base58Check.encode(prefix, opPushData.data)
+                    }
+                    Script.isPay2sh(script) -> {
+                        // OP_HASH160 OP_PUSHDATA(20) OP_EQUAL
+                        val opPushData = script[1] as OP_PUSHDATA
+                        val prefix = when (chainHash) {
+                            Block.LivenetGenesisBlock.hash -> Base58.Prefix.ScriptAddress
+                            Block.TestnetGenesisBlock.hash -> Base58.Prefix.ScriptAddressTestnet
+                            else -> Base58.Prefix.ScriptAddressSegnet
+                        }
+                        Base58Check.encode(prefix, opPushData.data)
+                    }
+                    Script.isPay2wpkh(script) || Script.isPay2wsh(script) -> {
+                        // isPay2wpkh : OP_0 OP_PUSHDATA(20)
+                        // isPay2wsh  : OP_0 OP_PUSHDATA(32)
+                        val opPushData = script[1] as OP_PUSHDATA
+                        val hrp = when (chainHash) {
+                            Block.LivenetGenesisBlock.hash -> "bc"
+                            Block.TestnetGenesisBlock.hash -> "tb"
+                            else -> "bcrt"
+                        }
+                        Bech32.encodeWitnessAddress(hrp, 0, opPushData.data.toByteArray())
+                    }
+                    else -> null
+                } // </when>
+            }.getOrElse { null }
+        }
+
         fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: FeeratePerKw): Satoshi {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)

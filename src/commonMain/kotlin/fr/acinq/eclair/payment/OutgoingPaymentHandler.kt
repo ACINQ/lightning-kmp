@@ -59,10 +59,10 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
-                val failure = result.value.toPaymentFailure()
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
-                db.updateOutgoingPayment(request.paymentId, failure.reason)
-                Failure(request, failure)
+                val finalFailure = result.value
+                db.completeOutgoingPayment(request.paymentId, finalFailure)
+                Failure(request, finalFailure.toPaymentFailure())
             }
             is Either.Right -> {
                 // We generate a random secret for this payment to avoid leaking the invoice secret to the trampoline node.
@@ -158,7 +158,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                                 logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
                                 val result = Failure(payment.request, OutgoingPaymentFailure(aborted.reason, aborted.failures))
-                                db.updateOutgoingPayment(payment.request.paymentId, result.failure.reason)
+                                db.completeOutgoingPayment(payment.request.paymentId, result.failure.reason)
                                 Pair(aborted, result)
                             }
                             is Either.Right -> {
@@ -203,7 +203,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val hasMorePendingParts = payment.parts.any { it.status == OutgoingPayment.Part.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
                     logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted}" }
-                    db.updateOutgoingPayment(payment.id, FinalFailure.WalletRestarted)
+                    db.completeOutgoingPayment(payment.id, FinalFailure.WalletRestarted)
                     Failure(
                         SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
                         OutgoingPaymentFailure(FinalFailure.WalletRestarted, payment.parts.map { it.status }.filterIsInstance<OutgoingPayment.Part.Status.Failed>() + OutgoingPaymentFailure.convertFailure(failure))
@@ -238,9 +238,9 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
 
         return if (updated.isComplete()) {
             logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment successfully sent (fees=${updated.fees})" }
-            db.updateOutgoingPayment(payment.request.paymentId, preimage)
+            db.completeOutgoingPayment(payment.request.paymentId, preimage)
             val r = payment.request
-            Success(r, OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Succeeded(preimage)), preimage)
+            Success(r, OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
         } else {
             PreimageReceived(payment.request, preimage)
         }
@@ -260,7 +260,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val hasMorePendingParts = payment.parts.any { it.status == OutgoingPayment.Part.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
                     logger.info { "h:${payment.paymentHash} p:${payment.id} payment successfully sent (wallet restart)" }
-                    db.updateOutgoingPayment(payment.id, preimage)
+                    db.completeOutgoingPayment(payment.id, preimage)
                     val succeeded = db.getOutgoingPayment(payment.id)!! //  NB: we reload the payment to ensure all parts status are updated
                     Success(request, succeeded, preimage)
                 } else {
@@ -377,7 +377,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val updated = copy(pending = pending - childId, failures = failures + failure)
                 val result = if (updated.isComplete()) {
                     logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${updated.reason}" }
-                    db.updateOutgoingPayment(request.paymentId, updated.reason)
+                    db.completeOutgoingPayment(request.paymentId, updated.reason)
                     Failure(request, OutgoingPaymentFailure(updated.reason, updated.failures))
                 } else {
                     null
@@ -411,8 +411,8 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val updated = copy(pending = pending - childId)
                 val result = if (updated.isComplete()) {
                     logger.info { "h:${request.paymentHash} p:${request.paymentId} payment successfully sent (fees=${updated.fees})" }
-                    db.updateOutgoingPayment(request.paymentId, preimage)
-                    Success(request, OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Succeeded(preimage)), preimage)
+                    db.completeOutgoingPayment(request.paymentId, preimage)
+                    Success(request, OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
                 } else {
                     null
                 }
