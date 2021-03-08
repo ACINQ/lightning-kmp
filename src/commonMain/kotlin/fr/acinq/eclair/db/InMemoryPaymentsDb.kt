@@ -56,22 +56,25 @@ class InMemoryPaymentsDb : PaymentsDb {
         return outgoing[id]?.let { payment ->
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
             return when (payment.status) {
-                is OutgoingPayment.Status.Succeeded -> payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
+                // This doesn't work. Is there something like "instanceof" to check inheritance ???
+            //  is OutgoingPayment.Status.Completed.Succeeded -> {
+            //      payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
+            //  }
+                is OutgoingPayment.Status.Completed.Succeeded.OffChain -> {
+                    payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
+                }
+                is OutgoingPayment.Status.Completed.Succeeded.OnChain -> {
+                    payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
+                }
                 else -> payment.copy(parts = parts)
             }
         }
     }
 
-    override suspend fun updateOutgoingPayment(id: UUID, failure: FinalFailure, completedAt: Long) {
+    override suspend fun completeOutgoingPayment(id: UUID, completed: OutgoingPayment.Status.Completed) {
         require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
         val payment = outgoing[id]!!
-        outgoing[id] = payment.copy(status = OutgoingPayment.Status.Failed(failure, completedAt))
-    }
-
-    override suspend fun updateOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long) {
-        require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
-        val payment = outgoing[id]!!
-        outgoing[id] = payment.copy(status = OutgoingPayment.Status.Succeeded(preimage, completedAt))
+        outgoing[id] = payment.copy(status = completed)
     }
 
     override suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>) {
@@ -109,7 +112,7 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<OutgoingPayment> =
         outgoing.values
             .asSequence()
-            .filter { it.details.matchesFilters(filters) && (it.status is OutgoingPayment.Status.Failed || it.status is OutgoingPayment.Status.Succeeded) }
+            .filter { it.details.matchesFilters(filters) && (it.status is OutgoingPayment.Status.Completed) }
             .sortedByDescending { WalletPayment.completedAt(it) }
             .drop(skip)
             .take(count)

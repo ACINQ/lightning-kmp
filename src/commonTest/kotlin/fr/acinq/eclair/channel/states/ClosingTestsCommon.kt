@@ -179,7 +179,10 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
         assertTrue(aliceClosed is Closed)
-        assertEquals(listOf(ChannelAction.Storage.StoreState(aliceClosed)), actions)
+        assertEquals(
+            listOf(ChannelAction.Storage.StoreState(aliceClosed)),
+            actions.filterIsInstance<ChannelAction.Storage.StoreState>()
+        )
     }
 
     @Test
@@ -510,12 +513,13 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
         assertTrue(aliceClosed is Closed)
-        assertEquals(2, actions.size)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
+        assertNotNull(actions.filterIsInstance<ChannelAction.Storage.CompleteChannelClosing>().firstOrNull())
         // We notify the payment handler that the non-dust htlc has been failed.
         val htlcFail = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().first()
         assertEquals(htlcs[0], htlcFail.htlc)
         assertTrue(htlcFail.result is ChannelAction.HtlcResult.Fail.OnChainFail)
+        assertEquals(3, actions.size)
     }
 
     @Test
@@ -1069,7 +1073,11 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         val (alice5, aliceActions5) = alice4.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceTxs[0]), 60, 3, aliceTxs[0])))
         assertTrue(alice5 is Closed)
-        assertEquals(listOf(ChannelAction.Storage.StoreState(alice5)), aliceActions5)
+        assertEquals(
+            listOf(ChannelAction.Storage.StoreState(alice5)),
+            aliceActions5.filterIsInstance<ChannelAction.Storage.StoreState>()
+        )
+        assertEquals(1, aliceActions5.filterIsInstance<ChannelAction.Storage.CompleteChannelClosing>().size)
     }
 
     @Test
@@ -1713,8 +1721,15 @@ class ClosingTestsCommon : EclairTestSuite() {
             val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
             assertTrue(aliceClosed is Closed)
             assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
-            // The only other possible actions are for settling htlcs
-            assertEquals(actions.size - 1, actions.count { action -> action is ChannelAction.ProcessCmdRes })
+            // The only other possible actions are for settling htlcs & ChannelClosing
+            assertEquals(actions.size - 1, actions.count { action ->
+                when (action) {
+                    is ChannelAction.ProcessCmdRes -> true
+                    is ChannelAction.Storage.StoreChannelClosing -> true
+                    is ChannelAction.Storage.CompleteChannelClosing -> true
+                    else -> false
+                }
+            })
         }
 
         fun initForceClose(): Pair<Closing, Closing> {
@@ -1724,7 +1739,13 @@ class ClosingTestsCommon : EclairTestSuite() {
                 val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(alice1 is Closing)
                 assertEquals(7, actions1.size)
-                assertTrue(actions1.contains(ChannelAction.Storage.StoreOutgoingAmount(alice1.commitments.localCommit.spec.toLocal)))
+
+                val channelBalance = alice1.commitments.localCommit.spec.toLocal
+                if (channelBalance > 0.msat) {
+                    val ledgerPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
+                    assertNotNull(ledgerPayment)
+                    assertTrue(ledgerPayment.amount == channelBalance)
+                }
 
                 val error = actions1.hasOutgoingMessage<Error>()
                 assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
@@ -1751,7 +1772,13 @@ class ClosingTestsCommon : EclairTestSuite() {
                 val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(bob1 is Closing)
                 assertEquals(7, actions1.size)
-                assertTrue(actions1.contains(ChannelAction.Storage.StoreOutgoingAmount(bob1.commitments.localCommit.spec.toLocal)))
+
+                val channelBalance = bob1.commitments.localCommit.spec.toLocal
+                if (channelBalance > 0.msat) {
+                    val ledgerPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
+                    assertNotNull(ledgerPayment)
+                    assertTrue(ledgerPayment.amount == channelBalance)
+                }
 
                 val error = actions1.hasOutgoingMessage<Error>()
                 assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())

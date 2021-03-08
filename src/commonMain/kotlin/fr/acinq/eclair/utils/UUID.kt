@@ -90,6 +90,11 @@ class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comp
 
         fun randomUUID(): UUID {
             val data = ByteArray(16).also { Random.secure().nextBytes(it) }
+            return fromBytes(data)
+        }
+
+        fun fromBytes(data: ByteArray): UUID {
+            require(data.size == 16) { "data must be exactly 16 bytes" }
             data[6] = (data[6].toInt() and 0x0F).toByte()
             data[6] = (data[6].toInt() or 0x40).toByte()
             data[8] = (data[8].toInt() and 0x3F).toByte()

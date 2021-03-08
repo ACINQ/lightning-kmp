@@ -2,6 +2,7 @@ package fr.acinq.eclair.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
+import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKeyPath
 import fr.acinq.eclair.blockchain.GetTxWithMeta
 import fr.acinq.eclair.blockchain.WatchEvent
@@ -53,6 +54,7 @@ data class PaymentReceived(val incomingPayment: IncomingPayment, val received: I
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
+data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
 
 object SendSwapInRequest: PeerEvent()
 data class SwapInResponseEvent(val swapInResponse: SwapInResponse): PeerListenerEvent()
@@ -404,6 +406,29 @@ class Peer(
                 action is ChannelAction.Storage.GetHtlcInfos -> {
                     val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                     input.send(WrappedChannelEvent(actualChannelId, ChannelEvent.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
+                }
+                action is ChannelAction.Storage.StoreChannelClosing -> {
+                    val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
+                    val payment = OutgoingPayment(
+                        id = dbId,
+                        recipientAmount = action.amount,
+                        recipient = PublicKey.Generator,
+                        details = OutgoingPayment.Details.ChannelClosing(
+                            closingAddress = action.closingAddress,
+                            isLocalWallet = action.isLocalWallet,
+                            paymentHash = randomBytes32()
+                        ),
+                        parts = listOf<OutgoingPayment.Part>(),
+                        status = OutgoingPayment.Status.Pending
+                    )
+                    db.payments.addOutgoingPayment(payment)
+                    listenerEventChannel.send(ChannelClosing(channelId))
+                }
+                action is ChannelAction.Storage.CompleteChannelClosing -> {
+                    val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
+                    val completed = OutgoingPayment.Status.Completed.Succeeded.OnChain(action.txids, action.claimed)
+                    db.payments.completeOutgoingPayment(dbId, completed)
+                    listenerEventChannel.send(ChannelClosing(channelId))
                 }
                 action is ChannelAction.ChannelId.IdSwitch -> {
                     logger.info { "n:$remoteNodeId c:$actualChannelId switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
