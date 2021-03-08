@@ -548,9 +548,9 @@ class Peer(
                         val state = _channels[msg.temporaryChannelId] ?: error("channel ${msg.temporaryChannelId} not found")
                         val event1 = ChannelEvent.MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
+                        processActions(msg.temporaryChannelId, actions)
                         _channels = _channels + (msg.temporaryChannelId to state1)
                         logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state1::class}" }
-                        processActions(msg.temporaryChannelId, actions)
                         actions.filterIsInstance<ChannelAction.ChannelId.IdSwitch>().forEach {
                             logger.info { "n:$remoteNodeId id switch from ${it.oldChannelId} to ${it.newChannelId}" }
                             _channels = _channels - it.oldChannelId + (it.newChannelId to state1)
@@ -565,17 +565,17 @@ class Peer(
                         val state = _channels[msg.channelId] ?: error("channel ${msg.channelId} not found")
                         val event1 = ChannelEvent.MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
+                        processActions(msg.channelId, actions)
                         _channels = _channels + (msg.channelId to state1)
                         logger.info { "n:$remoteNodeId c:${msg.channelId} new state: ${state1::class}" }
-                        processActions(msg.channelId, actions)
                     }
                     msg is ChannelUpdate -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} for channel ${msg.shortChannelId}" }
                         _channels.values.filterIsInstance<Normal>().find { it.shortChannelId == msg.shortChannelId }?.let { state ->
                             val event1 = ChannelEvent.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
-                            _channels = _channels + (state.channelId to state1)
                             processActions(state.channelId, actions)
+                            _channels = _channels + (state.channelId to state1)
                         }
                     }
                     msg is PayToOpenRequest -> {
