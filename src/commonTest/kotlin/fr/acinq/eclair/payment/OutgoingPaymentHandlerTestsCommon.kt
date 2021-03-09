@@ -589,8 +589,11 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
     @Test
     fun `non-retriable remote failure`() = runSuspendTest {
-        val fatalFailures = listOf(UnknownNextPeer, IncorrectOrUnknownPaymentDetails(50_000.msat, TestConstants.defaultBlockHeight.toLong()))
-        fatalFailures.forEach { remoteFailure ->
+        val fatalFailures = listOf(
+            Pair(UnknownNextPeer, FinalFailure.RecipientUnreachable),
+            Pair(IncorrectOrUnknownPaymentDetails(50_000.msat, TestConstants.defaultBlockHeight.toLong()), FinalFailure.UnknownError)
+        )
+        fatalFailures.forEach { (remoteFailure, userFailure) ->
             val channels = makeChannels()
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
@@ -603,7 +606,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
 
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
             val fail = outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
-            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.UnknownError, listOf(Either.Right(remoteFailure))))
+            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(userFailure, listOf(Either.Right(remoteFailure))))
             assertFailureEquals(expected, fail)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
