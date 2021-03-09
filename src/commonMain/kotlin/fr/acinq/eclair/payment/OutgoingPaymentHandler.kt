@@ -136,6 +136,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             is PaymentAttempt.PaymentInProgress -> {
                 val finalError = when {
                     walletParams.trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
+                    failure == UnknownNextPeer -> FinalFailure.RecipientUnreachable
                     failure != TrampolineExpiryTooSoon && failure != TrampolineFeeInsufficient -> FinalFailure.UnknownError // non-retriable error
                     else -> null
                 }

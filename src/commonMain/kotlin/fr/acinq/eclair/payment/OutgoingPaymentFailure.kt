@@ -18,6 +18,7 @@ sealed class FinalFailure {
     object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
     object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
     object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
+    object RecipientUnreachable : FinalFailure() { override fun toString(): String = "the recipient was offline or did not have enough liquidity to receive the payment" }
     object RetryExhausted: FinalFailure() { override fun toString(): String = "payment attempts exhausted without success" }
     object WalletRestarted: FinalFailure() { override fun toString(): String = "wallet restarted while a payment was ongoing" }
     object UnknownError : FinalFailure() { override fun toString(): String = "an unknown error occurred" }
