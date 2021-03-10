@@ -505,6 +505,18 @@ class OfflineTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `recv CMD_FORCECLOSE`() {
+        val (alice, _) = TestsHelper.reachNormal()
+        val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
+        assertTrue(alice1 is Offline)
+        val commitTx = alice1.state.commitments.localCommit.publishableTxs.commitTx.tx
+        val (alice2, actions2) = alice1.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        assertTrue(alice2 is Closing)
+        actions2.hasTx(commitTx)
+        assertNull(actions2.findOutgoingMessageOpt<Error>()) // we're offline so we shouldn't try to send messages
+    }
+
+    @Test
     fun `restore closing channel`() {
         val bob = run {
             val (alice, bob) = TestsHelper.reachNormal()

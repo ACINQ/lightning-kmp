@@ -749,6 +749,15 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
+            event is ChannelEvent.ExecuteCommand && event.command is CMD_FORCECLOSE -> {
+                val (newState, actions) = state.process(event)
+                when (newState) {
+                    // NB: it doesn't make sense to try to send outgoing messages if we're offline.
+                    is Closing -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })
+                    is Closed -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })
+                    else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
+                }
+            }
             else -> unhandled(event)
         }
     }
@@ -1011,6 +1020,14 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 }
             }
             event is ChannelEvent.Disconnected -> Pair(Offline(state), listOf())
+            event is ChannelEvent.ExecuteCommand && event.command is CMD_FORCECLOSE -> {
+                val (newState, actions) = state.process(event)
+                when (newState) {
+                    is Closing -> Pair(newState, actions)
+                    is Closed -> Pair(newState, actions)
+                    else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
+                }
+            }
             else -> unhandled(event)
         }
     }
