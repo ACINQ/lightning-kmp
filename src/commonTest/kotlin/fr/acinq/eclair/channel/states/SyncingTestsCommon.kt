@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel.states
 
-import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
@@ -14,9 +13,11 @@ import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.wire.ChannelReestablish
+import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.wire.Init
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SyncingTestsCommon : EclairTestSuite() {
@@ -56,6 +57,17 @@ class SyncingTestsCommon : EclairTestSuite() {
         val watches = actions.findWatches<WatchConfirmed>()
         // we watch the revoked tx and our "claim main output tx"
         assertEquals(watches.map { it.txId }.toSet(), setOf(revokedTx.txid, bob1.revokedCommitPublished.first().claimMainOutputTx!!.txid))
+    }
+
+    @Test
+    fun `recv CMD_FORCECLOSE`() {
+        val (alice, _, _) = run {
+            val (alice, bob) = reachNormal()
+            disconnect(alice, bob)
+        }
+        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        assertTrue(alice1 is Closing)
+        actions1.hasOutgoingMessage<Error>()
     }
 
     companion object {
