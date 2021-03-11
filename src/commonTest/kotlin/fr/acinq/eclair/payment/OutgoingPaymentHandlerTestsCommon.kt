@@ -828,7 +828,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             privateKey = privKey,
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            features = Features(invoiceFeatures),
+            features = Features(invoiceFeatures.toMap()),
             extraHops = extraHops
         )
     }
