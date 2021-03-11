@@ -65,12 +65,15 @@ interface LightningMessage {
                 UpdateFulfillHtlc.type -> UpdateFulfillHtlc.read(stream)
                 UpdateFee.type -> UpdateFee.read(stream)
                 AnnouncementSignatures.type -> AnnouncementSignatures.read(stream)
+                ChannelAnnouncement.type -> ChannelAnnouncement.read(stream)
                 ChannelUpdate.type -> ChannelUpdate.read(stream)
                 Shutdown.type -> Shutdown.read(stream)
                 ClosingSigned.type -> ClosingSigned.read(stream)
                 PayToOpenRequest.type -> PayToOpenRequest.read(stream)
+                PayToOpenResponse.type -> PayToOpenResponse.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
+                SwapInRequest.type -> SwapInRequest.read(stream)
                 SwapInResponse.type -> SwapInResponse.read(stream)
                 SwapInPending.type -> SwapInPending.read(stream)
                 SwapInConfirmed.type -> SwapInConfirmed.read(stream)
@@ -800,14 +803,52 @@ data class ChannelAnnouncement(
     override val type: Long get() = ChannelAnnouncement.type
 
     override fun write(out: Output) {
-        TODO()
+        LightningCodecs.writeBytes(nodeSignature1, out)
+        LightningCodecs.writeBytes(nodeSignature2, out)
+        LightningCodecs.writeBytes(bitcoinSignature1, out)
+        LightningCodecs.writeBytes(bitcoinSignature2, out)
+        val featureBytes = features.toByteArray()
+        LightningCodecs.writeU16(featureBytes.size, out)
+        LightningCodecs.writeBytes(featureBytes, out)
+        LightningCodecs.writeBytes(chainHash, out)
+        LightningCodecs.writeU64(shortChannelId.toLong(), out)
+        LightningCodecs.writeBytes(nodeId1.value, out)
+        LightningCodecs.writeBytes(nodeId2.value, out)
+        LightningCodecs.writeBytes(bitcoinKey1.value, out)
+        LightningCodecs.writeBytes(bitcoinKey2.value, out)
+        LightningCodecs.writeBytes(unknownFields, out)
     }
 
     companion object : LightningMessageReader<ChannelAnnouncement> {
         const val type: Long = 256
 
         override fun read(input: Input): ChannelAnnouncement {
-            TODO()
+            val nodeSignature1 = LightningCodecs.bytes(input, 64).toByteVector64()
+            val nodeSignature2 = LightningCodecs.bytes(input, 64).toByteVector64()
+            val bitcoinSignature1 = LightningCodecs.bytes(input, 64).toByteVector64()
+            val bitcoinSignature2 = LightningCodecs.bytes(input, 64).toByteVector64()
+            val featureBytes = LightningCodecs.bytes(input, LightningCodecs.u16(input))
+            val chainHash = LightningCodecs.bytes(input, 32).toByteVector32()
+            val shortChannelId = ShortChannelId(LightningCodecs.u64(input))
+            val nodeId1 = PublicKey(LightningCodecs.bytes(input, 33))
+            val nodeId2 = PublicKey(LightningCodecs.bytes(input, 33))
+            val bitcoinKey1 = PublicKey(LightningCodecs.bytes(input, 33))
+            val bitcoinKey2 = PublicKey(LightningCodecs.bytes(input, 33))
+            val unknownBytes = if (input.availableBytes > 0) LightningCodecs.bytes(input, input.availableBytes).toByteVector() else ByteVector.empty
+            return ChannelAnnouncement(
+                nodeSignature1,
+                nodeSignature2,
+                bitcoinSignature1,
+                bitcoinSignature2,
+                Features(featureBytes),
+                chainHash,
+                shortChannelId,
+                nodeId1,
+                nodeId2,
+                bitcoinKey1,
+                bitcoinKey2,
+                unknownBytes
+            )
         }
     }
 }
@@ -981,7 +1022,15 @@ data class PayToOpenRequest(
     override val type: Long get() = PayToOpenRequest.type
 
     override fun write(out: Output) {
-        TODO("Not implemented (not needed)")
+        LightningCodecs.writeBytes(chainHash, out)
+        LightningCodecs.writeU64(fundingSatoshis.toLong(), out)
+        LightningCodecs.writeU64(amountMsat.toLong(), out)
+        LightningCodecs.writeU64(payToOpenMinAmountMsat.toLong(), out)
+        LightningCodecs.writeU64(payToOpenFeeSatoshis.toLong(), out)
+        LightningCodecs.writeBytes(paymentHash, out)
+        LightningCodecs.writeU32(expireAt.toInt(), out)
+        LightningCodecs.writeU16(finalPacket.payload.size(), out)
+        OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
     }
 
     companion object : LightningMessageReader<PayToOpenRequest> {
@@ -1050,7 +1099,15 @@ data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHa
         const val type: Long = 35003
 
         override fun read(input: Input): PayToOpenResponse {
-            TODO("Not yet implemented")
+            val chainHash = LightningCodecs.bytes(input, 32).toByteVector32()
+            val paymentHash = LightningCodecs.bytes(input, 32).toByteVector32()
+            return when (val preimage = LightningCodecs.bytes(input, 32).toByteVector32()) {
+                ByteVector32.Zeroes -> {
+                    val failure = if (input.availableBytes > 0) LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector() else null
+                    PayToOpenResponse(chainHash, paymentHash, Result.Failure(failure))
+                }
+                else -> PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage))
+            }
         }
     }
 }
@@ -1079,11 +1136,10 @@ data class FCMToken(@Serializable(with = ByteVectorKSerializer::class) val token
 
 @Serializable
 object UnsetFCMToken : LightningMessage {
-
     override val type: Long get() = 35019
-
     override fun write(out: Output) {}
 }
+
 @OptIn(ExperimentalUnsignedTypes::class)
 data class SwapInRequest(
     override val chainHash: ByteVector32
@@ -1098,7 +1154,7 @@ data class SwapInRequest(
         const val type: Long = 35007
 
         override fun read(input: Input): SwapInRequest {
-            TODO("Not implemented (not needed)")
+            return SwapInRequest(LightningCodecs.bytes(input, 32).toByteVector32())
         }
     }
 }
@@ -1111,7 +1167,10 @@ data class SwapInResponse(
     override val type: Long get() = SwapInResponse.type
 
     override fun write(out: Output) {
-        TODO("Not implemented (not needed)")
+        LightningCodecs.writeBytes(chainHash, out)
+        val addressBytes = bitcoinAddress.encodeToByteArray()
+        LightningCodecs.writeU16(addressBytes.size, out)
+        LightningCodecs.writeBytes(addressBytes, out)
     }
 
     companion object : LightningMessageReader<SwapInResponse> {
@@ -1134,7 +1193,10 @@ data class SwapInPending(
     override val type: Long get() = SwapInPending.type
 
     override fun write(out: Output) {
-        TODO("Not implemented (not needed)")
+        val addressBytes = bitcoinAddress.encodeToByteArray()
+        LightningCodecs.writeU16(addressBytes.size, out)
+        LightningCodecs.writeBytes(addressBytes, out)
+        LightningCodecs.writeU64(amount.toLong(), out)
     }
 
     companion object : LightningMessageReader<SwapInPending> {
@@ -1157,7 +1219,10 @@ data class SwapInConfirmed(
     override val type: Long get() = SwapInConfirmed.type
 
     override fun write(out: Output) {
-        TODO("Not implemented (not needed)")
+        val addressBytes = bitcoinAddress.encodeToByteArray()
+        LightningCodecs.writeU16(addressBytes.size, out)
+        LightningCodecs.writeBytes(addressBytes, out)
+        LightningCodecs.writeU64(amount.toLong(), out)
     }
 
     companion object : LightningMessageReader<SwapInConfirmed> {

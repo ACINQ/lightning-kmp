@@ -59,14 +59,25 @@ sealed class ChannelTlv : Tlv {
         override val tag: Long get() = ChannelOriginTlv.tag
 
         override fun write(out: Output) {
-            TODO("Not implemented (not needed)")
+            when (channelOrigin) {
+                is ChannelOrigin.PayToOpenOrigin -> {
+                    LightningCodecs.writeU16(1, out)
+                    LightningCodecs.writeBytes(channelOrigin.paymentHash, out)
+                }
+                is ChannelOrigin.SwapInOrigin -> {
+                    LightningCodecs.writeU16(2, out)
+                    val addressBytes = channelOrigin.bitcoinAddress.encodeToByteArray()
+                    LightningCodecs.writeBigSize(addressBytes.size.toLong(), out)
+                    LightningCodecs.writeBytes(addressBytes, out)
+                }
+            }
         }
 
         companion object : TlvValueReader<ChannelOriginTlv> {
             const val tag: Long = 0x47000003
 
             override fun read(input: Input): ChannelOriginTlv {
-                val origin = when(LightningCodecs.u16(input)) {
+                val origin = when (LightningCodecs.u16(input)) {
                     1 -> ChannelOrigin.PayToOpenOrigin(ByteVector32(LightningCodecs.bytes(input, 32)))
                     2 -> {
                         val len = LightningCodecs.bigSize(input)
