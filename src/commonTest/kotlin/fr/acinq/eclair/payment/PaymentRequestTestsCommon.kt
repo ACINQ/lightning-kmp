@@ -388,7 +388,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
     @Test
     fun `payment secret`() {
         val features =
-            Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional), ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)))
+            Features(Feature.VariableLengthOnion to FeatureSupport.Optional, Feature.PaymentSecret to FeatureSupport.Optional, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
         val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features)
         assertNotNull(pr.paymentSecret)
         assertEquals(ByteVector("028200"), pr.features)
@@ -412,7 +412,7 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
                 priv,
                 "MPP without secrets",
                 CltvExpiryDelta(18),
-                Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)))
+                Features(Feature.VariableLengthOnion to FeatureSupport.Optional, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
             )
         }
     }
@@ -490,11 +490,11 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
         assertEquals(
             expected = PaymentRequest.invoiceFeatures(
                 Features(
-                    activated = setOf(
-                        ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
-                        ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
-                        ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
-                        ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional),
+                    activated = mapOf(
+                        Feature.InitialRoutingSync to FeatureSupport.Optional,
+                        Feature.StaticRemoteKey to FeatureSupport.Mandatory,
+                        Feature.PaymentSecret to FeatureSupport.Mandatory,
+                        Feature.TrampolinePayment to FeatureSupport.Optional,
                     ),
                     unknown = setOf(
                         UnknownFeature(47)
@@ -502,9 +502,9 @@ class PaymentRequestTestsCommon : EclairTestSuite() {
                 )
             ),
             actual = Features(
-                activated = setOf(
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
-                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
+                activated = mapOf(
+                    Feature.PaymentSecret to FeatureSupport.Mandatory,
+                    Feature.TrampolinePayment to FeatureSupport.Optional
                 )
             )
         )

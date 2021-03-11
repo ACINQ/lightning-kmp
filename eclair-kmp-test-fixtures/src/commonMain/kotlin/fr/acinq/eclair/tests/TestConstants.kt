@@ -41,19 +41,17 @@ object TestConstants {
             keyManager = keyManager,
             alias = "alice",
             features = Features(
-                setOf(
-                    ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
-                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Mandatory),
-                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
-                )
+                Feature.InitialRoutingSync to FeatureSupport.Optional,
+                Feature.OptionDataLossProtect to FeatureSupport.Optional,
+                Feature.ChannelRangeQueries to FeatureSupport.Optional,
+                Feature.ChannelRangeQueriesExtended to FeatureSupport.Optional,
+                Feature.VariableLengthOnion to FeatureSupport.Optional,
+                Feature.PaymentSecret to FeatureSupport.Optional,
+                Feature.BasicMultiPartPayment to FeatureSupport.Optional,
+                Feature.Wumbo to FeatureSupport.Optional,
+                Feature.StaticRemoteKey to FeatureSupport.Mandatory,
+                Feature.AnchorOutputs to FeatureSupport.Mandatory,
+                Feature.TrampolinePayment to FeatureSupport.Optional
             ),
             dustLimit = 1_100.sat,
             maxRemoteDustLimit = 1_500.sat,
@@ -110,19 +108,17 @@ object TestConstants {
             keyManager = keyManager,
             alias = "bob",
             features = Features(
-                setOf(
-                    ActivatedFeature(Feature.InitialRoutingSync, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.OptionDataLossProtect, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueries, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.ChannelRangeQueriesExtended, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.Wumbo, FeatureSupport.Optional),
-                    ActivatedFeature(Feature.StaticRemoteKey, FeatureSupport.Mandatory),
-                    ActivatedFeature(Feature.AnchorOutputs, FeatureSupport.Mandatory),
-                    ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional)
-                )
+                Feature.InitialRoutingSync to FeatureSupport.Optional,
+                Feature.OptionDataLossProtect to FeatureSupport.Optional,
+                Feature.ChannelRangeQueries to FeatureSupport.Optional,
+                Feature.ChannelRangeQueriesExtended to FeatureSupport.Optional,
+                Feature.VariableLengthOnion to FeatureSupport.Optional,
+                Feature.PaymentSecret to FeatureSupport.Optional,
+                Feature.BasicMultiPartPayment to FeatureSupport.Optional,
+                Feature.Wumbo to FeatureSupport.Optional,
+                Feature.StaticRemoteKey to FeatureSupport.Mandatory,
+                Feature.AnchorOutputs to FeatureSupport.Mandatory,
+                Feature.TrampolinePayment to FeatureSupport.Optional
             ),
             dustLimit = 1_000.sat,
             maxRemoteDustLimit = 1_500.sat,

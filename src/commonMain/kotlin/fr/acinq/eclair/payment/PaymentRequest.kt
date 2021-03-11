@@ -154,7 +154,7 @@ data class PaymentRequest(
          * This filters out all features unrelated to BOLT 11
          */
         fun invoiceFeatures(features: Features): Features {
-            return Features(activated = features.activated.filter { f -> bolt11Features.contains(f.feature) }.toSet())
+            return Features(activated = features.activated.filter { (f, _) -> bolt11Features.contains(f) })
         }
 
         fun create(

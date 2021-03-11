@@ -102,52 +102,47 @@ sealed class Feature {
 }
 
 @Serializable
-data class ActivatedFeature(val feature: Feature, val support: FeatureSupport)
-
-@Serializable
 data class UnknownFeature(val bitIndex: Int)
 
 @Serializable
-data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<UnknownFeature> = emptySet()) {
+data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Set<UnknownFeature> = emptySet()) {
 
     fun hasFeature(feature: Feature, support: FeatureSupport? = null): Boolean =
-        if (support != null) activated.contains(ActivatedFeature(feature, support))
-        else hasFeature(feature, FeatureSupport.Optional) || hasFeature(feature, FeatureSupport.Mandatory)
+        if (support != null) activated[feature] == support
+        else activated.containsKey(feature)
 
     /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
     fun areSupported(remoteFeatures: Features): Boolean {
         // we allow unknown odd features (it's ok to be odd)
         val unknownFeaturesOk = remoteFeatures.unknown.all { it.bitIndex % 2 == 1 }
         // we verify that we activated every mandatory feature they require
-        val knownFeaturesOk = remoteFeatures.activated.all {
-            when (it.support) {
+        val knownFeaturesOk = remoteFeatures.activated.all { (feature, support) ->
+            when (support) {
                 FeatureSupport.Optional -> true
-                FeatureSupport.Mandatory -> hasFeature(it.feature)
+                FeatureSupport.Mandatory -> hasFeature(feature)
             }
         }
         return unknownFeaturesOk && knownFeaturesOk
     }
 
     fun toByteArray(): ByteArray {
-        val activatedFeatureBytes =
-            activated.mapTo(HashSet()) { it.feature.supportBit(it.support) }.indicesToByteArray()
-        val unknownFeatureBytes = unknown.mapTo(HashSet()) { it.bitIndex }.indicesToByteArray()
+        val activatedFeatureBytes = activated.map { (feature, support) -> feature.supportBit(support) }.toHashSet().indicesToByteArray()
+        val unknownFeatureBytes = unknown.map { it.bitIndex }.toHashSet().indicesToByteArray()
         val maxSize = activatedFeatureBytes.size.coerceAtLeast(unknownFeatureBytes.size)
         return activatedFeatureBytes.leftPaddedCopyOf(maxSize) or unknownFeatureBytes.leftPaddedCopyOf(maxSize)
     }
 
     private fun Set<Int>.indicesToByteArray(): ByteArray {
         if (isEmpty()) return ByteArray(0)
-        // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
         val buf = BitField.forAtMost(maxOrNull()!! + 1)
         forEach { buf.setRight(it) }
         return buf.bytes
     }
 
     companion object {
-        val empty = Features(emptySet())
+        val empty = Features(mapOf())
 
-        val knownFeatures: Set<Feature> = setOf(
+        private val knownFeatures: Set<Feature> = setOf(
             Feature.OptionDataLossProtect,
             Feature.InitialRoutingSync,
             Feature.ChannelRangeQueries,
@@ -169,40 +164,19 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
             val all = bits.asRightSequence().withIndex()
                 .filter { it.value }
                 .map { (idx, _) ->
-                    knownFeatures.find { it.optional == idx }?.let { ActivatedFeature(it, FeatureSupport.Optional) }
-                        ?: knownFeatures.find { it.mandatory == idx }
-                            ?.let { ActivatedFeature(it, FeatureSupport.Mandatory) }
+                    knownFeatures.find { it.optional == idx }?.let { Pair(it, FeatureSupport.Optional) }
+                        ?: knownFeatures.find { it.mandatory == idx }?.let { Pair(it, FeatureSupport.Mandatory) }
                         ?: UnknownFeature(idx)
                 }
                 .toList()
 
             return Features(
-                activated = all.filterIsInstance<ActivatedFeature>().toSet(),
+                activated = all.filterIsInstance<Pair<Feature, FeatureSupport>>().toMap(),
                 unknown = all.filterIsInstance<UnknownFeature>().toSet()
             )
         }
 
-//        /** expects to have a top level config block named "features" */
-//        fun fromConfiguration(config: Config): Features = Features(
-//        knownFeatures.flatMap {
-//            feature =>
-//            getFeature(config, feature.rfcName) match {
-//                case Some(support) => Some(ActivatedFeature(feature, support))
-//                case _ => None
-//            }
-//        })
-//
-//        /** tries to extract the given feature name from the config, if successful returns its feature support */
-//        private def getFeature(config: Config, name: String): Option[FeatureSupport] = {
-//            if (!config.hasPath(s"features.$name")) None
-//            else {
-//                config.getString(s"features.$name") match {
-//                    case support if support == Mandatory.toString => Some(Mandatory)
-//                    case support if support == Optional.toString => Some(Optional)
-//                    case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
-//                }
-//            }
-//        }
+        operator fun invoke(vararg pairs: Pair<Feature, FeatureSupport>): Features = Features(mapOf(*pairs))
 
         // Features may depend on other features, as specified in Bolt 9.
         private val featuresDependency: Map<Feature, List<Feature>> = mapOf(
@@ -228,7 +202,6 @@ data class Features(val activated: Set<ActivatedFeature>, val unknown: Set<Unkno
         }
 
         fun areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
-
 
         /** returns true if both have at least optional support */
         fun canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean =
