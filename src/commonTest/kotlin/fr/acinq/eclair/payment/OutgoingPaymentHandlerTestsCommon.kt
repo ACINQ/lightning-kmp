@@ -812,13 +812,13 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val paymentPreimage: ByteVector32 = randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 
-        val invoiceFeatures = mutableSetOf(
-            ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-            ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Mandatory),
-            ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
+        val invoiceFeatures = mutableMapOf(
+            Feature.VariableLengthOnion to FeatureSupport.Optional,
+            Feature.PaymentSecret to FeatureSupport.Mandatory,
+            Feature.BasicMultiPartPayment to FeatureSupport.Optional
         )
         if (supportsTrampoline) {
-            invoiceFeatures.add(ActivatedFeature(Feature.TrampolinePayment, FeatureSupport.Optional))
+            invoiceFeatures[Feature.TrampolinePayment] = FeatureSupport.Optional
         }
 
         return PaymentRequest.create(
@@ -828,7 +828,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             privateKey = privKey,
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            features = Features(invoiceFeatures),
+            features = Features(invoiceFeatures.toMap()),
             extraHops = extraHops
         )
     }

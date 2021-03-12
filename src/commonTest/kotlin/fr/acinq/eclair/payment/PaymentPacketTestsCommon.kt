@@ -276,8 +276,7 @@ class PaymentPacketTestsCommon : EclairTestSuite() {
         // a -> b -> c      d -> e
 
         val routingHints = listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(42), 10.msat, 100, CltvExpiryDelta(144)))
-        val invoiceFeatures =
-            Features(setOf(ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional), ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional), ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)))
+        val invoiceFeatures = Features(Feature.VariableLengthOnion to FeatureSupport.Optional, Feature.PaymentSecret to FeatureSupport.Optional, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
         val invoice = PaymentRequest(
             "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
                 PaymentRequest.TaggedField.PaymentHash(paymentHash),

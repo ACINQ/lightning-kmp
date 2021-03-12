@@ -320,11 +320,9 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
 
     companion object {
         private val defaultFeatures = Features(
-            setOf(
-                ActivatedFeature(Feature.VariableLengthOnion, FeatureSupport.Optional),
-                ActivatedFeature(Feature.PaymentSecret, FeatureSupport.Optional),
-                ActivatedFeature(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
-            )
+            Feature.VariableLengthOnion to FeatureSupport.Optional,
+            Feature.PaymentSecret to FeatureSupport.Optional,
+            Feature.BasicMultiPartPayment to FeatureSupport.Optional
         )
 
         private fun createFixture(): Triple<PaymentsDb, ByteVector32, PaymentRequest> {
