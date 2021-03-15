@@ -168,7 +168,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
  * @param parts partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
-data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status) : WalletPayment() {
+data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
