@@ -3,7 +3,9 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.ChannelOrigin
 import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.crypto.assertArrayEquals
 import fr.acinq.eclair.tests.utils.EclairTestSuite
+import fr.acinq.eclair.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,6 +51,8 @@ class OpenTlvTestsCommon : EclairTestSuite() {
 
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
+            val encoded = tlvStreamSerializer.write(decoded)
+            assertArrayEquals(it.second, encoded)
             val channelOrigin = decoded.records.mapNotNull { record ->
                 when (record) {
                     is ChannelTlv.ChannelOriginTlv -> record.channelOrigin
