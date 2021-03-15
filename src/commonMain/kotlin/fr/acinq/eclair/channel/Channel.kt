@@ -2608,7 +2608,11 @@ data class Closing(
                             futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
                             revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
                         )
-                        closing1.networkFeePaid(watch.tx)?.let { logger.info { "c:$channelId paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" } }
+                        closing1.networkFeePaid(watch.tx)?.let {
+                            logger.info { "c:$channelId paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" }
+                        } ?: run {
+                            logger.info { "c:$channelId paid UNKNOWN fee for txid=${watch.tx.txid}" }
+                        }
 
                         // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                         val htlcSettledActions = mutableListOf<ChannelAction>()
