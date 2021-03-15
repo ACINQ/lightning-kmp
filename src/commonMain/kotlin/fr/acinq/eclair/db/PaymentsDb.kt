@@ -3,6 +3,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.ChannelException
@@ -222,7 +223,7 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
             data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
             sealed class Succeeded : Completed() {
                 data class OffChain(val preimage: ByteVector32, override val completedAt: Long = currentTimestampMillis()) : Completed()
-                data class OnChain(val txids: List<ByteVector32>, override val completedAt: Long = currentTimestampMillis()) : Completed()
+                data class OnChain(val txids: List<ByteVector32>, val claimed: Satoshi, override val completedAt: Long = currentTimestampMillis()) : Completed()
             }
         }
     }

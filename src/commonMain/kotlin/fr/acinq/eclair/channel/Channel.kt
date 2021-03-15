@@ -95,7 +95,7 @@ sealed class ChannelAction {
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isLocalWallet: Boolean) : Storage()
-        data class CompleteChannelClosing(val txids: List<ByteVector32>) : Storage()
+        data class CompleteChannelClosing(val txids: List<ByteVector32>, val claimed: Satoshi) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -200,30 +200,6 @@ sealed class ChannelState {
                     } else /* channelBalance <= 0.msat */ {
                         actions
                     }
-                }
-                this is Closing && newState is Closed -> {
-                    // We want to give the user the list of btc transactions for their outputs
-                    val txids = mutableListOf<ByteVector32>()
-                    localCommitPublished?.let {
-                        val confirmedTxids = it.irrevocablySpent.values.toSet()
-                        val txs = listOfNotNull(it.commitTx, it.claimMainDelayedOutputTx) + it.htlcSuccessTxs + it.htlcTimeoutTxs
-                        txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
-                    }
-                    listOfNotNull(
-                        remoteCommitPublished,
-                        nextRemoteCommitPublished,
-                        futureRemoteCommitPublished
-                    ).forEach {
-                        val confirmedTxids = it.irrevocablySpent.values.toSet()
-                        val txs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
-                        txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
-                    }
-                    revokedCommitPublished.forEach {
-                        val confirmedTxids = it.irrevocablySpent.values.toSet()
-                        val txs = listOfNotNull(it.commitTx, it.claimMainOutputTx, it.mainPenaltyTx) + it.htlcPenaltyTxs + it.claimHtlcDelayedPenaltyTxs
-                        txids += txs.filter { confirmedTxids.contains(it.txid) }.map { it.txid }
-                    }
-                    actions + ChannelAction.Storage.CompleteChannelClosing(txids)
                 }
                 else -> actions
             }
@@ -2653,19 +2629,20 @@ data class Closing(
                             commitments.payments[add.id]?.let { paymentId -> logger.info { "c:$channelId paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
                         }
 
-                        val nextState = when (val closingType = closing1.isClosed(watch.tx)) {
-                            null -> closing1
+                        val (nextState, closedActions) = when (val closingType = closing1.isClosed(watch.tx)) {
+                            null -> Pair(closing1, listOf<ChannelAction>())
                             else -> {
                                 logger.info { "c:$channelId channel is now closed" }
                                 if (closingType !is MutualClose) {
                                     logger.debug { "c:$channelId last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
-                                Closed(closing1)
+                                Pair(Closed(closing1), listOf(closing1.completeChannelClosing(watch.tx)))
                             }
                         }
                         val actions = buildList {
                             add(ChannelAction.Storage.StoreState(nextState))
                             addAll(htlcSettledActions)
+                            addAll(closedActions)
                         }
                         Pair(nextState, actions)
                     }
@@ -2852,6 +2829,53 @@ data class Closing(
         }
 
         return txs[tx.txid]?.let { (_, desc) -> fee(tx)?.let { it to desc } }
+    }
+
+    private fun completeChannelClosing(additionalConfirmedTx: Transaction?): ChannelAction.Storage.CompleteChannelClosing {
+        // We want to give the user the list of btc transactions for their outputs
+        val txids = mutableListOf<ByteVector32>()
+        var claimed = 0.sat
+        additionalConfirmedTx?.let { confirmedTx ->
+            mutualClosePublished.firstOrNull { it == confirmedTx }?.let {
+                txids += it.txid
+                // NB: this code could be much simpler if we knew the localScriptPubKey
+                var expectedAmount = commitments.localCommit.spec.toLocal.truncateToSatoshi()
+                if (commitments.localParams.isFunder) {
+                    // we had to pay the closingFees
+                    val inputAmount = commitments.commitInput.txOut.amount
+                    val outputAmount = it.txOut.map { it.amount }.sum()
+                    val feesAmount = outputAmount - inputAmount
+                    expectedAmount -= feesAmount
+                }
+                claimed += expectedAmount
+            }
+        }
+        localCommitPublished?.let {
+            val confirmedTxids = it.irrevocablySpent.values.toSet()
+            val allTxs = listOfNotNull(it.commitTx, it.claimMainDelayedOutputTx) + it.htlcSuccessTxs + it.htlcTimeoutTxs
+            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
+            txids += confirmedTxs.map { it.txid }
+            claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+        }
+        listOfNotNull(
+            remoteCommitPublished,
+            nextRemoteCommitPublished,
+            futureRemoteCommitPublished
+        ).forEach {
+            val confirmedTxids = it.irrevocablySpent.values.toSet()
+            val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
+            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
+            txids += confirmedTxs.map { it.txid }
+            claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+        }
+        revokedCommitPublished.forEach {
+            val confirmedTxids = it.irrevocablySpent.values.toSet()
+            val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx, it.mainPenaltyTx) + it.htlcPenaltyTxs + it.claimHtlcDelayedPenaltyTxs
+            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
+            txids += confirmedTxs.map { it.txid }
+            claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+        }
+        return ChannelAction.Storage.CompleteChannelClosing(txids, claimed)
     }
 }
 
