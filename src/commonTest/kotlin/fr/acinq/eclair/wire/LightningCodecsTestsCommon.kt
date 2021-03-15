@@ -471,7 +471,7 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
     fun `encode - decode channel_announcement`() {
         val testCases = listOf(
             ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(Hex.decode("09004200")), randomBytes32(), ShortChannelId(42), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey()),
-            ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(emptySet()), randomBytes32(), ShortChannelId(42), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), ByteVector("01020304")),
+            ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(mapOf()), randomBytes32(), ShortChannelId(42), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), ByteVector("01020304")),
         )
 
         testCases.forEach {
