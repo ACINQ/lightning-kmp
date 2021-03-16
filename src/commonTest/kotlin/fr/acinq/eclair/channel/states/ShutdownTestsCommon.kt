@@ -196,7 +196,7 @@ class ShutdownTestsCommon : EclairTestSuite() {
         // we still have 1 HTLC in the commit tx
         val htlcInfos = actions3.find<ChannelAction.Storage.StoreHtlcInfos>()
         assertEquals(htlcInfos.htlcs.size, 1)
-        assertEquals(htlcInfos.htlcs.first().paymentHash, sha256(r2).toByteVector32())
+        assertEquals(htlcInfos.htlcs.first().paymentHash, r2.sha256())
     }
 
     @Test
