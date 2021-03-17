@@ -457,7 +457,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
         assertTrue(aliceClosed is Closed)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
-        assertNotNull(actions.filterIsInstance<ChannelAction.Storage.CompleteChannelClosing>().firstOrNull())
+        assertNotNull(actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull())
         // We notify the payment handler that the non-dust htlc has been failed.
         val htlcFail = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().first()
         assertEquals(htlcs[0], htlcFail.htlc)
@@ -913,7 +913,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             listOf(ChannelAction.Storage.StoreState(alice5)),
             aliceActions5.filterIsInstance<ChannelAction.Storage.StoreState>()
         )
-        assertEquals(1, aliceActions5.filterIsInstance<ChannelAction.Storage.CompleteChannelClosing>().size)
+        assertEquals(1, aliceActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().size)
     }
 
     @Test
@@ -1549,7 +1549,7 @@ class ClosingTestsCommon : EclairTestSuite() {
                 when (action) {
                     is ChannelAction.ProcessCmdRes -> true
                     is ChannelAction.Storage.StoreChannelClosing -> true
-                    is ChannelAction.Storage.CompleteChannelClosing -> true
+                    is ChannelAction.Storage.StoreChannelClosed -> true
                     else -> false
                 }
             })

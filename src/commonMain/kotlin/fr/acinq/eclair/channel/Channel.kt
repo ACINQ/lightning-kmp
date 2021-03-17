@@ -95,7 +95,7 @@ sealed class ChannelAction {
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isLocalWallet: Boolean) : Storage()
-        data class CompleteChannelClosing(val txids: List<ByteVector32>, val claimed: Satoshi) : Storage()
+        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -2636,7 +2636,7 @@ data class Closing(
                                 if (closingType !is MutualClose) {
                                     logger.debug { "c:$channelId last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
-                                Pair(Closed(closing1), listOf(closing1.completeChannelClosing(watch.tx)))
+                                Pair(Closed(closing1), listOf(closing1.storeChannelClosed(watch.tx)))
                             }
                         }
                         val actions = buildList {
@@ -2831,7 +2831,7 @@ data class Closing(
         return txs[tx.txid]?.let { (_, desc) -> fee(tx)?.let { it to desc } }
     }
 
-    private fun completeChannelClosing(additionalConfirmedTx: Transaction?): ChannelAction.Storage.CompleteChannelClosing {
+    private fun storeChannelClosed(additionalConfirmedTx: Transaction?): ChannelAction.Storage.StoreChannelClosed {
         // We want to give the user the list of btc transactions for their outputs
         val txids = mutableListOf<ByteVector32>()
         var claimed = 0.sat
@@ -2875,7 +2875,7 @@ data class Closing(
             txids += confirmedTxs.map { it.txid }
             claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
         }
-        return ChannelAction.Storage.CompleteChannelClosing(txids, claimed)
+        return ChannelAction.Storage.StoreChannelClosed(txids, claimed)
     }
 }
 
