@@ -1,7 +1,6 @@
 package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
@@ -11,6 +10,8 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
 import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
@@ -22,7 +23,6 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
@@ -381,8 +381,9 @@ class ShutdownTestsCommon : EclairTestSuite() {
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs + 2 anchors + 2 pending htlcs
         val (_, remoteCommitPublished) = TestsHelper.remoteClose(bobCommitTx, alice)
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+        assertEquals(2, remoteCommitPublished.claimHtlcTxs.size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs().size)
     }
 
     @Test
@@ -410,8 +411,9 @@ class ShutdownTestsCommon : EclairTestSuite() {
         aliceActions1.has<ChannelAction.Storage.StoreState>()
         val rcp = alice1.nextRemoteCommitPublished!!
         assertNotNull(rcp.claimMainOutputTx)
-        assertTrue(rcp.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(2, rcp.claimHtlcTimeoutTxs.size)
+        assertEquals(2, rcp.claimHtlcTxs.size)
+        assertTrue(rcp.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(2, rcp.claimHtlcTimeoutTxs().size)
     }
 
     @Test

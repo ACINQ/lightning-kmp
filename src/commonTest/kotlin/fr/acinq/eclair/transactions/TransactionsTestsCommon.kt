@@ -42,6 +42,7 @@ import fr.acinq.eclair.transactions.Transactions.makeClaimHtlcTimeoutTx
 import fr.acinq.eclair.transactions.Transactions.makeClaimLocalDelayedOutputTx
 import fr.acinq.eclair.transactions.Transactions.makeClaimP2WPKHOutputTx
 import fr.acinq.eclair.transactions.Transactions.makeClaimRemoteDelayedOutputTx
+import fr.acinq.eclair.transactions.Transactions.makeClosingTx
 import fr.acinq.eclair.transactions.Transactions.makeCommitTx
 import fr.acinq.eclair.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.eclair.transactions.Transactions.makeHtlcPenaltyTx
@@ -53,9 +54,7 @@ import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlinx.serialization.InternalSerializationApi
 import kotlin.random.Random
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 @InternalSerializationApi
 class TransactionsTestsCommon : EclairTestSuite() {
@@ -68,31 +67,30 @@ class TransactionsTestsCommon : EclairTestSuite() {
     private val remotePaymentPriv = PrivateKey(randomBytes32())
     private val localHtlcPriv = PrivateKey(randomBytes32())
     private val remoteHtlcPriv = PrivateKey(randomBytes32())
-    private val finalPubKeyScript = write(pay2wpkh(PrivateKey(randomBytes32()).publicKey()))
     private val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
     private val toLocalDelay = CltvExpiryDelta(144)
     private val localDustLimit = 546.sat
     private val feerate = FeeratePerKw(22_000.sat)
 
     @Test
-    fun `encode and decode sequence and locktime (one example)`() {
-        val txnumber = 0x11F71FB268DL
+    fun `encode and decode sequence and lockTime (one example)`() {
+        val txNumber = 0x11F71FB268DL
 
-        val (sequence, locktime) = encodeTxNumber(txnumber)
+        val (sequence, lockTime) = encodeTxNumber(txNumber)
         assertEquals(0x80011F71L, sequence)
-        assertEquals(0x20FB268DL, locktime)
+        assertEquals(0x20FB268DL, lockTime)
 
-        val txnumber1 = decodeTxNumber(sequence, locktime)
-        assertEquals(txnumber, txnumber1)
+        val txNumber1 = decodeTxNumber(sequence, lockTime)
+        assertEquals(txNumber, txNumber1)
     }
 
     @Test
-    fun `reconstruct txnumber from sequence and locktime`() {
+    fun `reconstruct txNumber from sequence and lockTime`() {
         repeat(1_000) {
-            val txnumber = Random.nextLong() and 0xffffffffffffL
-            val (sequence, locktime) = encodeTxNumber(txnumber)
-            val txnumber1 = decodeTxNumber(sequence, locktime)
-            assertEquals(txnumber, txnumber1)
+            val txNumber = Random.nextLong() and 0xffffffffffffL
+            val (sequence, lockTime) = encodeTxNumber(txNumber)
+            val txNumber1 = decodeTxNumber(sequence, lockTime)
+            assertEquals(txNumber, txNumber1)
         }
     }
 
@@ -291,10 +289,10 @@ class TransactionsTestsCommon : EclairTestSuite() {
 
         val commitTxNumber = 0x404142434445L
         val commitTx = run {
-            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
-            val localSig = sign(txinfo, localPaymentPriv)
-            val remoteSig = sign(txinfo, remotePaymentPriv)
-            addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
+            val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+            val localSig = sign(txInfo, localPaymentPriv)
+            val remoteSig = sign(txInfo, remotePaymentPriv)
+            addSigs(txInfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
         }
 
         run {
@@ -304,10 +302,14 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val check = ((commitTx.tx.txIn.first().sequence and 0xffffffL) shl 24) or (commitTx.tx.lockTime and 0xffffffL)
             assertEquals(commitTxNumber, check xor num)
         }
-        val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), spec.feerate, outputs)
-
-        assertEquals(2, htlcTimeoutTxs.size) // htlc1 and htlc3
+        val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), spec.feerate, outputs)
+        assertEquals(4, htlcTxs.size)
+        val htlcSuccessTxs = htlcTxs.filterIsInstance<Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx>()
         assertEquals(2, htlcSuccessTxs.size) // htlc2 and htlc4
+        assertEquals(setOf(1L, 3L), htlcSuccessTxs.map { it.htlcId }.toSet())
+        val htlcTimeoutTxs = htlcTxs.filterIsInstance<Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx>()
+        assertEquals(2, htlcTimeoutTxs.size) // htlc1 and htlc3
+        assertEquals(setOf(0L, 2L), htlcTimeoutTxs.map { it.htlcId }.toSet())
 
         run {
             // either party spends local->remote htlc output with htlc timeout tx
@@ -461,7 +463,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
         )
 
         val commitTxNumber = 0x404142434446L
-        val (commitTx, outputs) = run {
+        val (commitTx, outputs, htlcTxs) = run {
             val outputs =
                 makeCommitTxOutputs(
                     localFundingPriv.publicKey(),
@@ -476,10 +478,12 @@ class TransactionsTestsCommon : EclairTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
-            val localSig = sign(txinfo, localPaymentPriv)
-            val remoteSig = sign(txinfo, remotePaymentPriv)
-            Pair(addSigs(txinfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig), outputs)
+            val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
+            val localSig = sign(txInfo, localPaymentPriv)
+            val remoteSig = sign(txInfo, remotePaymentPriv)
+            val commitTx = addSigs(txInfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
+            val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), feerate, outputs)
+            Triple(commitTx, outputs, htlcTxs)
         }
 
         // htlc1 comes before htlc2 because of the smaller amount (BIP69)
@@ -491,6 +495,12 @@ class TransactionsTestsCommon : EclairTestSuite() {
             assertEquals(20_000_000.sat, htlcOut.amount)
         }
 
+        assertEquals(5, htlcTxs.size)
+        htlcTxs.forEach { tx -> assertTrue(tx is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx) }
+        val htlcIds = htlcTxs.sortedBy { it.input.outPoint.index }.map { it.htlcId }
+        println(htlcIds)
+        assertEquals(listOf(1L, 3L, 4L, 5L, 2L), htlcIds)
+
         assertTrue(htlcOut4.publicKeyScript.toHex() < htlcOut5.publicKeyScript.toHex())
         assertEquals(htlcOut1.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc1)) }?.output?.publicKeyScript)
         assertEquals(htlcOut5.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc2)) }?.output?.publicKeyScript)
@@ -498,4 +508,58 @@ class TransactionsTestsCommon : EclairTestSuite() {
         assertEquals(htlcOut4.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc4)) }?.output?.publicKeyScript)
         assertEquals(htlcOut2.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc5)) }?.output?.publicKeyScript)
     }
+
+    @Test
+    fun `find our output in closing tx`() {
+        val localPubKeyScript = write(pay2wpkh(PrivateKey(randomBytes32()).publicKey()))
+        val remotePubKeyScript = write(pay2wpkh(PrivateKey(randomBytes32()).publicKey()))
+
+        run {
+            // Different amounts, both outputs untrimmed, local is funder:
+            val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 250_000_000.msat)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = true, localDustLimit, 1000.sat, spec)
+            assertEquals(2, closingTx.tx.txOut.size)
+            assertNotNull(closingTx.toLocalOutput)
+            assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
+            assertEquals(149_000.sat, closingTx.toLocalOutput!!.amount) // funder pays the fee
+            val toRemoteIndex = (closingTx.toLocalOutput!!.index + 1) % 2
+            assertEquals(250_000.sat, closingTx.tx.txOut[toRemoteIndex.toInt()].amount)
+        }
+        run {
+            // Same amounts, both outputs untrimmed, local is fundee:
+            val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 150_000_000.msat)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = false, localDustLimit, 1000.sat, spec)
+            assertEquals(2, closingTx.tx.txOut.size)
+            assertNotNull(closingTx.toLocalOutput)
+            assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
+            assertEquals(150_000.sat, closingTx.toLocalOutput!!.amount)
+            val toRemoteIndex = (closingTx.toLocalOutput!!.index + 1) % 2
+            assertEquals(149_000.sat, closingTx.tx.txOut[toRemoteIndex.toInt()].amount)
+        }
+        run {
+            // Their output is trimmed:
+            val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 1_000.msat)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = false, localDustLimit, 1000.sat, spec)
+            assertEquals(1, closingTx.tx.txOut.size)
+            assertNotNull(closingTx.toLocalOutput)
+            assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
+            assertEquals(150_000.sat, closingTx.toLocalOutput!!.amount)
+            assertEquals(0, closingTx.toLocalOutput!!.index)
+        }
+        run {
+            // Our output is trimmed:
+            val spec = CommitmentSpec(setOf(), feerate, 50_000.msat, 150_000_000.msat)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = true, localDustLimit, 1000.sat, spec)
+            assertEquals(1, closingTx.tx.txOut.size)
+            assertNull(closingTx.toLocalOutput)
+        }
+        run {
+            // Both outputs are trimmed:
+            val spec = CommitmentSpec(setOf(), feerate, 50_000.msat, 10_000.msat)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = true, localDustLimit, 1000.sat, spec)
+            assertTrue(closingTx.tx.txOut.isEmpty())
+            assertNull(closingTx.toLocalOutput)
+        }
+    }
+
 }

@@ -17,7 +17,6 @@ import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.wire.Init
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SyncingTestsCommon : EclairTestSuite() {
@@ -56,7 +55,7 @@ class SyncingTestsCommon : EclairTestSuite() {
         claimTxs.forEach { Transaction.correctlySpends(it, revokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
         val watches = actions.findWatches<WatchConfirmed>()
         // we watch the revoked tx and our "claim main output tx"
-        assertEquals(watches.map { it.txId }.toSet(), setOf(revokedTx.txid, bob1.revokedCommitPublished.first().claimMainOutputTx!!.txid))
+        assertEquals(watches.map { it.txId }.toSet(), setOf(revokedTx.txid, bob1.revokedCommitPublished.first().claimMainOutputTx!!.tx.txid))
     }
 
     @Test

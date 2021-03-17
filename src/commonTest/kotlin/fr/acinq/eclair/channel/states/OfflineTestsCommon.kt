@@ -8,6 +8,8 @@ import fr.acinq.eclair.blockchain.WatchConfirmed
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
+import fr.acinq.eclair.channel.TestsHelper.htlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.processEx
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
@@ -281,10 +283,9 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertNotNull(alice4.futureRemoteCommitPublished)
         assertEquals(bobCommitTx, alice4.futureRemoteCommitPublished!!.commitTx)
         assertNotNull(alice4.futureRemoteCommitPublished!!.claimMainOutputTx)
-        assertTrue(alice4.futureRemoteCommitPublished!!.claimHtlcTimeoutTxs.isEmpty())
-        assertTrue(alice4.futureRemoteCommitPublished!!.claimHtlcSuccessTxs.isEmpty())
-        actionsAlice4.hasTx(alice4.futureRemoteCommitPublished!!.claimMainOutputTx!!)
-        Transaction.correctlySpends(alice4.futureRemoteCommitPublished!!.claimMainOutputTx!!, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertTrue(alice4.futureRemoteCommitPublished!!.claimHtlcTxs.isEmpty())
+        actionsAlice4.hasTx(alice4.futureRemoteCommitPublished!!.claimMainOutputTx!!.tx)
+        Transaction.correctlySpends(alice4.futureRemoteCommitPublished!!.claimMainOutputTx!!.tx, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     @Test
@@ -311,7 +312,7 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertTrue(alice3 is Closing)
         assertNotNull(alice3.localCommitPublished)
         actionsAlice3.hasTx(alice3.localCommitPublished!!.commitTx)
-        actionsAlice3.hasTx(alice3.localCommitPublished!!.claimMainDelayedOutputTx!!)
+        actionsAlice3.hasTx(alice3.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
         val error = actionsAlice3.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), InvalidRevokedCommitProof(alice0.channelId, 0, 42, channelReestablishB.yourLastCommitmentSecret).message)
     }
@@ -463,7 +464,7 @@ class OfflineTestsCommon : EclairTestSuite() {
         actions.has<ChannelAction.Storage.StoreState>()
         val lcp = alice4.localCommitPublished!!
         actions.hasTx(lcp.commitTx)
-        assertEquals(1, lcp.htlcTimeoutTxs.size)
+        assertEquals(1, lcp.htlcTimeoutTxs().size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
         assertEquals(4, actions.findTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
         assertEquals(3, actions.findWatches<WatchConfirmed>().size) // commit tx + main output + claim-htlc-delayed
@@ -491,16 +492,16 @@ class OfflineTestsCommon : EclairTestSuite() {
 
         val lcp = bob4.localCommitPublished!!
         assertNotNull(lcp.claimMainDelayedOutputTx)
-        assertEquals(1, lcp.htlcSuccessTxs.size)
-        Transaction.correctlySpends(lcp.htlcSuccessTxs.first(), lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(1, lcp.htlcSuccessTxs().size)
+        Transaction.correctlySpends(lcp.htlcSuccessTxs().first().tx, lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
-        Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first(), lcp.htlcSuccessTxs.first(), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first().tx, lcp.htlcSuccessTxs().first().tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.htlcSuccessTxs.first(), lcp.claimHtlcDelayedTxs.first())
+        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.htlcSuccessTxs().first().tx, lcp.claimHtlcDelayedTxs.first().tx)
         assertEquals(txs, actions4.findTxs().toSet())
-        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.claimHtlcDelayedTxs.first()).map { it.txid }.toSet()
+        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.claimHtlcDelayedTxs.first().tx).map { it.txid }.toSet()
         assertEquals(watchConfirmed, actions4.findWatches<WatchConfirmed>().map { it.txId }.toSet())
-        val watchSpent = lcp.htlcSuccessTxs.first().txIn.map { it.outPoint }.toSet()
+        val watchSpent = setOf(lcp.htlcSuccessTxs().first().input.outPoint)
         assertEquals(watchSpent, actions4.findWatches<WatchSpent>().map { OutPoint(lcp.commitTx, it.outputIndex.toLong()) }.toSet())
     }
 
@@ -537,11 +538,11 @@ class OfflineTestsCommon : EclairTestSuite() {
         assertNotNull(remoteCommitPublished)
         val claimMainOutputTx = remoteCommitPublished.claimMainOutputTx
         assertNotNull(claimMainOutputTx)
-        actions.hasTx(claimMainOutputTx)
+        actions.hasTx(claimMainOutputTx.tx)
         val watches = actions.findWatches<WatchConfirmed>()
         assertEquals(2, watches.size)
         assertNotNull(watches.first { it.txId == remoteCommitPublished.commitTx.txid })
-        assertNotNull(watches.first { it.txId == claimMainOutputTx.txid })
+        assertNotNull(watches.first { it.txId == claimMainOutputTx.tx.txid })
         actions.has<ChannelAction.Blockchain.GetFundingTx>()
     }
 }

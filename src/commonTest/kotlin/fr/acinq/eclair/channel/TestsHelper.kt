@@ -12,6 +12,7 @@ import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.tests.TestConstants
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
@@ -203,32 +204,31 @@ object TestsHelper {
         assertEquals(commitTx, localCommitPublished.commitTx)
         actions1.hasTx(commitTx)
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        actions1.hasTx(localCommitPublished.claimMainDelayedOutputTx!!)
-        Transaction.correctlySpends(localCommitPublished.claimMainDelayedOutputTx!!, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        actions1.hasTx(localCommitPublished.claimMainDelayedOutputTx!!.tx)
+        Transaction.correctlySpends(localCommitPublished.claimMainDelayedOutputTx!!.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // all htlcs success/timeout should be published
-        (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).forEach { tx ->
-            Transaction.correctlySpends(tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            actions1.hasTx(tx)
+        localCommitPublished.htlcTxs.values.filterNotNull().forEach { htlcTx ->
+            Transaction.correctlySpends(htlcTx.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasTx(htlcTx.tx)
         }
         // and their outputs should be claimed
-        localCommitPublished.claimHtlcDelayedTxs.forEach { tx -> actions1.hasTx(tx) }
+        localCommitPublished.claimHtlcDelayedTxs.forEach { claimHtlcDelayed -> actions1.hasTx(claimHtlcDelayed.tx) }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val expectedWatchConfirmed = buildSet {
             add(BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx))
-            add(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!))
-            addAll(localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it) })
+            add(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx))
+            addAll(localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it.tx) })
         }
         assertEquals(expectedWatchConfirmed, actions1.findWatches<WatchConfirmed>().map { it.event }.toSet())
 
         // we watch outputs of the commitment tx that both parties may spend
-        val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs + localCommitPublished.htlcTimeoutTxs).map { it.txIn.find { txIn -> txIn.outPoint.txid == commitTx.txid }!!.outPoint.index }
         val watchSpent = actions1.findWatches<WatchSpent>()
         watchSpent.forEach { watch ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, commitTx.txid)
         }
-        assertEquals(htlcOutputIndexes.toSet(), watchSpent.map { it.outputIndex.toLong() }.toSet())
+        assertEquals(localCommitPublished.htlcTxs.keys, watchSpent.map { OutPoint(commitTx, it.outputIndex.toLong()) }.toSet())
 
         return s1 to localCommitPublished
     }
@@ -245,32 +245,30 @@ object TestsHelper {
         assertNull(s1.localCommitPublished)
 
         // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-        remoteCommitPublished.claimMainOutputTx?.let { tx ->
-            Transaction.correctlySpends(tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            actions1.hasTx(tx)
+        remoteCommitPublished.claimMainOutputTx?.let { claimMain ->
+            Transaction.correctlySpends(claimMain.tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasTx(claimMain.tx)
         }
         // all htlcs success/timeout should be claimed
-        val claimHtlcTxs = (remoteCommitPublished.claimHtlcSuccessTxs + remoteCommitPublished.claimHtlcTimeoutTxs)
-        claimHtlcTxs.forEach { tx ->
-            Transaction.correctlySpends(tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            actions1.hasTx(tx)
+        remoteCommitPublished.claimHtlcTxs.values.filterNotNull().forEach { claimHtlc ->
+            Transaction.correctlySpends(claimHtlc.tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasTx(claimHtlc.tx)
         }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
         assertEquals(BITCOIN_TX_CONFIRMED(rCommitTx), watchConfirmedList.first().event)
-        remoteCommitPublished.claimMainOutputTx?.let { tx ->
-            assertEquals(BITCOIN_TX_CONFIRMED(tx), watchConfirmedList.drop(1).first().event)
+        remoteCommitPublished.claimMainOutputTx?.let { claimMain ->
+            assertEquals(BITCOIN_TX_CONFIRMED(claimMain.tx), watchConfirmedList.drop(1).first().event)
         }
 
         // we watch outputs of the commitment tx that both parties may spend
-        val htlcOutputIndexes = claimHtlcTxs.map { it.txIn.find { txIn -> txIn.outPoint.txid == rCommitTx.txid }!!.outPoint.index }
         val watchSpent = actions1.findWatches<WatchSpent>()
         watchSpent.forEach { watch ->
             assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
             assertEquals(watch.txId, rCommitTx.txid)
         }
-        assertEquals(htlcOutputIndexes.toSet(), watchSpent.map { it.outputIndex.toLong() }.toSet())
+        assertEquals(remoteCommitPublished.claimHtlcTxs.keys, watchSpent.map { OutPoint(rCommitTx, it.outputIndex.toLong()) }.toSet())
 
         // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
         return s1 to remoteCommitPublished
@@ -385,6 +383,22 @@ object TestsHelper {
 
             return sender2 to receiver2
         }
+    }
+
+    fun LocalCommitPublished.htlcSuccessTxs(): List<Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx> {
+        return htlcTxs.values.filterIsInstance<Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx>()
+    }
+
+    fun LocalCommitPublished.htlcTimeoutTxs(): List<Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx> {
+        return htlcTxs.values.filterIsInstance<Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx>()
+    }
+
+    fun RemoteCommitPublished.claimHtlcSuccessTxs(): List<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx> {
+        return claimHtlcTxs.values.filterIsInstance<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx>()
+    }
+
+    fun RemoteCommitPublished.claimHtlcTimeoutTxs(): List<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx> {
+        return claimHtlcTxs.values.filterIsInstance<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx>()
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state

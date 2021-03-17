@@ -6,9 +6,13 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.failHtlc
 import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
+import fr.acinq.eclair.channel.TestsHelper.htlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.localClose
 import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.mutualClose
@@ -45,7 +49,17 @@ class ClosingTestsCommon : EclairTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC`() {
         val (alice, _, _) = initMutualClose()
-        val (_, actions) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_ADD_HTLC(1000000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())))
+        val (_, actions) = alice.processEx(
+            ChannelEvent.ExecuteCommand(
+                CMD_ADD_HTLC(
+                    1000000.msat,
+                    ByteVector32.Zeroes,
+                    CltvExpiryDelta(144).toCltvExpiry(alice.currentBlockHeight.toLong()),
+                    TestConstants.emptyOnionPacket,
+                    UUID.randomUUID()
+                )
+            )
+        )
         assertEquals(1, actions.size)
         assertTrue { (actions.first() as ChannelAction.ProcessCmdRes.AddFailed).error == ChannelUnavailable(alice.channelId) }
     }
@@ -84,12 +98,12 @@ class ClosingTestsCommon : EclairTestSuite() {
         // let's make alice publish this closing tx
         val (alice4, aliceActions4) = alice3.processEx(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "")))
         assertTrue { alice4 is Closing }
-        assertEquals(ChannelAction.Blockchain.PublishTx(mutualCloseTx), aliceActions4.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first())
+        assertEquals(ChannelAction.Blockchain.PublishTx(mutualCloseTx.tx), aliceActions4.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first())
         assertEquals(mutualCloseTx, (alice4 as Closing).mutualClosePublished.last())
 
         // actual test starts here
-        val (alice5, _) = alice4.processEx(ChannelEvent.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, mutualCloseTx)))
-        val (alice6, _) = alice5.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx), 0, 0, mutualCloseTx)))
+        val (alice5, _) = alice4.processEx(ChannelEvent.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, mutualCloseTx.tx)))
+        val (alice6, _) = alice5.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
 
         assertTrue { alice6 is Closed }
     }
@@ -100,7 +114,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         val mutualCloseTx = alice0.mutualClosePublished.last()
 
         // actual test starts here
-        val (alice1, _) = alice0.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx), 0, 0, mutualCloseTx)))
+        val (alice1, _) = alice0.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
         assertTrue { alice1 is Closed }
     }
 
@@ -134,15 +148,15 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         // actual test starts here
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        assertTrue(localCommitPublished.htlcSuccessTxs.isEmpty())
-        assertEquals(1, localCommitPublished.htlcTimeoutTxs.size)
+        assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
+        assertEquals(1, localCommitPublished.htlcTimeoutTxs().size)
         assertEquals(1, localCommitPublished.claimHtlcDelayedTxs.size)
 
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 0, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs.first()), 201, 0, localCommitPublished.htlcTimeoutTxs.first()),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first()), 202, 0, localCommitPublished.claimHtlcDelayedTxs.first())
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs().first().tx), 201, 0, localCommitPublished.htlcTimeoutTxs().first().tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first().tx), 202, 0, localCommitPublished.claimHtlcDelayedTxs.first().tx)
         )
 
         var alice = aliceClosing
@@ -160,7 +174,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertEquals(htlcs, addSettledFail.map { it.htlc }.toSet())
         assertTrue(addSettledFail.all { it.result is ChannelAction.HtlcResult.Fail.OnChainFail })
 
-        val irrevocablySpent = setOf(localCommitPublished.commitTx.txid, localCommitPublished.claimMainDelayedOutputTx!!.txid, localCommitPublished.htlcTimeoutTxs.first().txid)
+        val irrevocablySpent = setOf(localCommitPublished.commitTx, localCommitPublished.claimMainDelayedOutputTx!!.tx, localCommitPublished.htlcTimeoutTxs().first().tx)
         assertEquals(irrevocablySpent, alice.localCommitPublished!!.irrevocablySpent.values.toSet())
 
         val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
@@ -191,22 +205,22 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         // actual test starts here
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        assertTrue(localCommitPublished.htlcSuccessTxs.isEmpty())
-        assertEquals(4, localCommitPublished.htlcTimeoutTxs.size)
+        assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
+        assertEquals(4, localCommitPublished.htlcTimeoutTxs().size)
         assertEquals(4, localCommitPublished.claimHtlcDelayedTxs.size)
 
         // if commit tx and htlc-timeout txs end up in the same block, we may receive the htlc-timeout confirmation before the commit tx confirmation
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[2]), 42, 0, localCommitPublished.htlcTimeoutTxs[2]),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[2].tx), 42, 0, localCommitPublished.htlcTimeoutTxs()[2].tx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[1]), 202, 0, localCommitPublished.htlcTimeoutTxs[1]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[2]), 203, 2, localCommitPublished.claimHtlcDelayedTxs[2]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[0]), 202, 1, localCommitPublished.htlcTimeoutTxs[0]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[0]), 203, 0, localCommitPublished.claimHtlcDelayedTxs[0]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[1]), 203, 1, localCommitPublished.claimHtlcDelayedTxs[1]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[3]), 203, 0, localCommitPublished.htlcTimeoutTxs[3]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[3]), 203, 3, localCommitPublished.claimHtlcDelayedTxs[3])
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[1].tx), 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[2].tx), 203, 2, localCommitPublished.claimHtlcDelayedTxs[2].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[0].tx), 202, 1, localCommitPublished.htlcTimeoutTxs()[0].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[0].tx), 203, 0, localCommitPublished.claimHtlcDelayedTxs[0].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[1].tx), 203, 1, localCommitPublished.claimHtlcDelayedTxs[1].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[3].tx), 203, 0, localCommitPublished.htlcTimeoutTxs()[3].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[3].tx), 203, 3, localCommitPublished.claimHtlcDelayedTxs[3].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -227,8 +241,8 @@ class ClosingTestsCommon : EclairTestSuite() {
         }
 
         assertEquals(aliceCommitTx, localCommitPublished.commitTx)
-        assertTrue(localCommitPublished.htlcTimeoutTxs.isEmpty())
-        assertTrue(localCommitPublished.htlcSuccessTxs.isEmpty())
+        assertTrue(localCommitPublished.htlcTimeoutTxs().isEmpty())
+        assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
 
         val (alice1, actions1) = aliceClosing.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceCommitTx), 42, 1, aliceCommitTx)))
         assertTrue(alice1 is Closing)
@@ -258,29 +272,28 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
         // we don't have the preimage to claim the htlc-success yet
-        assertTrue(localCommitPublished.htlcSuccessTxs.isEmpty())
-        assertEquals(1, localCommitPublished.htlcTimeoutTxs.size)
+        assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
+        assertEquals(1, localCommitPublished.htlcTimeoutTxs().size)
         assertEquals(1, localCommitPublished.claimHtlcDelayedTxs.size)
 
         // Alice receives the preimage for the first HTLC from the payment handler; she can now claim the corresponding HTLC output.
         val (aliceFulfill, actionsFulfill) = aliceClosing.processEx(ChannelEvent.ExecuteCommand(fulfill))
         assertTrue(aliceFulfill is Closing)
-        assertEquals(1, aliceFulfill.localCommitPublished!!.htlcSuccessTxs.size)
-        assertEquals(1, aliceFulfill.localCommitPublished!!.htlcTimeoutTxs.size)
+        assertEquals(1, aliceFulfill.localCommitPublished!!.htlcSuccessTxs().size)
+        assertEquals(1, aliceFulfill.localCommitPublished!!.htlcTimeoutTxs().size)
         assertEquals(2, aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs.size)
-        val htlcSuccess = aliceFulfill.localCommitPublished!!.htlcSuccessTxs.first()
-        actionsFulfill.hasTx(htlcSuccess)
-        val htlcOutputIndex = htlcSuccess.txIn.find { txIn -> txIn.outPoint.txid == localCommitPublished.commitTx.txid }!!.outPoint.index
-        assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(localCommitPublished.commitTx.txid, htlcOutputIndex)))
-        Transaction.correctlySpends(htlcSuccess, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val htlcSuccess = aliceFulfill.localCommitPublished!!.htlcSuccessTxs().first()
+        actionsFulfill.hasTx(htlcSuccess.tx)
+        assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(localCommitPublished.commitTx.txid, htlcSuccess.input.outPoint.index)))
+        Transaction.correctlySpends(htlcSuccess.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[0]), 210, 0, localCommitPublished.htlcTimeoutTxs[0]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(htlcSuccess), 210, 1, htlcSuccess),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[0]), 215, 1, aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[0]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[1]), 215, 0, aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[1]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), 250, 0, localCommitPublished.claimMainDelayedOutputTx!!)
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[0].tx), 210, 0, localCommitPublished.htlcTimeoutTxs()[0].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(htlcSuccess.tx), 210, 1, htlcSuccess.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[0].tx), 215, 1, aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[0].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[1].tx), 215, 0, aliceFulfill.localCommitPublished!!.claimHtlcDelayedTxs[1].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 250, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
@@ -310,8 +323,8 @@ class ClosingTestsCommon : EclairTestSuite() {
         }
 
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        assertTrue(localCommitPublished.htlcSuccessTxs.isEmpty())
-        assertTrue(localCommitPublished.htlcTimeoutTxs.isEmpty())
+        assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
+        assertTrue(localCommitPublished.htlcTimeoutTxs().isEmpty())
         assertTrue(localCommitPublished.claimHtlcDelayedTxs.isEmpty())
 
         val (alice1, actions1) = aliceClosing.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx)))
@@ -345,20 +358,20 @@ class ClosingTestsCommon : EclairTestSuite() {
             Triple(alice8, localCommitPublished, preimage)
         }
 
-        assertEquals(2, localCommitPublished.htlcTimeoutTxs.size)
-        assertEquals(2, localCommitPublished.htlcSuccessTxs.size)
+        assertEquals(2, localCommitPublished.htlcTimeoutTxs().size)
+        assertEquals(2, localCommitPublished.htlcSuccessTxs().size)
         assertEquals(4, localCommitPublished.claimHtlcDelayedTxs.size)
 
         // Bob tries to claim 2 htlc outputs.
         val bobClaimSuccessTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(localCommitPublished.htlcTimeoutTxs[0].txIn[0].outPoint, ByteVector.empty, 0, Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, preimage, ByteArray(130) { 33 }.byteVector()))),
+            txIn = listOf(TxIn(localCommitPublished.htlcTimeoutTxs()[0].input.outPoint, ByteVector.empty, 0, Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, preimage, ByteArray(130) { 33 }.byteVector()))),
             txOut = emptyList(),
             lockTime = 0
         )
         val bobClaimTimeoutTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(localCommitPublished.htlcSuccessTxs[0].txIn[0].outPoint, ByteVector.empty, 0, Scripts.witnessClaimHtlcTimeoutFromCommitTx(Transactions.PlaceHolderSig, ByteVector.empty))),
+            txIn = listOf(TxIn(localCommitPublished.htlcSuccessTxs()[0].input.outPoint, ByteVector.empty, 0, Scripts.witnessClaimHtlcTimeoutFromCommitTx(Transactions.PlaceHolderSig, ByteVector.empty))),
             txOut = emptyList(),
             lockTime = 0
         )
@@ -378,17 +391,17 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing)))
         assertEquals(WatchConfirmed(alice0.channelId, bobClaimTimeoutTx, 3, BITCOIN_TX_CONFIRMED(bobClaimTimeoutTx)), actions2.findWatch<WatchConfirmed>())
 
-        val claimHtlcSuccessDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.txIn.first().outPoint.txid == localCommitPublished.htlcSuccessTxs[1].txid }!!
-        val claimHtlcTimeoutDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.txIn.first().outPoint.txid == localCommitPublished.htlcTimeoutTxs[1].txid }!!
+        val claimHtlcSuccessDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.input.outPoint.txid == localCommitPublished.htlcSuccessTxs()[1].tx.txid }!!
+        val claimHtlcTimeoutDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.input.outPoint.txid == localCommitPublished.htlcTimeoutTxs()[1].tx.txid }!!
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobClaimSuccessTx), 42, 0, bobClaimSuccessTx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcSuccessTxs[1]), 202, 0, localCommitPublished.htlcSuccessTxs[1]),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcSuccessTxs()[1].tx), 202, 0, localCommitPublished.htlcSuccessTxs()[1].tx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobClaimTimeoutTx), 202, 0, bobClaimTimeoutTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs[1]), 202, 0, localCommitPublished.htlcTimeoutTxs[1]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccessDelayed), 203, 0, claimHtlcSuccessDelayed),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcTimeoutDelayed), 203, 0, claimHtlcTimeoutDelayed)
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[1].tx), 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccessDelayed.tx), 203, 0, claimHtlcSuccessDelayed.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcTimeoutDelayed.tx), 203, 0, claimHtlcTimeoutDelayed.tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -401,8 +414,8 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertEquals(4, bobCommitTx.txOut.size) // main outputs and anchors
         val (aliceClosing, remoteCommitPublished) = remoteClose(bobCommitTx, alice)
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
-        assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs.isEmpty())
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
+        assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs().isEmpty())
         assertEquals(alice, aliceClosing.copy(remoteCommitPublished = null))
     }
 
@@ -424,13 +437,13 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         // actual test starts here
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 0, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 43, 0, remoteCommitPublished.claimMainOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs.first()), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs.first()),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 43, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs().first().tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs().first().tx),
         )
 
         var alice = aliceClosing
@@ -448,7 +461,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertEquals(htlcs[1], dustHtlcFail.htlc)
         assertTrue(dustHtlcFail.result is ChannelAction.HtlcResult.Fail.OnChainFail)
 
-        val irrevocablySpent = setOf(remoteCommitPublished.commitTx.txid, remoteCommitPublished.claimMainOutputTx!!.txid)
+        val irrevocablySpent = setOf(remoteCommitPublished.commitTx, remoteCommitPublished.claimMainOutputTx!!.tx)
         assertEquals(irrevocablySpent, alice.remoteCommitPublished!!.irrevocablySpent.values.toSet())
 
         val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
@@ -479,15 +492,15 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         // actual test starts here
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+        assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         // if commit tx and claim-htlc-timeout txs end up in the same block, we may receive them in any order
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 42, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1]),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 42, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs[2]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 200, 0, remoteCommitPublished.claimMainOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[0]), 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs[0])
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -507,7 +520,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             Triple(aliceClosing, remoteCommitPublished, add)
         }
 
-        assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs.isEmpty())
+        assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs().isEmpty())
 
         val (alice1, actions1) = aliceClosing.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 1, bobCommitTx)))
         assertTrue(alice1 is Closing)
@@ -540,25 +553,24 @@ class ClosingTestsCommon : EclairTestSuite() {
 
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
         // we don't have the preimage to claim the htlc-success yet
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         // Alice receives the preimage for the first HTLC from the payment handler; she can now claim the corresponding HTLC output.
         val (aliceFulfill, actionsFulfill) = aliceClosing.processEx(ChannelEvent.ExecuteCommand(fulfill))
         assertTrue(aliceFulfill is Closing)
-        assertEquals(1, aliceFulfill.remoteCommitPublished!!.claimHtlcSuccessTxs.size)
-        assertEquals(1, aliceFulfill.remoteCommitPublished!!.claimHtlcTimeoutTxs.size)
-        val claimHtlcSuccess = aliceFulfill.remoteCommitPublished!!.claimHtlcSuccessTxs.first()
-        actionsFulfill.hasTx(claimHtlcSuccess)
-        val claimHtlcOutputIndex = claimHtlcSuccess.txIn.find { txIn -> txIn.outPoint.txid == remoteCommitPublished.commitTx.txid }!!.outPoint.index
-        assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(remoteCommitPublished.commitTx.txid, claimHtlcOutputIndex)))
-        Transaction.correctlySpends(claimHtlcSuccess, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(1, aliceFulfill.remoteCommitPublished!!.claimHtlcSuccessTxs().size)
+        assertEquals(1, aliceFulfill.remoteCommitPublished!!.claimHtlcTimeoutTxs().size)
+        val claimHtlcSuccess = aliceFulfill.remoteCommitPublished!!.claimHtlcSuccessTxs().first()
+        actionsFulfill.hasTx(claimHtlcSuccess.tx)
+        assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(remoteCommitPublished.commitTx.txid, claimHtlcSuccess.input.outPoint.index)))
+        Transaction.correctlySpends(claimHtlcSuccess.tx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[0]), 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs[0]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccess), 210, 0, claimHtlcSuccess),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 250, 0, remoteCommitPublished.claimMainOutputTx!!)
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccess.tx), 210, 0, claimHtlcSuccess.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
@@ -589,11 +601,11 @@ class ClosingTestsCommon : EclairTestSuite() {
             val (alice8, localCommitPublished) = localClose(alice7)
             // bob also publishes his commitment, and wins the race to confirm
             val (alice9, remoteCommitPublished) = remoteClose(bobCommitTx, alice8.copy(localCommitPublished = null))
-            assertEquals(2, localCommitPublished.htlcTimeoutTxs.size)
-            assertEquals(2, localCommitPublished.htlcSuccessTxs.size)
+            assertEquals(2, localCommitPublished.htlcTimeoutTxs().size)
+            assertEquals(2, localCommitPublished.htlcSuccessTxs().size)
             assertEquals(4, localCommitPublished.claimHtlcDelayedTxs.size)
-            assertEquals(2, remoteCommitPublished.claimHtlcSuccessTxs.size)
-            assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+            assertEquals(2, remoteCommitPublished.claimHtlcSuccessTxs().size)
+            assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
             Triple(alice9, remoteCommitPublished, rb1)
         }
@@ -604,13 +616,13 @@ class ClosingTestsCommon : EclairTestSuite() {
         // Bob claims 2 htlc outputs, alice will claim the other 2.
         val bobHtlcSuccessTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcTimeoutTxs[0].txIn[0].outPoint, ByteVector.empty, 0, Scripts.witnessHtlcSuccess(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, preimage, ByteVector.empty))),
+            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcTimeoutTxs()[0].input.outPoint, ByteVector.empty, 0, Scripts.witnessHtlcSuccess(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, preimage, ByteVector.empty))),
             txOut = emptyList(),
             lockTime = 0
         )
         val bobHtlcTimeoutTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcSuccessTxs[0].txIn[0].outPoint, ByteVector.empty, 0, Scripts.witnessHtlcTimeout(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ByteVector.empty))),
+            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcSuccessTxs()[0].input.outPoint, ByteVector.empty, 0, Scripts.witnessHtlcTimeout(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ByteVector.empty))),
             txOut = emptyList(),
             lockTime = 0
         )
@@ -633,10 +645,10 @@ class ClosingTestsCommon : EclairTestSuite() {
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx), 42, 0, bobHtlcSuccessTx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 200, 0, remoteCommitPublished.claimMainOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcSuccessTxs[1]), 202, 0, remoteCommitPublished.claimHtlcSuccessTxs[1]),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcSuccessTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx), 202, 0, bobHtlcTimeoutTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1])
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -659,8 +671,8 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (aliceClosing, remoteCommitPublished) = remoteClose(bobCommitTx2, alice2)
 
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs.size)
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
+        assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs().size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
 
         assertNull(aliceClosing.remoteCommitPublished)
         assertNotNull(aliceClosing.nextRemoteCommitPublished)
@@ -695,15 +707,15 @@ class ClosingTestsCommon : EclairTestSuite() {
         // actual test starts here
         assertNotNull(aliceClosing.nextRemoteCommitPublished)
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs.size)
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
+        assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs().size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
 
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs[2]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 202, 0, remoteCommitPublished.claimMainOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[0]), 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs[0])
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 202, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -736,26 +748,25 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertNotNull(aliceClosing.nextRemoteCommitPublished)
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
         // we don't have the preimage to claim the htlc-success yet
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         // Alice receives the preimage for the first HTLC from the payment handler; she can now claim the corresponding HTLC output.
         val (aliceFulfill, actionsFulfill) = aliceClosing.processEx(ChannelEvent.ExecuteCommand(fulfill))
         assertTrue(aliceFulfill is Closing)
-        assertEquals(1, aliceFulfill.nextRemoteCommitPublished!!.claimHtlcSuccessTxs.size)
-        assertEquals(2, aliceFulfill.nextRemoteCommitPublished!!.claimHtlcTimeoutTxs.size)
-        val claimHtlcSuccess = aliceFulfill.nextRemoteCommitPublished!!.claimHtlcSuccessTxs.first()
-        actionsFulfill.hasTx(claimHtlcSuccess)
-        val claimHtlcOutputIndex = claimHtlcSuccess.txIn.find { txIn -> txIn.outPoint.txid == remoteCommitPublished.commitTx.txid }!!.outPoint.index
-        assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(remoteCommitPublished.commitTx.txid, claimHtlcOutputIndex)))
-        Transaction.correctlySpends(claimHtlcSuccess, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(1, aliceFulfill.nextRemoteCommitPublished!!.claimHtlcSuccessTxs().size)
+        assertEquals(2, aliceFulfill.nextRemoteCommitPublished!!.claimHtlcTimeoutTxs().size)
+        val claimHtlcSuccess = aliceFulfill.nextRemoteCommitPublished!!.claimHtlcSuccessTxs().first()
+        actionsFulfill.hasTx(claimHtlcSuccess.tx)
+        assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(remoteCommitPublished.commitTx.txid, claimHtlcSuccess.input.outPoint.index)))
+        Transaction.correctlySpends(claimHtlcSuccess.tx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[0]), 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs[0]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccess), 210, 1, claimHtlcSuccess),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 210, 3, remoteCommitPublished.claimHtlcTimeoutTxs[1]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 250, 0, remoteCommitPublished.claimMainOutputTx!!)
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccess.tx), 210, 1, claimHtlcSuccess.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 210, 3, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
@@ -793,11 +804,11 @@ class ClosingTestsCommon : EclairTestSuite() {
             val (alice10, localCommitPublished) = localClose(alice9)
             // bob also publishes his next commitment, and wins the race to confirm
             val (alice11, remoteCommitPublished) = remoteClose(bobCommitTx, alice10.copy(localCommitPublished = null))
-            assertEquals(2, localCommitPublished.htlcTimeoutTxs.size)
-            assertEquals(2, localCommitPublished.htlcSuccessTxs.size)
+            assertEquals(2, localCommitPublished.htlcTimeoutTxs().size)
+            assertEquals(2, localCommitPublished.htlcSuccessTxs().size)
             assertEquals(4, localCommitPublished.claimHtlcDelayedTxs.size)
-            assertEquals(2, remoteCommitPublished.claimHtlcSuccessTxs.size)
-            assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+            assertEquals(2, remoteCommitPublished.claimHtlcSuccessTxs().size)
+            assertEquals(3, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
             Pair(alice11, remoteCommitPublished)
         }
@@ -808,13 +819,13 @@ class ClosingTestsCommon : EclairTestSuite() {
         // Bob claims 2 htlc outputs, alice will claim the other 3.
         val bobHtlcSuccessTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcTimeoutTxs[0].txIn[0].outPoint, ByteVector.empty, 0, ScriptWitness.empty)),
+            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcTimeoutTxs()[0].input.outPoint, ByteVector.empty, 0, ScriptWitness.empty)),
             txOut = emptyList(),
             lockTime = 0
         )
         val bobHtlcTimeoutTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcSuccessTxs[0].txIn[0].outPoint, ByteVector.empty, 0, ScriptWitness.empty)),
+            txIn = listOf(TxIn(remoteCommitPublished.claimHtlcSuccessTxs()[0].input.outPoint, ByteVector.empty, 0, ScriptWitness.empty)),
             txOut = emptyList(),
             lockTime = 0
         )
@@ -834,11 +845,11 @@ class ClosingTestsCommon : EclairTestSuite() {
         val watchConfirmed = listOf(
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx), 42, 0, bobHtlcSuccessTx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!), 200, 0, remoteCommitPublished.claimMainOutputTx!!),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcSuccessTxs[1]), 202, 0, remoteCommitPublished.claimHtlcSuccessTxs[1]),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcSuccessTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx), 202, 0, bobHtlcTimeoutTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[2]), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[2]),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs[1]), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs[1])
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
+            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -930,13 +941,13 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
             assertTrue(revokedCommitPublished.htlcPenaltyTxs.isEmpty())
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
-            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!.tx, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             // alice publishes txs for the main outputs
-            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!, revokedCommitPublished.mainPenaltyTx!!), aliceActions1.findTxs().toSet())
+            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!.tx, revokedCommitPublished.mainPenaltyTx!!.tx), aliceActions1.findTxs().toSet())
             // alice watches confirmation for the commit tx and her main output
-            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.txid), aliceActions1.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), aliceActions1.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             // alice watches bob's main output
-            assertEquals(setOf(revokedCommitPublished.mainPenaltyTx!!.txIn.first().outPoint.index), aliceActions1.findWatches<WatchSpent>().map { it.outputIndex.toLong() }.toSet())
+            assertEquals(setOf(revokedCommitPublished.mainPenaltyTx!!.input.outPoint.index), aliceActions1.findWatches<WatchSpent>().map { it.outputIndex.toLong() }.toSet())
         }
 
         // alice fetches information about the revoked htlcs
@@ -959,25 +970,25 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
             assertEquals(2, revokedCommitPublished.htlcPenaltyTxs.size)
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
-            revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+            revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
             // alice publishes txs for all outputs
-            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!, revokedCommitPublished.mainPenaltyTx!!) + revokedCommitPublished.htlcPenaltyTxs.toSet(), aliceActions2.findTxs().toSet())
+            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!.tx, revokedCommitPublished.mainPenaltyTx!!.tx) + revokedCommitPublished.htlcPenaltyTxs.map { it.tx }.toSet(), aliceActions2.findTxs().toSet())
             // alice watches confirmation for the commit tx and her main output
-            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             // alice watches bob's outputs
             val outputsToWatch = buildSet {
-                add(revokedCommitPublished.mainPenaltyTx!!.txIn.first().outPoint.index)
-                addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.txIn.first().outPoint.index })
+                add(revokedCommitPublished.mainPenaltyTx!!.input.outPoint.index)
+                addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.input.outPoint.index })
             }
             assertEquals(3, outputsToWatch.size)
             assertEquals(outputsToWatch, aliceActions2.findWatches<WatchSpent>().map { it.outputIndex.toLong() }.toSet())
 
             val watchConfirmed = listOf(
                 WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx), 42, 0, revokedCommitPublished.commitTx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!), 43, 0, revokedCommitPublished.claimMainOutputTx!!),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!), 43, 5, revokedCommitPublished.mainPenaltyTx!!),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[1]), 50, 1, revokedCommitPublished.htlcPenaltyTxs[1]),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[0]), 52, 2, revokedCommitPublished.htlcPenaltyTxs[0]),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!.tx), 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!.tx), 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[1].tx), 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[0].tx), 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
             )
             confirmWatchedTxs(alice2, watchConfirmed)
         }
@@ -1038,7 +1049,7 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertEquals(bobCommitTxs[0].commitTx.tx, revokedCommitPublished.commitTx)
             assertNotNull(revokedCommitPublished.claimMainOutputTx)
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
-            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!, bobCommitTxs[0].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!.tx, bobCommitTxs[0].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             assertTrue(revokedCommitPublished.htlcPenaltyTxs.isEmpty())
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
             // alice publishes txs for all outputs
@@ -1063,10 +1074,10 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertEquals(bobCommitTxs[1].commitTx.tx, revokedCommitPublished.commitTx)
             assertNotNull(revokedCommitPublished.claimMainOutputTx)
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
-            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!.tx, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             assertEquals(2, revokedCommitPublished.htlcPenaltyTxs.size)
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
-            revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+            revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
             // alice publishes txs for all outputs
             assertEquals(4, aliceActions4.findTxs().size)
             assertEquals(2, aliceActions4.findWatches<WatchConfirmed>().size)
@@ -1075,10 +1086,10 @@ class ClosingTestsCommon : EclairTestSuite() {
             // this revoked transaction is the one to confirm
             val watchConfirmed = listOf(
                 WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx), 42, 0, revokedCommitPublished.commitTx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!), 43, 0, revokedCommitPublished.claimMainOutputTx!!),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!), 43, 5, revokedCommitPublished.mainPenaltyTx!!),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[1]), 50, 1, revokedCommitPublished.htlcPenaltyTxs[1]),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[0]), 52, 2, revokedCommitPublished.htlcPenaltyTxs[0]),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!.tx), 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!.tx), 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[1].tx), 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[0].tx), 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
             )
             confirmWatchedTxs(alice4, watchConfirmed)
         }
@@ -1180,15 +1191,15 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
             assertEquals(4, revokedCommitPublished.htlcPenaltyTxs.size)
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
-            revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it, bobRevokedTx.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+            revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobRevokedTx.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
             // alice publishes txs for all outputs
-            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!, revokedCommitPublished.mainPenaltyTx!!) + revokedCommitPublished.htlcPenaltyTxs.toSet(), aliceActions2.findTxs().toSet())
+            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!.tx, revokedCommitPublished.mainPenaltyTx!!.tx) + revokedCommitPublished.htlcPenaltyTxs.map { it.tx }.toSet(), aliceActions2.findTxs().toSet())
             // alice watches confirmation for the commit tx and her main output
-            assertEquals(setOf(bobRevokedTx.commitTx.tx.txid, revokedCommitPublished.claimMainOutputTx!!.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            assertEquals(setOf(bobRevokedTx.commitTx.tx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             // alice watches bob's outputs
             val outputsToWatch = buildSet {
-                add(revokedCommitPublished.mainPenaltyTx!!.txIn.first().outPoint.index)
-                addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.txIn.first().outPoint.index })
+                add(revokedCommitPublished.mainPenaltyTx!!.input.outPoint.index)
+                addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.input.outPoint.index })
             }
             assertEquals(5, outputsToWatch.size)
             assertEquals(outputsToWatch, aliceActions2.findWatches<WatchSpent>().map { it.outputIndex.toLong() }.toSet())
@@ -1206,8 +1217,8 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertEquals(1, alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
             assertTrue(actions3.contains(ChannelAction.Storage.StoreState(alice3)))
             assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, 3, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx.txinfo.tx)), actions3.findWatch<WatchConfirmed>())
-            actions3.hasTx(alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0])
-            assertEquals(WatchSpent(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT), actions3.findWatch<WatchSpent>())
+            actions3.hasTx(alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].tx)
+            assertEquals(WatchSpent(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT), actions3.findWatch<WatchSpent>())
 
             val (alice4, actions4) = alice3.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcTimeoutTx.txinfo.tx)))
             assertTrue(alice4 is Closing)
@@ -1215,22 +1226,22 @@ class ClosingTestsCommon : EclairTestSuite() {
             assertEquals(2, alice4.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
             assertTrue(actions4.contains(ChannelAction.Storage.StoreState(alice4)))
             assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, 3, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx.txinfo.tx)), actions4.findWatch<WatchConfirmed>())
-            actions4.hasTx(alice4.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1])
-            assertEquals(WatchSpent(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, alice4.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT), actions4.findWatch<WatchSpent>())
+            actions4.hasTx(alice4.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].tx)
+            assertEquals(WatchSpent(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, alice4.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT), actions4.findWatch<WatchSpent>())
 
             val claimHtlcDelayedPenaltyTxs = alice4.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs
-            val remainingHtlcPenaltyTxs = revokedCommitPublished.htlcPenaltyTxs.filterNot { bobOutpoints.contains(it.txIn.first().outPoint) }
+            val remainingHtlcPenaltyTxs = revokedCommitPublished.htlcPenaltyTxs.filterNot { bobOutpoints.contains(it.input.outPoint) }
             assertEquals(2, remainingHtlcPenaltyTxs.size)
             val watchConfirmed = listOf(
                 WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx), 42, 0, revokedCommitPublished.commitTx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!), 43, 0, revokedCommitPublished.claimMainOutputTx!!),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!), 43, 5, revokedCommitPublished.mainPenaltyTx!!),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs[1]), 50, 1, remainingHtlcPenaltyTxs[1]),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!.tx), 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!.tx), 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs[1].tx), 50, 1, remainingHtlcPenaltyTxs[1].tx),
                 WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx.txinfo.tx), 50, 2, bobHtlcSuccessTx.txinfo.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs[0]), 50, 3, remainingHtlcPenaltyTxs[0]),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs[0]), 51, 3, claimHtlcDelayedPenaltyTxs[0]),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs[0].tx), 50, 3, remainingHtlcPenaltyTxs[0].tx),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs[0].tx), 51, 3, claimHtlcDelayedPenaltyTxs[0].tx),
                 WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx.txinfo.tx), 51, 0, bobHtlcTimeoutTx.txinfo.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs[1]), 51, 1, claimHtlcDelayedPenaltyTxs[1]),
+                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs[1].tx), 51, 1, claimHtlcDelayedPenaltyTxs[1].tx),
             )
             confirmWatchedTxs(alice4, watchConfirmed)
         }
@@ -1250,7 +1261,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertNull(alice1.remoteCommitPublished)
         assertTrue(alice1.mutualClosePublished.isNotEmpty())
         val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), FundingTxSpent(alice0.channelId, alice0.mutualClosePublished.first()).message)
+        assertEquals(error.toAscii(), FundingTxSpent(alice0.channelId, alice0.mutualClosePublished.first().tx).message)
     }
 
     @Test
@@ -1560,12 +1571,12 @@ class ClosingTestsCommon : EclairTestSuite() {
                 val publishAsap = actions1.findTxs()
                 assertEquals(2, publishAsap.size)
                 assertEquals(commitTx.txid, publishAsap.first().txid)
-                assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+                assertEquals(claimDelayedOutputTx.tx.txid, publishAsap.last().txid)
 
                 assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
                 val watches = actions1.findWatches<WatchConfirmed>()
                 assertEquals(commitTx.txid, watches.first().txId)
-                assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+                assertEquals(claimDelayedOutputTx.tx.txid, watches.last().txId)
                 alice1
             }
 
@@ -1587,12 +1598,12 @@ class ClosingTestsCommon : EclairTestSuite() {
                 val publishAsap = actions1.findTxs()
                 assertEquals(2, publishAsap.size)
                 assertEquals(commitTx.txid, publishAsap.first().txid)
-                assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+                assertEquals(claimDelayedOutputTx.tx.txid, publishAsap.last().txid)
 
                 assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
                 val watches = actions1.findWatches<WatchConfirmed>()
                 assertEquals(commitTx.txid, watches.first().txId)
-                assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+                assertEquals(claimDelayedOutputTx.tx.txid, watches.last().txId)
                 bob1
             }
 

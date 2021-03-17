@@ -123,8 +123,8 @@ class NegotiatingTestsCommon : EclairTestSuite() {
         assertEquals(mutualCloseTxAlice, mutualCloseTxBob)
         assertEquals(actions.findWatches<WatchConfirmed>().map { it.event }, listOf(BITCOIN_TX_CONFIRMED(mutualCloseTxBob)))
         assertEquals(actions1.findWatches<WatchConfirmed>().map { it.event }, listOf(BITCOIN_TX_CONFIRMED(mutualCloseTxBob)))
-        assertEquals(bob1.mutualClosePublished, listOf(mutualCloseTxBob))
-        assertEquals(alice1.mutualClosePublished, listOf(mutualCloseTxBob))
+        assertEquals(bob1.mutualClosePublished.map { it.tx }, listOf(mutualCloseTxBob))
+        assertEquals(alice1.mutualClosePublished.map { it.tx }, listOf(mutualCloseTxBob))
     }
 
     @Test
@@ -155,11 +155,11 @@ class NegotiatingTestsCommon : EclairTestSuite() {
             aliceCloseSig1.feeSatoshis,
             aliceCloseSig1.signature
         ).right!!
-        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
+        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx.tx)))
         assertTrue(alice2 is Closing)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
-        actionsAlice2.hasTx(bobClosingTx)
-        assertEquals(actionsAlice2.hasWatch<WatchConfirmed>().txId, bobClosingTx.txid)
+        actionsAlice2.hasTx(bobClosingTx.tx)
+        assertEquals(actionsAlice2.hasWatch<WatchConfirmed>().txId, bobClosingTx.tx.txid)
     }
 
     @Test
@@ -181,7 +181,7 @@ class NegotiatingTestsCommon : EclairTestSuite() {
 
     companion object {
         fun init(tweakFees: Boolean = false, pushMsat: MilliSatoshi = TestConstants.pushMsat): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = TestsHelper.reachNormal(pushMsat = pushMsat)
+            val (alice, bob) = reachNormal(pushMsat = pushMsat)
             return mutualClose(alice, bob, tweakFees)
         }
 

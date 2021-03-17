@@ -13,8 +13,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
+import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.CommitTx
+import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTx
 import fr.acinq.eclair.transactions.Transactions.commitTxFee
 import fr.acinq.eclair.transactions.Transactions.commitTxFeeMsat
 import fr.acinq.eclair.transactions.Transactions.htlcOutputFee
@@ -33,7 +33,7 @@ data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<Upda
 }
 
 data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
-data class HtlcTxAndSigs(val txinfo: TransactionWithInputInfo, val localSig: ByteVector64, val remoteSig: ByteVector64)
+data class HtlcTxAndSigs(val txinfo: HtlcTx, val localSig: ByteVector64, val remoteSig: ByteVector64)
 data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
@@ -459,10 +459,10 @@ data class Commitments(
 
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
+        val (remoteCommitTx, htlcTxs) = makeRemoteTxs(keyManager, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
         val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath))
 
-        val sortedHtlcTxs: List<TransactionWithInputInfo> = (htlcTimeoutTxs + htlcSuccessTxs).sortedBy { it.input.outPoint.index }
+        val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
@@ -506,7 +506,7 @@ data class Commitments(
         val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
         val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommit.index + 1)
-        val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+        val (localCommitTx, htlcTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
         val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath))
 
         log.info {
@@ -524,22 +524,22 @@ data class Commitments(
             }
         }
 
-        val sortedHtlcTxs: List<TransactionWithInputInfo> = (htlcTimeoutTxs + htlcSuccessTxs).sortedBy { it.input.outPoint.index }
+        val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
             return Either.Left(HtlcSigCountMismatch(channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
         val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
         val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
         // combine the sigs to make signed txs
-        val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().mapNotNull { (htlcTx, localSig, remoteSig) ->
+        val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
             when (htlcTx) {
-                is HtlcTimeoutTx -> {
+                is HtlcTx.HtlcTimeoutTx -> {
                     if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
                         return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx))
                     }
                     HtlcTxAndSigs(htlcTx, localSig, remoteSig)
                 }
-                is HtlcSuccessTx -> {
+                is HtlcTx.HtlcSuccessTx -> {
                     // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
                     // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
                     if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
@@ -547,7 +547,6 @@ data class Commitments(
                     }
                     HtlcTxAndSigs(htlcTx, localSig, remoteSig)
                 }
-                else -> null
             }
         }
 
@@ -633,7 +632,7 @@ data class Commitments(
             commitmentInput: Transactions.InputInfo,
             localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
-        ): Triple<CommitTx, List<HtlcTimeoutTx>, List<HtlcSuccessTx>> {
+        ): Pair<CommitTx, List<HtlcTx>> {
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
             val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
@@ -655,8 +654,8 @@ data class Commitments(
                 spec
             )
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
-            val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feerate, outputs)
-            return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
+            val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feerate, outputs)
+            return Pair(commitTx, htlcTxs)
         }
 
         fun makeRemoteTxs(
@@ -666,7 +665,7 @@ data class Commitments(
             remoteParams: RemoteParams, commitmentInput: Transactions.InputInfo,
             remotePerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
-        ): Triple<CommitTx, List<HtlcTimeoutTx>, List<HtlcSuccessTx>> {
+        ): Pair<CommitTx, List<HtlcTx>> {
             val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
             val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
@@ -688,8 +687,8 @@ data class Commitments(
             )
             // NB: we are creating the remote commit tx, so local/remote parameters are inverted.
             val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentPubkey, !localParams.isFunder, outputs)
-            val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feerate, outputs)
-            return Triple(commitTx, htlcTimeoutTxs, htlcSuccessTxs)
+            val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feerate, outputs)
+            return Pair(commitTx, htlcTxs)
         }
     }
 }

@@ -12,6 +12,8 @@ import fr.acinq.eclair.channel.RemoteParams
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.tests.TestConstants
+import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
+import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlinx.serialization.decodeFromString
@@ -76,7 +78,7 @@ class AnchorOutputsTestsCommon {
         ByteVector32("0303030303030303030303030303030303030303030303030303030303030303"),
         ByteVector32("0404040404040404040404040404040404040404040404040404040404040404"),
     )
-    val htlcs = listOf<DirectedHtlc>(
+    val htlcs = listOf(
         IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, preimages[0].sha256(), CltvExpiry(500), TestConstants.emptyOnionPacket)),
         IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000.msat, preimages[1].sha256(), CltvExpiry(501), TestConstants.emptyOnionPacket)),
         OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 2000000.msat, preimages[2].sha256(), CltvExpiry(502), TestConstants.emptyOnionPacket)),
@@ -85,7 +87,7 @@ class AnchorOutputsTestsCommon {
     )
 
     // high level tests which calls Commitments methods to generate transactions
-    fun runHighLevelTest(testCase: TestCase) {
+    private fun runHighLevelTest(testCase: TestCase) {
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty, 546.sat, 1000000000L, 0.sat, 0.msat, CltvExpiryDelta(144), 1000, true,
@@ -178,7 +180,7 @@ class AnchorOutputsTestsCommon {
         }
 
         val keyManager = MyKeyManager()
-        val (commitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeLocalTxs(
+        val (commitTx, htlcTxs) = Commitments.makeLocalTxs(
             keyManager, channelVersion, 42, localParams, remoteParams,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,
@@ -191,26 +193,21 @@ class AnchorOutputsTestsCommon {
         assertEquals(Transaction.read(testCase.ExpectedCommitmentTxHex), signedTx.tx)
         val txs = testCase.HtlcDescs.map { Transaction.read(it.ResolutionTxHex).txid to Transaction.read(it.ResolutionTxHex) }.toMap()
         val remoteHtlcSigs = testCase.HtlcDescs.map { Transaction.read(it.ResolutionTxHex).txid to ByteVector(it.RemoteSigHex) }.toMap()
-        assertTrue { remoteHtlcSigs.keys.containsAll(htlcTimeoutTxs.map { it.tx.txid }) }
-        assertTrue { remoteHtlcSigs.keys.containsAll(htlcSuccessTxs.map { it.tx.txid }) }
-        htlcTimeoutTxs.forEach {
-            val localHtlcSig = Transactions.sign(it, local_htlc_privkey, SigHash.SIGHASH_ALL)
-            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[it.tx.txid]!!.toByteArray())
-            val expectedTx = txs[it.tx.txid]
-            val signed = Transactions.addSigs(it, localHtlcSig, remoteHtlcSig)
-            assertEquals(expectedTx, signed.tx)
-        }
-        htlcSuccessTxs.forEach {
-            val localHtlcSig = Transactions.sign(it, local_htlc_privkey, SigHash.SIGHASH_ALL)
-            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[it.tx.txid]!!.toByteArray())
-            val expectedTx = txs[it.tx.txid]
-            val signed = Transactions.addSigs(it, localHtlcSig, remoteHtlcSig, preimages.find { it1 -> it1.sha256() == it.paymentHash }!!)
+        assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
+        htlcTxs.forEach { htlcTx ->
+            val localHtlcSig = Transactions.sign(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
+            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[htlcTx.tx.txid]!!.toByteArray())
+            val expectedTx = txs[htlcTx.tx.txid]
+            val signed = when (htlcTx) {
+                is HtlcSuccessTx -> Transactions.addSigs(htlcTx, localHtlcSig, remoteHtlcSig, preimages.find { it.sha256() == htlcTx.paymentHash }!!)
+                is HtlcTimeoutTx -> Transactions.addSigs(htlcTx, localHtlcSig, remoteHtlcSig)
+            }
             assertEquals(expectedTx, signed.tx)
         }
     }
 
     // low-level tests where transactions are built manually using low-level primitives
-    fun runLowLevelTest(testCase: TestCase) {
+    private fun runLowLevelTest(testCase: TestCase) {
         val spec = CommitmentSpec(
             if (testCase.UseTestHtlcs) htlcs.toSet() else setOf(),
             FeeratePerKw(testCase.FeePerKw.sat),
@@ -245,21 +242,16 @@ class AnchorOutputsTestsCommon {
 
         val txs = testCase.HtlcDescs.map { it.ResolutionTx.txid to it.ResolutionTx }.toMap()
         val remoteHtlcSigs = testCase.HtlcDescs.map { it.ResolutionTx.txid to ByteVector(it.RemoteSigHex) }.toMap()
-        val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feerate, outputs)
-        assertTrue { remoteHtlcSigs.keys.containsAll(htlcTimeoutTxs.map { it.tx.txid }) }
-        assertTrue { remoteHtlcSigs.keys.containsAll(htlcSuccessTxs.map { it.tx.txid }) }
-        htlcTimeoutTxs.forEach {
-            val localHtlcSig = Transactions.sign(it, local_htlc_privkey, SigHash.SIGHASH_ALL)
-            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[it.tx.txid]!!.toByteArray())
-            val expectedTx = txs[it.tx.txid]
-            val signed = Transactions.addSigs(it, localHtlcSig, remoteHtlcSig)
-            assertEquals(expectedTx, signed.tx)
-        }
-        htlcSuccessTxs.forEach {
-            val localHtlcSig = Transactions.sign(it, local_htlc_privkey, SigHash.SIGHASH_ALL)
-            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[it.tx.txid]!!.toByteArray())
-            val expectedTx = txs[it.tx.txid]
-            val signed = Transactions.addSigs(it, localHtlcSig, remoteHtlcSig, preimages.find { it1 -> it1.sha256() == it.paymentHash }!!)
+        val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feerate, outputs)
+        assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
+        htlcTxs.forEach { htlcTx ->
+            val localHtlcSig = Transactions.sign(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
+            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[htlcTx.tx.txid]!!.toByteArray())
+            val expectedTx = txs[htlcTx.tx.txid]
+            val signed = when (htlcTx) {
+                is HtlcSuccessTx -> Transactions.addSigs(htlcTx, localHtlcSig, remoteHtlcSig, preimages.find { it.sha256() == htlcTx.paymentHash }!!)
+                is HtlcTimeoutTx -> Transactions.addSigs(htlcTx, localHtlcSig, remoteHtlcSig)
+            }
             assertEquals(expectedTx, signed.tx)
         }
     }

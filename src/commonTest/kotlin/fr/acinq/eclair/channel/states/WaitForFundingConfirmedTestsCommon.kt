@@ -60,12 +60,12 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         val publishAsap = actions1.findTxs()
         assertEquals(2, publishAsap.size)
         assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+        assertEquals(claimDelayedOutputTx.tx.txid, publishAsap.last().txid)
 
         assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
         val watches = actions1.findWatches<WatchConfirmed>()
         assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+        assertEquals(claimDelayedOutputTx.tx.txid, watches.last().txId)
     }
 
     @Test
@@ -90,12 +90,12 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
         val publishAsap = actions1.findTxs()
         assertEquals(2, publishAsap.size)
         assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.txid, publishAsap.last().txid)
+        assertEquals(claimDelayedOutputTx.tx.txid, publishAsap.last().txid)
 
         assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
         val watches = actions1.findWatches<WatchConfirmed>()
         assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.txid, watches.last().txId)
+        assertEquals(claimDelayedOutputTx.tx.txid, watches.last().txId)
     }
 
     @Test
@@ -107,7 +107,7 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
             val (bob1, actions1) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
             assertTrue(bob1 is Closing)
             assertNotNull(bob1.remoteCommitPublished)
-            actions1.hasTx(bob1.remoteCommitPublished!!.claimMainOutputTx!!)
+            actions1.hasTx(bob1.remoteCommitPublished!!.claimMainOutputTx!!.tx)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
 
@@ -116,7 +116,7 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
             val (alice1, actions1) = alice.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bob.commitments.localCommit.publishableTxs.commitTx.tx)))
             assertTrue(alice1 is Closing)
             assertNotNull(alice1.remoteCommitPublished)
-            actions1.hasTx(alice1.remoteCommitPublished!!.claimMainOutputTx!!)
+            actions1.hasTx(alice1.remoteCommitPublished!!.claimMainOutputTx!!.tx)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
     }
@@ -160,7 +160,7 @@ class WaitForFundingConfirmedTestsCommon : EclairTestSuite() {
             assertTrue(state1 is Closing)
             assertNotNull(state1.localCommitPublished)
             actions1.hasTx(state1.localCommitPublished!!.commitTx)
-            actions1.hasTx(state1.localCommitPublished!!.claimMainDelayedOutputTx!!)
+            actions1.hasTx(state1.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
     }
