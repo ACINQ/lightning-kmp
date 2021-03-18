@@ -1,6 +1,6 @@
 package fr.acinq.lightning.crypto.noise
 
-import fr.acinq.bitcoin.crypto.Sha256
+import fr.acinq.bitcoin.crypto.Digest
 import kotlin.experimental.xor
 
 object SHA256HashFunctions : HashFunctions {
@@ -11,7 +11,7 @@ object SHA256HashFunctions : HashFunctions {
     override fun blockLen() = 64
 
     override fun hash(data: ByteArray): ByteArray {
-        val sha = Sha256()
+        val sha = Digest.sha256()
         sha.update(data, 0, data.size)
         val output = ByteArray(32)
         sha.doFinal(output, 0)

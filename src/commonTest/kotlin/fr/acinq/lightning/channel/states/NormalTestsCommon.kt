@@ -1648,7 +1648,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (their *next* commit with htlc)`() {
+    fun `recv BITCOIN_FUNDING_SPENT (their next commit with htlc)`() {
         val (alice0, bob0) = reachNormal()
 
         val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)

@@ -279,9 +279,9 @@ class AnchorOutputsTestsCommon {
 
         val format = Json { ignoreUnknownKeys = true }
         val json = run {
-            val resourceDir = Environment.findVariable("TEST_RESOURCES_PATH")?.let { Path(it) } ?: FileSystem.currentDirectory.resolve("src/commonTest/resources")
+            val resourceDir = Environment.findVariable("TEST_RESOURCES_PATH")?.let { Path(it) } ?: FileSystem.workingDir().resolve("src/commonTest/resources")
             val file = resourceDir.resolve("bolt3_anchor_outputs_test_vectors.json")
-            file.openReadableFile().readString()
+            file.openReadableFile().run { readString(sizeBytes = available) }
         }
         val testCases = format.decodeFromString<Array<TestCase>>(json)
     }
