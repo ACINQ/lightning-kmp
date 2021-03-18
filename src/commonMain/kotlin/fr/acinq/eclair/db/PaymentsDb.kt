@@ -47,19 +47,11 @@ interface OutgoingPaymentsDb {
     /** Mark an outgoing payment as completed (failed, succeeded, mined). */
     suspend fun completeOutgoingPayment(id: UUID, completed: OutgoingPayment.Status.Completed)
 
-    suspend fun completeOutgoingPayment(id: UUID, finalFailure: FinalFailure, completedAt: Long? = null) =
-        if (completedAt != null) {
-            completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Failed(finalFailure, completedAt))
-        } else {
-            completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Failed(finalFailure))
-        }
+    suspend fun completeOutgoingPayment(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis()) =
+        completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Failed(finalFailure, completedAt))
 
-    suspend fun completeOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long? = null) =
-        if (completedAt != null) {
-            completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage, completedAt))
-        } else {
-            completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage))
-        }
+    suspend fun completeOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis()) =
+        completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage, completedAt))
 
     /** Add new partial payments to a pending outgoing payment. */
     suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>)
