@@ -3,12 +3,17 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
+import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.blockchain.WatchConfirmed
+import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.TestsHelper.claimHtlcSuccessTxs
 import fr.acinq.eclair.channel.TestsHelper.claimHtlcTimeoutTxs
+import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.eclair.channel.TestsHelper.htlcTimeoutTxs
+import fr.acinq.eclair.channel.TestsHelper.processEx
+import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
@@ -16,11 +21,9 @@ import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClaimH
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
+import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.sat
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class ChannelTypesTestsCommon : EclairTestSuite() {
 
@@ -251,6 +254,68 @@ class ChannelTypesTestsCommon : EclairTestSuite() {
             val rvk5b = rvk5a.update(theyClaimHtlcTimeout)
             assertTrue(rvk5b.isDone())
         }
+    }
+
+    @Test
+    fun `identify htlc txs`() {
+        val (lcp, rcp) = run {
+            val (alice0, bob0) = reachNormal()
+            val (nodes1, _, _) = TestsHelper.addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
+            val (alice1, bob1) = nodes1
+            val (nodes2, preimageAlice, htlcAlice) = TestsHelper.addHtlc(100_000_000.msat, payer = alice1, payee = bob1)
+            val (alice2, bob2) = nodes2
+            val (alice3, bob3) = crossSign(alice2, bob2)
+            val (nodes4, _, _) = TestsHelper.addHtlc(50_000_000.msat, payer = bob3, payee = alice3)
+            val (bob4, alice4) = nodes4
+            val (nodes5, preimageBob, htlcBob) = TestsHelper.addHtlc(55_000_000.msat, payer = bob4, payee = alice4)
+            val (bob5, alice5) = nodes5
+            val (bob6, alice6) = crossSign(bob5, alice5)
+            // Alice and Bob both know the preimage for only one of the two HTLCs they received.
+            val (alice7, _) = alice6.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob.id, preimageBob)))
+            val (bob7, _) = bob6.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice.id, preimageAlice)))
+            // Alice publishes her commitment.
+            val (aliceClosing, _) = alice7.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+            assertTrue(aliceClosing is Closing)
+            val lcp = aliceClosing.localCommitPublished
+            assertNotNull(lcp)
+            val (bobClosing, _) = bob7.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            assertTrue(bobClosing is Closing)
+            val rcp = bobClosing.remoteCommitPublished
+            assertNotNull(rcp)
+            Pair(lcp, rcp)
+        }
+
+        assertEquals(4, lcp.htlcTxs.size)
+        val htlcTimeoutTxs = lcp.htlcTimeoutTxs()
+        assertEquals(2, htlcTimeoutTxs.size)
+        val htlcSuccessTxs = lcp.htlcSuccessTxs()
+        assertEquals(1, htlcSuccessTxs.size)
+
+        assertEquals(4, rcp.claimHtlcTxs.size)
+        val claimHtlcTimeoutTxs = rcp.claimHtlcTimeoutTxs()
+        assertEquals(2, claimHtlcTimeoutTxs.size)
+        val claimHtlcSuccessTxs = rcp.claimHtlcSuccessTxs()
+        assertEquals(1, claimHtlcSuccessTxs.size)
+
+        // Valid txs should be detected:
+        htlcTimeoutTxs.forEach { tx -> assertTrue(lcp.isHtlcTimeout(tx.tx)) }
+        htlcSuccessTxs.forEach { tx -> assertTrue(lcp.isHtlcSuccess(tx.tx)) }
+        claimHtlcTimeoutTxs.forEach { tx -> assertTrue(rcp.isClaimHtlcTimeout(tx.tx)) }
+        claimHtlcSuccessTxs.forEach { tx -> assertTrue(rcp.isClaimHtlcSuccess(tx.tx)) }
+
+        // Invalid txs should be rejected:
+        htlcSuccessTxs.forEach { tx -> assertFalse(lcp.isHtlcTimeout(tx.tx)) }
+        claimHtlcTimeoutTxs.forEach { tx -> assertFalse(lcp.isHtlcTimeout(tx.tx)) }
+        claimHtlcSuccessTxs.forEach { tx -> assertFalse(lcp.isHtlcTimeout(tx.tx)) }
+        htlcTimeoutTxs.forEach { tx -> assertFalse(lcp.isHtlcSuccess(tx.tx)) }
+        claimHtlcTimeoutTxs.forEach { tx -> assertFalse(lcp.isHtlcSuccess(tx.tx)) }
+        claimHtlcSuccessTxs.forEach { tx -> assertFalse(lcp.isHtlcSuccess(tx.tx)) }
+        htlcTimeoutTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcTimeout(tx.tx)) }
+        htlcSuccessTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcTimeout(tx.tx)) }
+        claimHtlcSuccessTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcTimeout(tx.tx)) }
+        htlcTimeoutTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcSuccess(tx.tx)) }
+        htlcSuccessTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcSuccess(tx.tx)) }
+        claimHtlcTimeoutTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcSuccess(tx.tx)) }
     }
 
     companion object {

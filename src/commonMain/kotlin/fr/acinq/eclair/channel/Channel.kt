@@ -578,7 +578,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             }
             event is ChannelEvent.Restore && event.state is Closing -> {
                 val closingType = event.state.closingTypeAlreadyKnown()
-                logger.info { "c:${event.state.channelId} channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"}" }
+                logger.info { "c:${event.state.channelId} channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"})" }
                 // if the closing type is known:
                 // - there is no need to watch the funding tx because it has already been spent and the spending tx has
                 //   already reached mindepth
@@ -2250,6 +2250,7 @@ data class ShuttingDown(
                 event.command is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(event.command, commitments.sendFailMalformed(event.command), event.command.commit)
                 event.command is CMD_UPDATE_FEE -> handleCommandResult(event.command, commitments.sendFee(event.command), event.command.commit)
                 event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+                event.command is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {

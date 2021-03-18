@@ -9,6 +9,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.publishIfNeeded
 import fr.acinq.eclair.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.eclair.channel.Helpers.watchSpentIfNeeded
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.eclair.utils.BitField
 import fr.acinq.eclair.utils.UUID
@@ -135,6 +136,24 @@ data class LocalCommitPublished(
         return irrevocablySpent.values.any { it.txid == commitTx.txid } || irrevocablySpent.keys.any { it.txid == commitTx.txid }
     }
 
+    fun isHtlcTimeout(tx: Transaction): Boolean {
+        return tx.txIn.filter {
+            when (htlcTxs[it.outPoint]) {
+                is HtlcTx.HtlcTimeoutTx -> true
+                else -> false
+            }
+        }.map { it.witness }.mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout()).isNotEmpty()
+    }
+
+    fun isHtlcSuccess(tx: Transaction): Boolean {
+        return tx.txIn.filter {
+            when (htlcTxs[it.outPoint]) {
+                is HtlcTx.HtlcSuccessTx -> true
+                else -> false
+            }
+        }.map { it.witness }.mapNotNull(Scripts.extractPreimageFromHtlcSuccess()).isNotEmpty()
+    }
+
     internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
         val publishQueue = buildList {
             add(commitTx)
@@ -224,6 +243,24 @@ data class RemoteCommitPublished(
 
     fun isConfirmed(): Boolean {
         return irrevocablySpent.values.any { it.txid == commitTx.txid } || irrevocablySpent.keys.any { it.txid == commitTx.txid }
+    }
+
+    fun isClaimHtlcTimeout(tx: Transaction): Boolean {
+        return tx.txIn.filter {
+            when (claimHtlcTxs[it.outPoint]) {
+                is ClaimHtlcTx.ClaimHtlcTimeoutTx -> true
+                else -> false
+            }
+        }.map { it.witness }.mapNotNull(Scripts.extractPaymentHashFromClaimHtlcTimeout()).isNotEmpty()
+    }
+
+    fun isClaimHtlcSuccess(tx: Transaction): Boolean {
+        return tx.txIn.filter {
+            when (claimHtlcTxs[it.outPoint]) {
+                is ClaimHtlcTx.ClaimHtlcSuccessTx -> true
+                else -> false
+            }
+        }.map { it.witness }.mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess()).isNotEmpty()
     }
 
     internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
@@ -436,6 +473,7 @@ data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: 
 @Serializable
 sealed class ChannelOrigin {
     abstract val fee: Satoshi
+
     data class PayToOpenOrigin(val paymentHash: ByteVector32, override val fee: Satoshi) : ChannelOrigin()
     data class SwapInOrigin(val bitcoinAddress: String, override val fee: Satoshi) : ChannelOrigin()
 }

@@ -443,11 +443,11 @@ class TransactionsTestsCommon : EclairTestSuite() {
         val paymentPreimage1 = ByteVector32.fromValidHex("1111111111111111111111111111111111111111111111111111111111111111")
         val paymentPreimage2 = ByteVector32.fromValidHex("2222222222222222222222222222222222222222222222222222222222222222")
         val paymentPreimage3 = ByteVector32.fromValidHex("3333333333333333333333333333333333333333333333333333333333333333")
-        val htlc1 = UpdateAddHtlc(randomBytes32(), 1, 100.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage1)), CltvExpiry(300), TestConstants.emptyOnionPacket)
-        val htlc2 = UpdateAddHtlc(randomBytes32(), 2, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage2)), CltvExpiry(300), TestConstants.emptyOnionPacket)
-        val htlc3 = UpdateAddHtlc(randomBytes32(), 3, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(300), TestConstants.emptyOnionPacket)
-        val htlc4 = UpdateAddHtlc(randomBytes32(), 4, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(300), TestConstants.emptyOnionPacket)
-        val htlc5 = UpdateAddHtlc(randomBytes32(), 5, 200.mbtc.toMilliSatoshi(), ByteVector32(sha256(paymentPreimage3)), CltvExpiry(301), TestConstants.emptyOnionPacket)
+        val htlc1 = UpdateAddHtlc(randomBytes32(), 1, 100.mbtc.toMilliSatoshi(), paymentPreimage1.sha256(), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc2 = UpdateAddHtlc(randomBytes32(), 2, 200.mbtc.toMilliSatoshi(), paymentPreimage2.sha256(), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc3 = UpdateAddHtlc(randomBytes32(), 3, 200.mbtc.toMilliSatoshi(), paymentPreimage3.sha256(), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc4 = UpdateAddHtlc(randomBytes32(), 4, 200.mbtc.toMilliSatoshi(), paymentPreimage3.sha256(), CltvExpiry(300), TestConstants.emptyOnionPacket)
+        val htlc5 = UpdateAddHtlc(randomBytes32(), 5, 200.mbtc.toMilliSatoshi(), paymentPreimage3.sha256(), CltvExpiry(301), TestConstants.emptyOnionPacket)
 
         val spec = CommitmentSpec(
             htlcs = setOf(
@@ -487,19 +487,19 @@ class TransactionsTestsCommon : EclairTestSuite() {
         }
 
         // htlc1 comes before htlc2 because of the smaller amount (BIP69)
-        // htlc2 and htlc3 have the same amount but htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
-        // htlc5 comes after htlc3 and htlc4 because of the higher CLTV
+        // htlc3, htlc4 and htlc5 have the same pubKeyScript but htlc5 comes after because it has a higher CLTV
+        // htlc2 and htlc3/4/5 have the same amount but htlc2 comes last because its pubKeyScript is lexicographically greater than htlc3/4/5
         val (htlcOut1, htlcOut2, htlcOut3, htlcOut4, htlcOut5) = commitTx.tx.txOut.drop(2)
         assertEquals(10_000_000.sat, htlcOut1.amount)
         for (htlcOut in listOf(htlcOut2, htlcOut3, htlcOut4, htlcOut5)) {
             assertEquals(20_000_000.sat, htlcOut.amount)
         }
 
+        // htlc3 and htlc4 are completely identical, their relative order can't be enforced.
         assertEquals(5, htlcTxs.size)
         htlcTxs.forEach { tx -> assertTrue(tx is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx) }
         val htlcIds = htlcTxs.sortedBy { it.input.outPoint.index }.map { it.htlcId }
-        println(htlcIds)
-        assertEquals(listOf(1L, 3L, 4L, 5L, 2L), htlcIds)
+        assertTrue(htlcIds == listOf(1L, 3L, 4L, 5L, 2L) || htlcIds == listOf(1L, 4L, 3L, 5L, 2L))
 
         assertTrue(htlcOut4.publicKeyScript.toHex() < htlcOut5.publicKeyScript.toHex())
         assertEquals(htlcOut1.publicKeyScript, outputs.find { it.commitmentOutput == OutHtlc(OutgoingHtlc(htlc1)) }?.output?.publicKeyScript)

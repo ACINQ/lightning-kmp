@@ -19,13 +19,8 @@ import fr.acinq.eclair.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.*
-import fr.acinq.eclair.transactions.Scripts.extractPaymentHashFromClaimHtlcTimeout
-import fr.acinq.eclair.transactions.Scripts.extractPaymentHashFromHtlcTimeout
-import fr.acinq.eclair.transactions.Scripts.extractPreimageFromClaimHtlcSuccess
-import fr.acinq.eclair.transactions.Scripts.extractPreimageFromHtlcSuccess
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
@@ -846,42 +841,6 @@ object Helpers {
             }.toSet()
         }
 
-        private fun Transaction.isHtlcTimeout(localCommitPublished: LocalCommitPublished): Boolean {
-            return txIn.filter {
-                when (localCommitPublished.htlcTxs[it.outPoint]) {
-                    is HtlcTimeoutTx -> true
-                    else -> false
-                }
-            }.map { it.witness }.mapNotNull(extractPaymentHashFromHtlcTimeout()).isNotEmpty()
-        }
-
-        private fun Transaction.isHtlcSuccess(localCommitPublished: LocalCommitPublished): Boolean {
-            return txIn.filter {
-                when (localCommitPublished.htlcTxs[it.outPoint]) {
-                    is HtlcSuccessTx -> true
-                    else -> false
-                }
-            }.map { it.witness }.mapNotNull(extractPreimageFromHtlcSuccess()).isNotEmpty()
-        }
-
-        private fun Transaction.isClaimHtlcTimeout(remoteCommitPublished: RemoteCommitPublished): Boolean {
-            return txIn.filter {
-                when (remoteCommitPublished.claimHtlcTxs[it.outPoint]) {
-                    is ClaimHtlcTimeoutTx -> true
-                    else -> false
-                }
-            }.map { it.witness }.mapNotNull(extractPaymentHashFromClaimHtlcTimeout()).isNotEmpty()
-        }
-
-        private fun Transaction.isClaimHtlcSuccess(remoteCommitPublished: RemoteCommitPublished): Boolean {
-            return txIn.filter {
-                when (remoteCommitPublished.claimHtlcTxs[it.outPoint]) {
-                    is ClaimHtlcSuccessTx -> true
-                    else -> false
-                }
-            }.map { it.witness }.mapNotNull(extractPreimageFromClaimHtlcSuccess()).isNotEmpty()
-        }
-
         /**
          * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
          * more htlcs have timed out and need to be failed in an upstream channel.
@@ -896,7 +855,7 @@ object Helpers {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
                     (spec.htlcs.outgoings() - untrimmedHtlcs).toSet()
                 }
-                tx.isHtlcTimeout(localCommitPublished) -> {
+                localCommitPublished.isHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                     tx.txIn.mapNotNull { txIn ->
                         when (val htlcTx = localCommitPublished.htlcTxs[txIn.outPoint]) {
@@ -932,7 +891,7 @@ object Helpers {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
                     (spec.htlcs.incomings() - untrimmedHtlcs).toSet()
                 }
-                tx.isClaimHtlcTimeout(remoteCommitPublished) -> {
+                remoteCommitPublished.isClaimHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                     tx.txIn.mapNotNull { txIn ->
                         when (val htlcTx = remoteCommitPublished.claimHtlcTxs[txIn.outPoint]) {
