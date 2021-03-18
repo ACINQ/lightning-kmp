@@ -137,21 +137,19 @@ data class LocalCommitPublished(
     }
 
     fun isHtlcTimeout(tx: Transaction): Boolean {
-        return tx.txIn.filter {
-            when (htlcTxs[it.outPoint]) {
-                is HtlcTx.HtlcTimeoutTx -> true
-                else -> false
-            }
-        }.map { it.witness }.mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout()).isNotEmpty()
+        return tx.txIn
+            .filter { htlcTxs[it.outPoint] is HtlcTx.HtlcTimeoutTx }
+            .map { it.witness }
+            .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
+            .isNotEmpty()
     }
 
     fun isHtlcSuccess(tx: Transaction): Boolean {
-        return tx.txIn.filter {
-            when (htlcTxs[it.outPoint]) {
-                is HtlcTx.HtlcSuccessTx -> true
-                else -> false
-            }
-        }.map { it.witness }.mapNotNull(Scripts.extractPreimageFromHtlcSuccess()).isNotEmpty()
+        return tx.txIn
+            .filter { htlcTxs[it.outPoint] is HtlcTx.HtlcSuccessTx }
+            .map { it.witness }
+            .mapNotNull(Scripts.extractPreimageFromHtlcSuccess())
+            .isNotEmpty()
     }
 
     internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
@@ -246,21 +244,19 @@ data class RemoteCommitPublished(
     }
 
     fun isClaimHtlcTimeout(tx: Transaction): Boolean {
-        return tx.txIn.filter {
-            when (claimHtlcTxs[it.outPoint]) {
-                is ClaimHtlcTx.ClaimHtlcTimeoutTx -> true
-                else -> false
-            }
-        }.map { it.witness }.mapNotNull(Scripts.extractPaymentHashFromClaimHtlcTimeout()).isNotEmpty()
+        return tx.txIn
+            .filter { claimHtlcTxs[it.outPoint] is ClaimHtlcTx.ClaimHtlcTimeoutTx }
+            .map { it.witness }
+            .mapNotNull(Scripts.extractPaymentHashFromClaimHtlcTimeout())
+            .isNotEmpty()
     }
 
     fun isClaimHtlcSuccess(tx: Transaction): Boolean {
-        return tx.txIn.filter {
-            when (claimHtlcTxs[it.outPoint]) {
-                is ClaimHtlcTx.ClaimHtlcSuccessTx -> true
-                else -> false
-            }
-        }.map { it.witness }.mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess()).isNotEmpty()
+        return tx.txIn
+            .filter { claimHtlcTxs[it.outPoint] is ClaimHtlcTx.ClaimHtlcSuccessTx }
+            .map { it.witness }
+            .mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess())
+            .isNotEmpty()
     }
 
     internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {

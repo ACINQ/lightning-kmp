@@ -717,7 +717,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     watch is WatchEventSpent -> when {
                         state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                             logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
-                            val closingTx = state.closingTxProposed.flatten().first { it.unsignedTx.tx.txid == watch.tx.txid }.unsignedTx.copy(tx = watch.tx)
+                            val closingTx = state.getMutualClosePublished(watch.tx)
                             val nextState = Closing(
                                 staticParams,
                                 currentTip,
@@ -988,7 +988,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     watch is WatchEventSpent -> when {
                         state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                             logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
-                            val closingTx = state.closingTxProposed.flatten().first { it.unsignedTx.tx.txid == watch.tx.txid }.unsignedTx.copy(tx = watch.tx)
+                            val closingTx = state.getMutualClosePublished(watch.tx)
                             val nextState = Closing(
                                 staticParams,
                                 currentTip,
@@ -2393,7 +2393,7 @@ data class Negotiating(
                     watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                         // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
                         logger.info { "c:$channelId closing tx published: closingTxId=${watch.tx.txid}" }
-                        val closingTx = closingTxProposed.flatten().first { it.unsignedTx.tx.txid == watch.tx.txid }.unsignedTx.copy(tx = watch.tx)
+                        val closingTx = getMutualClosePublished(watch.tx)
                         val nextState = Closing(
                             staticParams,
                             currentTip,
@@ -2425,6 +2425,13 @@ data class Negotiating(
             event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
             else -> unhandled(event)
         }
+    }
+
+    /** Return full information about a known closing tx. */
+    internal fun getMutualClosePublished(tx: Transaction): ClosingTx {
+        // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
+        // they added their signature, so we use their version of the transaction
+        return closingTxProposed.flatten().first { it.unsignedTx.tx.txid == tx.txid }.unsignedTx.copy(tx = tx)
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
@@ -2777,10 +2784,10 @@ data class Closing(
      * @return if the parent tx is found, a tuple (fee, description)
      */
     private fun networkFeePaid(tx: Transaction): Pair<Satoshi, String>? {
-        // only the funder pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
         // we can compute the fees only for transactions with a single parent for which we know the output amount
-        val isCommitTx = tx.txIn.any { it.outPoint == commitments.commitInput.outPoint }
         if (tx.txIn.size != 1) return null
+        // only the funder pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
+        val isCommitTx = tx.txIn.any { it.outPoint == commitments.commitInput.outPoint }
         if (isCommitTx && !commitments.localParams.isFunder) return null
 
         // we build a map with all known txs (that's not particularly efficient, but it doesn't really matter)
