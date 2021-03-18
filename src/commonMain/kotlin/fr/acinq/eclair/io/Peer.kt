@@ -304,7 +304,7 @@ class Peer(
 
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
-    private suspend fun sendToPeer(msg: LightningMessage) {
+    suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pongs
         if (msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
