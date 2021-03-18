@@ -172,10 +172,26 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
-    val fees: MilliSatoshi = when (status) {
-        is Status.Completed.Failed -> 0.msat
-        else -> parts.filter { it.status is Part.Status.Succeeded || it.status == Part.Status.Pending }.map { it.amount }.sum() - recipientAmount
-    }
+    val fees: MilliSatoshi =
+        if (details is Details.Normal) {
+            when (status) {
+                is Status.Completed.Failed -> 0.msat
+                else -> {
+                    val sum = parts.filter {
+                        it.status is Part.Status.Succeeded || it.status == Part.Status.Pending
+                    }.map { it.amount }.sum()
+                    if (sum < recipientAmount && status is Status.Pending) {
+                        // We don't have all the parts yet, so the total fees are unknown.
+                        0.msat
+                    } else {
+                        sum - recipientAmount
+                    }
+                }
+            }
+
+        } else {
+            0.msat
+        }
 
     sealed class Details {
         abstract val paymentHash: ByteVector32
