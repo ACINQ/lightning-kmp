@@ -201,7 +201,13 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         /** Swaps out send a lightning payment to a swap server, which will send an on-chain transaction to a given address. */
         data class SwapOut(val address: String, override val paymentHash: ByteVector32) : Details()
 
-        data class ChannelClosing(val closingAddress: String, val isLocalWallet: Boolean, override val paymentHash: ByteVector32) : Details()
+        /** Corresponds to the on-chain payments made when closing a channel. */
+        data class ChannelClosing(
+            val channelId: ByteVector32,
+            val closingAddress: String,
+            val isLocalWallet: Boolean,
+            override val paymentHash: ByteVector32
+        ) : Details()
 
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
             is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
@@ -217,8 +223,20 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
             abstract val completedAt: Long
             data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
             sealed class Succeeded : Completed() {
-                data class OffChain(val preimage: ByteVector32, override val completedAt: Long = currentTimestampMillis()) : Completed()
-                data class OnChain(val txids: List<ByteVector32>, val claimed: Satoshi, override val completedAt: Long = currentTimestampMillis()) : Completed()
+                data class OffChain(
+                    val preimage: ByteVector32,
+                    override val completedAt: Long = currentTimestampMillis()
+                ) : Completed()
+                data class OnChain(
+                    val txids: List<ByteVector32>,
+                    val claimed: Satoshi,
+                    val type: ChannelClosingType,
+                    override val completedAt: Long = currentTimestampMillis()
+                ) : Completed() {
+                    enum class ChannelClosingType {
+                        Mutual, Local, Remote, Other
+                    }
+                }
             }
         }
     }

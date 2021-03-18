@@ -16,6 +16,7 @@ import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.OutgoingPayment.Status.Completed.Succeeded.OnChain.ChannelClosingType
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -96,7 +97,7 @@ sealed class ChannelAction {
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isLocalWallet: Boolean) : Storage()
-        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi) : Storage()
+        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi, val type: ChannelClosingType) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -2892,6 +2893,7 @@ data class Closing(
         // We want to give the user the list of btc transactions for their outputs
         val txids = mutableListOf<ByteVector32>()
         var claimed = 0.sat
+        var type = ChannelClosingType.Other
         additionalConfirmedTx?.let { confirmedTx ->
             mutualClosePublished.firstOrNull { it == confirmedTx }?.let {
                 txids += it.txid
@@ -2905,14 +2907,18 @@ data class Closing(
                     expectedAmount -= feesAmount
                 }
                 claimed += expectedAmount
+                type = ChannelClosingType.Mutual
             }
         }
         localCommitPublished?.let {
             val confirmedTxids = it.irrevocablySpent.values.toSet()
             val allTxs = listOfNotNull(it.commitTx, it.claimMainDelayedOutputTx) + it.htlcSuccessTxs + it.htlcTimeoutTxs
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            txids += confirmedTxs.map { it.txid }
-            claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+            if (confirmedTxs.size > 0) {
+                txids += confirmedTxs.map { it.txid }
+                claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+                type = ChannelClosingType.Local
+            }
         }
         listOfNotNull(
             remoteCommitPublished,
@@ -2922,17 +2928,23 @@ data class Closing(
             val confirmedTxids = it.irrevocablySpent.values.toSet()
             val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            txids += confirmedTxs.map { it.txid }
-            claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+            if (confirmedTxs.size > 0) {
+                txids += confirmedTxs.map { it.txid }
+                claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+                type = ChannelClosingType.Remote
+            }
         }
         revokedCommitPublished.forEach {
             val confirmedTxids = it.irrevocablySpent.values.toSet()
             val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx, it.mainPenaltyTx) + it.htlcPenaltyTxs + it.claimHtlcDelayedPenaltyTxs
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            txids += confirmedTxs.map { it.txid }
-            claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+            if (confirmedTxs.size > 0) {
+                txids += confirmedTxs.map { it.txid }
+                claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+                type = ChannelClosingType.Other
+            }
         }
-        return ChannelAction.Storage.StoreChannelClosed(txids, claimed)
+        return ChannelAction.Storage.StoreChannelClosed(txids, claimed, type)
     }
 }
 
