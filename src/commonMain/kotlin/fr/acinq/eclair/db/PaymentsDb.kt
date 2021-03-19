@@ -29,6 +29,9 @@ interface IncomingPaymentsDb {
      */
     suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long = currentTimestampMillis())
 
+    /** Add and receive a payment. Use this method when receiving a spontaneous payment, for example a swap-in payment. */
+    suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, createdAt: Long = currentTimestampMillis(), receivedAt: Long = currentTimestampMillis())
+
     /** List received payments (with most recent payments first). */
     suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
 }
@@ -115,8 +118,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
         object KeySend : Origin()
 
-        /** Swap-in works by sending an on-chain transaction to a swap server, which will pay us in exchange. */
-        data class SwapIn(val amount: MilliSatoshi, val address: String, val paymentRequest: PaymentRequest?) : Origin()
+        /** Swap-in works by sending an on-chain transaction to a swap server, which will pay us in exchange. We may not know the origin address. */
+        data class SwapIn(val address: String?) : Origin()
 
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
             is Invoice -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
@@ -132,7 +135,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
         /** Payment was received via existing lightning channels. */
         object LightningPayment : ReceivedWith() {
-            override val fees: MilliSatoshi = 0.msat
+            override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
         /** Payment was received via a new channel opened to us. */

@@ -304,7 +304,7 @@ class Peer(
 
     fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
 
-    private suspend fun sendToPeer(msg: LightningMessage) {
+    suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pongs
         if (msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
@@ -366,6 +366,40 @@ class Peer(
                 }
                 action is ChannelAction.Storage.StoreHtlcInfos -> {
                     action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
+                }
+                action is ChannelAction.Storage.StoreIncomingAmount -> {
+                    logger.info { "storing incoming amount=${action.amount} with origin=${action.origin}" }
+                    when (action.origin) {
+                        null -> {
+                            logger.warning { "n:$remoteNodeId c:$actualChannelId incoming amount with empty origin, store minimal information" }
+                            val fakePreimage = actualChannelId.sha256()
+                            db.payments.addAndReceivePayment(
+                                preimage = fakePreimage,
+                                origin = IncomingPayment.Origin.SwapIn(address = ""),
+                                amount = action.amount,
+                                receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = 0.msat, channelId = actualChannelId)
+                            )
+                        }
+                        is ChannelOrigin.PayToOpenOrigin -> {
+                            if (db.payments.getIncomingPayment(action.origin.paymentHash) != null) {
+                                db.payments.receivePayment(paymentHash = action.origin.paymentHash, amount = action.amount, receivedWith = IncomingPayment.ReceivedWith.NewChannel(
+                                    fees = action.origin.fee.toMilliSatoshi(),
+                                    channelId = actualChannelId
+                                ))
+                            } else {
+                                logger.warning { "n:$remoteNodeId c:$actualChannelId ignored pay-to-open storage, no payments in db for hash=${action.origin.paymentHash}" }
+                            }
+                        }
+                        is ChannelOrigin.SwapInOrigin -> {
+                            val fakePreimage = actualChannelId.sha256()
+                            db.payments.addAndReceivePayment(
+                                preimage = fakePreimage,
+                                origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
+                                amount = action.amount,
+                                receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = action.origin.fee.toMilliSatoshi(), channelId = actualChannelId)
+                            )
+                        }
+                    }
                 }
                 action is ChannelAction.Storage.GetHtlcInfos -> {
                     val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
