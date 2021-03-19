@@ -2893,7 +2893,14 @@ data class Closing(
         // We want to give the user the list of btc transactions for their outputs
         val txids = mutableListOf<ByteVector32>()
         var claimed = 0.sat
-        var type = ChannelClosingType.Other
+        val type = when {
+            mutualClosePublished.isNotEmpty() -> ChannelClosingType.Mutual
+            localCommitPublished != null -> ChannelClosingType.Local
+            remoteCommitPublished != null -> ChannelClosingType.Remote
+            nextRemoteCommitPublished != null -> ChannelClosingType.Remote
+            futureRemoteCommitPublished != null -> ChannelClosingType.Remote
+            else -> ChannelClosingType.Other // includes revoked commit published case
+        }
         additionalConfirmedTx?.let { confirmedTx ->
             mutualClosePublished.firstOrNull { it == confirmedTx }?.let {
                 txids += it.txid
@@ -2907,7 +2914,6 @@ data class Closing(
                     expectedAmount -= feesAmount
                 }
                 claimed += expectedAmount
-                type = ChannelClosingType.Mutual
             }
         }
         localCommitPublished?.let {
@@ -2917,7 +2923,6 @@ data class Closing(
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
                 claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
-                type = ChannelClosingType.Local
             }
         }
         listOfNotNull(
@@ -2931,7 +2936,6 @@ data class Closing(
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
                 claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
-                type = ChannelClosingType.Remote
             }
         }
         revokedCommitPublished.forEach {
@@ -2941,7 +2945,6 @@ data class Closing(
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
                 claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
-                type = ChannelClosingType.Other
             }
         }
         return ChannelAction.Storage.StoreChannelClosed(txids, claimed, type)
