@@ -2928,7 +2928,7 @@ data class Closing(
             val confirmedTxids = it.irrevocablySpent.values.toSet()
             val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            if (confirmedTxs.size > 0) {
+            if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
                 claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
                 type = ChannelClosingType.Remote
