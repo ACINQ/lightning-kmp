@@ -35,6 +35,24 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
     }
 
     @Test
+    fun `add and receive incoming payments`() = runSuspendTest {
+        val db = InMemoryPaymentsDb()
+        val preimage = randomBytes32()
+        val channelId = randomBytes32()
+        val amount = MilliSatoshi(50_000_000)
+        val origin = IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb")
+        val receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = MilliSatoshi(1234), channelId = channelId)
+        assertNull(db.getIncomingPayment(randomBytes32()))
+
+        db.addAndReceivePayment(preimage = preimage, origin = origin, amount = amount, receivedWith = receivedWith)
+        val payment = db.getIncomingPayment(Crypto.sha256(preimage).toByteVector32())
+        assertNotNull(payment)
+        assertEquals(origin, payment.origin)
+        assertNotNull(payment.received)
+        assertEquals(receivedWith, payment.received?.receivedWith)
+    }
+
+    @Test
     fun `reject duplicate payment hash`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr))
@@ -73,7 +91,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
 
         val preimage2 = randomBytes32()
         val received2 = createInvoice(preimage2)
-        db.addIncomingPayment(preimage2, IncomingPayment.Origin.SwapIn(150_000.msat, "1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", received2))
+        db.addIncomingPayment(preimage2, IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"))
         db.receivePayment(received2.paymentHash, 180_000.msat, IncomingPayment.ReceivedWith.NewChannel(100.msat, channelId = null), 60)
         val payment2 = db.getIncomingPayment(received2.paymentHash)!!
 
@@ -279,7 +297,7 @@ class PaymentsDbTestsCommon : EclairTestSuite() {
 
         val (preimage1, preimage2, preimage3, preimage4) = listOf(randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
         val incoming1 = IncomingPayment(preimage1, IncomingPayment.Origin.Invoice(createInvoice(preimage1)), null, createdAt = 20)
-        val incoming2 = IncomingPayment(preimage2, IncomingPayment.Origin.SwapIn(20_000.msat, "1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", null), null, createdAt = 21)
+        val incoming2 = IncomingPayment(preimage2, IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"), null, createdAt = 21)
         val incoming3 = IncomingPayment(preimage3, IncomingPayment.Origin.Invoice(createInvoice(preimage3)), null, createdAt = 22)
         val incoming4 = IncomingPayment(preimage4, IncomingPayment.Origin.Invoice(createInvoice(preimage4)), null, createdAt = 23)
         listOf(incoming1, incoming2, incoming3, incoming4).forEach { db.addIncomingPayment(it.preimage, it.origin, it.createdAt) }
