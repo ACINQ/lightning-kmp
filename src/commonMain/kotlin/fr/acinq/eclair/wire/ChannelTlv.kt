@@ -64,12 +64,14 @@ sealed class ChannelTlv : Tlv {
                 is ChannelOrigin.PayToOpenOrigin -> {
                     LightningCodecs.writeU16(1, out)
                     LightningCodecs.writeBytes(channelOrigin.paymentHash, out)
+                    LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
                 }
                 is ChannelOrigin.SwapInOrigin -> {
                     LightningCodecs.writeU16(2, out)
                     val addressBytes = channelOrigin.bitcoinAddress.encodeToByteArray()
                     LightningCodecs.writeBigSize(addressBytes.size.toLong(), out)
                     LightningCodecs.writeBytes(addressBytes, out)
+                    LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
                 }
             }
         }
