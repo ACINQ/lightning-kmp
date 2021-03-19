@@ -377,7 +377,7 @@ class Peer(
                                 preimage = fakePreimage,
                                 origin = IncomingPayment.Origin.SwapIn(address = ""),
                                 amount = action.amount,
-                                receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = null, channelId = actualChannelId)
+                                receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = 0.msat, channelId = actualChannelId)
                             )
                         }
                         is ChannelOrigin.PayToOpenOrigin -> {

@@ -135,11 +135,11 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
         /** Payment was received via existing lightning channels. */
         object LightningPayment : ReceivedWith() {
-            override val fees: MilliSatoshi? = null // with Lightning, the fee is paid by the sender
+            override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
         /** Payment was received via a new channel opened to us. */
-        data class NewChannel(override val fees: MilliSatoshi?, val channelId: ByteVector32?) : ReceivedWith()
+        data class NewChannel(override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
     }
 
     /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */
