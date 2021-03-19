@@ -40,9 +40,6 @@ typealias TransactionsCommitmentOutputs = List<Transactions.CommitmentOutputLink
 object Transactions {
 
     @Serializable
-    data class OutputInfo(val index: Long, @Serializable(with = SatoshiKSerializer::class) val amount: Satoshi, @Serializable(with = ByteVectorKSerializer::class) val publicKeyScript: ByteVector)
-
-    @Serializable
     data class InputInfo constructor(
         @Serializable(with = OutPointKSerializer::class) val outPoint: OutPoint,
         @Serializable(with = TxOutKSerializer::class) val txOut: TxOut,
@@ -123,7 +120,9 @@ object Transactions {
         data class ClaimHtlcDelayedOutputPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, val toLocalOutput: OutputInfo?) : TransactionWithInputInfo()
+        data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, val toLocalIndex: Int?) : TransactionWithInputInfo() {
+            val toLocalOutput: TxOut? get() = toLocalIndex?.let { tx.txOut.getOrNull(it) }
+        }
     }
 
     sealed class TxGenerationSkipped {
@@ -787,7 +786,7 @@ object Transactions {
         )
         val toLocalOutput = when (val toLocalIndex = findPubKeyScriptIndex(tx, localScriptPubKey, null)) {
             is TxResult.Skipped -> null
-            is TxResult.Success -> OutputInfo(toLocalIndex.result.toLong(), toLocalAmount, localScriptPubKey.toByteVector())
+            is TxResult.Success -> toLocalIndex.result
         }
         return TransactionWithInputInfo.ClosingTx(commitTxInput, tx, toLocalOutput)
     }

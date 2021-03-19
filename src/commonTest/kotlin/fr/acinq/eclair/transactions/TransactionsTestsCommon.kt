@@ -519,22 +519,22 @@ class TransactionsTestsCommon : EclairTestSuite() {
             val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 250_000_000.msat)
             val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = true, localDustLimit, 1000.sat, spec)
             assertEquals(2, closingTx.tx.txOut.size)
-            assertNotNull(closingTx.toLocalOutput)
+            assertNotNull(closingTx.toLocalIndex)
             assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
             assertEquals(149_000.sat, closingTx.toLocalOutput!!.amount) // funder pays the fee
-            val toRemoteIndex = (closingTx.toLocalOutput!!.index + 1) % 2
-            assertEquals(250_000.sat, closingTx.tx.txOut[toRemoteIndex.toInt()].amount)
+            val toRemoteIndex = (closingTx.toLocalIndex!! + 1) % 2
+            assertEquals(250_000.sat, closingTx.tx.txOut[toRemoteIndex].amount)
         }
         run {
             // Same amounts, both outputs untrimmed, local is fundee:
             val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 150_000_000.msat)
             val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsFunder = false, localDustLimit, 1000.sat, spec)
             assertEquals(2, closingTx.tx.txOut.size)
-            assertNotNull(closingTx.toLocalOutput)
+            assertNotNull(closingTx.toLocalIndex)
             assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
             assertEquals(150_000.sat, closingTx.toLocalOutput!!.amount)
-            val toRemoteIndex = (closingTx.toLocalOutput!!.index + 1) % 2
-            assertEquals(149_000.sat, closingTx.tx.txOut[toRemoteIndex.toInt()].amount)
+            val toRemoteIndex = (closingTx.toLocalIndex!! + 1) % 2
+            assertEquals(149_000.sat, closingTx.tx.txOut[toRemoteIndex].amount)
         }
         run {
             // Their output is trimmed:
@@ -544,7 +544,7 @@ class TransactionsTestsCommon : EclairTestSuite() {
             assertNotNull(closingTx.toLocalOutput)
             assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
             assertEquals(150_000.sat, closingTx.toLocalOutput!!.amount)
-            assertEquals(0, closingTx.toLocalOutput!!.index)
+            assertEquals(0, closingTx.toLocalIndex!!)
         }
         run {
             // Our output is trimmed:
