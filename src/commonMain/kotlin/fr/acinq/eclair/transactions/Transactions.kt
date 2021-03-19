@@ -63,29 +63,52 @@ object Transactions {
         data class CommitTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class HtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32) :
-            TransactionWithInputInfo()
+        sealed class HtlcTx : TransactionWithInputInfo() {
+            abstract val htlcId: Long
+
+            @Serializable
+            data class HtlcSuccessTx(
+                override val input: InputInfo,
+                @Serializable(with = TransactionKSerializer::class) override val tx: Transaction,
+                @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32,
+                override val htlcId: Long
+            ) : HtlcTx()
+
+            @Serializable
+            data class HtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, override val htlcId: Long) : HtlcTx()
+        }
 
         @Serializable
-        data class HtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        sealed class ClaimHtlcTx : TransactionWithInputInfo() {
+            abstract val htlcId: Long
+
+            @Serializable
+            data class ClaimHtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, override val htlcId: Long) : ClaimHtlcTx()
+
+            @Serializable
+            data class ClaimHtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, override val htlcId: Long) : ClaimHtlcTx()
+        }
 
         @Serializable
-        data class ClaimHtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        sealed class ClaimAnchorOutputTx : TransactionWithInputInfo() {
+            @Serializable
+            data class ClaimLocalAnchorOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimAnchorOutputTx()
 
-        @Serializable
-        data class ClaimHtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-
-        @Serializable
-        data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
-
-        @Serializable
-        data class ClaimRemoteDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+            @Serializable
+            data class ClaimRemoteAnchorOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimAnchorOutputTx()
+        }
 
         @Serializable
         data class ClaimLocalDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class ClaimDelayedOutputPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        sealed class ClaimRemoteCommitMainOutputTx : TransactionWithInputInfo() {
+            @Serializable
+            data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
+
+            @Serializable
+            data class ClaimRemoteDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
+        }
 
         @Serializable
         data class MainPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
@@ -94,7 +117,12 @@ object Transactions {
         data class HtlcPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        data class ClaimHtlcDelayedOutputPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+
+        @Serializable
+        data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, val toLocalIndex: Int?) : TransactionWithInputInfo() {
+            val toLocalOutput: TxOut? get() = toLocalIndex?.let { tx.txOut[it] }
+        }
     }
 
     sealed class TxGenerationSkipped {
@@ -357,7 +385,7 @@ object Transactions {
         data class Success<T>(val result: T) : TxResult<T>()
     }
 
-    fun makeHtlcTimeoutTx(
+    private fun makeHtlcTimeoutTx(
         commitTx: Transaction,
         output: CommitmentOutputLink<OutHtlc>,
         outputIndex: Int,
@@ -366,7 +394,7 @@ object Transactions {
         toLocalDelay: CltvExpiryDelta,
         localDelayedPaymentPubkey: PublicKey,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.HtlcTimeoutTx> {
+    ): TxResult<TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx> {
         val fee = weight2fee(feerate, Commitments.HTLC_TIMEOUT_WEIGHT)
         val redeemScript = output.redeemScript
         val htlc = output.commitmentOutput.outgoingHtlc.add
@@ -375,21 +403,17 @@ object Transactions {
             TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
         } else {
             val input = InputInfo(OutPoint(commitTx, outputIndex.toLong()), commitTx.txOut[outputIndex], ByteVector(Script.write(redeemScript)))
-            TxResult.Success(
-                TransactionWithInputInfo.HtlcTimeoutTx(
-                    input,
-                    Transaction(
-                        version = 2,
-                        txIn = listOf(TxIn(input.outPoint, ByteVector.empty, 1L)),
-                        txOut = listOf(TxOut(amount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))),
-                        lockTime = htlc.cltvExpiry.toLong()
-                    )
-                )
+            val tx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(input.outPoint, ByteVector.empty, 1L)),
+                txOut = listOf(TxOut(amount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))),
+                lockTime = htlc.cltvExpiry.toLong()
             )
+            TxResult.Success(TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx(input, tx, htlc.id))
         }
     }
 
-    fun makeHtlcSuccessTx(
+    private fun makeHtlcSuccessTx(
         commitTx: Transaction,
         output: CommitmentOutputLink<InHtlc>,
         outputIndex: Int,
@@ -398,7 +422,7 @@ object Transactions {
         toLocalDelay: CltvExpiryDelta,
         localDelayedPaymentPubkey: PublicKey,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.HtlcSuccessTx> {
+    ): TxResult<TransactionWithInputInfo.HtlcTx.HtlcSuccessTx> {
         val fee = weight2fee(feerate, Commitments.HTLC_SUCCESS_WEIGHT)
         val redeemScript = output.redeemScript
         val htlc = output.commitmentOutput.incomingHtlc.add
@@ -407,18 +431,13 @@ object Transactions {
             TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
         } else {
             val input = InputInfo(OutPoint(commitTx, outputIndex.toLong()), commitTx.txOut[outputIndex], ByteVector(Script.write(redeemScript)))
-            TxResult.Success(
-                TransactionWithInputInfo.HtlcSuccessTx(
-                    input,
-                    Transaction(
-                        version = 2,
-                        txIn = listOf(TxIn(input.outPoint, ByteVector.empty, 1L)),
-                        txOut = listOf(TxOut(amount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))),
-                        lockTime = 0
-                    ),
-                    htlc.paymentHash
-                )
+            val tx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(input.outPoint, ByteVector.empty, 1L)),
+                txOut = listOf(TxOut(amount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))),
+                lockTime = 0
             )
+            TxResult.Success(TransactionWithInputInfo.HtlcTx.HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id))
         }
     }
 
@@ -430,7 +449,7 @@ object Transactions {
         localDelayedPaymentPubkey: PublicKey,
         feerate: FeeratePerKw,
         outputs: TransactionsCommitmentOutputs
-    ): Pair<List<TransactionWithInputInfo.HtlcTimeoutTx>, List<TransactionWithInputInfo.HtlcSuccessTx>> {
+    ): List<TransactionWithInputInfo.HtlcTx> {
         val htlcTimeoutTxs = outputs
             .mapIndexedNotNull map@{ outputIndex, link ->
                 val outHtlc = link.commitmentOutput as? OutHtlc ?: return@map null
@@ -447,7 +466,7 @@ object Transactions {
             }
             .mapNotNull { (it as? TxResult.Success)?.result }
 
-        return Pair(htlcTimeoutTxs, htlcSuccessTxs)
+        return htlcTimeoutTxs + htlcSuccessTxs
     }
 
     fun makeClaimHtlcSuccessTx(
@@ -460,7 +479,7 @@ object Transactions {
         localFinalScriptPubKey: ByteArray,
         htlc: UpdateAddHtlc,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimHtlcSuccessTx> {
+    ): TxResult<TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx> {
         val redeemScript = Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(htlc.paymentHash))
         return outputs.withIndex()
             .firstOrNull { (it.value.commitmentOutput as? OutHtlc)?.outgoingHtlc?.add?.id == htlc.id }
@@ -472,14 +491,14 @@ object Transactions {
                     txOut = listOf(TxOut(0.sat, localFinalScriptPubKey)),
                     lockTime = htlc.cltvExpiry.toLong()
                 )
-                val weight = addSigs(TransactionWithInputInfo.ClaimHtlcTimeoutTx(input, tx), PlaceHolderSig).tx.weight()
+                val weight = addSigs(TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx(input, tx, htlc.id), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
                 val fee = weight2fee(feerate, weight)
                 val amount = input.txOut.amount - fee
                 if (amount < localDustLimit) {
                     TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
                 } else {
                     val tx1 = tx.copy(txOut = listOf(tx.txOut.first().copy(amount = amount)))
-                    TxResult.Success(TransactionWithInputInfo.ClaimHtlcSuccessTx(input, tx1))
+                    TxResult.Success(TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx(input, tx1, htlc.id))
                 }
             }
             ?: TxResult.Skipped(TxGenerationSkipped.OutputNotFound)
@@ -495,7 +514,7 @@ object Transactions {
         localFinalScriptPubKey: ByteArray,
         htlc: UpdateAddHtlc,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimHtlcTimeoutTx> {
+    ): TxResult<TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx> {
         val redeemScript = Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(htlc.paymentHash), htlc.cltvExpiry)
         return outputs.withIndex()
             .firstOrNull { (it.value.commitmentOutput as? InHtlc)?.incomingHtlc?.add?.id == htlc.id }
@@ -508,14 +527,14 @@ object Transactions {
                     txOut = listOf(TxOut(0.sat, localFinalScriptPubKey)),
                     lockTime = htlc.cltvExpiry.toLong()
                 )
-                val weight = addSigs(TransactionWithInputInfo.ClaimHtlcTimeoutTx(input, tx), PlaceHolderSig).tx.weight()
+                val weight = addSigs(TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx(input, tx, htlc.id), PlaceHolderSig).tx.weight()
                 val fee = weight2fee(feerate, weight)
                 val amount = input.txOut.amount - fee
                 if (amount < localDustLimit) {
                     TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
                 } else {
                     val tx1 = tx.copy(txOut = listOf(tx.txOut.first().copy(amount = amount)))
-                    TxResult.Success(TransactionWithInputInfo.ClaimHtlcTimeoutTx(input, tx1))
+                    TxResult.Success(TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx(input, tx1, htlc.id))
                 }
             }
             ?: TxResult.Skipped(TxGenerationSkipped.OutputNotFound)
@@ -527,7 +546,7 @@ object Transactions {
         localPaymentPubkey: PublicKey,
         localFinalScriptPubKey: ByteArray,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimP2WPKHOutputTx> {
+    ): TxResult<TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx> {
         val redeemScript = Script.pay2pkh(localPaymentPubkey)
         val pubkeyScript = Script.write(Script.pay2wpkh(localPaymentPubkey))
         return when (val pubkeyScriptIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, amount_opt = null)) {
@@ -547,14 +566,14 @@ object Transactions {
                     lockTime = 0
                 )
                 // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
-                val weight = addSigs(TransactionWithInputInfo.ClaimP2WPKHOutputTx(input, tx), PlaceHolderPubKey, PlaceHolderSig).tx.weight()
+                val weight = addSigs(TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(input, tx), PlaceHolderPubKey, PlaceHolderSig).tx.weight()
                 val fee = weight2fee(feerate, weight)
                 val amount = input.txOut.amount - fee
                 if (amount < localDustLimit) {
                     TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
                 } else {
                     val tx1 = tx.copy(txOut = listOf(tx.txOut.first().copy(amount = amount)))
-                    TxResult.Success(TransactionWithInputInfo.ClaimP2WPKHOutputTx(input, tx1))
+                    TxResult.Success(TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(input, tx1))
                 }
             }
         }
@@ -565,7 +584,7 @@ object Transactions {
         localPaymentPubkey: PublicKey,
         localFinalScriptPubKey: ByteVector,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimRemoteDelayedOutputTx> {
+    ): TxResult<TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx> {
         val redeemScript = Scripts.toRemoteDelayed(localPaymentPubkey)
         val pubkeyScript = Script.write(Script.pay2wsh(redeemScript))
 
@@ -582,14 +601,14 @@ object Transactions {
                     lockTime = 0
                 )
                 // compute weight with a dummy 73 bytes signature (the largest you can get)
-                val weight = addSigs(TransactionWithInputInfo.ClaimRemoteDelayedOutputTx(input, tx), PlaceHolderSig).tx.weight()
+                val weight = addSigs(TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx(input, tx), PlaceHolderSig).tx.weight()
                 val fee = weight2fee(feerate, weight)
                 val amount = input.txOut.amount - fee
                 if (amount < localDustLimit) {
                     TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
                 } else {
                     val tx1 = tx.copy(txOut = listOf(tx.txOut.first().copy(amount = amount)))
-                    TxResult.Success(TransactionWithInputInfo.ClaimRemoteDelayedOutputTx(input, tx1))
+                    TxResult.Success(TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx(input, tx1))
                 }
             }
         }
@@ -640,7 +659,7 @@ object Transactions {
         localDelayedPaymentPubkey: PublicKey,
         localFinalScriptPubKey: ByteArray,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimDelayedOutputPenaltyTx> {
+    ): TxResult<TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx> {
         val redeemScript = Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
         val pubkeyScript = Script.write(Script.pay2wsh(redeemScript))
         return when (val pubkeyScriptIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, amount_opt = null)) {
@@ -656,14 +675,14 @@ object Transactions {
                     lockTime = 0
                 )
                 // compute weight with a dummy 73 bytes signature (the largest you can get)
-                val weight = addSigs(TransactionWithInputInfo.ClaimDelayedOutputPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
+                val weight = addSigs(TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
                 val fee = weight2fee(feerate, weight)
                 val amount = input.txOut.amount - fee
                 if (amount < localDustLimit) {
                     TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
                 } else {
                     val tx1 = tx.copy(txOut = listOf(tx.txOut.first().copy(amount = amount)))
-                    TxResult.Success(TransactionWithInputInfo.ClaimDelayedOutputPenaltyTx(input, tx1))
+                    TxResult.Success(TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx(input, tx1))
                 }
             }
         }
@@ -754,19 +773,25 @@ object Transactions {
             Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - closingFee)
         } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
-        val toLocalOutput_opt = toLocalAmount.takeIf { it >= dustLimit }?.let { TxOut(it, localScriptPubKey) }
-        val toRemoteOutput_opt = toRemoteAmount.takeIf { it >= dustLimit }?.let { TxOut(it, remoteScriptPubKey) }
+        val toLocalOutputOpt = toLocalAmount.takeIf { it >= dustLimit }?.let { TxOut(it, localScriptPubKey) }
+        val toRemoteOutputOpt = toRemoteAmount.takeIf { it >= dustLimit }?.let { TxOut(it, remoteScriptPubKey) }
 
-        val tx = Transaction(
-            version = 2,
-            txIn = listOf(TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = 0xffffffffL)),
-            txOut = listOfNotNull(toLocalOutput_opt, toRemoteOutput_opt),
-            lockTime = 0
+        val tx = LexicographicalOrdering.sort(
+            Transaction(
+                version = 2,
+                txIn = listOf(TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = 0xffffffffL)),
+                txOut = listOfNotNull(toLocalOutputOpt, toRemoteOutputOpt),
+                lockTime = 0
+            )
         )
-        return TransactionWithInputInfo.ClosingTx(commitTxInput, LexicographicalOrdering.sort(tx))
+        val toLocalOutput = when (val toLocalIndex = findPubKeyScriptIndex(tx, localScriptPubKey, null)) {
+            is TxResult.Skipped -> null
+            is TxResult.Success -> toLocalIndex.result
+        }
+        return TransactionWithInputInfo.ClosingTx(commitTxInput, tx, toLocalOutput)
     }
 
-    fun findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteArray, amount_opt: Satoshi?): TxResult<Int> {
+    private fun findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteArray, amount_opt: Satoshi?): TxResult<Int> {
         val outputIndex = tx.txOut
             .withIndex()
             .indexOfFirst { (_, txOut) -> (amount_opt == null || amount_opt == txOut.amount) && txOut.publicKeyScript.contentEquals(pubkeyScript) }
@@ -820,32 +845,36 @@ object Transactions {
         return htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(htlcSuccessTx: TransactionWithInputInfo.HtlcSuccessTx, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32): TransactionWithInputInfo.HtlcSuccessTx {
+    fun addSigs(htlcSuccessTx: TransactionWithInputInfo.HtlcTx.HtlcSuccessTx, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32): TransactionWithInputInfo.HtlcTx.HtlcSuccessTx {
         val witness = Scripts.witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
         return htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(htlcTimeoutTx: TransactionWithInputInfo.HtlcTimeoutTx, localSig: ByteVector64, remoteSig: ByteVector64): TransactionWithInputInfo.HtlcTimeoutTx {
+    fun addSigs(htlcTimeoutTx: TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx, localSig: ByteVector64, remoteSig: ByteVector64): TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx {
         val witness = Scripts.witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript)
         return htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(claimHtlcSuccessTx: TransactionWithInputInfo.ClaimHtlcSuccessTx, localSig: ByteVector64, paymentPreimage: ByteVector32): TransactionWithInputInfo.ClaimHtlcSuccessTx {
+    fun addSigs(claimHtlcSuccessTx: TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx, localSig: ByteVector64, paymentPreimage: ByteVector32): TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx {
         val witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
         return claimHtlcSuccessTx.copy(tx = claimHtlcSuccessTx.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(claimHtlcTimeoutTx: TransactionWithInputInfo.ClaimHtlcTimeoutTx, localSig: ByteVector64): TransactionWithInputInfo.ClaimHtlcTimeoutTx {
+    fun addSigs(claimHtlcTimeoutTx: TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx, localSig: ByteVector64): TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx {
         val witness = Scripts.witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
         return claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(claimP2WPKHOutputTx: TransactionWithInputInfo.ClaimP2WPKHOutputTx, localPaymentPubkey: PublicKey, localSig: ByteVector64): TransactionWithInputInfo.ClaimP2WPKHOutputTx {
+    fun addSigs(
+        claimP2WPKHOutputTx: TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx,
+        localPaymentPubkey: PublicKey,
+        localSig: ByteVector64
+    ): TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx {
         val witness = ScriptWitness(listOf(Scripts.der(localSig, SigHash.SIGHASH_ALL), localPaymentPubkey.value))
         return claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(claimRemoteDelayed: TransactionWithInputInfo.ClaimRemoteDelayedOutputTx, localSig: ByteVector64): TransactionWithInputInfo.ClaimRemoteDelayedOutputTx {
+    fun addSigs(claimRemoteDelayed: TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx, localSig: ByteVector64): TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx {
         val witness = Scripts.witnessToRemoteDelayedAfterDelay(localSig, claimRemoteDelayed.input.redeemScript)
         return claimRemoteDelayed.copy(tx = claimRemoteDelayed.tx.updateWitness(0, witness))
     }
@@ -855,7 +884,7 @@ object Transactions {
         return claimLocalDelayed.copy(tx = claimLocalDelayed.tx.updateWitness(0, witness))
     }
 
-    fun addSigs(claimHtlcDelayedPenalty: TransactionWithInputInfo.ClaimDelayedOutputPenaltyTx, revocationSig: ByteVector64): TransactionWithInputInfo.ClaimDelayedOutputPenaltyTx {
+    fun addSigs(claimHtlcDelayedPenalty: TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx, revocationSig: ByteVector64): TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx {
         val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimHtlcDelayedPenalty.input.redeemScript)
         return claimHtlcDelayedPenalty.copy(tx = claimHtlcDelayedPenalty.tx.updateWitness(0, witness))
     }

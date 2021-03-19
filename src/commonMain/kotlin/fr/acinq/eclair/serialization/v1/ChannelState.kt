@@ -64,7 +64,11 @@ data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<Upda
 }
 
 @Serializable
-data class HtlcTxAndSigs(val txinfo: Transactions.TransactionWithInputInfo, @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64, @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64) {
+data class HtlcTxAndSigs(
+    val txinfo: Transactions.TransactionWithInputInfo.HtlcTx,
+    @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64,
+    @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64
+) {
     constructor(from: fr.acinq.eclair.channel.HtlcTxAndSigs) : this(from.txinfo, from.localSig, from.remoteSig)
 
     fun export() = fr.acinq.eclair.channel.HtlcTxAndSigs(txinfo, localSig, remoteSig)
@@ -101,39 +105,39 @@ data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: Co
 @Serializable
 data class LocalCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
-    @Serializable(with = TransactionKSerializer::class) val claimMainDelayedOutputTx: Transaction? = null,
-    val htlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val htlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val claimHtlcDelayedTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
+    val claimMainDelayedOutputTx: Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx? = null,
+    val htlcTxs: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, Transactions.TransactionWithInputInfo.HtlcTx?> = emptyMap(),
+    val claimHtlcDelayedTxs: List<Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx> = emptyList(),
+    val claimAnchorTxs: List<Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = TransactionKSerializer::class) Transaction> = emptyMap()
 ) {
-    constructor(from: fr.acinq.eclair.channel.LocalCommitPublished) : this(from.commitTx, from.claimMainDelayedOutputTx, from.htlcSuccessTxs, from.htlcTimeoutTxs, from.claimHtlcDelayedTxs, from.irrevocablySpent)
+    constructor(from: fr.acinq.eclair.channel.LocalCommitPublished) : this(from.commitTx, from.claimMainDelayedOutputTx, from.htlcTxs, from.claimHtlcDelayedTxs, from.claimAnchorTxs, from.irrevocablySpent)
 
-    fun export() = fr.acinq.eclair.channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTx, htlcSuccessTxs, htlcTimeoutTxs, claimHtlcDelayedTxs, irrevocablySpent)
+    fun export() = fr.acinq.eclair.channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTx, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent)
 }
 
 @Serializable
 data class RemoteCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
-    @Serializable(with = TransactionKSerializer::class) val claimMainOutputTx: Transaction? = null,
-    val claimHtlcSuccessTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val claimHtlcTimeoutTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
+    val claimMainOutputTx: Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx? = null,
+    val claimHtlcTxs: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, Transactions.TransactionWithInputInfo.ClaimHtlcTx?> = emptyMap(),
+    val claimAnchorTxs: List<Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = TransactionKSerializer::class) Transaction> = emptyMap()
 ) {
-    constructor(from: fr.acinq.eclair.channel.RemoteCommitPublished) : this(from.commitTx, from.claimMainOutputTx, from.claimHtlcSuccessTxs, from.claimHtlcTimeoutTxs, from.irrevocablySpent)
+    constructor(from: fr.acinq.eclair.channel.RemoteCommitPublished) : this(from.commitTx, from.claimMainOutputTx, from.claimHtlcTxs, from.claimAnchorTxs, from.irrevocablySpent)
 
-    fun export() = fr.acinq.eclair.channel.RemoteCommitPublished(commitTx, claimMainOutputTx, claimHtlcSuccessTxs, claimHtlcTimeoutTxs, irrevocablySpent)
+    fun export() = fr.acinq.eclair.channel.RemoteCommitPublished(commitTx, claimMainOutputTx, claimHtlcTxs, claimAnchorTxs, irrevocablySpent)
 }
 
 @Serializable
 data class RevokedCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
     @Serializable(with = PrivateKeyKSerializer::class) val remotePerCommitmentSecret: PrivateKey,
-    @Serializable(with = TransactionKSerializer::class) val claimMainOutputTx: Transaction? = null,
-    @Serializable(with = TransactionKSerializer::class) val mainPenaltyTx: Transaction? = null,
-    val htlcPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val claimHtlcDelayedPenaltyTxs: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = ByteVector32KSerializer::class) ByteVector32> = emptyMap()
+    val claimMainOutputTx: Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx? = null,
+    val mainPenaltyTx: Transactions.TransactionWithInputInfo.MainPenaltyTx? = null,
+    val htlcPenaltyTxs: List<Transactions.TransactionWithInputInfo.HtlcPenaltyTx> = emptyList(),
+    val claimHtlcDelayedPenaltyTxs: List<Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx> = emptyList(),
+    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = TransactionKSerializer::class) Transaction> = emptyMap()
 ) {
     constructor(from: fr.acinq.eclair.channel.RevokedCommitPublished) : this(
         from.commitTx,
@@ -242,7 +246,7 @@ data class ChannelVersion(@Serializable(with = ByteVectorKSerializer::class) val
 }
 
 @Serializable
-data class ClosingTxProposed(@Serializable(with = TransactionKSerializer::class) val unsignedTx: Transaction, val localClosingSigned: ClosingSigned) {
+data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
     constructor(from: fr.acinq.eclair.channel.ClosingTxProposed) : this(from.unsignedTx, from.localClosingSigned)
 
     fun export() = fr.acinq.eclair.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
@@ -724,7 +728,7 @@ data class Negotiating(
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closingTxProposed: List<List<ClosingTxProposed>>,
-    @Serializable(with = TransactionKSerializer::class) val bestUnpublishedClosingTx: Transaction?
+    val bestUnpublishedClosingTx: Transactions.TransactionWithInputInfo.ClosingTx?
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
@@ -762,8 +766,8 @@ data class Closing(
     override val commitments: Commitments,
     @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
     val waitingSinceBlock: Long,
-    val mutualCloseProposed: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
-    val mutualClosePublished: List<@Serializable(with = TransactionKSerializer::class) Transaction> = emptyList(),
+    val mutualCloseProposed: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
+    val mutualClosePublished: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
     val remoteCommitPublished: RemoteCommitPublished? = null,
     val nextRemoteCommitPublished: RemoteCommitPublished? = null,

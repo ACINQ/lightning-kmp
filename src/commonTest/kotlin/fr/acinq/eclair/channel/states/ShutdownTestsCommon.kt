@@ -1,7 +1,6 @@
 package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
@@ -11,6 +10,8 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.WatchSpent
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
 import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
@@ -22,7 +23,6 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
 import fr.acinq.eclair.utils.msat
-import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.*
 import kotlin.test.*
 
@@ -381,8 +381,9 @@ class ShutdownTestsCommon : EclairTestSuite() {
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs + 2 anchors + 2 pending htlcs
         val (_, remoteCommitPublished) = TestsHelper.remoteClose(bobCommitTx, alice)
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs.size)
+        assertEquals(2, remoteCommitPublished.claimHtlcTxs.size)
+        assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs().size)
     }
 
     @Test
@@ -410,8 +411,9 @@ class ShutdownTestsCommon : EclairTestSuite() {
         aliceActions1.has<ChannelAction.Storage.StoreState>()
         val rcp = alice1.nextRemoteCommitPublished!!
         assertNotNull(rcp.claimMainOutputTx)
-        assertTrue(rcp.claimHtlcSuccessTxs.isEmpty())
-        assertEquals(2, rcp.claimHtlcTimeoutTxs.size)
+        assertEquals(2, rcp.claimHtlcTxs.size)
+        assertTrue(rcp.claimHtlcSuccessTxs().isEmpty())
+        assertEquals(2, rcp.claimHtlcTimeoutTxs().size)
     }
 
     @Test
@@ -455,22 +457,20 @@ class ShutdownTestsCommon : EclairTestSuite() {
         assertEquals(actions, listOf(ChannelAction.ProcessCmdRes.NotExecuted(CMD_CLOSE(null), ClosingAlreadyInProgress(alice.channelId))))
     }
 
-    @Test
-    fun `recv Error`() {
-        val (alice, _) = init()
+    private fun testLocalForceClose(alice: ChannelState, actions: List<ChannelAction>) {
+        assertTrue(alice is Closing)
         val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx
-        val (alice1, actions) = alice.processEx(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertTrue(alice1 is Closing)
-        assertNotNull(alice1.localCommitPublished)
-        assertEquals(alice1.localCommitPublished!!.commitTx, aliceCommitTx.tx)
+        val lcp = alice.localCommitPublished
+        assertNotNull(lcp)
+        assertEquals(lcp.commitTx, aliceCommitTx.tx)
 
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(6, txs.size)
         // alice has sent 2 htlcs so we expect 6 transactions:
         // - alice's current commit tx
         // - 1 tx to claim the main delayed output
-        // - 2 txes for each htlc
-        // - 2 txes for each delayed output of the claimed htlc
+        // - 2 txs for each htlc
+        // - 2 txs for each delayed output of the claimed htlc
         assertEquals(aliceCommitTx.tx, txs[0])
         assertEquals(aliceCommitTx.tx.txOut.size, 6) // 2 anchor outputs + 2 main output + 2 pending htlcs
         // the main delayed output spends the commitment transaction
@@ -484,16 +484,28 @@ class ShutdownTestsCommon : EclairTestSuite() {
         Transaction.correctlySpends(txs[4], txs[2], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         Transaction.correctlySpends(txs[5], txs[3], ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        assertEquals(
-            actions.findWatches<WatchConfirmed>().map { it.txId },
-            listOf(
-                txs[0].txid, // commit tx
-                txs[1].txid, // main delayed
-                txs[4].txid, // htlc-delayed
-                txs[5].txid, // htlc-delayed
-            )
+        val expectedWatchConfirmed = listOf(
+            txs[0].txid, // commit tx
+            txs[1].txid, // main delayed
+            txs[4].txid, // htlc-delayed
+            txs[5].txid, // htlc-delayed
         )
-        assertEquals(2, actions.findWatches<WatchSpent>().size)
+        assertEquals(actions.findWatches<WatchConfirmed>().map { it.txId }, expectedWatchConfirmed)
+        assertEquals(lcp.htlcTxs.keys, actions.findWatches<WatchSpent>().map { OutPoint(aliceCommitTx.tx, it.outputIndex.toLong()) }.toSet())
+    }
+
+    @Test
+    fun `recv CMD_FORCECLOSE`() {
+        val (alice, _) = init()
+        val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        testLocalForceClose(alice1, actions1)
+    }
+
+    @Test
+    fun `recv Error`() {
+        val (alice, _) = init()
+        val (alice1, actions1) = alice.processEx(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        testLocalForceClose(alice1, actions1)
     }
 
     companion object {

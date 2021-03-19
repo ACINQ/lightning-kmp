@@ -20,6 +20,7 @@ import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.eclair.transactions.outgoings
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
@@ -243,9 +244,9 @@ sealed class ChannelState {
         }
     }
 
-    internal fun doPublish(tx: Transaction, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
-        ChannelAction.Blockchain.PublishTx(tx),
-        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx)))
+    internal fun doPublish(tx: ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
+        ChannelAction.Blockchain.PublishTx(tx.tx),
+        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
     )
 
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
@@ -577,7 +578,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             }
             event is ChannelEvent.Restore && event.state is Closing -> {
                 val closingType = event.state.closingTypeAlreadyKnown()
-                logger.info { "c:${event.state.channelId} channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"}" }
+                logger.info { "c:${event.state.channelId} channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"})" }
                 // if the closing type is known:
                 // - there is no need to watch the funding tx because it has already been spent and the spending tx has
                 //   already reached mindepth
@@ -714,8 +715,9 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent -> when {
-                        state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
+                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                             logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
+                            val closingTx = state.getMutualClosePublished(watch.tx)
                             val nextState = Closing(
                                 staticParams,
                                 currentTip,
@@ -724,7 +726,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                                 null,
                                 currentBlockHeight.toLong(),
                                 state.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(watch.tx)
+                                listOf(closingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -959,7 +961,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             state.remoteShutdown.scriptPubKey.toByteArray(),
                             currentOnChainFeerates.mutualCloseFeerate
                         )
-                        val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned)))
+                        val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
                         val nextState = state.copy(closingTxProposed = closingTxProposed1)
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
@@ -984,8 +986,9 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent -> when {
-                        state is Negotiating && state.closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
+                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                             logger.info { "c:${state.channelId} closing tx published: closingTxId=${watch.tx.txid}" }
+                            val closingTx = state.getMutualClosePublished(watch.tx)
                             val nextState = Closing(
                                 staticParams,
                                 currentTip,
@@ -994,7 +997,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 null,
                                 currentBlockHeight.toLong(),
                                 state.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(watch.tx)
+                                listOf(closingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -1912,7 +1915,7 @@ data class Normal(
                                             remoteShutdown.scriptPubKey.toByteArray(),
                                             currentOnChainFeerates.mutualCloseFeerate,
                                         )
-                                        listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned)))
+                                        listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
                                     } else {
                                         listOf(listOf())
                                     }
@@ -1991,7 +1994,7 @@ data class Normal(
                                             commitments1,
                                             localShutdown,
                                             event.message,
-                                            listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))),
+                                            listOf(listOf(ClosingTxProposed(closingTx, closingSigned))),
                                             bestUnpublishedClosingTx = null
                                         )
                                         actions.addAll(listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned)))
@@ -2130,7 +2133,7 @@ data class ShuttingDown(
                                         commitments1,
                                         localShutdown,
                                         remoteShutdown,
-                                        listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))),
+                                        listOf(listOf(ClosingTxProposed(closingTx, closingSigned))),
                                         bestUnpublishedClosingTx = null
                                     )
                                     val actions = listOf(
@@ -2178,7 +2181,7 @@ data class ShuttingDown(
                                         commitments1,
                                         localShutdown,
                                         remoteShutdown,
-                                        listOf(listOf(ClosingTxProposed(closingTx.tx, closingSigned))),
+                                        listOf(listOf(ClosingTxProposed(closingTx, closingSigned))),
                                         bestUnpublishedClosingTx = null
                                     )
                                     actions1.addAll(listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned)))
@@ -2247,6 +2250,7 @@ data class ShuttingDown(
                 event.command is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(event.command, commitments.sendFailMalformed(event.command), event.command.commit)
                 event.command is CMD_UPDATE_FEE -> handleCommandResult(event.command, commitments.sendFee(event.command), event.command.commit)
                 event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+                event.command is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
             is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
@@ -2294,7 +2298,7 @@ data class Negotiating(
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
-    val bestUnpublishedClosingTx: Transaction?
+    val bestUnpublishedClosingTx: ClosingTx?
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
@@ -2321,7 +2325,7 @@ data class Negotiating(
                 val result = checkSig.map { signedClosingTx -> // this signed closing tx matches event.message.feeSatoshis
                     when {
                         lastLocalClosingFee == event.message.feeSatoshis || lastLocalClosingFee == nextClosingFee || closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS -> {
-                            logger.info { "c:$channelId closing tx published: closingTxId=${signedClosingTx.txid}" }
+                            logger.info { "c:$channelId closing tx published: closingTxId=${signedClosingTx.tx.txid}" }
                             val nextState = Closing(
                                 staticParams,
                                 currentTip,
@@ -2334,14 +2338,14 @@ data class Negotiating(
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Blockchain.PublishTx(signedClosingTx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx)))
+                                ChannelAction.Blockchain.PublishTx(signedClosingTx.tx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx.tx)))
                             )
                             Pair(nextState, actions)
                         }
                         nextClosingFee == event.message.feeSatoshis -> {
                             // we have converged but they don't have our signature yet
-                            logger.info { "c:$channelId closing tx published: closingTxId=${signedClosingTx.txid}" }
+                            logger.info { "c:$channelId closing tx published: closingTxId=${signedClosingTx.tx.txid}" }
                             val (_, closingSigned) = Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), nextClosingFee)
                             val nextState = Closing(
                                 staticParams,
@@ -2355,8 +2359,8 @@ data class Negotiating(
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Blockchain.PublishTx(signedClosingTx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx))),
+                                ChannelAction.Blockchain.PublishTx(signedClosingTx.tx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx.tx))),
                                 ChannelAction.Message.Send(closingSigned)
                             )
                             Pair(nextState, actions)
@@ -2366,12 +2370,12 @@ data class Negotiating(
                             logger.info { "c:$channelId proposing closingFeeSatoshis=${closingSigned.feeSatoshis}" }
                             val closingProposed1 = closingTxProposed.updated(
                                 closingTxProposed.lastIndex,
-                                closingTxProposed.last() + listOf(ClosingTxProposed(closingTx.tx, closingSigned))
+                                closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                             )
                             val nextState = this.copy(
                                 commitments = commitments.copy(remoteChannelData = event.message.channelData),
                                 closingTxProposed = closingProposed1,
-                                bestUnpublishedClosingTx = closingTx.tx
+                                bestUnpublishedClosingTx = closingTx
                             )
                             val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned))
                             Pair(nextState, actions)
@@ -2386,9 +2390,10 @@ data class Negotiating(
             event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)
             event is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
                 is WatchEventSpent -> when {
-                    watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().map { it.unsignedTx.txid }.contains(watch.tx.txid) -> {
+                    watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                         // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
                         logger.info { "c:$channelId closing tx published: closingTxId=${watch.tx.txid}" }
+                        val closingTx = getMutualClosePublished(watch.tx)
                         val nextState = Closing(
                             staticParams,
                             currentTip,
@@ -2397,7 +2402,7 @@ data class Negotiating(
                             null,
                             currentBlockHeight.toLong(),
                             this.closingTxProposed.flatten().map { it.unsignedTx },
-                            listOf(watch.tx)
+                            listOf(closingTx)
                         )
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
@@ -2422,6 +2427,13 @@ data class Negotiating(
         }
     }
 
+    /** Return full information about a known closing tx. */
+    internal fun getMutualClosePublished(tx: Transaction): ClosingTx {
+        // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
+        // they added their signature, so we use their version of the transaction
+        return closingTxProposed.flatten().first { it.unsignedTx.tx.txid == tx.txid }.unsignedTx.copy(tx = tx)
+    }
+
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
@@ -2441,8 +2453,8 @@ data class Negotiating(
                 )
                 val actions = listOf(
                     ChannelAction.Storage.StoreState(nextState),
-                    ChannelAction.Blockchain.PublishTx(bestUnpublishedClosingTx),
-                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, bestUnpublishedClosingTx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(bestUnpublishedClosingTx)))
+                    ChannelAction.Blockchain.PublishTx(bestUnpublishedClosingTx.tx),
+                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(bestUnpublishedClosingTx.tx)))
                 )
                 Pair(nextState, actions)
             }
@@ -2452,7 +2464,7 @@ data class Negotiating(
 }
 
 sealed class ClosingType
-data class MutualClose(val tx: Transaction) : ClosingType()
+data class MutualClose(val tx: ClosingTx) : ClosingType()
 data class LocalClose(val localCommit: LocalCommit, val localCommitPublished: LocalCommitPublished) : ClosingType()
 
 sealed class RemoteClose : ClosingType() {
@@ -2473,8 +2485,8 @@ data class Closing(
     override val commitments: Commitments,
     val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
-    val mutualCloseProposed: List<Transaction> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
-    val mutualClosePublished: List<Transaction> = emptyList(),
+    val mutualCloseProposed: List<ClosingTx> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
+    val mutualClosePublished: List<ClosingTx> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
     val remoteCommitPublished: RemoteCommitPublished? = null,
     val nextRemoteCommitPublished: RemoteCommitPublished? = null,
@@ -2483,13 +2495,12 @@ data class Closing(
 ) : ChannelStateWithCommitments() {
 
     private val spendingTxs: List<Transaction> by lazy {
-        mutualClosePublished + revokedCommitPublished.map { it.commitTx } +
-                listOfNotNull(
-                    localCommitPublished?.commitTx,
-                    remoteCommitPublished?.commitTx,
-                    nextRemoteCommitPublished?.commitTx,
-                    futureRemoteCommitPublished?.commitTx
-                )
+        mutualClosePublished.map { it.tx } + revokedCommitPublished.map { it.commitTx } + listOfNotNull(
+            localCommitPublished?.commitTx,
+            remoteCommitPublished?.commitTx,
+            nextRemoteCommitPublished?.commitTx,
+            futureRemoteCommitPublished?.commitTx
+        )
     }
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -2500,13 +2511,14 @@ data class Closing(
                 val watch = event.watch
                 when {
                     watch is WatchEventSpent && watch.event is BITCOIN_FUNDING_SPENT -> when {
-                        mutualClosePublished.contains(watch.tx) -> {
+                        mutualClosePublished.any { it.tx.txid == watch.tx.txid } -> {
                             // we already know about this tx, probably because we have published it ourselves after successful negotiation
                             Pair(this, listOf())
                         }
-                        mutualCloseProposed.contains(watch.tx) -> {
+                        mutualCloseProposed.any { it.tx.txid == watch.tx.txid } -> {
                             // at any time they can publish a closing tx with any sig we sent them
-                            val nextState = this.copy(mutualClosePublished = this.mutualClosePublished + listOf(watch.tx))
+                            val closingTx = mutualCloseProposed.first { it.tx.txid == watch.tx.txid }.copy(tx = watch.tx)
+                            val nextState = this.copy(mutualClosePublished = this.mutualClosePublished + listOf(closingTx))
                             val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Blockchain.PublishTx(watch.tx))
                             Pair(nextState, actions)
                         }
@@ -2551,8 +2563,8 @@ data class Closing(
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
                             val (newRevokedCommitPublished, tx) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
                             tx?.let {
-                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
-                                revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.txIn.first().outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
+                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it.tx)
+                                revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
                             }
                             newRevokedCommitPublished
                         }
@@ -2740,7 +2752,10 @@ data class Closing(
      */
     private fun isClosed(additionalConfirmedTx: Transaction?): ClosingType? {
         return when {
-            additionalConfirmedTx?.let { mutualClosePublished.contains(it) } ?: false -> MutualClose(additionalConfirmedTx!!)
+            additionalConfirmedTx?.let { tx -> mutualClosePublished.any { it.tx.txid == tx.txid } } ?: false -> {
+                val closingTx = mutualClosePublished.first { it.tx.txid == additionalConfirmedTx!!.txid }.copy(tx = additionalConfirmedTx!!)
+                MutualClose(closingTx)
+            }
             localCommitPublished?.isDone() ?: false -> LocalClose(commitments.localCommit, localCommitPublished!!)
             remoteCommitPublished?.isDone() ?: false -> CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished!!)
             nextRemoteCommitPublished?.isDone() ?: false -> NextRemoteClose(commitments.remoteNextCommitInfo.left!!.nextRemoteCommit, nextRemoteCommitPublished!!)
@@ -2756,7 +2771,7 @@ data class Closing(
             remoteCommitPublished?.isConfirmed() ?: false -> CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished!!)
             nextRemoteCommitPublished?.isConfirmed() ?: false -> NextRemoteClose(commitments.remoteNextCommitInfo.left!!.nextRemoteCommit, nextRemoteCommitPublished!!)
             futureRemoteCommitPublished?.isConfirmed() ?: false -> RecoveryClose(futureRemoteCommitPublished!!)
-            revokedCommitPublished.any { it.irrevocablySpent.values.contains(it.commitTx.txid) } -> RevokedClose(revokedCommitPublished.first { it.irrevocablySpent.values.contains(it.commitTx.txid) })
+            revokedCommitPublished.any { it.isConfirmed() } -> RevokedClose(revokedCommitPublished.first { it.isConfirmed() })
             else -> null
         }
     }
@@ -2769,55 +2784,67 @@ data class Closing(
      * @return if the parent tx is found, a tuple (fee, description)
      */
     private fun networkFeePaid(tx: Transaction): Pair<Satoshi, String>? {
-        // only funder pays the fee
-        if (!commitments.localParams.isFunder) return null
+        // we can compute the fees only for transactions with a single parent for which we know the output amount
+        if (tx.txIn.size != 1) return null
+        // only the funder pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
+        val isCommitTx = tx.txIn.any { it.outPoint == commitments.commitInput.outPoint }
+        if (isCommitTx && !commitments.localParams.isFunder) return null
 
         // we build a map with all known txs (that's not particularly efficient, but it doesn't really matter)
         val txs = buildList {
-            mutualClosePublished.map { it to "mutual" }.forEach { add(it) }
+            mutualClosePublished.map { it.tx to "mutual" }.forEach { add(it) }
             localCommitPublished?.let { localCommitPublished ->
                 add(localCommitPublished.commitTx to "local-commit")
-                localCommitPublished.claimMainDelayedOutputTx?.let { add(it to "local-main-delayed") }
-                localCommitPublished.htlcSuccessTxs.forEach { add(it to "local-htlc-success") }
-                localCommitPublished.htlcTimeoutTxs.forEach { add(it to "local-htlc-timeout") }
-                localCommitPublished.claimHtlcDelayedTxs.forEach { add(it to "local-htlc-delayed") }
+                localCommitPublished.claimMainDelayedOutputTx?.let { add(it.tx to "local-main-delayed") }
+                localCommitPublished.htlcTxs.values.forEach {
+                    when (it) {
+                        is Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx -> add(it.tx to "local-htlc-success")
+                        is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx -> add(it.tx to "local-htlc-timeout")
+                    }
+                }
+                localCommitPublished.claimHtlcDelayedTxs.forEach { add(it.tx to "local-htlc-delayed") }
             }
             remoteCommitPublished?.let { remoteCommitPublished ->
                 add(remoteCommitPublished.commitTx to "remote-commit")
-                remoteCommitPublished.claimMainOutputTx?.let { add(it to "remote-main") }
-                remoteCommitPublished.claimHtlcSuccessTxs.forEach { add(it to "remote-htlc-success") }
-                remoteCommitPublished.claimHtlcTimeoutTxs.forEach { add(it to "remote-htlc-timeout") }
+                remoteCommitPublished.claimMainOutputTx?.let { add(it.tx to "remote-main") }
+                remoteCommitPublished.claimHtlcTxs.values.forEach {
+                    when (it) {
+                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> add(it.tx to "remote-htlc-success")
+                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> add(it.tx to "remote-htlc-timeout")
+                    }
+                }
             }
             nextRemoteCommitPublished?.let { nextRemoteCommitPublished ->
                 add(nextRemoteCommitPublished.commitTx to "remote-commit")
-                nextRemoteCommitPublished.claimMainOutputTx?.let { add(it to "remote-main") }
-                nextRemoteCommitPublished.claimHtlcSuccessTxs.forEach { add(it to "remote-htlc-success") }
-                nextRemoteCommitPublished.claimHtlcTimeoutTxs.forEach { add(it to "remote-htlc-timeout") }
+                nextRemoteCommitPublished.claimMainOutputTx?.let { add(it.tx to "remote-main") }
+                nextRemoteCommitPublished.claimHtlcTxs.values.forEach {
+                    when (it) {
+                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> add(it.tx to "remote-htlc-success")
+                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> add(it.tx to "remote-htlc-timeout")
+                    }
+                }
             }
             revokedCommitPublished.forEach { revokedCommitPublished ->
                 add(revokedCommitPublished.commitTx to "revoked-commit")
-                revokedCommitPublished.claimMainOutputTx?.let { add(it to "revoked-main") }
-                revokedCommitPublished.mainPenaltyTx?.let { add(it to "revoked-main-penalty") }
-                revokedCommitPublished.htlcPenaltyTxs.forEach { add(it to "revoked-htlc-penalty") }
-                revokedCommitPublished.claimHtlcDelayedPenaltyTxs.forEach { add(it to "revoked-htlc-penalty-delayed") }
+                revokedCommitPublished.claimMainOutputTx?.let { add(it.tx to "revoked-main") }
+                revokedCommitPublished.mainPenaltyTx?.let { add(it.tx to "revoked-main-penalty") }
+                revokedCommitPublished.htlcPenaltyTxs.forEach { add(it.tx to "revoked-htlc-penalty") }
+                revokedCommitPublished.claimHtlcDelayedPenaltyTxs.forEach { add(it.tx to "revoked-htlc-penalty-delayed") }
             }
         }.map { (tx, desc) ->
             // will allow easy lookup of parent transaction
             tx.txid to (tx to desc)
         }.toMap()
 
-        fun fee(child: Transaction): Satoshi? {
-            require(child.txIn.size == 1) { "transaction must have exactly one input" }
-            val outPoint = child.txIn.first().outPoint
-            val parentTxOut = if (outPoint == commitments.commitInput.outPoint) {
+        return txs[tx.txid]?.let { (_, desc) ->
+            val parentTxOut = if (isCommitTx) {
                 commitments.commitInput.txOut
             } else {
+                val outPoint = tx.txIn.first().outPoint
                 txs[outPoint.txid]?.let { (parent, _) -> parent.txOut[outPoint.index.toInt()] }
             }
-            return parentTxOut?.let { txOut -> txOut.amount - child.txOut.map { it.amount }.sum() }
+            parentTxOut?.let { txOut -> txOut.amount - tx.txOut.map { it.amount }.sum() }?.let { it to desc }
         }
-
-        return txs[tx.txid]?.let { (_, desc) -> fee(tx)?.let { it to desc } }
     }
 }
 

@@ -7,7 +7,15 @@ import fr.acinq.eclair.Eclair.randomBytes32
 import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.blockchain.BITCOIN_FUNDING_SPENT
+import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcTimeoutTxs
+import fr.acinq.eclair.channel.TestsHelper.htlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.htlcTimeoutTxs
+import fr.acinq.eclair.channel.TestsHelper.processEx
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.tests.TestConstants
@@ -19,6 +27,7 @@ import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CommitmentsTestsCommon : EclairTestSuite() {
@@ -391,6 +400,73 @@ class CommitmentsTestsCommon : EclairTestSuite() {
             val result = c.receiveAdd(add)
             assertTrue(result.isRight)
         }
+    }
+
+    @Test
+    fun `find timed out htlcs`() {
+        val (alice, bob, timedOutHtlcs) = run {
+            val (alice0, bob0) = reachNormal()
+            // We have two identical HTLCs (MPP):
+            val (nodes1, _, htlcAlice1a) = TestsHelper.addHtlc(50_000_000.msat, payer = alice0, payee = bob0)
+            val (alice1, bob1) = nodes1
+            val cmdAddAlice = CMD_ADD_HTLC(htlcAlice1a.amountMsat, htlcAlice1a.paymentHash, htlcAlice1a.cltvExpiry, htlcAlice1a.onionRoutingPacket, UUID.randomUUID())
+            val (alice2, bob2, htlcAlice1b) = TestsHelper.addHtlc(cmdAddAlice, alice1, bob1)
+            val (nodes3, preimageAlice2, htlcAlice2) = TestsHelper.addHtlc(60_000_000.msat, payer = alice2, payee = bob2)
+            val (alice3, bob3) = nodes3
+            val (alice4, bob4) = TestsHelper.crossSign(alice3, bob3)
+            // We have two identical HTLCs (MPP):
+            val (nodes5, _, htlcBob1a) = TestsHelper.addHtlc(15_000_000.msat, payer = bob4, payee = alice4)
+            val (bob5, alice5) = nodes5
+            val cmdAddBob = CMD_ADD_HTLC(htlcBob1a.amountMsat, htlcBob1a.paymentHash, htlcBob1a.cltvExpiry, htlcBob1a.onionRoutingPacket, UUID.randomUUID())
+            val (bob6, alice6, htlcBob1b) = TestsHelper.addHtlc(cmdAddBob, bob5, alice5)
+            val (nodes7, preimageBob2, htlcBob2) = TestsHelper.addHtlc(20_000_000.msat, payer = bob6, payee = alice6)
+            val (bob7, alice7) = nodes7
+            val (bob8, alice8) = TestsHelper.crossSign(bob7, alice7)
+            // Alice and Bob both know the preimage for only one of the two HTLCs they received.
+            val (alice9, _) = alice8.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob2.id, preimageBob2)))
+            val (bob9, _) = bob8.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice2.id, preimageAlice2)))
+            // Alice publishes her commitment.
+            val (aliceClosing, _) = alice9.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+            assertTrue(aliceClosing is Closing)
+            val lcp = aliceClosing.localCommitPublished
+            assertNotNull(lcp)
+            val (bobClosing, _) = bob9.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            assertTrue(bobClosing is Closing)
+            val rcp = bobClosing.remoteCommitPublished
+            assertNotNull(rcp)
+            Triple(aliceClosing, bobClosing, listOf(htlcAlice1a, htlcAlice1b, htlcAlice2, htlcBob1a, htlcBob1b, htlcBob2))
+        }
+
+        val lcp = alice.localCommitPublished!!
+        val localCommit = alice.commitments.localCommit
+        val rcp = bob.remoteCommitPublished!!
+        val remoteCommit = bob.commitments.remoteCommit
+        val dustLimit = TestConstants.Alice.nodeParams.dustLimit
+        val htlcTimeoutTxs = lcp.htlcTimeoutTxs()
+        val htlcSuccessTxs = lcp.htlcSuccessTxs()
+        val claimHtlcTimeoutTxs = rcp.claimHtlcTimeoutTxs()
+        val claimHtlcSuccessTxs = rcp.claimHtlcSuccessTxs()
+
+        val aliceTimedOutHtlcs = htlcTimeoutTxs.map { htlcTimeout ->
+            val htlcs = localCommit.timedOutHtlcs(lcp, dustLimit, htlcTimeout.tx)
+            assertEquals(1, htlcs.size)
+            htlcs.first()
+        }
+        assertEquals(timedOutHtlcs.take(3).toSet(), aliceTimedOutHtlcs.toSet())
+
+        val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map { claimHtlcTimeout ->
+            val htlcs = remoteCommit.timedOutHtlcs(rcp, dustLimit, claimHtlcTimeout.tx)
+            assertEquals(1, htlcs.size)
+            htlcs.first()
+        }
+        assertEquals(timedOutHtlcs.drop(3).toSet(), bobTimedOutHtlcs.toSet())
+
+        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, htlcSuccess.tx).isEmpty()) }
+        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(remoteCommit.timedOutHtlcs(rcp, dustLimit, htlcSuccess.tx).isEmpty()) }
+        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
+        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(remoteCommit.timedOutHtlcs(rcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
+        htlcTimeoutTxs.forEach { htlcTimeout -> assertTrue(remoteCommit.timedOutHtlcs(rcp, dustLimit, htlcTimeout.tx).isEmpty()) }
+        claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)

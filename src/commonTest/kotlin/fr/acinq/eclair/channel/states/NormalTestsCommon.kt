@@ -9,8 +9,12 @@ import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
 import fr.acinq.eclair.channel.TestsHelper.addHtlc
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.crossSign
 import fr.acinq.eclair.channel.TestsHelper.fulfillHtlc
+import fr.acinq.eclair.channel.TestsHelper.htlcSuccessTxs
+import fr.acinq.eclair.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.eclair.channel.TestsHelper.makeCmdAdd
 import fr.acinq.eclair.channel.TestsHelper.processEx
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
@@ -1630,16 +1634,17 @@ class NormalTestsCommon : EclairTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(819_470.sat, amountClaimed)
+        assertEquals(819_150.sat, amountClaimed)
 
         val rcp = aliceClosing.remoteCommitPublished!!
         val watchConfirmed = actions.findWatches<WatchConfirmed>()
         assertEquals(2, watchConfirmed.size)
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!), watchConfirmed[1].event)
-        assertEquals(3, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
-        assertEquals(1, rcp.claimHtlcSuccessTxs.size)
-        assertEquals(2, rcp.claimHtlcTimeoutTxs.size)
+        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!.tx), watchConfirmed[1].event)
+        assertEquals(4, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(4, rcp.claimHtlcTxs.size)
+        assertEquals(1, rcp.claimHtlcSuccessTxs().size)
+        assertEquals(2, rcp.claimHtlcTimeoutTxs().size)
     }
 
     @Test
@@ -1705,10 +1710,11 @@ class NormalTestsCommon : EclairTestSuite() {
         val watchConfirmed = actions9.findWatches<WatchConfirmed>()
         assertEquals(2, watchConfirmed.size)
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!), watchConfirmed[1].event)
-        assertEquals(2, actions9.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
-        assertEquals(0, rcp.claimHtlcSuccessTxs.size)
-        assertEquals(2, rcp.claimHtlcTimeoutTxs.size)
+        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!.tx), watchConfirmed[1].event)
+        assertEquals(3, actions9.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(3, rcp.claimHtlcTxs.size)
+        assertEquals(0, rcp.claimHtlcSuccessTxs().size)
+        assertEquals(2, rcp.claimHtlcTimeoutTxs().size)
     }
 
     @Test
@@ -1822,7 +1828,7 @@ class NormalTestsCommon : EclairTestSuite() {
         actions.has<ChannelAction.Storage.StoreState>()
         val lcp = alice3.localCommitPublished!!
         actions.hasTx(lcp.commitTx)
-        assertEquals(1, lcp.htlcTimeoutTxs.size)
+        assertEquals(1, lcp.htlcTimeoutTxs().size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
         assertEquals(4, actions.findTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
         assertEquals(3, actions.findWatches<WatchConfirmed>().size) // commit tx + main output + claim-htlc-delayed
@@ -1837,16 +1843,16 @@ class NormalTestsCommon : EclairTestSuite() {
 
         val lcp = bob.localCommitPublished!!
         assertNotNull(lcp.claimMainDelayedOutputTx)
-        assertEquals(1, lcp.htlcSuccessTxs.size)
-        Transaction.correctlySpends(lcp.htlcSuccessTxs.first(), lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(1, lcp.htlcSuccessTxs().size)
+        Transaction.correctlySpends(lcp.htlcSuccessTxs().first().tx, lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
-        Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first(), lcp.htlcSuccessTxs.first(), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first().tx, lcp.htlcSuccessTxs().first().tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.htlcSuccessTxs.first(), lcp.claimHtlcDelayedTxs.first())
+        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.htlcSuccessTxs().first().tx, lcp.claimHtlcDelayedTxs.first().tx)
         assertEquals(txs, actions.findTxs().toSet())
-        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!, lcp.claimHtlcDelayedTxs.first()).map { it.txid }.toSet()
+        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.claimHtlcDelayedTxs.first().tx).map { it.txid }.toSet()
         assertEquals(watchConfirmed, actions.findWatches<WatchConfirmed>().map { it.txId }.toSet())
-        val watchSpent = lcp.htlcSuccessTxs.first().txIn.map { it.outPoint }.toSet()
+        val watchSpent = setOf(lcp.htlcSuccessTxs().first().input.outPoint)
         assertEquals(watchSpent, actions.findWatches<WatchSpent>().map { OutPoint(lcp.commitTx, it.outputIndex.toLong()) }.toSet())
     }
 
@@ -1967,8 +1973,9 @@ class NormalTestsCommon : EclairTestSuite() {
         assertTrue(alice4 is Closing)
         assertNotNull(alice4.localCommitPublished)
         assertEquals(alice4.localCommitPublished!!.commitTx, aliceCommitTx.tx)
-        assertEquals(1, alice4.localCommitPublished!!.htlcSuccessTxs.size)
-        assertEquals(2, alice4.localCommitPublished!!.htlcTimeoutTxs.size)
+        assertEquals(4, alice4.localCommitPublished!!.htlcTxs.size)
+        assertEquals(1, alice4.localCommitPublished!!.htlcSuccessTxs().size)
+        assertEquals(2, alice4.localCommitPublished!!.htlcTimeoutTxs().size)
         assertEquals(3, alice4.localCommitPublished!!.claimHtlcDelayedTxs.size)
 
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
@@ -1977,8 +1984,8 @@ class NormalTestsCommon : EclairTestSuite() {
         // so we expect 8 transactions:
         // - alice's current commit tx
         // - 1 tx to claim the main delayed output
-        // - 3 txes for each htlc
-        // - 3 txes for each delayed output of the claimed htlc
+        // - 3 txs for each htlc
+        // - 3 txs for each delayed output of the claimed htlc
 
         assertEquals(aliceCommitTx.tx, txs[0])
         assertEquals(aliceCommitTx.tx.txOut.size, 8) // 2 anchor outputs + 2 main output + 4 pending htlcs
@@ -2005,7 +2012,7 @@ class NormalTestsCommon : EclairTestSuite() {
                 txs[7].txid  // htlc-delayed
             )
         )
-        assertEquals(3, actions.findWatches<WatchSpent>().size)
+        assertEquals(4, actions.findWatches<WatchSpent>().size)
     }
 
     @Test
