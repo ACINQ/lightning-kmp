@@ -372,7 +372,7 @@ class Peer(
                     when (action.origin) {
                         null -> {
                             logger.warning { "n:$remoteNodeId c:$actualChannelId incoming amount with empty origin, store minimal information" }
-                            val fakePreimage = Crypto.sha256(actualChannelId).toByteVector32()
+                            val fakePreimage = actualChannelId.sha256()
                             db.payments.addAndReceivePayment(
                                 preimage = fakePreimage,
                                 origin = IncomingPayment.Origin.SwapIn(address = ""),
@@ -391,7 +391,7 @@ class Peer(
                             }
                         }
                         is ChannelOrigin.SwapInOrigin -> {
-                            val fakePreimage = Crypto.sha256(actualChannelId).toByteVector32()
+                            val fakePreimage = actualChannelId.sha256()
                             db.payments.addAndReceivePayment(
                                 preimage = fakePreimage,
                                 origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
