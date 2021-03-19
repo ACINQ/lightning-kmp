@@ -107,7 +107,7 @@ data class LocalCommitPublished(
             isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx }.toMap())
+        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.associateWith { tx }.toMap())
     }
 
     /**
@@ -221,7 +221,7 @@ data class RemoteCommitPublished(
             isCommitTx || spendsTheCommitTx
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx }.toMap())
+        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.associateWith { tx }.toMap())
     }
 
     /**
@@ -330,7 +330,7 @@ data class RevokedCommitPublished(
             isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.map { it to tx }.toMap())
+        return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.associateWith { tx }.toMap())
     }
 
     /**

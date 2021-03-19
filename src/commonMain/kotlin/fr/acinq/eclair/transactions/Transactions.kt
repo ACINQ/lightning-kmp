@@ -121,7 +121,7 @@ object Transactions {
 
         @Serializable
         data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, val toLocalIndex: Int?) : TransactionWithInputInfo() {
-            val toLocalOutput: TxOut? get() = toLocalIndex?.let { tx.txOut.getOrNull(it) }
+            val toLocalOutput: TxOut? get() = toLocalIndex?.let { tx.txOut[it] }
         }
     }
 
