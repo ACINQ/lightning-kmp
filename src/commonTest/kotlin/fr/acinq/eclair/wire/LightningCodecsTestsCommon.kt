@@ -12,6 +12,7 @@ import fr.acinq.eclair.Features
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelOrigin
 import fr.acinq.eclair.crypto.assertArrayEquals
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.utils.msat
@@ -264,7 +265,10 @@ class LightningCodecsTestsCommon : EclairTestSuite() {
                 )
             ),
             // non-empty upfront_shutdown_script + unknown odd tlv records
-            defaultEncoded + ByteVector("0002 1234 0303010203") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203")))))
+            defaultEncoded + ByteVector("0002 1234 0303010203") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203"))))),
+            // channel origin tlv records
+            defaultEncoded + ByteVector("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat))))),
+            defaultEncoded + ByteVector("fe47000005 2d 0002 223341754d3868536b584265746a644878577468524669483668596871463250726a72 00000000000001a4") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.SwapInOrigin("3AuM8hSkXBetjdHxWthRFiH6hYhqF2Prjr", 420.sat)))))
         )
 
         testCases.forEach {
