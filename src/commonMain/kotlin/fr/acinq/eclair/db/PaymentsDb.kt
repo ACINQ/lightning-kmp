@@ -131,7 +131,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     data class Received(val amount: MilliSatoshi, val receivedWith: ReceivedWith, val receivedAt: Long = currentTimestampMillis())
 
     sealed class ReceivedWith {
-        abstract val fees: MilliSatoshi?
+        abstract val fees: MilliSatoshi
 
         /** Payment was received via existing lightning channels. */
         object LightningPayment : ReceivedWith() {
