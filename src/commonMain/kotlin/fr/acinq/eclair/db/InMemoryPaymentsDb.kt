@@ -56,14 +56,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         return outgoing[id]?.let { payment ->
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
             return when (payment.status) {
-                // This doesn't work. Is there something like "instanceof" to check inheritance ???
-            //  is OutgoingPayment.Status.Completed.Succeeded -> {
-            //      payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
-            //  }
-                is OutgoingPayment.Status.Completed.Succeeded.OffChain -> {
-                    payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
-                }
-                is OutgoingPayment.Status.Completed.Succeeded.OnChain -> {
+                is OutgoingPayment.Status.Completed.Succeeded -> {
                     payment.copy(parts = parts.filter { it.status is OutgoingPayment.Part.Status.Succeeded })
                 }
                 else -> payment.copy(parts = parts)

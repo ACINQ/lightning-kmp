@@ -226,13 +226,13 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
                 data class OffChain(
                     val preimage: ByteVector32,
                     override val completedAt: Long = currentTimestampMillis()
-                ) : Completed()
+                ) : Succeeded()
                 data class OnChain(
                     val txids: List<ByteVector32>,
                     val claimed: Satoshi,
                     val type: ChannelClosingType,
                     override val completedAt: Long = currentTimestampMillis()
-                ) : Completed() {
+                ) : Succeeded() {
                     enum class ChannelClosingType {
                         Mutual, Local, Remote, Other
                     }
