@@ -2902,23 +2902,15 @@ data class Closing(
             else -> ChannelClosingType.Other // includes revoked commit published case
         }
         additionalConfirmedTx?.let { confirmedTx ->
-            mutualClosePublished.firstOrNull { it == confirmedTx }?.let {
-                txids += it.txid
-                // NB: this code could be much simpler if we knew the localScriptPubKey
-                var expectedAmount = commitments.localCommit.spec.toLocal.truncateToSatoshi()
-                if (commitments.localParams.isFunder) {
-                    // we had to pay the closingFees
-                    val inputAmount = commitments.commitInput.txOut.amount
-                    val outputAmount = it.txOut.map { it.amount }.sum()
-                    val feesAmount = outputAmount - inputAmount
-                    expectedAmount -= feesAmount
-                }
-                claimed += expectedAmount
+            mutualClosePublished.firstOrNull { it.tx == confirmedTx }?.let {
+                txids += it.tx.txid
+                claimed += it.toLocalOutput?.amount ?: 0.sat
             }
         }
         localCommitPublished?.let {
-            val confirmedTxids = it.irrevocablySpent.values.toSet()
-            val allTxs = listOfNotNull(it.commitTx, it.claimMainDelayedOutputTx) + it.htlcSuccessTxs + it.htlcTimeoutTxs
+            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
+            val allTxs = listOfNotNull(it.claimMainDelayedOutputTx?.tx) +
+                    it.claimHtlcDelayedTxs.map { it.tx }
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
@@ -2930,8 +2922,9 @@ data class Closing(
             nextRemoteCommitPublished,
             futureRemoteCommitPublished
         ).forEach {
-            val confirmedTxids = it.irrevocablySpent.values.toSet()
-            val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx) + it.claimHtlcSuccessTxs + it.claimHtlcTimeoutTxs
+            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
+            val allTxs = listOfNotNull(it.claimMainOutputTx?.tx) +
+                    it.claimHtlcTxs.mapNotNull { it.value?.tx }
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
@@ -2939,8 +2932,10 @@ data class Closing(
             }
         }
         revokedCommitPublished.forEach {
-            val confirmedTxids = it.irrevocablySpent.values.toSet()
-            val allTxs = listOfNotNull(it.commitTx, it.claimMainOutputTx, it.mainPenaltyTx) + it.htlcPenaltyTxs + it.claimHtlcDelayedPenaltyTxs
+            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
+            val allTxs = listOfNotNull(it.claimMainOutputTx?.tx, it.mainPenaltyTx?.tx) +
+                    it.htlcPenaltyTxs.map { it.tx } +
+                    it.claimHtlcDelayedPenaltyTxs.map { it.tx }
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
