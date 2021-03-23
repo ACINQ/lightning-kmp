@@ -225,7 +225,7 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
                     override val completedAt: Long = currentTimestampMillis()
                 ) : Succeeded() {
                     enum class ChannelClosingType {
-                        Mutual, Local, Remote, Other
+                        Mutual, Local, Remote, Revoked, Other
                     }
                 }
             }

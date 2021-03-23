@@ -2899,7 +2899,8 @@ data class Closing(
             remoteCommitPublished != null -> ChannelClosingType.Remote
             nextRemoteCommitPublished != null -> ChannelClosingType.Remote
             futureRemoteCommitPublished != null -> ChannelClosingType.Remote
-            else -> ChannelClosingType.Other // includes revoked commit published case
+            revokedCommitPublished.isNotEmpty() -> ChannelClosingType.Revoked
+            else -> ChannelClosingType.Other
         }
         additionalConfirmedTx?.let { confirmedTx ->
             mutualClosePublished.firstOrNull { it.tx == confirmedTx }?.let {
