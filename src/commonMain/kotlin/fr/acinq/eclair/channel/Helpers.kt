@@ -363,6 +363,7 @@ object Helpers {
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
 
+        // To be replaced with corresponding function in bitcoin-kmp
         fun btcAddressFromScriptPubKey(scriptPubKey: ByteVector, chainHash: ByteVector32): String? {
             return runTrying {
                 val script = Script.parse(scriptPubKey)
@@ -372,9 +373,9 @@ object Helpers {
                         val opPushData = script[2] as OP_PUSHDATA
                         val prefix = when (chainHash) {
                             Block.LivenetGenesisBlock.hash -> Base58.Prefix.PubkeyAddress
-                            Block.TestnetGenesisBlock.hash -> Base58.Prefix.PubkeyAddressTestnet
-                            else -> Base58.Prefix.PubkeyAddressSegnet
-                        }
+                            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> Base58.Prefix.PubkeyAddressTestnet
+                            else -> null
+                        } ?: return null
                         Base58Check.encode(prefix, opPushData.data)
                     }
                     Script.isPay2sh(script) -> {
@@ -382,9 +383,9 @@ object Helpers {
                         val opPushData = script[1] as OP_PUSHDATA
                         val prefix = when (chainHash) {
                             Block.LivenetGenesisBlock.hash -> Base58.Prefix.ScriptAddress
-                            Block.TestnetGenesisBlock.hash -> Base58.Prefix.ScriptAddressTestnet
-                            else -> Base58.Prefix.ScriptAddressSegnet
-                        }
+                            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> Base58.Prefix.ScriptAddressTestnet
+                            else -> null
+                        } ?: return null
                         Base58Check.encode(prefix, opPushData.data)
                     }
                     Script.isPay2wpkh(script) || Script.isPay2wsh(script) -> {
@@ -394,8 +395,9 @@ object Helpers {
                         val hrp = when (chainHash) {
                             Block.LivenetGenesisBlock.hash -> "bc"
                             Block.TestnetGenesisBlock.hash -> "tb"
-                            else -> "bcrt"
-                        }
+                            Block.RegtestGenesisBlock.hash -> "bcrt"
+                            else -> null
+                        } ?: return null
                         Bech32.encodeWitnessAddress(hrp, 0, opPushData.data.toByteArray())
                     }
                     else -> null
