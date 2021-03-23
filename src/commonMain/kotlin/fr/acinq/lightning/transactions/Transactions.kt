@@ -651,7 +651,7 @@ object Transactions {
         }
     }
 
-    fun makeClaimDelayedOutputPenaltyTx(
+    fun makeClaimDelayedOutputPenaltyTxs(
         delayedOutputTx: Transaction,
         localDustLimit: Satoshi,
         localRevocationPubkey: PublicKey,
@@ -659,13 +659,12 @@ object Transactions {
         localDelayedPaymentPubkey: PublicKey,
         localFinalScriptPubKey: ByteArray,
         feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx> {
+    ): List<TxResult<TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx>> {
         val redeemScript = Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
         val pubkeyScript = Script.write(Script.pay2wsh(redeemScript))
-        return when (val pubkeyScriptIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript, amount_opt = null)) {
-            is TxResult.Skipped -> TxResult.Skipped(pubkeyScriptIndex.why)
-            is TxResult.Success -> {
-                val outputIndex = pubkeyScriptIndex.result
+        return when (val pubkeyScriptIndexes = findPubKeyScriptIndexes(delayedOutputTx, pubkeyScript, amount_opt = null)) {
+            is TxResult.Skipped -> listOf(TxResult.Skipped(pubkeyScriptIndexes.why))
+            is TxResult.Success -> pubkeyScriptIndexes.result.map { outputIndex ->
                 val input = InputInfo(OutPoint(delayedOutputTx, outputIndex.toLong()), delayedOutputTx.txOut[outputIndex], ByteVector(Script.write(redeemScript)))
                 // unsigned transaction
                 val tx = Transaction(
@@ -791,12 +790,23 @@ object Transactions {
         return TransactionWithInputInfo.ClosingTx(commitTxInput, tx, toLocalOutput)
     }
 
+    private fun matchPubKeyScript(txOut: TxOut, pubkeyScript: ByteArray, amount_opt: Satoshi?): Boolean {
+        return (amount_opt == null || amount_opt == txOut.amount) && txOut.publicKeyScript.contentEquals(pubkeyScript)
+    }
+
     private fun findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteArray, amount_opt: Satoshi?): TxResult<Int> {
-        val outputIndex = tx.txOut
-            .withIndex()
-            .indexOfFirst { (_, txOut) -> (amount_opt == null || amount_opt == txOut.amount) && txOut.publicKeyScript.contentEquals(pubkeyScript) }
+        val outputIndex = tx.txOut.indexOfFirst { txOut -> matchPubKeyScript(txOut, pubkeyScript, amount_opt) }
         return if (outputIndex >= 0) {
             TxResult.Success(outputIndex)
+        } else {
+            TxResult.Skipped(TxGenerationSkipped.OutputNotFound)
+        }
+    }
+
+    private fun findPubKeyScriptIndexes(tx: Transaction, pubkeyScript: ByteArray, amount_opt: Satoshi?): TxResult<List<Int>> {
+        val outputIndexes = tx.txOut.withIndex().filter { matchPubKeyScript(it.value, pubkeyScript, amount_opt) }.map { it.index }
+        return if (outputIndexes.isNotEmpty()) {
+            TxResult.Success(outputIndexes)
         } else {
             TxResult.Skipped(TxGenerationSkipped.OutputNotFound)
         }
