@@ -2673,7 +2673,7 @@ data class Closing(
                         }
 
                         val (nextState, closedActions) = when (val closingType = closing1.isClosed(watch.tx)) {
-                            null -> Pair(closing1, listOf<ChannelAction>())
+                            null -> Pair(closing1, listOf())
                             else -> {
                                 logger.info { "c:$channelId channel is now closed" }
                                 if (closingType !is MutualClose) {
