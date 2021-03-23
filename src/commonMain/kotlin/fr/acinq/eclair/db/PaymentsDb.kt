@@ -191,7 +191,11 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         /** Corresponds to the on-chain payments made when closing a channel. */
         data class ChannelClosing(
             val channelId: ByteVector32,
-            val closingAddress: String,
+            val closingAddress: String, // btc address
+            // The closingAddress may have been supplied by the user during a mutual close.
+            // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
+            // So `isSentToDefaultAddress` means this default Phoenix address was used,
+            // and is used by the UI to explain the situation to the user.
             val isSentToDefaultAddress: Boolean,
             override val paymentHash: ByteVector32
         ) : Details()
