@@ -2914,7 +2914,7 @@ data class Closing(
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
-                claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
             }
         }
         listOfNotNull(
@@ -2928,7 +2928,7 @@ data class Closing(
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
-                claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
             }
         }
         revokedCommitPublished.forEach {
@@ -2939,7 +2939,7 @@ data class Closing(
             val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
             if (confirmedTxs.isNotEmpty()) {
                 txids += confirmedTxs.map { it.txid }
-                claimed += confirmedTxs.map { it.txOut.map { it.amount }.sum() }.sum()
+                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
             }
         }
         return ChannelAction.Storage.StoreChannelClosed(txids, claimed, type)
