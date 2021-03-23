@@ -173,7 +173,7 @@ class ElectrumClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val eventChannel: Channel<ClientEvent> = Channel(BUFFERED)
-    private val output: Channel<ByteArray> = Channel(BUFFERED)
+    private var output: Channel<ByteArray> = Channel(BUFFERED)
 
     private val _connectionState = MutableStateFlow(Connection.CLOSED)
     val connectionState: StateFlow<Connection> get() = _connectionState
@@ -208,7 +208,7 @@ class ElectrumClient(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is SendRequest -> output.send(action.request.encodeToByteArray())
+                    is SendRequest -> if(!output.isClosedForSend) output.send(action.request.encodeToByteArray())
                     is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
                     is SendResponse -> notificationsChannel.send(action.response)
                     is BroadcastStatus -> if (_connectionState.value != action.connection) _connectionState.value = action.connection
@@ -224,6 +224,7 @@ class ElectrumClient(
 
     fun disconnect() {
         if (this::socket.isInitialized) socket.close()
+        output.close()
     }
 
     // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
@@ -271,6 +272,8 @@ class ElectrumClient(
         }
 
         suspend fun respond() {
+            // Reset the output channel to avoid sending obsolete messages
+            output = Channel(BUFFERED)
             for (msg in output) { send(msg) }
         }
 
