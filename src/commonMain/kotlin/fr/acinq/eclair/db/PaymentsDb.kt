@@ -220,6 +220,10 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
                 ) : Succeeded()
                 data class OnChain(
                     val txids: List<ByteVector32>,
+                    // The `claimed` field represents the sum total of bitcoin tx outputs claimed for the user.
+                    // A simplified fees can be calculated as: OutgoingPayment.recipientAmount - claimed
+                    // In the future, we plan on storing the closing btc transactions as parts.
+                    // Then we can use those parts to calculate the fees, and provide more details to the user.
                     val claimed: Satoshi,
                     val type: ChannelClosingType,
                     override val completedAt: Long = currentTimestampMillis()
