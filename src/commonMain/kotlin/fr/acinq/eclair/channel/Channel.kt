@@ -96,7 +96,7 @@ sealed class ChannelAction {
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
-        data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToMyWallet: Boolean) : Storage()
+        data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
         data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi, val type: ChannelClosingType) : Storage()
     }
 
@@ -185,7 +185,7 @@ sealed class ChannelState {
                             actions + ChannelAction.Storage.StoreChannelClosing(
                                 amount = channelBalance,
                                 closingAddress = btcAddr,
-                                isSentToMyWallet = false
+                                isSentToDefaultAddress = false
                             )
                         } else {
                             // Default output address
@@ -196,7 +196,7 @@ sealed class ChannelState {
                             actions + ChannelAction.Storage.StoreChannelClosing(
                                 amount = channelBalance,
                                 closingAddress = btcAddr,
-                                isSentToMyWallet = true
+                                isSentToDefaultAddress = true
                             )
                         }
                     } else /* channelBalance <= 0.msat */ {

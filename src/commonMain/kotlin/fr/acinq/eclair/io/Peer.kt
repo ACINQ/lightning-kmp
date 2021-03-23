@@ -416,7 +416,7 @@ class Peer(
                         details = OutgoingPayment.Details.ChannelClosing(
                             channelId = channelId,
                             closingAddress = action.closingAddress,
-                            isSentToMyWallet = action.isSentToMyWallet,
+                            isSentToDefaultAddress = action.isSentToDefaultAddress,
                             paymentHash = randomBytes32()
                         ),
                         parts = listOf<OutgoingPayment.Part>(),

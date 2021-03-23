@@ -205,7 +205,7 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         data class ChannelClosing(
             val channelId: ByteVector32,
             val closingAddress: String,
-            val isSentToMyWallet: Boolean,
+            val isSentToDefaultAddress: Boolean,
             override val paymentHash: ByteVector32
         ) : Details()
 
