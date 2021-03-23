@@ -409,15 +409,15 @@ class Peer(
                 }
                 action is ChannelAction.Storage.StoreChannelClosing -> {
                     val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
+                    val recipient = if (action.isSentToDefaultAddress) nodeParams.nodeId else PublicKey.Generator
                     val payment = OutgoingPayment(
                         id = dbId,
                         recipientAmount = action.amount,
-                        recipient = PublicKey.Generator,
+                        recipient = recipient,
                         details = OutgoingPayment.Details.ChannelClosing(
                             channelId = channelId,
                             closingAddress = action.closingAddress,
-                            isSentToDefaultAddress = action.isSentToDefaultAddress,
-                            paymentHash = randomBytes32()
+                            isSentToDefaultAddress = action.isSentToDefaultAddress
                         ),
                         parts = listOf<OutgoingPayment.Part>(),
                         status = OutgoingPayment.Status.Pending

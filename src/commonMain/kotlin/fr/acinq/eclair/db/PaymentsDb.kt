@@ -196,9 +196,10 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
             // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
             // So `isSentToDefaultAddress` means this default Phoenix address was used,
             // and is used by the UI to explain the situation to the user.
-            val isSentToDefaultAddress: Boolean,
-            override val paymentHash: ByteVector32
-        ) : Details()
+            val isSentToDefaultAddress: Boolean
+        ) : Details() {
+            override val paymentHash: ByteVector32 = channelId.sha256()
+        }
 
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
             is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
