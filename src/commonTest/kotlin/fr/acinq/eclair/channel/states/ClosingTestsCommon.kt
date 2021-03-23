@@ -1742,9 +1742,9 @@ class ClosingTestsCommon : EclairTestSuite() {
 
                 val channelBalance = alice1.commitments.localCommit.spec.toLocal
                 if (channelBalance > 0.msat) {
-                    val ledgerPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
-                    assertNotNull(ledgerPayment)
-                    assertTrue(ledgerPayment.amount == channelBalance)
+                    val onChainPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
+                    assertNotNull(onChainPayment)
+                    assertTrue(onChainPayment.amount == channelBalance)
                 }
 
                 val error = actions1.hasOutgoingMessage<Error>()
@@ -1775,9 +1775,9 @@ class ClosingTestsCommon : EclairTestSuite() {
 
                 val channelBalance = bob1.commitments.localCommit.spec.toLocal
                 if (channelBalance > 0.msat) {
-                    val ledgerPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
-                    assertNotNull(ledgerPayment)
-                    assertTrue(ledgerPayment.amount == channelBalance)
+                    val onChainPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
+                    assertNotNull(onChainPayment)
+                    assertTrue(onChainPayment.amount == channelBalance)
                 }
 
                 val error = actions1.hasOutgoingMessage<Error>()
