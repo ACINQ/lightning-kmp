@@ -1522,40 +1522,47 @@ class ClosingTestsCommon : LightningTestSuite() {
         val (alice2, _) = alice1.processEx(ChannelEvent.GetHtlcInfosResponse(bobRevokedTx.commitTx.tx.txid, htlcInfos))
         assertTrue(alice2 is Closing)
 
-        // bob claims multiple htlc-timeout in a single transaction (this is possible with anchor outputs because signatures
+        // bob claims multiple htlc outputs in a single transaction (this is possible with anchor outputs because signatures
         // use sighash_single | sighash_anyonecanpay)
-        val bobHtlcTimeoutTxs = bobRevokedTx.htlcTxsAndSigs.filter { it.txinfo is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx }
-        assertEquals(2, bobHtlcTimeoutTxs.size)
+        assertEquals(4, bobRevokedTx.htlcTxsAndSigs.size)
         val bobHtlcTx = Transaction(
             2,
             listOf(
                 TxIn(OutPoint(Lightning.randomBytes32(), 4), listOf(), 1), // unrelated utxo (maybe used for fee bumping)
-                bobHtlcTimeoutTxs.first().txinfo.tx.txIn.first(),
-                bobHtlcTimeoutTxs.last().txinfo.tx.txIn.first(),
+                bobRevokedTx.htlcTxsAndSigs[0].txinfo.tx.txIn.first(),
+                bobRevokedTx.htlcTxsAndSigs[1].txinfo.tx.txIn.first(),
+                bobRevokedTx.htlcTxsAndSigs[2].txinfo.tx.txIn.first(),
+                bobRevokedTx.htlcTxsAndSigs[3].txinfo.tx.txIn.first(),
             ),
             listOf(
                 TxOut(10_000.sat, listOf()), // unrelated output (maybe change output)
-                bobHtlcTimeoutTxs.first().txinfo.tx.txOut.first(),
-                bobHtlcTimeoutTxs.last().txinfo.tx.txOut.first(),
+                bobRevokedTx.htlcTxsAndSigs[0].txinfo.tx.txOut.first(),
+                bobRevokedTx.htlcTxsAndSigs[1].txinfo.tx.txOut.first(),
+                bobRevokedTx.htlcTxsAndSigs[2].txinfo.tx.txOut.first(),
+                bobRevokedTx.htlcTxsAndSigs[3].txinfo.tx.txOut.first(),
             ),
             0
         )
 
         val (alice3, actions3) = alice2.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcTx)))
         assertTrue(alice3 is Closing)
-        assertEquals(6, actions3.size)
-        assertEquals(2, alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
+        assertEquals(10, actions3.size)
+        assertEquals(4, alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
         val claimHtlcDelayedPenaltyTxs = alice3.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs
         claimHtlcDelayedPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobHtlcTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
-        assertEquals(setOf(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2)), claimHtlcDelayedPenaltyTxs.map { it.input.outPoint }.toSet())
+        assertEquals(setOf(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2), OutPoint(bobHtlcTx, 3), OutPoint(bobHtlcTx, 4)), claimHtlcDelayedPenaltyTxs.map { it.input.outPoint }.toSet())
         assertTrue(actions3.contains(ChannelAction.Storage.StoreState(alice3)))
         assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTx, 3, BITCOIN_TX_CONFIRMED(bobHtlcTx)), actions3.findWatch<WatchConfirmed>())
         actions3.hasTx(claimHtlcDelayedPenaltyTxs[0].tx)
         actions3.hasTx(claimHtlcDelayedPenaltyTxs[1].tx)
+        actions3.hasTx(claimHtlcDelayedPenaltyTxs[2].tx)
+        actions3.hasTx(claimHtlcDelayedPenaltyTxs[3].tx)
         val watchSpent = actions3.findWatches<WatchSpent>().toSet()
         val expected = setOf(
             WatchSpent(alice0.channelId, bobHtlcTx, 1, BITCOIN_OUTPUT_SPENT),
-            WatchSpent(alice0.channelId, bobHtlcTx, 2, BITCOIN_OUTPUT_SPENT)
+            WatchSpent(alice0.channelId, bobHtlcTx, 2, BITCOIN_OUTPUT_SPENT),
+            WatchSpent(alice0.channelId, bobHtlcTx, 3, BITCOIN_OUTPUT_SPENT),
+            WatchSpent(alice0.channelId, bobHtlcTx, 4, BITCOIN_OUTPUT_SPENT),
         )
         assertEquals(expected, watchSpent)
     }
