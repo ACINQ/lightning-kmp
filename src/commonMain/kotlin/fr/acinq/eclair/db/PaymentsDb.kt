@@ -3,6 +3,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.ChannelException
@@ -43,11 +44,14 @@ interface OutgoingPaymentsDb {
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
 
-    /** Mark an outgoing payment as failed. */
-    suspend fun updateOutgoingPayment(id: UUID, failure: FinalFailure, completedAt: Long = currentTimestampMillis())
+    /** Mark an outgoing payment as completed (failed, succeeded, mined). */
+    suspend fun completeOutgoingPayment(id: UUID, completed: OutgoingPayment.Status.Completed)
 
-    /** Mark an outgoing payment as succeeded. This should delete all intermediate failed payment parts and only keep the successful ones. */
-    suspend fun updateOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingPayment(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis()) =
+        completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Failed(finalFailure, completedAt))
+
+    suspend fun completeOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis()) =
+        completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage, completedAt))
 
     /** Add new partial payments to a pending outgoing payment. */
     suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>)
@@ -68,7 +72,7 @@ interface OutgoingPaymentsDb {
     suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<OutgoingPayment>
 }
 
-enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut }
+enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing }
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
@@ -77,8 +81,7 @@ sealed class WalletPayment {
         fun completedAt(payment: WalletPayment): Long = when (payment) {
             is IncomingPayment -> payment.received?.receivedAt ?: 0
             is OutgoingPayment -> when (val status = payment.status) {
-                is OutgoingPayment.Status.Succeeded -> status.completedAt
-                is OutgoingPayment.Status.Failed -> status.completedAt
+                is OutgoingPayment.Status.Completed -> status.completedAt
                 else -> 0
             }
         }
@@ -157,13 +160,16 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
  * @param parts partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
-data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status) : WalletPayment() {
+data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
     val fees: MilliSatoshi = when (status) {
-        is Status.Failed -> 0.msat
-        else -> parts.filter { it.status is Part.Status.Succeeded || it.status == Part.Status.Pending }.map { it.amount }.sum() - recipientAmount
+        is Status.Pending -> 0.msat
+        is Status.Completed.Failed -> 0.msat
+        is Status.Completed.Succeeded -> {
+            parts.filter { it.status is Part.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+        }
     }
 
     sealed class Details {
@@ -182,17 +188,53 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         /** Swaps out send a lightning payment to a swap server, which will send an on-chain transaction to a given address. */
         data class SwapOut(val address: String, override val paymentHash: ByteVector32) : Details()
 
+        /** Corresponds to the on-chain payments made when closing a channel. */
+        data class ChannelClosing(
+            val channelId: ByteVector32,
+            val closingAddress: String, // btc address
+            // The closingAddress may have been supplied by the user during a mutual close.
+            // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
+            // So `isSentToDefaultAddress` means this default Phoenix address was used,
+            // and is used by the UI to explain the situation to the user.
+            val isSentToDefaultAddress: Boolean
+        ) : Details() {
+            override val paymentHash: ByteVector32 = channelId.sha256()
+        }
+
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
             is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
             is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
             is SwapOut -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapOut)
+            is ChannelClosing -> filters.isEmpty() || filters.contains(PaymentTypeFilter.ChannelClosing)
         }
     }
 
     sealed class Status {
         object Pending : Status()
-        data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
-        data class Failed(val reason: FinalFailure, val completedAt: Long = currentTimestampMillis()) : Status()
+        sealed class Completed : Status() {
+            abstract val completedAt: Long
+            data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
+            sealed class Succeeded : Completed() {
+                data class OffChain(
+                    val preimage: ByteVector32,
+                    override val completedAt: Long = currentTimestampMillis()
+                ) : Succeeded()
+                data class OnChain(
+                    val txids: List<ByteVector32>,
+                    // The `claimed` field represents the sum total of bitcoin tx outputs claimed for the user.
+                    // A simplified fees can be calculated as: OutgoingPayment.recipientAmount - claimed
+                    // In the future, we plan on storing the closing btc transactions as parts.
+                    // Then we can use those parts to calculate the fees, and provide more details to the user.
+                    val claimed: Satoshi,
+                    val type: ChannelClosingType,
+                    override val completedAt: Long = currentTimestampMillis()
+                ) : Succeeded() {
+                    enum class ChannelClosingType {
+                        Mutual, Local, Remote, Revoked, Other
+                    }
+                }
+            }
+        }
     }
 
     /**

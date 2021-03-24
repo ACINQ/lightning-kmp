@@ -9,12 +9,14 @@ import fr.acinq.eclair.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
 import fr.acinq.eclair.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.eclair.channel.Channel.handleSync
+import fr.acinq.eclair.channel.Helpers.Closing.btcAddressFromScriptPubKey
 import fr.acinq.eclair.channel.Helpers.Closing.extractPreimages
 import fr.acinq.eclair.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.OutgoingPayment.Status.Completed.Succeeded.OnChain.ChannelClosingType
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -94,7 +96,8 @@ sealed class ChannelAction {
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
-        data class StoreOutgoingAmount(val amount: MilliSatoshi) : Storage()
+        data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
+        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi, val type: ChannelClosingType) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -164,7 +167,41 @@ sealed class ChannelState {
                 this is WaitForInit && newState is Closing -> actions
                 this is Closing && newState is Closing -> actions
                 this is ChannelStateWithCommitments && newState is Closing -> {
-                    actions + ChannelAction.Storage.StoreOutgoingAmount(this.commitments.localCommit.spec.toLocal)
+                    val channelBalance = commitments.localCommit.spec.toLocal
+                    if (channelBalance > 0.msat) {
+                        val defaultScriptPubKey = commitments.localParams.defaultFinalScriptPubKey
+                        val localShutdown = when (this) {
+                            is Normal -> this.localShutdown
+                            is Negotiating -> this.localShutdown
+                            is ShuttingDown -> this.localShutdown
+                            else -> null
+                        }
+                        if (localShutdown != null && localShutdown.scriptPubKey != defaultScriptPubKey) {
+                            // Non-default output address
+                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
+                                scriptPubKey = localShutdown.scriptPubKey,
+                                chainHash = staticParams.nodeParams.chainHash
+                            ) ?: "unknown"
+                            actions + ChannelAction.Storage.StoreChannelClosing(
+                                amount = channelBalance,
+                                closingAddress = btcAddr,
+                                isSentToDefaultAddress = false
+                            )
+                        } else {
+                            // Default output address
+                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
+                                scriptPubKey = defaultScriptPubKey,
+                                chainHash = staticParams.nodeParams.chainHash
+                            ) ?: "unknown"
+                            actions + ChannelAction.Storage.StoreChannelClosing(
+                                amount = channelBalance,
+                                closingAddress = btcAddr,
+                                isSentToDefaultAddress = true
+                            )
+                        }
+                    } else /* channelBalance <= 0.msat */ {
+                        actions
+                    }
                 }
                 else -> actions
             }
@@ -723,10 +760,10 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                                 currentTip,
                                 currentOnChainFeerates,
                                 state.commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                state.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(closingTx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(closingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -994,10 +1031,10 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 currentTip,
                                 currentOnChainFeerates,
                                 state.commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                state.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(closingTx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(closingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -2331,10 +2368,10 @@ data class Negotiating(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                this.closingTxProposed.flatten().map { it.unsignedTx },
-                                listOf(signedClosingTx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(signedClosingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -2352,10 +2389,10 @@ data class Negotiating(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
-                                null,
-                                currentBlockHeight.toLong(),
-                                this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
-                                listOf(signedClosingTx)
+                                fundingTx = null,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(signedClosingTx),
+                                mutualClosePublished = listOf(signedClosingTx)
                             )
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -2399,10 +2436,10 @@ data class Negotiating(
                             currentTip,
                             currentOnChainFeerates,
                             commitments,
-                            null,
-                            currentBlockHeight.toLong(),
-                            this.closingTxProposed.flatten().map { it.unsignedTx },
-                            listOf(closingTx)
+                            fundingTx = null,
+                            waitingSinceBlock = currentBlockHeight.toLong(),
+                            mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx },
+                            mutualClosePublished = listOf(closingTx)
                         )
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
@@ -2446,10 +2483,10 @@ data class Negotiating(
                     currentTip,
                     currentOnChainFeerates,
                     commitments,
-                    null,
-                    currentBlockHeight.toLong(),
-                    this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
-                    listOf(bestUnpublishedClosingTx)
+                    fundingTx = null,
+                    waitingSinceBlock = currentBlockHeight.toLong(),
+                    mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
+                    mutualClosePublished = listOf(bestUnpublishedClosingTx)
                 )
                 val actions = listOf(
                     ChannelAction.Storage.StoreState(nextState),
@@ -2590,7 +2627,11 @@ data class Closing(
                             futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
                             revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
                         )
-                        closing1.networkFeePaid(watch.tx)?.let { logger.info { "c:$channelId paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" } }
+                        closing1.networkFeePaid(watch.tx)?.let {
+                            logger.info { "c:$channelId paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" }
+                        } ?: run {
+                            logger.info { "c:$channelId paid UNKNOWN fee for txid=${watch.tx.txid}" }
+                        }
 
                         // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                         val htlcSettledActions = mutableListOf<ChannelAction>()
@@ -2631,19 +2672,20 @@ data class Closing(
                             commitments.payments[add.id]?.let { paymentId -> logger.info { "c:$channelId paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
                         }
 
-                        val nextState = when (val closingType = closing1.isClosed(watch.tx)) {
-                            null -> closing1
+                        val (nextState, closedActions) = when (val closingType = closing1.isClosed(watch.tx)) {
+                            null -> Pair(closing1, listOf())
                             else -> {
                                 logger.info { "c:$channelId channel is now closed" }
                                 if (closingType !is MutualClose) {
                                     logger.debug { "c:$channelId last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
-                                Closed(closing1)
+                                Pair(Closed(closing1), listOf(closing1.storeChannelClosed(watch.tx)))
                             }
                         }
                         val actions = buildList {
                             add(ChannelAction.Storage.StoreState(nextState))
                             addAll(htlcSettledActions)
+                            addAll(closedActions)
                         }
                         Pair(nextState, actions)
                     }
@@ -2845,6 +2887,63 @@ data class Closing(
             }
             parentTxOut?.let { txOut -> txOut.amount - tx.txOut.map { it.amount }.sum() }?.let { it to desc }
         }
+    }
+
+    private fun storeChannelClosed(additionalConfirmedTx: Transaction?): ChannelAction.Storage.StoreChannelClosed {
+        // We want to give the user the list of btc transactions for their outputs
+        val txids = mutableListOf<ByteVector32>()
+        var claimed = 0.sat
+        val type = when {
+            mutualClosePublished.isNotEmpty() -> ChannelClosingType.Mutual
+            localCommitPublished != null -> ChannelClosingType.Local
+            remoteCommitPublished != null -> ChannelClosingType.Remote
+            nextRemoteCommitPublished != null -> ChannelClosingType.Remote
+            futureRemoteCommitPublished != null -> ChannelClosingType.Remote
+            revokedCommitPublished.isNotEmpty() -> ChannelClosingType.Revoked
+            else -> ChannelClosingType.Other
+        }
+        additionalConfirmedTx?.let { confirmedTx ->
+            mutualClosePublished.firstOrNull { it.tx == confirmedTx }?.let {
+                txids += it.tx.txid
+                claimed += it.toLocalOutput?.amount ?: 0.sat
+            }
+        }
+        localCommitPublished?.let {
+            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
+            val allTxs = listOfNotNull(it.claimMainDelayedOutputTx?.tx) +
+                    it.claimHtlcDelayedTxs.map { it.tx }
+            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
+            if (confirmedTxs.isNotEmpty()) {
+                txids += confirmedTxs.map { it.txid }
+                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
+            }
+        }
+        listOfNotNull(
+            remoteCommitPublished,
+            nextRemoteCommitPublished,
+            futureRemoteCommitPublished
+        ).forEach {
+            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
+            val allTxs = listOfNotNull(it.claimMainOutputTx?.tx) +
+                    it.claimHtlcTxs.mapNotNull { it.value?.tx }
+            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
+            if (confirmedTxs.isNotEmpty()) {
+                txids += confirmedTxs.map { it.txid }
+                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
+            }
+        }
+        revokedCommitPublished.forEach {
+            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
+            val allTxs = listOfNotNull(it.claimMainOutputTx?.tx, it.mainPenaltyTx?.tx) +
+                    it.htlcPenaltyTxs.map { it.tx } +
+                    it.claimHtlcDelayedPenaltyTxs.map { it.tx }
+            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
+            if (confirmedTxs.isNotEmpty()) {
+                txids += confirmedTxs.map { it.txid }
+                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
+            }
+        }
+        return ChannelAction.Storage.StoreChannelClosed(txids, claimed, type)
     }
 }
 

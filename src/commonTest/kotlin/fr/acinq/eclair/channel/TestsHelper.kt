@@ -58,6 +58,7 @@ internal inline fun <reified T : ChannelException> List<ChannelAction>.hasComman
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.findOpt(): T? = filterIsInstance<T>().firstOrNull()
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = findOpt<T>() ?: fail("cannot find action ${T::class}")
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
+internal inline fun <reified T : ChannelAction> List<ChannelAction>.doesNotHave() = assertTrue { none { it is T } }
 
 fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
 fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
@@ -167,12 +168,17 @@ object TestsHelper {
         return Pair(alice as Normal, bob as Normal)
     }
 
-    fun mutualClose(alice: Normal, bob: Normal, tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
+    fun mutualClose(
+        alice: Normal,
+        bob: Normal,
+        tweakFees: Boolean = false,
+        scriptPubKey: ByteVector? = null
+    ): Triple<Negotiating, Negotiating, ClosingSigned> {
         val alice1 = alice.updateFeerate(if (tweakFees) FeeratePerKw(4_319.sat) else FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(if (tweakFees) FeeratePerKw(4_319.sat) else FeeratePerKw(10_000.sat))
 
         // Bob is fundee and initiates the closing
-        val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(scriptPubKey)))
         assertTrue(bob2 is Normal)
         val shutdown = actions.findOutgoingMessage<Shutdown>()
 
@@ -196,8 +202,9 @@ object TestsHelper {
         // an error occurs and alice publishes her commit tx
         val commitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        actions1.has<ChannelAction.Storage.StoreState>()
         assertTrue(s1 is Closing)
+        actions1.has<ChannelAction.Storage.StoreState>()
+        actions1.has<ChannelAction.Storage.StoreChannelClosing>()
 
         val localCommitPublished = s1.localCommitPublished
         assertNotNull(localCommitPublished)
@@ -239,6 +246,13 @@ object TestsHelper {
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(ChannelEvent.WatchReceived(WatchEventSpent(s.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
         assertTrue(s1 is Closing)
+
+        if (s !is Closing) {
+            val channelBalance = s.commitments.localCommit.spec.toLocal
+            if (channelBalance > 0.msat) {
+                actions1.has<ChannelAction.Storage.StoreChannelClosing>()
+            }
+        }
 
         val remoteCommitPublished = s1.remoteCommitPublished ?: s1.nextRemoteCommitPublished ?: s1.futureRemoteCommitPublished
         assertNotNull(remoteCommitPublished)

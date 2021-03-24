@@ -55,8 +55,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertNotNull(dbPayment)
         assertEquals(100_000.msat, dbPayment.recipientAmount)
         assertEquals(invoice.nodeId, dbPayment.recipient)
-        assertTrue(dbPayment.status is OutgoingPayment.Status.Failed)
-        assertEquals(FinalFailure.NoAvailableChannels, (dbPayment.status as OutgoingPayment.Status.Failed).reason)
+        assertTrue(dbPayment.status is OutgoingPayment.Status.Completed.Failed)
+        assertEquals(FinalFailure.NoAvailableChannels, (dbPayment.status as OutgoingPayment.Status.Completed.Failed).reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -74,8 +74,8 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment)
         assertEquals(amount, dbPayment.recipientAmount)
-        assertTrue(dbPayment.status is OutgoingPayment.Status.Failed)
-        assertEquals(FinalFailure.InsufficientBalance, (dbPayment.status as OutgoingPayment.Status.Failed).reason)
+        assertTrue(dbPayment.status is OutgoingPayment.Status.Completed.Failed)
+        assertEquals(FinalFailure.InsufficientBalance, (dbPayment.status as OutgoingPayment.Status.Completed.Failed).reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -230,7 +230,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(invoice.nodeId, success.payment.recipient)
         assertEquals(invoice.paymentHash, success.payment.paymentHash)
         assertEquals(OutgoingPayment.Details.Normal(invoice), success.payment.details)
-        assertEquals(preimage, (success.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(preimage, (success.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         assertEquals(1, success.payment.parts.size)
         val part = success.payment.parts.first()
         assertNotEquals(part.id, payment.paymentId)
@@ -292,7 +292,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(invoice.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
         assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
-        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         assertEquals(2, success2.payment.parts.size)
         assertEquals(310_000.msat, success2.payment.parts.map { it.amount }.sum())
         assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
@@ -344,7 +344,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(invoice.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
         assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
-        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         assertEquals(2, success2.payment.parts.size)
         assertEquals(310_000.msat, success2.payment.parts.map { it.amount }.sum())
         assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
@@ -399,7 +399,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(TestConstants.Bob.nodeParams.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
         assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
-        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         assertEquals(2, success2.payment.parts.size)
         assertEquals(300_000.msat, success2.payment.parts.map { it.amount }.sum())
         assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
@@ -470,7 +470,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(invoice.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
         assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
-        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         assertEquals(2, success2.payment.parts.size)
         assertEquals(301_030.msat, success2.payment.parts.map { it.amount }.sum())
         assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
@@ -478,7 +478,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         val dbPayment2 = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment2)
-        assertTrue(dbPayment2.status is OutgoingPayment.Status.Succeeded)
+        assertTrue(dbPayment2.status is OutgoingPayment.Status.Completed.Succeeded.OffChain)
         assertEquals(2, dbPayment2.parts.size)
         assertTrue(dbPayment2.parts.all { it.status is OutgoingPayment.Part.Status.Succeeded })
     }
@@ -516,7 +516,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertEquals(TestConstants.Bob.nodeParams.nodeId, success2.payment.recipient)
         assertEquals(invoice.paymentHash, success2.payment.paymentHash)
         assertEquals(OutgoingPayment.Details.Normal(invoice), success2.payment.details)
-        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+        assertEquals(preimage, (success2.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         assertEquals(2, success2.payment.parts.size)
         assertEquals(300_000.msat, success2.payment.parts.map { it.amount }.sum())
         assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as OutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
@@ -804,7 +804,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
             assertEquals(preimage, result2.preimage)
             assertEquals(3, result2.payment.parts.size)
             assertEquals(payment, SendPayment(result2.payment.id, result2.payment.recipientAmount, result2.payment.recipient, result2.payment.details as OutgoingPayment.Details.Normal))
-            assertEquals(preimage, (result2.payment.status as OutgoingPayment.Status.Succeeded).preimage)
+            assertEquals(preimage, (result2.payment.status as OutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         }
     }
 
@@ -889,7 +889,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
     private suspend fun assertDbPaymentFailed(db: OutgoingPaymentsDb, paymentId: UUID, partsCount: Int) {
         val dbPayment = db.getOutgoingPayment(paymentId)
         assertNotNull(dbPayment)
-        assertTrue(dbPayment.status is OutgoingPayment.Status.Failed)
+        assertTrue(dbPayment.status is OutgoingPayment.Status.Completed.Failed)
         assertEquals(partsCount, dbPayment.parts.size)
         assertTrue(dbPayment.parts.all { it.status is OutgoingPayment.Part.Status.Failed })
     }
@@ -899,7 +899,7 @@ class OutgoingPaymentHandlerTestsCommon : EclairTestSuite() {
         assertNotNull(dbPayment)
         assertEquals(amount, dbPayment.recipientAmount)
         assertEquals(fees, dbPayment.fees)
-        assertTrue(dbPayment.status is OutgoingPayment.Status.Succeeded)
+        assertTrue(dbPayment.status is OutgoingPayment.Status.Completed.Succeeded.OffChain)
         assertEquals(partsCount, dbPayment.parts.size)
         assertTrue(dbPayment.parts.all { it.status is OutgoingPayment.Part.Status.Succeeded })
     }
