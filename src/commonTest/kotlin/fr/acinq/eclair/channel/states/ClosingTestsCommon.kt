@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel.states
 
 import fr.acinq.bitcoin.*
 import fr.acinq.eclair.CltvExpiryDelta
+import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.blockchain.*
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.*
@@ -19,6 +20,7 @@ import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.channel.TestsHelper.processEx
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.remoteClose
+import fr.acinq.eclair.db.OutgoingPayment.Status.Completed.Succeeded.OnChain.ChannelClosingType
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
@@ -107,7 +109,10 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (alice6, aliceActions6) = alice5.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
 
         assertTrue { alice6 is Closed }
-        aliceActions6.has<ChannelAction.Storage.StoreChannelClosed>()
+        val storeChannelClosed = aliceActions6.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
+        assertNotNull(storeChannelClosed)
+        assertTrue { storeChannelClosed.type == ChannelClosingType.Mutual }
+        assertTrue { storeChannelClosed.txids == listOf(mutualCloseTx.tx.txid) }
     }
 
     @Test
@@ -116,9 +121,38 @@ class ClosingTestsCommon : EclairTestSuite() {
         val mutualCloseTx = alice0.mutualClosePublished.last()
 
         // actual test starts here
-        val (alice1, aliceActions1) = alice0.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
+        val (alice1, actions1) = alice0.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
         assertTrue { alice1 is Closed }
-        aliceActions1.has<ChannelAction.Storage.StoreChannelClosed>()
+        val storeChannelClosed = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
+        assertNotNull(storeChannelClosed)
+        assertTrue { storeChannelClosed.type == ChannelClosingType.Mutual }
+        assertTrue { storeChannelClosed.txids == listOf(mutualCloseTx.tx.txid) }
+    }
+
+    @Test
+    fun `recv BITCOIN_TX_CONFIRMED (mutual close with external btc address)`() {
+        val pubKey = Eclair.randomKey().publicKey()
+        val bobBtcAddr = computeP2PkhAddress(pubKey, TestConstants.Bob.nodeParams.chainHash)
+        val bobFinalScript = Script.write(Script.pay2pkh(pubKey)).toByteVector()
+
+        val (alice1, bob1) = reachNormal()
+        val (alice2, bob2, aliceClosingSigned1) = mutualClose(alice1, bob1, tweakFees = true, scriptPubKey = bobFinalScript)
+
+        val (bob3, bobActions3) = bob2.processEx(ChannelEvent.MessageReceived(aliceClosingSigned1))
+        val bobClosingSigned = bobActions3.findOutgoingMessageOpt<ClosingSigned>()
+        assertNotNull(bobClosingSigned)
+
+        val (alice4, aliceActions4) = alice2.processEx(ChannelEvent.MessageReceived(bobClosingSigned))
+        assertTrue { alice4 is Closing }
+        val aliceClosingSigned2 = aliceActions4.findOutgoingMessageOpt<ClosingSigned>()
+        assertNotNull(aliceClosingSigned2)
+
+        val (bob5, bobActions5) = bob3.processEx(ChannelEvent.MessageReceived(aliceClosingSigned2))
+        assertTrue { bob5 is Closing }
+        val storeChannelClosing = bobActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
+        assertNotNull(storeChannelClosing)
+        assertFalse { storeChannelClosing.isSentToDefaultAddress }
+        assertTrue { storeChannelClosing.closingAddress == bobBtcAddr }
     }
 
     @Test
@@ -186,7 +220,16 @@ class ClosingTestsCommon : EclairTestSuite() {
             listOf(ChannelAction.Storage.StoreState(aliceClosed)),
             actions.filterIsInstance<ChannelAction.Storage.StoreState>()
         )
-        actions.has<ChannelAction.Storage.StoreChannelClosed>()
+        val storeChannelClosed = actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
+        assertNotNull(storeChannelClosed)
+        assertTrue { storeChannelClosed.type == ChannelClosingType.Local }
+        assertTrue {
+            storeChannelClosed.txids.toSet() ==
+            listOfNotNull(
+                localCommitPublished.claimMainDelayedOutputTx,
+                localCommitPublished.claimHtlcDelayedTxs.firstOrNull()
+            ).map { it.tx.txid }.toSet()
+        }
     }
 
     @Test
@@ -519,7 +562,16 @@ class ClosingTestsCommon : EclairTestSuite() {
         val (aliceClosed, actions) = alice.processEx(ChannelEvent.WatchReceived(watchConfirmed.last()))
         assertTrue(aliceClosed is Closed)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
-        actions.has<ChannelAction.Storage.StoreChannelClosed>()
+        val storeChannelClosed = actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
+        assertNotNull(storeChannelClosed)
+        assertTrue { storeChannelClosed.type == ChannelClosingType.Remote }
+        assertTrue {
+            storeChannelClosed.txids.toSet() ==
+            listOfNotNull(
+                remoteCommitPublished.claimMainOutputTx,
+                remoteCommitPublished.claimHtlcTimeoutTxs().firstOrNull()
+            ).map { it.tx.txid }.toSet()
+        }
         // We notify the payment handler that the non-dust htlc has been failed.
         val htlcFail = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().first()
         assertEquals(htlcs[0], htlcFail.htlc)
@@ -1088,7 +1140,10 @@ class ClosingTestsCommon : EclairTestSuite() {
             listOf(ChannelAction.Storage.StoreState(alice5)),
             aliceActions5.filterIsInstance<ChannelAction.Storage.StoreState>()
         )
-        assertEquals(1, aliceActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().size)
+        val storeChannelClosed = aliceActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
+        assertNotNull(storeChannelClosed)
+        assertTrue { storeChannelClosed.type == ChannelClosingType.Remote }
+        assertTrue { storeChannelClosed.txids.toSet() == aliceTxs.map { it.txid }.toSet() }
     }
 
     @Test
@@ -1768,6 +1823,10 @@ class ClosingTestsCommon : EclairTestSuite() {
                     val onChainPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
                     assertNotNull(onChainPayment)
                     assertTrue(onChainPayment.amount == channelBalance)
+                    assertTrue(onChainPayment.isSentToDefaultAddress)
+                    val (closingPubKey, _) = alice1.keyManager.closingPubkeyScript(PublicKey.Generator) // param ignored
+                    val closingAddress2 = computeBIP84Address(closingPubKey, alice1.staticParams.nodeParams.chainHash)
+                    assertTrue(onChainPayment.closingAddress == closingAddress2)
                 }
 
                 val error = actions1.hasOutgoingMessage<Error>()
@@ -1801,6 +1860,10 @@ class ClosingTestsCommon : EclairTestSuite() {
                     val onChainPayment = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosing>().firstOrNull()
                     assertNotNull(onChainPayment)
                     assertTrue(onChainPayment.amount == channelBalance)
+                    assertTrue(onChainPayment.isSentToDefaultAddress)
+                    val (closingPubKey, _) = bob1.keyManager.closingPubkeyScript(PublicKey.Generator) // param ignored
+                    val closingAddress = computeBIP84Address(closingPubKey, bob1.staticParams.nodeParams.chainHash)
+                    assertTrue(onChainPayment.closingAddress == closingAddress)
                 }
 
                 val error = actions1.hasOutgoingMessage<Error>()

@@ -1,9 +1,6 @@
 package fr.acinq.eclair.tests
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
 import fr.acinq.eclair.*
 import fr.acinq.eclair.Eclair.randomKey
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -92,9 +89,10 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
+        val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+            defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
             isFunder = true,
             fundingAmount
         ).copy(channelReserve = 10_000.sat) // Bob will need to keep that much satoshis as direct payment
@@ -159,9 +157,10 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
+        val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))),
+            defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
             isFunder = false,
             fundingAmount
         ).copy(channelReserve = 20_000.sat) // Alice will need to keep that much satoshis as direct payment

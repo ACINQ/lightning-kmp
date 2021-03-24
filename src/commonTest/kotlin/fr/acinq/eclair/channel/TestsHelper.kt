@@ -168,12 +168,17 @@ object TestsHelper {
         return Pair(alice as Normal, bob as Normal)
     }
 
-    fun mutualClose(alice: Normal, bob: Normal, tweakFees: Boolean = false): Triple<Negotiating, Negotiating, ClosingSigned> {
+    fun mutualClose(
+        alice: Normal,
+        bob: Normal,
+        tweakFees: Boolean = false,
+        scriptPubKey: ByteVector? = null
+    ): Triple<Negotiating, Negotiating, ClosingSigned> {
         val alice1 = alice.updateFeerate(if (tweakFees) FeeratePerKw(4_319.sat) else FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(if (tweakFees) FeeratePerKw(4_319.sat) else FeeratePerKw(10_000.sat))
 
         // Bob is fundee and initiates the closing
-        val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        val (bob2, actions) = bob1.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(scriptPubKey)))
         assertTrue(bob2 is Normal)
         val shutdown = actions.findOutgoingMessage<Shutdown>()
 
