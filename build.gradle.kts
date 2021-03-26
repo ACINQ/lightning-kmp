@@ -14,9 +14,6 @@ allprojects {
     repositories {
         mavenLocal()
         maven("https://oss.sonatype.org/content/repositories/snapshots")
-        maven("https://dl.bintray.com/kotlin/kotlinx")
-        maven("https://dl.bintray.com/kotlin/ktor")
-        maven("https://dl.bintray.com/acinq/libs")
         mavenCentral()
         google()
         jcenter()
@@ -28,13 +25,13 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 kotlin {
     val ktorVersion: String by extra { "1.5.2" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val secp256k1Version = "0.5.0"
+    val secp256k1Version = "0.5.1"
     val serializationVersion = "1.0.1" // Ktor is not compatible with 1.1.0 yet
     val coroutineVersion = "1.4.3-native-mt"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.7.0-SNAPSHOT")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.7.0")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.10.1")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
