@@ -11,6 +11,7 @@ import fr.acinq.eclair.payment.FinalFailure
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.FailureMessage
+import kotlinx.serialization.Serializable
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
     /** List sent and received payments (with most recent payments first). */
@@ -226,13 +227,9 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
                     // In the future, we plan on storing the closing btc transactions as parts.
                     // Then we can use those parts to calculate the fees, and provide more details to the user.
                     val claimed: Satoshi,
-                    val type: ChannelClosingType,
+                    val closingType: ChannelClosingType,
                     override val completedAt: Long = currentTimestampMillis()
-                ) : Succeeded() {
-                    enum class ChannelClosingType {
-                        Mutual, Local, Remote, Revoked, Other
-                    }
-                }
+                ) : Succeeded()
             }
         }
     }
@@ -260,6 +257,11 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
             }
         }
     }
+}
+
+@Serializable
+enum class ChannelClosingType {
+    Mutual, Local, Remote, Revoked, Other;
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
