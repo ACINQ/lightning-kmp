@@ -20,7 +20,7 @@ import fr.acinq.eclair.channel.TestsHelper.mutualClose
 import fr.acinq.eclair.channel.TestsHelper.processEx
 import fr.acinq.eclair.channel.TestsHelper.reachNormal
 import fr.acinq.eclair.channel.TestsHelper.remoteClose
-import fr.acinq.eclair.db.OutgoingPayment.Status.Completed.Succeeded.OnChain.ChannelClosingType
+import fr.acinq.eclair.db.ChannelClosingType
 import fr.acinq.eclair.tests.TestConstants
 import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.transactions.Scripts
@@ -111,7 +111,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue { alice6 is Closed }
         val storeChannelClosed = aliceActions6.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.type == ChannelClosingType.Mutual }
+        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Mutual }
         assertTrue { storeChannelClosed.txids == listOf(mutualCloseTx.tx.txid) }
     }
 
@@ -125,7 +125,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue { alice1 is Closed }
         val storeChannelClosed = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.type == ChannelClosingType.Mutual }
+        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Mutual }
         assertTrue { storeChannelClosed.txids == listOf(mutualCloseTx.tx.txid) }
     }
 
@@ -222,7 +222,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         )
         val storeChannelClosed = actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.type == ChannelClosingType.Local }
+        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Local }
         assertTrue {
             storeChannelClosed.txids.toSet() ==
             listOfNotNull(
@@ -564,7 +564,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
         val storeChannelClosed = actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.type == ChannelClosingType.Remote }
+        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Remote }
         assertTrue {
             storeChannelClosed.txids.toSet() ==
             listOfNotNull(
@@ -1142,7 +1142,7 @@ class ClosingTestsCommon : EclairTestSuite() {
         )
         val storeChannelClosed = aliceActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.type == ChannelClosingType.Remote }
+        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Remote }
         assertTrue { storeChannelClosed.txids.toSet() == aliceTxs.map { it.txid }.toSet() }
     }
 
