@@ -8,6 +8,7 @@ import fr.acinq.eclair.payment.FinalFailure
 import fr.acinq.eclair.payment.OutgoingPaymentFailure
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.UUID
+import fr.acinq.eclair.utils.msat
 import fr.acinq.eclair.utils.toByteVector32
 import fr.acinq.eclair.wire.FailureMessage
 
@@ -27,7 +28,10 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = payment.copy(received = IncomingPayment.Received(amount, receivedWith, receivedAt))
+            else -> incoming[paymentHash] = run {
+                val alreadyReceived = payment.received?.amount ?: 0.msat
+                payment.copy(received = IncomingPayment.Received(amount + alreadyReceived, receivedWith, receivedAt))
+            }
         }
     }
 

@@ -17,10 +17,7 @@ import fr.acinq.eclair.tests.utils.EclairTestSuite
 import fr.acinq.eclair.tests.utils.runSuspendTest
 import fr.acinq.eclair.utils.*
 import fr.acinq.eclair.wire.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
 
@@ -312,6 +309,54 @@ class IncomingPaymentHandlerTestsCommon : EclairTestSuite() {
             )
         )
         assertEquals(setOf(expected), result.actions.toSet())
+    }
+
+    @Test
+    fun `process incoming amount with unknown origin`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(amount = 15_000_000.msat, origin = null)
+        val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        handler.process(channelId, amountOrigin)
+        val dbPayment = handler.db.getIncomingPayment(channelId.sha256().sha256())
+        assertNotNull(dbPayment)
+        assertTrue { dbPayment.origin is IncomingPayment.Origin.SwapIn }
+        assertEquals(IncomingPayment.ReceivedWith.NewChannel(fees = 0.msat, channelId = channelId), dbPayment.received?.receivedWith)
+        assertEquals(15_000_000.msat, dbPayment.received?.amount)
+    }
+
+    @Test
+    fun `process incoming amount with pay-to-open origin`() = runSuspendTest {
+        val preimage = randomBytes32()
+        val channelId = randomBytes32()
+        val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
+            amount = 15_000_000.msat,
+            origin = ChannelOrigin.PayToOpenOrigin(paymentHash = preimage.sha256(), fee = 1000.sat))
+        val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        // simulate payment processed as a pay-to-open
+        handler.db.addIncomingPayment(preimage, IncomingPayment.Origin.KeySend)
+        handler.db.receivePayment(preimage.sha256(), 20_000_000.msat, receivedWith = IncomingPayment.ReceivedWith.NewChannel(0.msat, null))
+        // process the amount origin which must reconcile with the existing line in the database
+        handler.process(channelId, amountOrigin)
+        val dbPayment = handler.db.getIncomingPayment(preimage.sha256())
+        assertNotNull(dbPayment)
+        assertTrue { dbPayment.origin is IncomingPayment.Origin.KeySend }
+        assertEquals(IncomingPayment.ReceivedWith.NewChannel(fees = 1_000_000.msat, channelId = channelId), dbPayment.received?.receivedWith)
+        assertEquals(20_000_000.msat, dbPayment.received?.amount)
+    }
+
+    @Test
+    fun `process incoming amount with swap-in origin`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
+            amount = 33_000_000.msat,
+            origin = ChannelOrigin.SwapInOrigin("tb1q97tpc0y4rvdnu9wm7nu354lmmzdm8du228u3g4", 1_200.sat))
+        val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        handler.process(channelId, amountOrigin)
+        val dbPayment = handler.db.getIncomingPayment(channelId.sha256().sha256())
+        assertNotNull(dbPayment)
+        assertTrue { dbPayment.origin is IncomingPayment.Origin.SwapIn }
+        assertEquals(IncomingPayment.ReceivedWith.NewChannel(fees = 1_200_000.msat, channelId = channelId), dbPayment.received?.receivedWith)
+        assertEquals(33_000_000.msat, dbPayment.received?.amount)
     }
 
     @Test
