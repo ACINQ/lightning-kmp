@@ -16,7 +16,7 @@ import fr.acinq.eclair.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.eclair.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.db.OutgoingPayment.Status.Completed.Succeeded.OnChain.ChannelClosingType
+import fr.acinq.eclair.db.ChannelClosingType
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.serialization.Serialization
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -97,7 +97,7 @@ sealed class ChannelAction {
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
-        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi, val type: ChannelClosingType) : Storage()
+        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi, val closingType: ChannelClosingType) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
