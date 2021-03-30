@@ -5,25 +5,23 @@ import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.utils.Either
 import fr.acinq.eclair.utils.currentTimestampMillis
 import fr.acinq.eclair.wire.*
-import kotlinx.serialization.Serializable
 
 /** A fatal failure that stops payment attempts. */
-@Serializable
 sealed class FinalFailure {
 
     /** Use this function when no payment attempts have been made (e.g. when a precondition failed). */
     fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<OutgoingPayment.Part.Status.Failed>())
 
     // @formatter:off
-    @Serializable object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
-    @Serializable object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
-    @Serializable object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
-    @Serializable object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
-    @Serializable object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
-    @Serializable object RecipientUnreachable : FinalFailure() { override fun toString(): String = "the recipient was offline or did not have enough liquidity to receive the payment" }
-    @Serializable object RetryExhausted: FinalFailure() { override fun toString(): String = "payment attempts exhausted without success" }
-    @Serializable object WalletRestarted: FinalFailure() { override fun toString(): String = "wallet restarted while a payment was ongoing" }
-    @Serializable object UnknownError : FinalFailure() { override fun toString(): String = "an unknown error occurred" }
+    object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
+    object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
+    object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
+    object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
+    object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
+    object RecipientUnreachable : FinalFailure() { override fun toString(): String = "the recipient was offline or did not have enough liquidity to receive the payment" }
+    object RetryExhausted: FinalFailure() { override fun toString(): String = "payment attempts exhausted without success" }
+    object WalletRestarted: FinalFailure() { override fun toString(): String = "wallet restarted while a payment was ongoing" }
+    object UnknownError : FinalFailure() { override fun toString(): String = "an unknown error occurred" }
     // @formatter:on
 }
 
