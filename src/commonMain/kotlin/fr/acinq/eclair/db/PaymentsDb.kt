@@ -259,7 +259,6 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
     }
 }
 
-@Serializable
 enum class ChannelClosingType {
     Mutual, Local, Remote, Revoked, Other;
 }
