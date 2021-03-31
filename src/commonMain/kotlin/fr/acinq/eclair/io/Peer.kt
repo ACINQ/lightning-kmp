@@ -370,38 +370,8 @@ class Peer(
                     action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                 }
                 action is ChannelAction.Storage.StoreIncomingAmount -> {
-                    logger.info { "storing incoming amount=${action.amount} with origin=${action.origin}" }
-                    when (action.origin) {
-                        null -> {
-                            logger.warning { "n:$remoteNodeId c:$actualChannelId incoming amount with empty origin, store minimal information" }
-                            val fakePreimage = actualChannelId.sha256()
-                            db.payments.addAndReceivePayment(
-                                preimage = fakePreimage,
-                                origin = IncomingPayment.Origin.SwapIn(address = ""),
-                                amount = action.amount,
-                                receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = 0.msat, channelId = actualChannelId)
-                            )
-                        }
-                        is ChannelOrigin.PayToOpenOrigin -> {
-                            if (db.payments.getIncomingPayment(action.origin.paymentHash) != null) {
-                                db.payments.receivePayment(paymentHash = action.origin.paymentHash, amount = action.amount, receivedWith = IncomingPayment.ReceivedWith.NewChannel(
-                                    fees = action.origin.fee.toMilliSatoshi(),
-                                    channelId = actualChannelId
-                                ))
-                            } else {
-                                logger.warning { "n:$remoteNodeId c:$actualChannelId ignored pay-to-open storage, no payments in db for hash=${action.origin.paymentHash}" }
-                            }
-                        }
-                        is ChannelOrigin.SwapInOrigin -> {
-                            val fakePreimage = actualChannelId.sha256()
-                            db.payments.addAndReceivePayment(
-                                preimage = fakePreimage,
-                                origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
-                                amount = action.amount,
-                                receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = action.origin.fee.toMilliSatoshi(), channelId = actualChannelId)
-                            )
-                        }
-                    }
+                    logger.info { "n:$remoteNodeId c:$channelId storing incoming amount=${action.amount} with origin=${action.origin}" }
+                    incomingPaymentHandler.process(actualChannelId, action)
                 }
                 action is ChannelAction.Storage.GetHtlcInfos -> {
                     val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }

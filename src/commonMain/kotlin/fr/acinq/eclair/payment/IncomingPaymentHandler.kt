@@ -94,6 +94,56 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     }
 
     /**
+     * Save the "received-with" details of an incoming amount.
+     *
+     * - for a pay-to-open origin, we only save the id of the channel that was created for this payment.
+     * - for a swap-in origin, a new incoming payment must be created. We use the channel id to generate the payment's preimage.
+     * - for unknown origin, the amount is handled as a swap-in coming from an unknown address.
+     */
+    suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingAmount) {
+        when (action.origin) {
+            null -> {
+                // TODO: hacky, needs clean-up
+                logger.warning { "incoming amount with empty origin, we store only minimal information" }
+                val fakePreimage = channelId.sha256()
+                db.addAndReceivePayment(
+                    preimage = fakePreimage,
+                    origin = IncomingPayment.Origin.SwapIn(address = ""),
+                    amount = action.amount,
+                    receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = 0.msat, channelId = channelId)
+                )
+            }
+            is ChannelOrigin.PayToOpenOrigin -> {
+                if (db.getIncomingPayment(action.origin.paymentHash) != null) {
+                    db.receivePayment(
+                        paymentHash = action.origin.paymentHash,
+                        amount = 0.msat, // do not update the amount, it's already set by the main payment handler.
+                        receivedWith = IncomingPayment.ReceivedWith.NewChannel(
+                            fees = action.origin.fee.toMilliSatoshi(),
+                            channelId = channelId
+                        )
+                    )
+                } else {
+                    logger.warning { "ignored pay-to-open origin action, there are no payments in db for payment_hash=${action.origin.paymentHash}" }
+                }
+            }
+            is ChannelOrigin.SwapInOrigin -> {
+                // swap-ins are push payments made with an on-chain tx, there is no related preimage so we make up one so it fits in our model
+                val fakePreimage = channelId.sha256()
+                db.addAndReceivePayment(
+                    preimage = fakePreimage,
+                    origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
+                    amount = action.amount,
+                    receivedWith = IncomingPayment.ReceivedWith.NewChannel(
+                        fees = action.origin.fee.toMilliSatoshi(),
+                        channelId = channelId
+                    )
+                )
+            }
+        }
+    }
+
+    /**
      * Process an incoming htlc.
      * Before calling this, the htlc must be committed and ack-ed by both sides.
      *
