@@ -318,10 +318,13 @@ data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFe
 }
 
 @Serializable
-data class StaticParams(@Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey) {
-    constructor(from: fr.acinq.eclair.channel.StaticParams) : this(from.remoteNodeId)
+data class StaticParams(@Serializable(with = ByteVector32KSerializer::class) val chainHash: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey) {
+    constructor(from: fr.acinq.eclair.channel.StaticParams) : this(from.nodeParams.chainHash, from.remoteNodeId)
 
-    fun export(nodeParams: NodeParams) = fr.acinq.eclair.channel.StaticParams(nodeParams, this.remoteNodeId)
+    fun export(nodeParams: NodeParams): fr.acinq.eclair.channel.StaticParams {
+        require(chainHash == nodeParams.chainHash) { "restoring data from a different chain" }
+        return fr.acinq.eclair.channel.StaticParams(nodeParams, this.remoteNodeId)
+    }
 }
 
 @Serializable
