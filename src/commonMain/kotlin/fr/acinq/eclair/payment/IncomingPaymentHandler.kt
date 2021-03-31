@@ -127,6 +127,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 }
             }
             is ChannelOrigin.SwapInOrigin -> {
+                // swap-ins are push payments made with an on-chain tx, there is no related preimage so we make up one so it fits in our model
                 val fakePreimage = channelId.sha256()
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
