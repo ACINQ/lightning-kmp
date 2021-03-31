@@ -123,7 +123,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         )
                     )
                 } else {
-                    logger.warning { "c:$channelId ignored pay-to-open origin action, there are no payments in db for payment_hash=${action.origin.paymentHash}" }
+                    logger.warning { "ignored pay-to-open origin action, there are no payments in db for payment_hash=${action.origin.paymentHash}" }
                 }
             }
             is ChannelOrigin.SwapInOrigin -> {
