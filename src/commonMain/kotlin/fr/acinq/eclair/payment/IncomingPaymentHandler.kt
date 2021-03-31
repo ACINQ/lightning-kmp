@@ -103,6 +103,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingAmount) {
         when (action.origin) {
             null -> {
+                // TODO: hacky, needs clean-up
                 logger.warning { "incoming amount with empty origin, we store only minimal information" }
                 val fakePreimage = channelId.sha256()
                 db.addAndReceivePayment(
