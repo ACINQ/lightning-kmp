@@ -9,10 +9,12 @@ import fr.acinq.eclair.transactions.Transactions
 data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
-
     override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chainHash))
-
     override val nodeId: PublicKey get() = nodeKey.publicKey
+
+    override fun toString(): String {
+        return "LocalKeyManager(seed=xxx,chainHash=$chainHash)"
+    }
 
     private fun internalKeyPath(channelKeyPath: List<Long>, index: Long): List<Long> = channelKeyBasePath(chainHash) + channelKeyPath + index
 
