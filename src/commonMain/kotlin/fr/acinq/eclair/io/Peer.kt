@@ -56,10 +56,10 @@ data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentF
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
 
-object SendSwapInRequest: PeerEvent()
-data class SwapInResponseEvent(val swapInResponse: SwapInResponse): PeerListenerEvent()
-data class SwapInPendingEvent(val swapInPending: SwapInPending): PeerListenerEvent()
-data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed): PeerListenerEvent()
+object SendSwapInRequest : PeerEvent()
+data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListenerEvent()
+data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
+data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
 
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
@@ -269,12 +269,14 @@ class Peer(
                 sendToPeer(ping)
             }
         }
+
         suspend fun checkPaymentsTimeout() {
             while (isActive) {
                 delay(30.seconds)
                 input.send(CheckPaymentsTimeout)
             }
         }
+
         suspend fun listen() {
             try {
                 while (isActive) {
@@ -287,10 +289,11 @@ class Peer(
                 closeSocket()
             }
         }
+
         suspend fun respond() {
             // Reset the output channel to avoid sending obsolete messages
             output = Channel(BUFFERED)
-            for(msg in output) send(msg)
+            for (msg in output) send(msg)
         }
 
         launch { doPing() }
@@ -308,8 +311,8 @@ class Peer(
 
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
-        // Avoids polluting the logs with pongs
-        if (msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
+        // Avoids polluting the logs with pings/pongs
+        if (msg !is Ping && msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
         if (!output.isClosedForSend) output.send(encoded)
     }
 
@@ -481,7 +484,7 @@ class Peer(
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
-                msg?.let { logger.info { "n:$remoteNodeId received $it" } }
+                msg?.let { if (it !is Ping && it !is Pong) logger.info { "n:$remoteNodeId received $it" } }
                 when {
                     msg is Init -> {
                         val theirFeatures = Features(msg.features)
