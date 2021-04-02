@@ -82,11 +82,12 @@ stable successful outcome; eclair uses continuous integration techniques and hav
 helps the reviewers with their job.
 
 Contributors should follow the default Kotlin coding style guide. If you use IntelliJ:
+
 - File > Settings > Editor > Code Style
-  - In the "Formatter Control" tab, check "Enable formatter markers in comments" 
+  - In the "Formatter Control" tab, check "Enable formatter markers in comments"
 - File > Settings > Editor > Code Style > Kotlin
   - select "Set from..." and choose "Kotline style guide"
-  - set "Hard wrap at" to 240 
+  - set "Hard wrap at" to 240
 
 ### Signed Commits
 
