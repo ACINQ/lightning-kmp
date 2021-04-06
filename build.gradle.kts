@@ -9,7 +9,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.eclair"
-    version = "1.0-beta9"
+    version = "1.0-beta10"
 
     repositories {
         mavenLocal()
