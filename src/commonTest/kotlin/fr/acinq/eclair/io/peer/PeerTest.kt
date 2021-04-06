@@ -178,7 +178,6 @@ class PeerTest : EclairTestSuite() {
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
             bob.send(ReceivePayment(randomBytes32(), 1.msat, "A description: \uD83D\uDE2C", 3600 * 3, deferredInvoice))
             val invoice = deferredInvoice.await()
-            // The routing hint uses default values since no channel update has been sent by Alice yet.
             assertEquals(1.msat, invoice.amount)
             assertEquals(3600 * 3, invoice.expirySeconds)
             assertEquals("A description: \uD83D\uDE2C", invoice.description)
