@@ -169,6 +169,23 @@ class PeerTest : EclairTestSuite() {
     }
 
     @Test
+    fun `invoice parameters`() = runSuspendTest {
+        val nodeParams = TestConstants.Alice.nodeParams
+        val walletParams = TestConstants.Alice.walletParams
+        val bob = newPeer(nodeParams, walletParams)
+
+        run {
+            val deferredInvoice = CompletableDeferred<PaymentRequest>()
+            bob.send(ReceivePayment(randomBytes32(), 1.msat, "A description: \uD83D\uDE2C", 3600 * 3, deferredInvoice))
+            val invoice = deferredInvoice.await()
+            // The routing hint uses default values since no channel update has been sent by Alice yet.
+            assertEquals(1.msat, invoice.amount)
+            assertEquals(3600 * 3, invoice.expirySeconds)
+            assertEquals("A description: \uD83D\uDE2C", invoice.description)
+        }
+    }
+
+    @Test
     fun `invoice routing hints`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
@@ -181,7 +198,7 @@ class PeerTest : EclairTestSuite() {
 
         run {
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "default routing hints", deferredInvoice))
+            bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "default routing hints", null, deferredInvoice))
             val invoice = deferredInvoice.await()
             // The routing hint uses default values since no channel update has been sent by Alice yet.
             assertEquals(1, invoice.routingInfo.size)
@@ -194,7 +211,7 @@ class PeerTest : EclairTestSuite() {
             bob.forward(aliceUpdate)
 
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 5_000_000.msat, "updated routing hints", deferredInvoice))
+            bob.send(ReceivePayment(randomBytes32(), 5_000_000.msat, "updated routing hints", null, deferredInvoice))
             val invoice = deferredInvoice.await()
             // The routing hint uses values from Alice's channel update.
             assertEquals(1, invoice.routingInfo.size)
@@ -218,7 +235,7 @@ class PeerTest : EclairTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
+        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", null, deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
@@ -264,7 +281,7 @@ class PeerTest : EclairTestSuite() {
         val (alice, bob) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0))
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", deferredInvoice))
+        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", null, deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))

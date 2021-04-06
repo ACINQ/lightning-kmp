@@ -41,7 +41,7 @@ data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: Ch
 object Disconnected : PeerEvent()
 
 sealed class PaymentEvent : PeerEvent()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
+data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val expirySeconds: Long? = null, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
 object CheckPaymentsTimeout : PaymentEvent()
 data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val details: OutgoingPayment.Details.Normal) : PaymentEvent() {
@@ -669,7 +669,7 @@ class Peer(
                         )
                     )
                 )
-                val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description, extraHops)
+                val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description, extraHops, event.expirySeconds)
                 listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
                 event.result.complete(pr)
             }
