@@ -1,12 +1,12 @@
 # Manual tests with Docker
 
 `eclair-kmp` includes a simple `Node` test program that simulates a Phoenix can and can be used to test against local eclair nodes. To run it just start `Node` in the `jvmTest` package. It will start an `eclair-kmp` node, connect it to a
-hardcoded `eclair` node (that must already be running)
+hardcoded `lightning` node (that must already be running)
 and read and parse text inputs from Idea's console.
 
 Tests use a small docker environment:
 
-- a shared `eclair-net` docker network
+- a shared `lightning-net` docker network
 - an electrumx container
 - a bitcoind container
 - 2 eclair containers, nodes A and B
@@ -14,7 +14,7 @@ Tests use a small docker environment:
 For testing, A simulates horizon/endurance and B simulates a node we want to exchange payments with.
 
 ```
- B <--> A <--> eclair-kmp
+ B <--> A <--> lightning-kmp
 
 ```
 
@@ -62,9 +62,9 @@ $ docker exec eclair-nodeB ./eclair-cli -p foobar connect --uri=039dc0e0b1d25905
 $ docker exec eclair-nodeB ./eclair-cli -p foobar open --nodeId=039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585 --fundingSatoshis=200000 --pushMsat=50000000
 ```
 
-## Start eclair-kmp
+## Start lightning-kmp
 
-From Idea, start the `Node` class in `jvmTest`. It should automatically connect to node A. Get your eclair-kmp node Id from the console logs and open a channel from node A:
+From Idea, start the `Node` class in `jvmTest`. It should automatically connect to node A. Get your lightning-kmp node Id from the console logs and open a channel from node A:
 
 ```
 docker exec eclair-nodeA ./eclair-cli -p foobar open --nodeId=03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0 --fundingSatoshis=200000 --pushMsat=50000000

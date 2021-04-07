@@ -1,6 +1,6 @@
 # Building
 
-Eclair-kmp is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) library.
+lightning-kmp is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) library.
 It can run on many different platforms, including mobile devices (iOS and Android).
 
 ## Requirements
@@ -21,8 +21,8 @@ brew install gmp
 You should start by cloning the repository locally:
 
 ```sh
-git clone git@github.com:ACINQ/eclair-kmp.git
-cd eclair-kmp
+git clone git@github.com:ACINQ/lightning-kmp.git
+cd lightning-kmp
 ```
 
 To build the project library and install it locally, you can run:
