@@ -108,12 +108,12 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
         val channelKeyPath = keyManager.channelKeyPath(localParams, ChannelVersion.STANDARD)
 
-        assertEquals(fundingPub.publicKey, PrivateKey.fromHex("041db93c7f1bd0661a44f90c0843976878d1a6315e87547cdec9c8b0dc0d63a4").publicKey())
-        assertEquals(keyManager.revocationPoint(channelKeyPath).publicKey, PrivateKey.fromHex("066041952f72969604d80c02d10781fadbc7b1fcb684b94af74e1af2d1b08d46").publicKey())
-        assertEquals(keyManager.paymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("0f939dbaa75b5e01b30c465661b8d272f5ba582ba8c9f0370d86dd0f63e19f93").publicKey())
-        assertEquals(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("3907651b3e5edbe61ec6170e1bb56fd417615d42cc6bf9bba72861a1369258a7").publicKey())
-        assertEquals(keyManager.htlcPoint(channelKeyPath).publicKey, PrivateKey.fromHex("479fd504f709ba2ae3b34a0ee46cfb38aecfbb6e205fabcefbca4f23f9ef3fac").publicKey())
-        assertEquals(keyManager.commitmentSecret(channelKeyPath, 0).value, ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("e0723ef3ef519dfe32c548258797ddbf8a700ce075fa694cc0a110f77cb61cb5"), 0xFFFFFFFFFFFFL))
+        assertEquals(fundingPub.publicKey, PrivateKey.fromHex("b3b3f1af2ef961ee7aa62451a93a1fd57ea126c81008e5d95ced822cca30da6e").publicKey())
+        assertEquals(keyManager.revocationPoint(channelKeyPath).publicKey, PrivateKey.fromHex("119ae90789c0b9a68e5cfa2eee08b62cc668b2cd758403dfa7eabde1dc0b6d0a").publicKey())
+        assertEquals(keyManager.paymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("882003004cf9c58003f4be161c0ea72879ea9bae8893fd37fb0b3980e0bed0f7").publicKey())
+        assertEquals(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("7bf712af4006aefeef189b91346f5e3f9a470cc4be9fff9b2ef290032c1bfd3b").publicKey())
+        assertEquals(keyManager.htlcPoint(channelKeyPath).publicKey, PrivateKey.fromHex("17c685f22bce6f9f1c704477f8ecc7c89b1bf20536fcd30c48fc13666f8d62aa").publicKey())
+        assertEquals(keyManager.commitmentSecret(channelKeyPath, 0).value, ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("cb94d016a90a5558d0d53f928046be41f0584acd8993a399bbd2cb40e5376dac"), 0xFFFFFFFFFFFFL))
     }
 
     @Test
@@ -126,12 +126,11 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
         val channelKeyPath = keyManager.channelKeyPath(localParams, ChannelVersion.STANDARD)
 
-        assertEquals(fundingPub.publicKey, PrivateKey.fromHex("31108cadc3d65215502933353b3dcf389504173b560e4a490df97046772a8ef0").publicKey())
-        assertEquals(keyManager.revocationPoint(channelKeyPath).publicKey, PrivateKey.fromHex("d2f450e28244479c084f81356e652506ce8bc7461ca5f5e933f4ef601a88dc43").publicKey())
-        assertEquals(keyManager.paymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("650b4ac88e50d2804c695ce32ce5bc394c75862cb558460b668503a7faff4f1e").publicKey())
-        assertEquals(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("0648da92d5d03aa3c38f5d64dc29e975360e2f2f899482c4e0cfb105ef0e18c6").publicKey())
-        assertEquals(keyManager.htlcPoint(channelKeyPath).publicKey, PrivateKey.fromHex("90569928f7e4dd0dd953ab03f2f6f157d7f8a74187b9fb41af5d77502c419969").publicKey())
-        assertEquals(keyManager.commitmentSecret(channelKeyPath, 0).value, ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("7fcbe6c6020580a2df1e8852fb82686bd7f4315110cef19e6e1a4ed61b4d0755"), 0xFFFFFFFFFFFFL))
+        assertEquals(fundingPub.publicKey, PrivateKey.fromHex("033880995016c275e725da625e4a78ea8c3215ab8ea54145fa3124bbb2e4a3d4").publicKey())
+        assertEquals(keyManager.revocationPoint(channelKeyPath).publicKey, PrivateKey.fromHex("16d8dd5e6a22de173288cdb7905cfbbcd9efab99471eb735ff95cb7fbdf43e45").publicKey())
+        assertEquals(keyManager.paymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("1682a3b6ebcee107156c49f5d7e29423b1abcc396add6357e9e2d0721881fda0").publicKey())
+        assertEquals(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("2f047edff3e96d16d726a265ddb95d61f695d34b1861f10f80c1758271b00523").publicKey())
+        assertEquals(keyManager.htlcPoint(channelKeyPath).publicKey, PrivateKey.fromHex("3e740f7d7d214db23ca17b9586e22f004497dbef585781f5a864ed794ad695c6").publicKey())
+        assertEquals(keyManager.commitmentSecret(channelKeyPath, 0).value, ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("a7968178e0472a53eb5a45bb86d8c4591509fbaeba1e223acc80cc28d37b4804"), 0xFFFFFFFFFFFFL))
     }
-
 }

@@ -94,7 +94,7 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
     companion object {
         fun channelKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
             Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(48), hardened(1))
-            Block.LivenetGenesisBlock.hash -> listOf(hardened(49), hardened(1))
+            Block.LivenetGenesisBlock.hash -> listOf(hardened(50), hardened(1))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")
         }
 
@@ -103,7 +103,7 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
         // node key is compromised there is no way to retrieve the wallet keys
         fun nodeKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
             Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(48), hardened(0))
-            Block.LivenetGenesisBlock.hash -> listOf(hardened(49), hardened(0))
+            Block.LivenetGenesisBlock.hash -> listOf(hardened(50), hardened(0))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")
         }
     }
