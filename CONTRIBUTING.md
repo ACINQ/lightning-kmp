@@ -1,4 +1,4 @@
-# Contributing to Lightning KMP
+# Contributing to the lightning-kmp project
 
 ACINQ welcomes contributions in the form of peer review, testing and patches.
 This document explains the practical process and guidelines for contributing.
@@ -35,7 +35,7 @@ You can also use Github issues for [feature requests](https://github.com/ACINQ/l
 
 ## Recommended Skillset
 
-Lightning KMP uses [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) with [Kotlin Coroutines](https://kotlinlang.org/docs/reference/coroutines-overview.html).
+lightning-kmp uses [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) with [Kotlin Coroutines](https://kotlinlang.org/docs/reference/coroutines-overview.html).
 Good understanding of these technologies is required to contribute.
 There are a lot of good resources online to learn about them.
 
@@ -96,7 +96,7 @@ You can find setup instructions [here](https://help.github.com/en/github/authent
 
 ### Commit Message
 
-Lightning KMP keeps a clean commit history on the master branch with well-formed commit messages.
+lightning-kmp keeps a clean commit history on the master branch with well-formed commit messages.
 
 Here is a model Git commit message:
 

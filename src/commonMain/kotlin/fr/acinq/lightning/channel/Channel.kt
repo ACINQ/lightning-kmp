@@ -247,7 +247,7 @@ sealed class ChannelState {
             // if we are funder, we never give up
             logger.info { "republishing the funding tx..." }
             // TODO we should also check if the funding tx has been double-spent
-            //  see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
+            // see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
             this to listOf(ChannelAction.Blockchain.PublishTx(fundingTx_opt))
         }
         (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {

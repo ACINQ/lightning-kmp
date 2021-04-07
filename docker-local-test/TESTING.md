@@ -1,17 +1,15 @@
 # Manual tests with Docker
 
-`eclair-kmp` includes a simple `Node` test program that simulates a Phoenix can and can be used to test against local eclair nodes. To run it just start `Node` in the `jvmTest` package. It will start an `eclair-kmp` node, connect it to a
-hardcoded `lightning` node (that must already be running)
-and read and parse text inputs from Idea's console.
+This project includes a simple `Node` test program that runs a lightning-kmp node and test it against local [eclair](https://github.com/ACINQ/eclair) nodes (eclair is our reference implementation). To run it just start `Node` in the `jvmTest` package. It will start a lightning-kmp node, connect it to a hardcoded [eclair](https://github.com/ACINQ/eclair) node (that must already be running), and read and parse text inputs from Idea's console.
 
 Tests use a small docker environment:
 
-- a shared `lightning-net` docker network
+- a shared `eclair-net` docker network
 - an electrumx container
 - a bitcoind container
 - 2 eclair containers, nodes A and B
 
-For testing, A simulates horizon/endurance and B simulates a node we want to exchange payments with.
+For testing, A simulates the endurance node, and B simulates a node we want to exchange payments with.
 
 ```
  B <--> A <--> lightning-kmp
@@ -42,13 +40,13 @@ $ ./env.sh btc-start elx-start
 
 You can check that they're running with `./env.sh btc-logs` and `./env.sh elx-logs`
 
-## Start eclair nodes
+## Start the two eclair nodes (`node A` and `node B`)
 
 ```
 $ ./env.sh ecl-start 
 ```
 
-You can check that they're running properly and start using their APIss:
+You can check that they're running properly and start using their APIs:
 
 ```
 $ docker exec eclair-nodeA ./eclair-cli -p foobar getinfo
@@ -64,7 +62,7 @@ $ docker exec eclair-nodeB ./eclair-cli -p foobar open --nodeId=039dc0e0b1d25905
 
 ## Start lightning-kmp
 
-From Idea, start the `Node` class in `jvmTest`. It should automatically connect to node A. Get your lightning-kmp node Id from the console logs and open a channel from node A:
+From Idea, start the `Node` class in `jvmTest`. It should automatically connect to node A. Get your lightning-kmp node id from the console logs and open a channel from node A:
 
 ```
 docker exec eclair-nodeA ./eclair-cli -p foobar open --nodeId=03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0 --fundingSatoshis=200000 --pushMsat=50000000
@@ -90,4 +88,4 @@ Generate a payment request on node B:
 docker exec eclair-nodeB ./eclair-cli -p foobar createinvoice --description=test --amountMsat=50000
 ```
 
-In the Idea console, type `pay` and paste the generated payment request
+In the Idea console, type `pay` and paste the generated payment request.
