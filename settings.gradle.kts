@@ -1,4 +1,4 @@
-rootProject.name = "eclair-kmp"
+rootProject.name = "lightning-kmp"
 
 pluginManagement {
     repositories {
@@ -10,5 +10,5 @@ pluginManagement {
 
 include(
     ":PhoenixCrypto",
-    ":eclair-kmp-test-fixtures"
+    ":lightning-kmp-test-fixtures"
 )

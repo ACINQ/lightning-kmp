@@ -8,8 +8,8 @@ plugins {
 }
 
 allprojects {
-    group = "fr.acinq.eclair"
-    version = "1.0-beta10"
+    group = "fr.acinq.lightning"
+    version = "snapshot"
 
     repositories {
         mavenLocal()
@@ -48,7 +48,7 @@ kotlin {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
             implementation("org.kodein.memory:kodein-memory-files:0.4.1")
-            implementation(project(":eclair-kmp-test-fixtures"))
+            implementation(project(":lightning-kmp-test-fixtures"))
         }
     }
 

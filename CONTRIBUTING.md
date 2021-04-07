@@ -1,6 +1,6 @@
-# Contributing to Eclair Multi-Platform
+# Contributing to the lightning-kmp project
 
-Eclair welcomes contributions in the form of peer review, testing and patches.
+ACINQ welcomes contributions in the form of peer review, testing and patches.
 This document explains the practical process and guidelines for contributing.
 
 While developing a Lightning implementation is an exciting project that spans many domains
@@ -9,7 +9,7 @@ represents real money and introducing bugs or security vulnerabilities can have 
 consequences than in typical projects. In the world of cryptocurrencies, even the smallest bug in
 the wrong area can cost users a significant amount of money.
 
-If you're looking for somewhere to start contributing, check out the [good first issue](https://github.com/ACINQ/eclair-kmp/issues?q=is%3Aopen+is%3Aissue+label%3A"good+first+issue") list.
+If you're looking for somewhere to start contributing, check out the [good first issue](https://github.com/ACINQ/lightning-kmp/issues?q=is%3Aopen+is%3Aissue+label%3A"good+first+issue") list.
 
 Another way to start contributing is by adding tests or improving them.
 This will help you understand the different parts of the codebase and how they work together.
@@ -22,7 +22,7 @@ some pointers and feedback from experienced contributors. It will also ensure th
 duplicating work that someone else is doing.
 
 We use Github issues only for, well, issues (mostly bugs that need to be investigated).
-You can also use Github issues for [feature requests](https://github.com/ACINQ/eclair-kmp/issues?q=is%3Aissue+label%3A"feature+request").
+You can also use Github issues for [feature requests](https://github.com/ACINQ/lightning-kmp/issues?q=is%3Aissue+label%3A"feature+request").
 
 ## Recommended Reading
 
@@ -35,7 +35,7 @@ You can also use Github issues for [feature requests](https://github.com/ACINQ/e
 
 ## Recommended Skillset
 
-Eclair KMP uses [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) with [Kotlin Coroutines](https://kotlinlang.org/docs/reference/coroutines-overview.html).
+lightning-kmp uses [Kotlin Multiplatform](https://kotlinlang.org/docs/reference/multiplatform.html) with [Kotlin Coroutines](https://kotlinlang.org/docs/reference/coroutines-overview.html).
 Good understanding of these technologies is required to contribute.
 There are a lot of good resources online to learn about them.
 
@@ -78,7 +78,7 @@ made between versions (since Github doesn't easily show prior versions) and it m
 the PR author as they can set it to auto-squash the fixup commits on rebase.
 
 It's recommended to take great care in writing tests and ensuring the entire test suite has a
-stable successful outcome; eclair uses continuous integration techniques and having a stable build
+stable successful outcome; lightning-kmp uses continuous integration techniques and having a stable build
 helps the reviewers with their job.
 
 Contributors should follow the default Kotlin coding style guide. If you use IntelliJ:
@@ -96,7 +96,7 @@ You can find setup instructions [here](https://help.github.com/en/github/authent
 
 ### Commit Message
 
-Eclair keeps a clean commit history on the master branch with well-formed commit messages.
+lightning-kmp keeps a clean commit history on the master branch with well-formed commit messages.
 
 Here is a model Git commit message:
 
