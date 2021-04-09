@@ -23,10 +23,10 @@ allprojects {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    val ktorVersion: String by extra { "1.5.2" }
+    val ktorVersion: String by extra { "1.5.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val secp256k1Version = "0.5.1"
-    val serializationVersion = "1.0.1" // Ktor is not compatible with 1.1.0 yet
+    val serializationVersion = "1.1.0" 
     val coroutineVersion = "1.4.3-native-mt"
 
     val commonMain by sourceSets.getting {
@@ -44,7 +44,7 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("org.kodein.memory:kodein-memory-files:0.7.0-kx.ser-1.0.1-55-SNAPSHOT")
+            implementation("org.kodein.memory:kodein-memory-files:0.8.1")
             implementation(project(":lightning-kmp-test-fixtures"))
         }
     }
