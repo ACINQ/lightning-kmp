@@ -526,7 +526,7 @@ class Peer(
                         val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
                         val localParams = LocalParams(
                             nodeParams.nodeId,
-                            fundingKeyPath,
+                            nodeParams.keyManager.channelKeys(fundingKeyPath),
                             nodeParams.dustLimit,
                             nodeParams.maxHtlcValueInFlightMsat,
                             Satoshi(600),

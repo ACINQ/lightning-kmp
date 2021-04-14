@@ -392,10 +392,26 @@ data class RevokedCommitPublished(
     }
 }
 
+data class ChannelKeys(
+    val fundingKeyPath: KeyPath,
+    val fundingPrivateKey: PrivateKey,
+    val paymentKey: PrivateKey,
+    val delayedPaymentKey: PrivateKey,
+    val htlcKey: PrivateKey,
+    val revocationKey: PrivateKey,
+    val shaSeed: ByteVector32
+) {
+    val fundingPubKey: PublicKey = fundingPrivateKey.publicKey()
+    val htlcBasepoint: PublicKey = htlcKey.publicKey()
+    val paymentBasepoint: PublicKey = paymentKey.publicKey()
+    val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
+    val revocationBasepoint: PublicKey = revocationKey.publicKey()
+}
+
 @OptIn(ExperimentalUnsignedTypes::class)
 data class LocalParams constructor(
     val nodeId: PublicKey,
-    val fundingKeyPath: KeyPath,
+    val channelKeys: ChannelKeys,
     val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
     val channelReserve: Satoshi,
