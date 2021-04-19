@@ -9,7 +9,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = (project.findProperty("publishVersion") as? String?) ?: "snapshot"
+    version = "snapshot"
 
     repositories {
         mavenLocal()
