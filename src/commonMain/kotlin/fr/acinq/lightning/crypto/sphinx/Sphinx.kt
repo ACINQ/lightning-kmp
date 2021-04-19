@@ -2,8 +2,8 @@ package fr.acinq.lightning.crypto.sphinx
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
-import fr.acinq.bitcoin.crypto.HMac
-import fr.acinq.bitcoin.crypto.Sha256
+import fr.acinq.bitcoin.crypto.Digest
+import fr.acinq.bitcoin.crypto.hmac
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.lightning.crypto.ChaCha20
@@ -37,7 +37,7 @@ object Sphinx {
     /** Secp256k1's base point. */
     private val CurveG = PublicKey(ByteVector("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"))
 
-    fun mac(key: ByteArray, message: ByteArray): ByteVector32 = HMac.hmac(key, message, Sha256(), 64).toByteVector32()
+    fun mac(key: ByteArray, message: ByteArray): ByteVector32 = Digest.sha256().hmac(key, message, 64).toByteVector32()
 
     fun mac(key: ByteVector, message: ByteVector): ByteVector32 = mac(key.toByteArray(), message.toByteArray())
 

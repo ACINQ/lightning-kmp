@@ -1,6 +1,8 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Bitcoin.computeBIP84Address
+import fr.acinq.bitcoin.Bitcoin.computeP2PkhAddress
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.blockchain.*

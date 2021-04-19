@@ -1,6 +1,9 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Bitcoin.computeP2PkhAddress
+import fr.acinq.bitcoin.Bitcoin.computeP2ShOfP2WpkhAddress
+import fr.acinq.bitcoin.Bitcoin.computeP2WpkhAddress
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test

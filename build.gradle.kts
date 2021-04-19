@@ -2,22 +2,19 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.4.10"
-    kotlin("plugin.serialization") version "1.4.10"
+    kotlin("multiplatform") version "1.4.31"
+    kotlin("plugin.serialization") version "1.4.30"
     `maven-publish`
 }
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.0-beta11"
+    version = "snapshot"
 
     repositories {
         mavenLocal()
-        maven("https://dl.bintray.com/kotlin/kotlinx")
-        maven("https://dl.bintray.com/kotlin/ktor")
-        maven("https://dl.bintray.com/kodein-framework/kodein-dev")
-        maven("https://dl.bintray.com/kodein-framework/Kodein-Memory")
-        maven("https://dl.bintray.com/acinq/libs")
+        maven("https://oss.sonatype.org/content/repositories/snapshots")
+        mavenCentral()
         google()
         jcenter()
     }
@@ -26,17 +23,17 @@ allprojects {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    val ktorVersion: String by extra { "1.4.1" }
+    val ktorVersion: String by extra { "1.5.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val secp256k1Version = "0.4.1"
-    val serializationVersion = "1.0.0"
-    val coroutineVersion = "1.4.2-native-mt"
+    val secp256k1Version = "0.5.1"
+    val serializationVersion = "1.1.0" 
+    val coroutineVersion = "1.4.3-native-mt"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.6.1")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.7.0")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.7.0")
+            api("org.kodein.log:kodein-log:0.10.1")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
@@ -47,7 +44,7 @@ kotlin {
         dependencies {
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
-            implementation("org.kodein.memory:kodein-memory-files:0.4.1")
+            implementation("org.kodein.memory:kodein-memory-files:0.8.1")
             implementation(project(":lightning-kmp-test-fixtures"))
         }
     }
