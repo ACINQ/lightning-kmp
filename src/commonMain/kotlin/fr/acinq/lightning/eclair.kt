@@ -10,7 +10,7 @@ import kotlin.random.Random
 
 object Lightning {
 
-    val secureRandom = Random.secure()
+    private val secureRandom = Random.secure()
 
     fun randomBytes(length: Int): ByteArray {
         val buffer = ByteArray(length)
@@ -24,8 +24,12 @@ object Lightning {
 
     fun randomKeyPath(length: Int): KeyPath {
         val path = mutableListOf<Long>()
-        repeat(length) { path.add(secureRandom.nextLong()) }
+        repeat(length) { path.add(randomLong()) }
         return KeyPath(path)
+    }
+
+    fun randomLong(): Long {
+        return secureRandom.nextLong()
     }
 
     fun toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 {
