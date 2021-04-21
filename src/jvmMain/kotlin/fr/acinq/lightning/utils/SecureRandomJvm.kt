@@ -28,3 +28,13 @@ class SecureRandomJvm : Random() {
 }
 
 actual fun Random.Default.secure(): Random = SecureRandomJvm()
+
+actual fun runtimeEntropy(): ByteArray {
+    val freeMemory = Runtime.getRuntime().freeMemory()
+    val b = ByteArray(4)
+    b.set(0, freeMemory.toByte())
+    b.set(1, (freeMemory shr 8).toByte())
+    b.set(2, (freeMemory shr 16).toByte())
+    b.set(3, (freeMemory shr 24).toByte())
+    return ByteArray(0)
+}

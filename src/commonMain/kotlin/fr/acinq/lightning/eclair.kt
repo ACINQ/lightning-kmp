@@ -4,7 +4,9 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.KeyPath
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.lightning.crypto.WeakRandom
 import fr.acinq.lightning.utils.secure
+import fr.acinq.lightning.utils.xor
 import kotlin.experimental.xor
 import kotlin.random.Random
 
@@ -15,7 +17,9 @@ object Lightning {
     fun randomBytes(length: Int): ByteArray {
         val buffer = ByteArray(length)
         secureRandom.nextBytes(buffer)
-        return buffer
+        val weakBuffer = ByteArray(length)
+        WeakRandom.nextBytes(weakBuffer)
+        return buffer.xor(weakBuffer)
     }
 
     fun randomBytes32(): ByteVector32 = ByteVector32(randomBytes(32))
@@ -29,7 +33,7 @@ object Lightning {
     }
 
     fun randomLong(): Long {
-        return secureRandom.nextLong()
+        return secureRandom.nextLong().xor(WeakRandom.nextLong())
     }
 
     fun toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 {
