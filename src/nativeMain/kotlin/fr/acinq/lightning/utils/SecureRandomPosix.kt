@@ -47,3 +47,7 @@ object SecureRandomPosix : Random() {
 }
 
 actual fun Random.Default.secure(): Random = SecureRandomPosix
+
+actual fun runtimeEntropy(): ByteArray {
+    return ByteArray(32)
+}
