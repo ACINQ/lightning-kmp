@@ -1,9 +1,11 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.lightning.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.wire.LightningCodecs
 import fr.acinq.secp256k1.Hex
 import kotlin.test.*
 
@@ -315,6 +317,18 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
         )
         val check = pr.sign(priv).write()
         assertEquals(ref, check)
+    }
+
+    @Test
+    fun `insert current timestamp in payment preimage generation`() {
+        val now = currentTimestampMillis()
+        val pr1 = PaymentRequest.generatePreimage()
+        val preimageTimestamp = LightningCodecs.tu64(ByteArrayInput(pr1.takeRight(6).toByteArray()))
+        assertTrue(now <= preimageTimestamp)
+        assertTrue(preimageTimestamp <= now + 5000)
+
+        val pr2 = PaymentRequest.generatePreimage()
+        assertNotEquals(pr1, pr2)
     }
 
     @Test

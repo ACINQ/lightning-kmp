@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Script.tail
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.serialization.ByteVector32KSerializer
 import fr.acinq.lightning.serialization.ByteVectorKSerializer
@@ -155,6 +156,19 @@ data class PaymentRequest(
          */
         fun invoiceFeatures(features: Features): Features {
             return Features(activated = features.activated.filter { (f, _) -> bolt11Features.contains(f) })
+        }
+
+        /**
+         * To avoid collision on payment preimages, we use a mix of randomness and timestamping.
+         * The end of the preimage contains a timestamp and the rest (at least 192 bits) comes from our RNG.
+         * This ensures that even if the randomness fails, it's unlikely that preimages will be reused.
+         */
+        fun generatePreimage(): ByteVector32 {
+            val timestamp = ByteArrayOutput()
+            LightningCodecs.writeTU64(currentTimestampMillis(), timestamp)
+            val timestampBytes = timestamp.toByteArray()
+            val random = randomBytes(32 - timestampBytes.size)
+            return ByteVector32(random + timestampBytes)
         }
 
         fun create(
