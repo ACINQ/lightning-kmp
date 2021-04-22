@@ -1,5 +1,6 @@
 package fr.acinq.lightning.utils
 
+import java.lang.management.ManagementFactory
 import java.security.SecureRandom
 import kotlin.random.Random
 
@@ -30,11 +31,25 @@ class SecureRandomJvm : Random() {
 actual fun Random.Default.secure(): Random = SecureRandomJvm()
 
 actual fun runtimeEntropy(): ByteArray {
-    val freeMemory = Runtime.getRuntime().freeMemory()
-    val b = ByteArray(4)
-    b.set(0, freeMemory.toByte())
-    b.set(1, (freeMemory shr 8).toByte())
-    b.set(2, (freeMemory shr 16).toByte())
-    b.set(3, (freeMemory shr 24).toByte())
-    return ByteArray(0)
+    val memoryMXBean = ManagementFactory.getMemoryMXBean()
+    val runtimeMXBean = ManagementFactory.getRuntimeMXBean()
+    val threadMXBean = ManagementFactory.getThreadMXBean()
+
+    fun toBytes(l: Long): List<Byte> {
+        return buildList {
+            add(l.toByte())
+            add((l shr 8).toByte())
+            add((l shr 16).toByte())
+            add((l shr 24).toByte())
+        }
+    }
+
+    return toBytes(memoryMXBean.getHeapMemoryUsage().getUsed())
+        .plus(toBytes(memoryMXBean.getNonHeapMemoryUsage().getUsed()))
+        .plus(toBytes(runtimeMXBean.getPid()))
+        .plus(toBytes(runtimeMXBean.getUptime()))
+        .plus(toBytes(threadMXBean.getCurrentThreadCpuTime()))
+        .plus(toBytes(threadMXBean.getCurrentThreadUserTime()))
+        .plus(toBytes(threadMXBean.getPeakThreadCount().toLong()))
+        .toByteArray()
 }
