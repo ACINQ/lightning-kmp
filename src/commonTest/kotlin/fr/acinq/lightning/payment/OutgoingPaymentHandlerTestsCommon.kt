@@ -80,6 +80,21 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `invoice already paid`() = runSuspendTest {
+        val channels = makeChannels()
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
+        val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true)
+        val payment = SendPayment(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val (channelId, add) = filterAddHtlcCommands(result).first()
+        outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId, add, randomBytes32())) as OutgoingPaymentHandler.Success
+
+        val duplicatePayment = payment.copy(paymentId = UUID.randomUUID())
+        val error = outgoingPaymentHandler.sendPayment(duplicatePayment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        assertEquals(error.failure.reason, FinalFailure.AlreadyPaid)
+    }
+
+    @Test
     fun `channel restrictions (maxAcceptedHtlcs)`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
         alice = alice.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxAcceptedHtlcs = 1)))

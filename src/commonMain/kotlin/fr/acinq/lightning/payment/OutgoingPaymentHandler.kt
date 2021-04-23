@@ -54,6 +54,10 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             logger.error { "h:${request.paymentHash} p:${request.paymentId} contract violation: caller is recycling uuid's" }
             return Failure(request, FinalFailure.InvalidPaymentId.toPaymentFailure())
         }
+        if (db.listOutgoingPayments(request.paymentHash).find { it.status is OutgoingPayment.Status.Completed.Succeeded } != null) {
+            logger.error { "h:${request.paymentHash} p:${request.paymentId} invoice has already been paid" }
+            return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
+        }
 
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, walletParams.trampolineFees.first(), currentBlockHeight)
         return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
