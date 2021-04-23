@@ -19,6 +19,7 @@ import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.Shutdown
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class NegotiatingTestsCommon : LightningTestSuite() {
@@ -104,7 +105,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingSigned (theirCloseFee == ourCloseFee, different fee parameters)`() {
-        val (alice, bob, aliceCloseSig) = init(true)
+        val (alice, bob, aliceCloseSig) = init(tweakFees = true)
         assertTrue { converge(alice, bob, aliceCloseSig) != null }
     }
 
@@ -135,6 +136,12 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         actions.hasOutgoingMessage<Error>()
         actions.hasWatch<WatchConfirmed>()
         actions.findTxs().contains(bob.commitments.localCommit.publishableTxs.commitTx.tx)
+    }
+
+    @Test
+    fun `recv ClosingSigned with encrypted channel data`() {
+        val (_, _, aliceCloseSig) = init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        assertFalse(aliceCloseSig.channelData.isEmpty())
     }
 
     @Test
@@ -180,8 +187,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun init(tweakFees: Boolean = false, pushMsat: MilliSatoshi = TestConstants.pushMsat): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = reachNormal(pushMsat = pushMsat)
+        fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, tweakFees: Boolean = false, pushMsat: MilliSatoshi = TestConstants.pushMsat): Triple<Negotiating, Negotiating, ClosingSigned> {
+            val (alice, bob) = reachNormal(channelVersion = channelVersion, pushMsat = pushMsat)
             return mutualClose(alice, bob, tweakFees)
         }
 

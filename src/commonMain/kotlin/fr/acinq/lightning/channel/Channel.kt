@@ -222,12 +222,12 @@ sealed class ChannelState {
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         this is ChannelStateWithCommitments && this.isZeroReserve -> actions.map {
             when {
-                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
-                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
-                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
-                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.copy(channelData = Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is Shutdown -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
                 else -> it
-
             }
         }
         else -> actions
@@ -738,9 +738,8 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                             nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
                             nextRemoteRevocationNumber = state.commitments.remoteCommit.index,
                             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                            state.commitments.remoteChannelData
-                        )
+                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+                        ).withChannelData(state.commitments.remoteChannelData)
                         logger.info { "c:${state.channelId} syncing ${state::class}" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
@@ -869,9 +868,8 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             nextLocalCommitmentNumber = nextState.commitments.localCommit.index + 1,
                             nextRemoteRevocationNumber = nextState.commitments.remoteCommit.index,
                             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                            nextState.commitments.remoteChannelData
-                        )
+                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+                        ).withChannelData(nextState.commitments.remoteChannelData)
                         val actions = listOf<ChannelAction>(ChannelAction.Message.Send(channelReestablish))
                         // now apply their reestablish message to the restored state
                         val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).processInternal(event)

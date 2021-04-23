@@ -9,6 +9,7 @@ import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelVersion
 import fr.acinq.lightning.serialization.ByteVectorKSerializer
 import fr.acinq.lightning.utils.BitField
+import fr.acinq.lightning.utils.toByteVector
 import kotlinx.serialization.Serializable
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -96,6 +97,90 @@ sealed class ChannelTlv : Tlv {
                 }
                 return ChannelOriginTlv(origin)
             }
+        }
+    }
+}
+
+@Serializable
+sealed class FundingSignedTlv : Tlv {
+    @Serializable
+    data class ChannelData(val ecb: EncryptedChannelData) : FundingSignedTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+@Serializable
+sealed class CommitSigTlv : Tlv {
+    @Serializable
+    data class ChannelData(val ecb: EncryptedChannelData) : CommitSigTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+@Serializable
+sealed class RevokeAndAckTlv : Tlv {
+    @Serializable
+    data class ChannelData(val ecb: EncryptedChannelData) : RevokeAndAckTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+@Serializable
+sealed class ChannelReestablishTlv : Tlv {
+    @Serializable
+    data class ChannelData(val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+@Serializable
+sealed class ShutdownTlv : Tlv {
+    @Serializable
+    data class ChannelData(val ecb: EncryptedChannelData) : ShutdownTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+@Serializable
+sealed class ClosingSignedTlv : Tlv {
+    @Serializable
+    data class ChannelData(val ecb: EncryptedChannelData) : ClosingSignedTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
         }
     }
 }

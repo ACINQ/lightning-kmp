@@ -146,9 +146,8 @@ public suspend fun CoroutineScope.newPeer(
             nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
             nextRemoteRevocationNumber = state.commitments.remoteCommit.index,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-            state.commitments.remoteChannelData
-        )
+            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+        ).withChannelData(state.commitments.remoteChannelData)
 
         val msg = LightningMessage.encode(channelReestablish)
         peer.send(BytesReceived(msg))

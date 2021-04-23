@@ -255,9 +255,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 nextLocalCommitmentNumber = alice.commitments.localCommit.index + 1,
                 nextRemoteRevocationNumber = alice.commitments.remoteCommit.index,
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                alice.commitments.remoteChannelData
-            )
+                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+            ).withChannelData(alice.commitments.remoteChannelData)
         }
 
         val (bob3, actions3) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishAlice))

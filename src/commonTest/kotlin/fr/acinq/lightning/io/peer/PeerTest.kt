@@ -146,9 +146,8 @@ class PeerTest : LightningTestSuite() {
             nextLocalCommitmentNumber = syncState.state.commitments.localCommit.index + 1,
             nextRemoteRevocationNumber = syncState.state.commitments.remoteCommit.index,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-            syncState.state.commitments.remoteChannelData
-        )
+            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+        ).withChannelData(syncState.state.commitments.remoteChannelData)
 
         val reestablishMsg = LightningMessage.encode(channelReestablish)
         peer.send(BytesReceived(reestablishMsg))

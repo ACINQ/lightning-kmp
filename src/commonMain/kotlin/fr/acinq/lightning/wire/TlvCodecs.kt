@@ -154,6 +154,27 @@ data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv
         return null
     }
 
+    /**
+     * Add a record to the tlv stream.
+     * Only one record of each type is allowed, so this replaced the previous record of the same type.
+     */
+    inline fun <reified R : T> addOrUpdate(r: R): TlvStream<T> {
+        var found = false
+        val updated = records.map {
+            if (it is R) {
+                found = true
+                r
+            } else {
+                it
+            }
+        }
+        return if (found) {
+            copy(records = updated)
+        } else {
+            copy(records = updated + r)
+        }
+    }
+
     companion object {
         fun <T : Tlv> empty() = TlvStream(listOf<T>(), listOf())
     }
