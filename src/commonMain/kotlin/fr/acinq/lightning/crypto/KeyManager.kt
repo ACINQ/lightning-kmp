@@ -54,14 +54,18 @@ interface KeyManager {
      */
     fun newFundingKeyPath(isFunder: Boolean): KeyPath
 
-    fun channelKeys(fundingKeyPath: KeyPath) : ChannelKeys
+    /**
+     * generate channel-specific keys and secrets
+     * @params funding public key BIP32 path
+     * @return channel keys and secrets
+     */
+    fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys
 
     /**
      *
      * @param tx        input transaction
-     * @param publicKey extended public key
-     * @return a signature generated with the private key that matches the input
-     *         extended public key
+     * @param privateKey private key
+     * @return a signature generated with the input private key
      */
     fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey): ByteVector64
 
@@ -69,10 +73,9 @@ interface KeyManager {
      * This method is used to spend funds send to htlc keys/delayed keys
      *
      * @param tx          input transaction
-     * @param publicKey   extended public key
+     * @param privateKey  private key
      * @param remotePoint remote point
-     * @return a signature generated with a private key generated from the input keys's matching
-     *         private key and the remote point.
+     * @return a signature generated with a private key generated from the input private key and the remote point.
      */
     fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remotePoint: PublicKey, sigHash: Int): ByteVector64
 
@@ -80,10 +83,9 @@ interface KeyManager {
      * Ths method is used to spend revoked transactions, with the corresponding revocation key
      *
      * @param tx           input transaction
-     * @param publicKey    extended public key
+     * @param privateKey   private key
      * @param remoteSecret remote secret
-     * @return a signature generated with a private key generated from the input keys's matching
-     *         private key and the remote secret.
+     * @return a signature generated with a private key generated from the input private key and the remote secret.
      */
     fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64
 

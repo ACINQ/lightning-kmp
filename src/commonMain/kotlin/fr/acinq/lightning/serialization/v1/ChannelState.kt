@@ -152,6 +152,11 @@ data class RevokedCommitPublished(
     fun export() = fr.acinq.lightning.channel.RevokedCommitPublished(commitTx, remotePerCommitmentSecret, claimMainOutputTx, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent)
 }
 
+/**
+ * README: by design, we do not include channel private keys and secret here, so they won't be included in our backups (local files, encrypted peer backup, ...), so even
+ * if these backups were compromised channel private keys would not be leaked unless the main seed was also compromised.
+ * This means that they will be recomputed once when we convert serialized data to their "live" counterparts.
+ */
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class LocalParams constructor(

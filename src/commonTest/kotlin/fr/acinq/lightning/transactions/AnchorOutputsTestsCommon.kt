@@ -88,7 +88,7 @@ class AnchorOutputsTestsCommon {
     private fun runHighLevelTest(testCase: TestCase) {
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
-            ChannelKeys( KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32()),
+            ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32()),
             546.sat, 1000000000L, 0.sat, 0.msat, CltvExpiryDelta(144), 1000, true,
             Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector(),
             TestConstants.Alice.nodeParams.features,
@@ -136,7 +136,7 @@ class AnchorOutputsTestsCommon {
         */
 
         val (commitTx, htlcTxs) = Commitments.makeLocalTxs(
-             42, localParams, remoteParams,
+            42, localParams, remoteParams,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,
             spec

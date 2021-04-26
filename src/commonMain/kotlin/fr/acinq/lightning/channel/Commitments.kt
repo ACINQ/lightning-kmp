@@ -459,7 +459,7 @@ data class Commitments(
 
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTxs) = makeRemoteTxs( remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
+        val (remoteCommitTx, htlcTxs) = makeRemoteTxs(remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
         val sig = keyManager.sign(remoteCommitTx, localParams.channelKeys.fundingPrivateKey)
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
@@ -504,7 +504,7 @@ data class Commitments(
 
         val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
         val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys.shaSeed, localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = makeLocalTxs( localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+        val (localCommitTx, htlcTxs) = makeLocalTxs(localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
         val sig = Transactions.sign(localCommitTx, localParams.channelKeys.fundingPrivateKey)
 
         log.info {

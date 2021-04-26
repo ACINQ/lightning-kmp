@@ -46,7 +46,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
 
         // README !
         // test data generated with v1.0-beta11, but they should never change
-        // if this test fails it means that we cannot restore channels created with older phoenix of lightning-kmp without
+        // if this test fails it means that we cannot restore channels created with older versions of lightning-kmp without
         // some kind of migration process
         val expected = ChannelKeys(
             fundingKeyPath = fundingKeyPath,
