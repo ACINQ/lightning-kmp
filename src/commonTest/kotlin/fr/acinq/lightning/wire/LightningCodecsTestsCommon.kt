@@ -542,7 +542,6 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         // @formatter:on
 
         refs.forEach {
-            println(it.key.toByteVector().toHex())
             val decoded = LightningMessage.decode(it.key)
             assertEquals(it.value, decoded)
             val encoded = LightningMessage.encode(it.value)
