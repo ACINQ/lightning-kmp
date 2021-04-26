@@ -18,6 +18,7 @@ import fr.acinq.lightning.channel.TestsHelper.makeCmdAdd
 import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.signAndRevack
+import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.Either
@@ -31,6 +32,15 @@ class ShutdownTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CMD_ADD_HTLC`() {
         val (_, bob) = init()
+        val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
+        val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(add))
+        assertTrue { bob1 is ShuttingDown }
+        assertTrue { actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) } }
+    }
+
+    @Test
+    fun `recv CMD_ADD_HTLC (zero-reserve)`() {
+        val (_, bob) = init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(add))
         assertTrue { bob1 is ShuttingDown }
@@ -342,6 +352,16 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv Shutdown with encrypted channel data`() {
+        val (alice0, _) = reachNormal(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        val (alice1, actions1) = alice0.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        assertTrue(alice1 is Normal)
+        val blob = Serialization.encrypt(alice1.staticParams.nodeParams.nodePrivateKey.value, alice1)
+        val shutdown = actions1.findOutgoingMessage<Shutdown>()
+        assertEquals(blob, shutdown.channelData)
+    }
+
+    @Test
     fun `recv NewBlock (no htlc timed out)`() {
         val (alice, _) = init()
 
@@ -512,8 +532,8 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val r1 = randomBytes32()
         val r2 = randomBytes32()
 
-        fun init(currentBlockHeight: Int = TestConstants.defaultBlockHeight): Pair<ShuttingDown, ShuttingDown> {
-            val (alice, bob) = reachNormal(ChannelVersion.STANDARD)
+        fun init(channelVersion: ChannelVersion = ChannelVersion.STANDARD, currentBlockHeight: Int = TestConstants.defaultBlockHeight): Pair<ShuttingDown, ShuttingDown> {
+            val (alice, bob) = reachNormal(channelVersion)
             val (_, cmdAdd1) = makeCmdAdd(300_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r1)
             val (alice1, actions) = alice.processEx(ChannelEvent.ExecuteCommand(cmdAdd1))
             val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()
@@ -541,6 +561,8 @@ class ShutdownTestsCommon : LightningTestSuite() {
             val (alice2, _) = alice1.processEx(ChannelEvent.MessageReceived(shutdown1))
             assertTrue(alice2 is ShuttingDown)
             assertTrue(bob1 is ShuttingDown)
+            if (alice2.commitments.isZeroReserve) assertFalse(shutdown.channelData.isEmpty())
+            if (bob1.commitments.isZeroReserve) assertFalse(shutdown1.channelData.isEmpty())
             return Pair(alice2, bob1)
         }
     }

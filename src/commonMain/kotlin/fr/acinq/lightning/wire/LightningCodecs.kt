@@ -7,8 +7,6 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.utils.leftPaddedCopyOf
-import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.secp256k1.Hex
 import kotlin.jvm.JvmStatic
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -200,26 +198,6 @@ object LightningCodecs {
     fun script(input: Input): ByteArray {
         val length = bigSize(input)
         return bytes(input, length)
-    }
-
-    private val channelDataMagic = Hex.decode("fe 47010000").toByteVector()
-
-    fun writeChannelData(msg: ByteArray, out: Output) {
-        if (msg.isNotEmpty()) {
-            out.write(channelDataMagic.toByteArray())
-            writeBigSize(msg.size.toLong(), out)
-            writeBytes(msg, out)
-        }
-    }
-
-    fun writeChannelData(msg: EncryptedChannelData, out: Output) = writeChannelData(msg.data.toByteArray(), out)
-
-    fun channelData(input: Input): EncryptedChannelData {
-        if (input.availableBytes <= 5) return EncryptedChannelData.empty
-        val magic = bytes(input, 5)
-        if (!channelDataMagic.contentEquals(magic)) return EncryptedChannelData.empty
-        val length = bigSize(input)
-        return EncryptedChannelData(bytes(input, length).toByteVector())
     }
 
 }

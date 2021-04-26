@@ -307,6 +307,24 @@ class TlvTestsCommon : LightningTestSuite() {
         assertNull(stream.get<TestTlv.TestType2>())
     }
 
+    @Test
+    fun `add TLV field to stream`() {
+        val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType254(1702)), listOf(GenericTlv(13, ByteVector("2a"))))
+        val updated = stream.addOrUpdate(TestTlv.TestType2(ShortChannelId(561)))
+        assertEquals(TestTlv.TestType2(ShortChannelId(561)), updated.get<TestTlv.TestType2>())
+        val expected = TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType254(1702), TestTlv.TestType2(ShortChannelId(561))), listOf(GenericTlv(13, ByteVector("2a"))))
+        assertEquals(updated, expected)
+    }
+
+    @Test
+    fun `replace TLV field in stream`() {
+        val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType254(1702)), listOf(GenericTlv(13, ByteVector("2a"))))
+        val updated = stream.addOrUpdate(TestTlv.TestType1(562))
+        assertEquals(TestTlv.TestType1(562), updated.get<TestTlv.TestType1>())
+        val expected = TlvStream<TestTlv>(listOf(TestTlv.TestType1(562), TestTlv.TestType254(1702)), listOf(GenericTlv(13, ByteVector("2a"))))
+        assertEquals(updated, expected)
+    }
+
     // See https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#appendix-a-type-length-value-test-vectors
     companion object {
         sealed class TestTlv : Tlv {

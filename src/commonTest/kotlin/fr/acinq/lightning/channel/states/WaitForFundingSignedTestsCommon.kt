@@ -6,6 +6,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.sat
@@ -29,6 +30,13 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         assertEquals(WatchConfirmed(alice1.channelId, fundingTx, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
         val watchSpent = actions1.findWatch<WatchSpent>()
         assertEquals(WatchSpent(alice1.channelId, fundingTx, 0, BITCOIN_FUNDING_SPENT), watchSpent)
+    }
+
+    @Test
+    fun `recv FundingSigned with encrypted channel data`() {
+        val (_, bob, fundingSigned) = init(ChannelVersion.STANDARD or ChannelVersion.ZERO_RESERVE)
+        val blob = Serialization.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob)
+        assertEquals(blob, fundingSigned.channelData)
     }
 
     @Test

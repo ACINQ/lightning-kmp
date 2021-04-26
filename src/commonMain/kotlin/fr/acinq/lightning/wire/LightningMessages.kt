@@ -134,11 +134,7 @@ data class EncryptedChannelData(@Serializable(with = ByteVectorKSerializer::clas
     /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
     override fun toString(): String {
         val bytes = data.take(min(data.size(), 10))
-        return if (bytes.isEmpty()) {
-            ""
-        } else {
-            "$bytes (truncated)"
-        }
+        return if (bytes.isEmpty()) "" else "$bytes (truncated)"
     }
 
     fun isEmpty(): Boolean = data.isEmpty()
@@ -150,6 +146,9 @@ data class EncryptedChannelData(@Serializable(with = ByteVectorKSerializer::clas
 
 interface HasEncryptedChannelData : LightningMessage {
     val channelData: EncryptedChannelData
+    fun withChannelData(data: ByteVector): HasEncryptedChannelData = withChannelData(EncryptedChannelData(data))
+    fun withChannelData(ecd: EncryptedChannelData): HasEncryptedChannelData = if (ecd.isEmpty()) this else withNonEmptyChannelData(ecd)
+    fun withNonEmptyChannelData(ecd: EncryptedChannelData): HasEncryptedChannelData
 }
 
 interface ChannelMessage
@@ -457,24 +456,30 @@ data class FundingCreated(
 data class FundingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+    val tlvStream: TlvStream<FundingSignedTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = FundingSigned.type
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<FundingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): FundingSigned = copy(tlvStream = tlvStream.addOrUpdate(FundingSignedTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(signature, out)
-        LightningCodecs.writeChannelData(channelData, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<FundingSigned> {
         const val type: Long = 35
 
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(FundingSignedTlv.ChannelData.tag to FundingSignedTlv.ChannelData.Companion as TlvValueReader<FundingSignedTlv>)
+
         override fun read(input: Input): FundingSigned {
             return FundingSigned(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 ByteVector64(LightningCodecs.bytes(input, 64)),
-                LightningCodecs.channelData(input)
+                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }
@@ -635,20 +640,26 @@ data class CommitSig(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
     val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>,
-    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+    val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
 ) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = CommitSig.type
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<CommitSigTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): CommitSig = copy(tlvStream = tlvStream.addOrUpdate(CommitSigTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(signature, out)
         LightningCodecs.writeU16(htlcSignatures.size, out)
         htlcSignatures.forEach { LightningCodecs.writeBytes(it, out) }
-        LightningCodecs.writeChannelData(channelData, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<CommitSig> {
         const val type: Long = 132
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>)
 
         override fun read(input: Input): CommitSig {
             val channelId = ByteVector32(LightningCodecs.bytes(input, 32))
@@ -658,7 +669,7 @@ data class CommitSig(
             for (i in 1..numHtlcs) {
                 htlcSigs += ByteVector64(LightningCodecs.bytes(input, 64))
             }
-            return CommitSig(channelId, sig, htlcSigs.toList(), LightningCodecs.channelData(input))
+            return CommitSig(channelId, sig, htlcSigs.toList(), TlvStreamSerializer(false, readers).read(input))
         }
     }
 }
@@ -668,26 +679,32 @@ data class RevokeAndAck(
     override val channelId: ByteVector32,
     val perCommitmentSecret: PrivateKey,
     val nextPerCommitmentPoint: PublicKey,
-    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+    val tlvStream: TlvStream<RevokeAndAckTlv> = TlvStream.empty()
 ) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = RevokeAndAck.type
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<RevokeAndAckTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): RevokeAndAck = copy(tlvStream = tlvStream.addOrUpdate(RevokeAndAckTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(perCommitmentSecret.value, out)
         LightningCodecs.writeBytes(nextPerCommitmentPoint.value, out)
-        LightningCodecs.writeChannelData(channelData, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<RevokeAndAck> {
         const val type: Long = 133
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(RevokeAndAckTlv.ChannelData.tag to RevokeAndAckTlv.ChannelData.Companion as TlvValueReader<RevokeAndAckTlv>)
 
         override fun read(input: Input): RevokeAndAck {
             return RevokeAndAck(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 PrivateKey(LightningCodecs.bytes(input, 32)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.channelData(input)
+                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }
@@ -726,9 +743,12 @@ data class ChannelReestablish(
     val nextRemoteRevocationNumber: Long,
     @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
     @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey,
-    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+    val tlvStream: TlvStream<ChannelReestablishTlv> = TlvStream.empty()
 ) : HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ChannelReestablish.type
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ChannelReestablish = copy(tlvStream = tlvStream.addOrUpdate(ChannelReestablishTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -736,11 +756,14 @@ data class ChannelReestablish(
         LightningCodecs.writeU64(nextRemoteRevocationNumber, out)
         LightningCodecs.writeBytes(yourLastCommitmentSecret.value, out)
         LightningCodecs.writeBytes(myCurrentPerCommitmentPoint.value, out)
-        LightningCodecs.writeChannelData(channelData, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<ChannelReestablish> {
         const val type: Long = 136
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>)
 
         override fun read(input: Input): ChannelReestablish {
             return ChannelReestablish(
@@ -749,7 +772,7 @@ data class ChannelReestablish(
                 LightningCodecs.u64(input),
                 PrivateKey(LightningCodecs.bytes(input, 32)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.channelData(input)
+                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }
@@ -940,25 +963,31 @@ data class ChannelUpdate(
 data class Shutdown(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
-    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+    val tlvStream: TlvStream<ShutdownTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = Shutdown.type
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<ShutdownTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): Shutdown = copy(tlvStream = tlvStream.addOrUpdate(ShutdownTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeU16(scriptPubKey.size(), out)
         LightningCodecs.writeBytes(scriptPubKey, out)
-        LightningCodecs.writeChannelData(channelData, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<Shutdown> {
         const val type: Long = 38
 
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(ShutdownTlv.ChannelData.tag to ShutdownTlv.ChannelData.Companion as TlvValueReader<ShutdownTlv>)
+
         override fun read(input: Input): Shutdown {
             return Shutdown(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input))),
-                LightningCodecs.channelData(input)
+                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }
@@ -970,26 +999,32 @@ data class ClosingSigned(
     @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
     @Serializable(with = SatoshiKSerializer::class) val feeSatoshis: Satoshi,
     @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    override val channelData: EncryptedChannelData = EncryptedChannelData.empty
+    val tlvStream: TlvStream<ClosingSignedTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ClosingSigned.type
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingSigned = copy(tlvStream = tlvStream.addOrUpdate(ClosingSignedTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeU64(feeSatoshis.toLong(), out)
         LightningCodecs.writeBytes(signature, out)
-        LightningCodecs.writeChannelData(channelData, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<ClosingSigned> {
         const val type: Long = 39
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(ClosingSignedTlv.ChannelData.tag to ClosingSignedTlv.ChannelData.Companion as TlvValueReader<ClosingSignedTlv>)
 
         override fun read(input: Input): ClosingSigned {
             return ClosingSigned(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 Satoshi(LightningCodecs.u64(input)),
                 ByteVector64(LightningCodecs.bytes(input, 64)),
-                LightningCodecs.channelData(input)
+                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }
