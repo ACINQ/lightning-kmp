@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.channel.ChannelVersion
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
@@ -29,14 +30,20 @@ interface KeyManager {
 
     fun commitmentPoint(channelKeyPath: KeyPath, index: Long): PublicKey
 
-    fun channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): KeyPath =
+    fun commitmentSecret(shaSeed: ByteVector32, index: Long): PrivateKey
+
+    fun commitmentPoint(shaSeed: ByteVector32, index: Long): PublicKey
+
+    fun channelKeyPath(fundingKeyPath: KeyPath, channelVersion: ChannelVersion): KeyPath =
         if (channelVersion.isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)) {
             // deterministic mode: use the funding pubkey to compute the channel key path
-            channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
+            channelKeyPath(fundingPublicKey(fundingKeyPath))
         } else {
             // legacy mode:  we reuse the funding key path as our channel key path
-            localParams.fundingKeyPath
+            fundingKeyPath
         }
+
+    fun channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): KeyPath = channelKeyPath(localParams.channelKeys.fundingKeyPath, channelVersion)
 
     /**
      *
@@ -48,35 +55,39 @@ interface KeyManager {
     fun newFundingKeyPath(isFunder: Boolean): KeyPath
 
     /**
+     * generate channel-specific keys and secrets
+     * @params funding public key BIP32 path
+     * @return channel keys and secrets
+     */
+    fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys
+
+    /**
      *
      * @param tx        input transaction
-     * @param publicKey extended public key
-     * @return a signature generated with the private key that matches the input
-     *         extended public key
+     * @param privateKey private key
+     * @return a signature generated with the input private key
      */
-    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector64
+    fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey): ByteVector64
 
     /**
      * This method is used to spend funds send to htlc keys/delayed keys
      *
      * @param tx          input transaction
-     * @param publicKey   extended public key
+     * @param privateKey  private key
      * @param remotePoint remote point
-     * @return a signature generated with a private key generated from the input keys's matching
-     *         private key and the remote point.
+     * @return a signature generated with a private key generated from the input private key and the remote point.
      */
-    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sigHash: Int): ByteVector64
+    fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remotePoint: PublicKey, sigHash: Int): ByteVector64
 
     /**
      * Ths method is used to spend revoked transactions, with the corresponding revocation key
      *
      * @param tx           input transaction
-     * @param publicKey    extended public key
+     * @param privateKey   private key
      * @param remoteSecret remote secret
-     * @return a signature generated with a private key generated from the input keys's matching
-     *         private key and the remote secret.
+     * @return a signature generated with a private key generated from the input private key and the remote secret.
      */
-    fun sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64
+    fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64
 
     companion object {
         /**

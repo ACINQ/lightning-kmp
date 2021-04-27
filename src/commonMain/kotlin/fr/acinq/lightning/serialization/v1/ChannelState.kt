@@ -152,6 +152,11 @@ data class RevokedCommitPublished(
     fun export() = fr.acinq.lightning.channel.RevokedCommitPublished(commitTx, remotePerCommitmentSecret, claimMainOutputTx, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent)
 }
 
+/**
+ * README: by design, we do not include channel private keys and secret here, so they won't be included in our backups (local files, encrypted peer backup, ...), so even
+ * if these backups were compromised channel private keys would not be leaked unless the main seed was also compromised.
+ * This means that they will be recomputed once when we convert serialized data to their "live" counterparts.
+ */
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class LocalParams constructor(
@@ -169,7 +174,7 @@ data class LocalParams constructor(
 ) {
     constructor(from: fr.acinq.lightning.channel.LocalParams) : this(
         from.nodeId,
-        from.fundingKeyPath,
+        from.channelKeys.fundingKeyPath,
         from.dustLimit,
         from.maxHtlcValueInFlightMsat,
         from.channelReserve,
@@ -181,7 +186,7 @@ data class LocalParams constructor(
         from.features
     )
 
-    fun export() = fr.acinq.lightning.channel.LocalParams(nodeId, fundingKeyPath, dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isFunder, defaultFinalScriptPubKey, features)
+    fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.LocalParams(nodeId, nodeParams.keyManager.channelKeys(fundingKeyPath), dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isFunder, defaultFinalScriptPubKey, features)
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -290,9 +295,9 @@ data class Commitments(
         from.remoteChannelData
     )
 
-    fun export() = fr.acinq.lightning.channel.Commitments(
+    fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.Commitments(
         channelVersion.export(),
-        localParams.export(),
+        localParams.export(nodeParams),
         remoteParams.export(),
         channelFlags,
         localCommit.export(),
@@ -445,7 +450,7 @@ data class WaitForRemotePublishFutureCommitment(
     )
 
     override fun export(nodeParams: NodeParams) =
-        fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment(staticParams.export(nodeParams), currentTip, currentOnChainFeerates.export(), commitments.export(), remoteChannelReestablish)
+        fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment(staticParams.export(nodeParams), currentTip, currentOnChainFeerates.export(), commitments.export(nodeParams), remoteChannelReestablish)
 }
 
 @Serializable
@@ -615,7 +620,7 @@ data class WaitForFundingConfirmed(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export(),
+        commitments.export(nodeParams),
         fundingTx,
         waitingSinceBlock,
         deferred,
@@ -645,7 +650,7 @@ data class WaitForFundingLocked(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export(),
+        commitments.export(nodeParams),
         shortChannelId,
         lastSent
     )
@@ -683,7 +688,7 @@ data class Normal(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export(),
+        commitments.export(nodeParams),
         shortChannelId,
         buried,
         channelAnnouncement,
@@ -716,7 +721,7 @@ data class ShuttingDown(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export(),
+        commitments.export(nodeParams),
         localShutdown,
         remoteShutdown
     )
@@ -753,7 +758,7 @@ data class Negotiating(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export(),
+        commitments.export(nodeParams),
         localShutdown,
         remoteShutdown,
         closingTxProposed.map { x -> x.map { it.export() } },
@@ -797,7 +802,7 @@ data class Closing(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export(),
+        commitments.export(nodeParams),
         fundingTx,
         waitingSinceBlock,
         mutualCloseProposed,
@@ -840,6 +845,6 @@ data class ErrorInformationLeak(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),
-        commitments.export()
+        commitments.export(nodeParams)
     )
 }

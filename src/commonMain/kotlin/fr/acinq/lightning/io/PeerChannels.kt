@@ -17,7 +17,7 @@ object PeerChannels {
     fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: KeyPath): LocalParams {
         return LocalParams(
             nodeParams.nodeId,
-            fundingKeyPath,
+            nodeParams.keyManager.channelKeys(fundingKeyPath),
             dustLimit = nodeParams.dustLimit,
             maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
             channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit

@@ -3,12 +3,10 @@ package fr.acinq.lightning.transactions
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.ChannelVersion
-import fr.acinq.lightning.channel.Commitments
-import fr.acinq.lightning.channel.LocalParams
-import fr.acinq.lightning.channel.RemoteParams
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.tests.TestConstants
@@ -90,7 +88,8 @@ class AnchorOutputsTestsCommon {
     private fun runHighLevelTest(testCase: TestCase) {
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
-            KeyPath.empty, 546.sat, 1000000000L, 0.sat, 0.msat, CltvExpiryDelta(144), 1000, true,
+            ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32()),
+            546.sat, 1000000000L, 0.sat, 0.msat, CltvExpiryDelta(144), 1000, true,
             Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector(),
             TestConstants.Alice.nodeParams.features,
         )
@@ -135,53 +134,9 @@ class AnchorOutputsTestsCommon {
         # From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
         INTERNAL: local_delayed_privkey: adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01
         */
-        class MyKeyManager : KeyManager {
-            override val nodeKey: DeterministicWallet.ExtendedPrivateKey get() = DeterministicWallet.ExtendedPrivateKey(TestConstants.Alice.nodeParams.nodePrivateKey.value, ByteVector32.Zeroes, 0, KeyPath.empty, 0)
-            override val nodeId: PublicKey get() = nodeKey.publicKey
 
-            fun PrivateKey.toExtendedPrivateKey() = DeterministicWallet.ExtendedPrivateKey(this.value, ByteVector32.Zeroes, 0, KeyPath.empty, 0)
-
-            fun PublicKey.toExtendedPublicKey() = DeterministicWallet.ExtendedPublicKey(this.value, ByteVector32.Zeroes, 0, KeyPath.empty, 0)
-
-            override fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray> {
-                TODO("Not yet implemented")
-            }
-
-            override fun fundingPublicKey(keyPath: KeyPath): DeterministicWallet.ExtendedPublicKey = local_funding_pubkey.toExtendedPublicKey()
-
-            override fun revocationPoint(channelKeyPath: KeyPath): DeterministicWallet.ExtendedPublicKey = local_revocation_pubkey.toExtendedPublicKey()
-
-            override fun paymentPoint(channelKeyPath: KeyPath): DeterministicWallet.ExtendedPublicKey = local_payment_basepoint_secret.publicKey().toExtendedPublicKey()
-
-            override fun delayedPaymentPoint(channelKeyPath: KeyPath): DeterministicWallet.ExtendedPublicKey = local_delayed_payment_basepoint.toExtendedPublicKey()
-
-            override fun htlcPoint(channelKeyPath: KeyPath): DeterministicWallet.ExtendedPublicKey = PrivateKey.fromHex("1111111111111111111111111111111111111111111111111111111111111111").publicKey().toExtendedPublicKey()
-
-            override fun commitmentSecret(channelKeyPath: KeyPath, index: Long): PrivateKey = local_per_commitment_secret
-
-            override fun commitmentPoint(channelKeyPath: KeyPath, index: Long): PublicKey = local_per_commitment_point
-
-            override fun newFundingKeyPath(isFunder: Boolean): KeyPath {
-                TODO("Not yet implemented")
-            }
-
-            override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey): ByteVector64 {
-                val privateKey = local_funding_privkey
-                return Transactions.sign(tx, privateKey)
-            }
-
-            override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
-                TODO("Not yet implemented")
-            }
-
-            override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 {
-                TODO("Not yet implemented")
-            }
-        }
-
-        val keyManager = MyKeyManager()
         val (commitTx, htlcTxs) = Commitments.makeLocalTxs(
-            keyManager, channelVersion, 42, localParams, remoteParams,
+            42, localParams, remoteParams,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,
             spec

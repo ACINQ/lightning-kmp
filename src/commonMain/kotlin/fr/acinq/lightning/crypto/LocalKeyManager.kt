@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.lightning.Lightning.secureRandom
+import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.transactions.Transactions
 
 data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
@@ -70,24 +71,39 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
 
     override fun htlcPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(4)))
 
-    override fun commitmentSecret(channelKeyPath: KeyPath, index: Long) = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
+    override fun commitmentSecret(channelKeyPath: KeyPath, index: Long) = commitmentSecret(shaSeed(channelKeyPath), index)
 
-    override fun commitmentPoint(channelKeyPath: KeyPath, index: Long) = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
+    override fun commitmentPoint(channelKeyPath: KeyPath, index: Long) = commitmentPoint(shaSeed(channelKeyPath), index)
 
-    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey): ByteVector64 {
-        val privateKey = privateKey(publicKey.path)
-        return Transactions.sign(tx, privateKey.privateKey)
+    override fun commitmentSecret(shaSeed: ByteVector32, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
+
+    override fun commitmentPoint(shaSeed: ByteVector32, index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
+
+    override fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys {
+        val fundingPubKey = fundingPublicKey(fundingKeyPath)
+        val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
+        return ChannelKeys(
+            fundingKeyPath,
+            privateKey(fundingPubKey.path).privateKey,
+            paymentKey = privateKey(paymentPoint(channelKeyPath).path).privateKey,
+            delayedPaymentKey = privateKey(delayedPaymentPoint(channelKeyPath).path).privateKey,
+            htlcKey = privateKey(htlcPoint(channelKeyPath).path).privateKey,
+            revocationKey = privateKey(revocationPoint(channelKeyPath).path).privateKey,
+            shaSeed = shaSeed(channelKeyPath)
+        )
     }
 
-    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
-        val privateKey = privateKey(publicKey.path)
-        val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
+    override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey): ByteVector64 {
+        return Transactions.sign(tx, privateKey)
+    }
+
+    override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
+        val currentKey = Generators.derivePrivKey(privateKey, remotePoint)
         return Transactions.sign(tx, currentKey, sigHash)
     }
 
-    override fun sign(tx: Transactions.TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 {
-        val privateKey = privateKey(publicKey.path)
-        val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
+    override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64 {
+        val currentKey = Generators.revocationPrivKey(privateKey, remoteSecret)
         return Transactions.sign(tx, currentKey)
     }
 

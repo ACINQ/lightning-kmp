@@ -104,7 +104,7 @@ class PeerTest : LightningTestSuite() {
         alice.forward(open3)
         alice2bob.expect<AcceptChannel>()
 
-        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.fundingKeyPath }.toSet().size)
+        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.channelKeys.fundingKeyPath }.toSet().size)
     }
 
     @Test

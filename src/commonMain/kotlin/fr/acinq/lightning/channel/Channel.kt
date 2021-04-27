@@ -573,9 +573,8 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 Pair(nextState, listOf())
             }
             event is ChannelEvent.InitFunder -> {
-                val fundingPubKey = keyManager.fundingPublicKey(event.localParams.fundingKeyPath).publicKey
-                val channelKeyPath = keyManager.channelKeyPath(event.localParams, event.channelVersion)
-                val paymentBasepoint = keyManager.paymentPoint(channelKeyPath)
+                val fundingPubKey = event.localParams.channelKeys.fundingPubKey
+                val paymentBasepoint = event.localParams.channelKeys.paymentBasepoint
                 val open = OpenChannel(
                     staticParams.nodeParams.chainHash,
                     temporaryChannelId = event.temporaryChannelId,
@@ -589,11 +588,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     toSelfDelay = event.localParams.toSelfDelay,
                     maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
                     fundingPubkey = fundingPubKey,
-                    revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-                    paymentBasepoint = paymentBasepoint.publicKey,
-                    delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-                    htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-                    firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+                    revocationBasepoint = event.localParams.channelKeys.revocationBasepoint,
+                    paymentBasepoint = paymentBasepoint,
+                    delayedPaymentBasepoint = event.localParams.channelKeys.delayedPaymentBasepoint,
+                    htlcBasepoint = event.localParams.channelKeys.htlcBasepoint,
+                    firstPerCommitmentPoint = keyManager.commitmentPoint(event.localParams.channelKeys.shaSeed, 0),
                     channelFlags = event.channelFlags,
                     // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
                     // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -730,8 +729,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     }
                     else -> {
                         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
-                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, state.commitments.localCommit.index)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, state.commitments.localCommit.index)
 
                         val channelReestablish = ChannelReestablish(
                             channelId = state.channelId,
@@ -860,8 +858,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         }
 
                         val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, nextState.commitments.channelVersion)
-                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, nextState.commitments.localCommit.index)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, nextState.commitments.localCommit.index)
 
                         val channelReestablish = ChannelReestablish(
                             channelId = nextState.channelId,
@@ -895,19 +892,17 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     state is WaitForFundingLocked -> {
                         logger.debug { "c:${state.channelId} re-sending fundingLocked" }
-                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
-                        val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+                        val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, 1)
                         val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
                         val actions = listOf(ChannelAction.Message.Send(fundingLocked))
                         Pair(state, actions)
                     }
                     state is Normal -> {
-                        val channelKeyPath = keyManager.channelKeyPath(state.commitments.localParams, state.commitments.channelVersion)
                         when {
                             !Helpers.checkLocalCommit(state.commitments, event.message.nextRemoteRevocationNumber) -> {
                                 // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
                                 // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
-                                if (keyManager.commitmentSecret(channelKeyPath, event.message.nextRemoteRevocationNumber - 1) == event.message.yourLastCommitmentSecret) {
+                                if (keyManager.commitmentSecret(state.commitments.localParams.channelKeys.shaSeed, event.message.nextRemoteRevocationNumber - 1) == event.message.yourLastCommitmentSecret) {
                                     logger.warning { "c:${state.channelId} counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommit.index} theirCommitmentNumber=${event.message.nextRemoteRevocationNumber}" }
                                     // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
                                     // would punish us by taking all the funds in the channel
@@ -952,7 +947,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                 if (event.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommit.index == 0L) {
                                     // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
                                     logger.debug { "c:${state.channelId} re-sending fundingLocked" }
-                                    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+                                    val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, 1)
                                     val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
                                     actions.add(ChannelAction.Message.Send(fundingLocked))
                                 }
@@ -1164,10 +1159,9 @@ data class WaitForOpenChannel(
                         }
                         val channelOrigin = event.message.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin
 
-                        val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-                        val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
+                        val fundingPubkey = localParams.channelKeys.fundingPubKey
                         val minimumDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingSatoshis)
-                        val paymentBasepoint = keyManager.paymentPoint(channelKeyPath)
+                        val paymentBasepoint = localParams.channelKeys.paymentBasepoint
                         val accept = AcceptChannel(
                             temporaryChannelId = event.message.temporaryChannelId,
                             dustLimitSatoshis = localParams.dustLimit,
@@ -1178,11 +1172,11 @@ data class WaitForOpenChannel(
                             toSelfDelay = localParams.toSelfDelay,
                             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
                             fundingPubkey = fundingPubkey,
-                            revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-                            paymentBasepoint = paymentBasepoint.publicKey,
-                            delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-                            htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-                            firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+                            revocationBasepoint = localParams.channelKeys.revocationBasepoint,
+                            paymentBasepoint = paymentBasepoint,
+                            delayedPaymentBasepoint = localParams.channelKeys.delayedPaymentBasepoint,
+                            htlcBasepoint = localParams.channelKeys.htlcBasepoint,
+                            firstPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelVersion), 0),
                             // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
                             // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
                             tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
@@ -1265,7 +1259,6 @@ data class WaitForFundingCreated(
                         // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
                         val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
                             keyManager,
-                            channelVersion,
                             temporaryChannelId,
                             localParams,
                             remoteParams,
@@ -1284,11 +1277,11 @@ data class WaitForFundingCreated(
                             is Either.Right -> {
                                 val firstCommitTx = firstCommitTxRes.value
                                 // check remote signature validity
-                                val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-                                val localSigOfLocalTx = keyManager.sign(firstCommitTx.localCommitTx, fundingPubKey)
+                                val fundingPubKey = localParams.channelKeys.fundingPubKey
+                                val localSigOfLocalTx = keyManager.sign(firstCommitTx.localCommitTx, localParams.channelKeys.fundingPrivateKey)
                                 val signedLocalCommitTx = Transactions.addSigs(
                                     firstCommitTx.localCommitTx,
-                                    fundingPubKey.publicKey,
+                                    fundingPubKey,
                                     remoteParams.fundingPubKey,
                                     localSigOfLocalTx,
                                     event.message.signature
@@ -1299,7 +1292,7 @@ data class WaitForFundingCreated(
                                         handleLocalError(event, result.error)
                                     }
                                     is Try.Success -> {
-                                        val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, fundingPubKey)
+                                        val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, localParams.channelKeys.fundingPrivateKey)
                                         val channelId = Lightning.toLongId(event.message.fundingTxid, event.message.fundingOutputIndex)
                                         // watch the funding tx transaction
                                         val commitInput = firstCommitTx.localCommitTx.input
@@ -1405,8 +1398,8 @@ data class WaitForAcceptChannel(
                     htlcBasepoint = event.message.htlcBasepoint,
                     features = Features(initFunder.remoteInit.features)
                 )
-                val localFundingPubkey = keyManager.fundingPublicKey(initFunder.localParams.fundingKeyPath)
-                val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey))))
+                val localFundingPubkey = initFunder.localParams.channelKeys.fundingPubKey
+                val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                 val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeerate)
                 val nextState = WaitForFundingInternal(
                     staticParams,
@@ -1463,7 +1456,6 @@ data class WaitForFundingInternal(
                 // let's create the first commitment tx that spends the yet uncommitted funding tx
                 val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
                     keyManager,
-                    channelVersion,
                     temporaryChannelId,
                     localParams,
                     remoteParams,
@@ -1482,7 +1474,7 @@ data class WaitForFundingInternal(
                     is Either.Right -> {
                         val firstCommitTx = firstCommitTxRes.value
                         require(event.fundingTx.txOut[event.fundingTxOutputIndex].publicKeyScript == firstCommitTx.localCommitTx.input.txOut.publicKeyScript) { "pubkey script mismatch!" }
-                        val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath))
+                        val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, localParams.channelKeys.fundingPrivateKey)
                         // signature of their initial commitment tx that pays remote pushMsat
                         val fundingCreated = FundingCreated(
                             temporaryChannelId = temporaryChannelId,
@@ -1553,9 +1545,9 @@ data class WaitForFundingSigned(
         return when {
             event is ChannelEvent.MessageReceived && event.message is FundingSigned -> {
                 // we make sure that their sig checks out and that our first commit tx is spendable
-                val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-                val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
-                val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
+                val fundingPubKey = localParams.channelKeys.fundingPubKey
+                val localSigOfLocalTx = keyManager.sign(localCommitTx, localParams.channelKeys.fundingPrivateKey)
+                val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey, remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> handleLocalError(event, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx))
                     is Try.Success -> {
@@ -1654,8 +1646,7 @@ data class WaitForFundingConfirmed(
                             return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx))
                         }
                         val watchLost = WatchLost(this.channelId, commitments.commitInput.outPoint.txid, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST)
-                        val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
-                        val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)
                         val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
@@ -3046,9 +3037,8 @@ object Channel {
                 channelReestablish.nextRemoteRevocationNumber + 1 -> {
                     // our last revocation got lost, let's resend it
                     log.debug { "re-sending last revocation" }
-                    val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
-                    val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, d.commitments.localCommit.index - 1)
-                    val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index + 1)
+                    val localPerCommitmentSecret = keyManager.commitmentSecret(d.commitments.localParams.channelKeys.shaSeed, d.commitments.localCommit.index - 1)
+                    val localNextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeys.shaSeed, d.commitments.localCommit.index + 1)
                     val revocation = RevokeAndAck(commitments1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
                     sendQueue.add(ChannelAction.Message.Send(revocation))
                 }
