@@ -242,7 +242,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CMD_CLOSE`() {
         val (_, bob, _) = TestsHelper.init()
-        val (bob1, actions) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null)))
+        val (bob1, actions) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
         assertTrue { bob1 is Aborted }
         assertTrue { actions.isEmpty() }
     }

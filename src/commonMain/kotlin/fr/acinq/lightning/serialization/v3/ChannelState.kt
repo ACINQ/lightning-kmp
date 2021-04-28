@@ -273,6 +273,13 @@ data class ChannelFeatures(@Serializable(with = ByteVectorKSerializer::class) va
 }
 
 @Serializable
+data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw) {
+    constructor(from: fr.acinq.lightning.channel.ClosingFeerates) : this(from.preferred, from.min, from.max)
+
+    fun export() = fr.acinq.lightning.channel.ClosingFeerates(preferred, min, max)
+}
+
+@Serializable
 data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
     constructor(from: fr.acinq.lightning.channel.ClosingTxProposed) : this(from.unsignedTx, from.localClosingSigned)
 
@@ -701,7 +708,8 @@ data class Normal(
     val channelUpdate: ChannelUpdate,
     val remoteChannelUpdate: ChannelUpdate?,
     val localShutdown: Shutdown?,
-    val remoteShutdown: Shutdown?
+    val remoteShutdown: Shutdown?,
+    val closingFeerates: ClosingFeerates?
 ) : ChannelStateWithCommitments() {
     constructor(from: fr.acinq.lightning.channel.Normal) : this(
         StaticParams(from.staticParams),
@@ -714,7 +722,8 @@ data class Normal(
         from.channelUpdate,
         from.remoteChannelUpdate,
         from.localShutdown,
-        from.remoteShutdown
+        from.remoteShutdown,
+        from.closingFeerates?.let { ClosingFeerates(it) }
     )
 
     override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.Normal(
@@ -728,7 +737,8 @@ data class Normal(
         channelUpdate,
         remoteChannelUpdate,
         localShutdown,
-        remoteShutdown
+        remoteShutdown,
+        closingFeerates?.export()
     )
 }
 
@@ -739,7 +749,8 @@ data class ShuttingDown(
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
-    val remoteShutdown: Shutdown
+    val remoteShutdown: Shutdown,
+    val closingFeerates: ClosingFeerates?
 ) : ChannelStateWithCommitments() {
     constructor(from: fr.acinq.lightning.channel.ShuttingDown) : this(
         StaticParams(from.staticParams),
@@ -747,7 +758,8 @@ data class ShuttingDown(
         OnChainFeerates(from.currentOnChainFeerates),
         Commitments(from.commitments),
         from.localShutdown,
-        from.remoteShutdown
+        from.remoteShutdown,
+        from.closingFeerates?.let { ClosingFeerates(it) }
     )
 
     override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.ShuttingDown(
@@ -756,7 +768,8 @@ data class ShuttingDown(
         currentOnChainFeerates.export(),
         commitments.export(nodeParams),
         localShutdown,
-        remoteShutdown
+        remoteShutdown,
+        closingFeerates?.export()
     )
 }
 
@@ -769,7 +782,8 @@ data class Negotiating(
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closingTxProposed: List<List<ClosingTxProposed>>,
-    val bestUnpublishedClosingTx: Transactions.TransactionWithInputInfo.ClosingTx?
+    val bestUnpublishedClosingTx: Transactions.TransactionWithInputInfo.ClosingTx?,
+    val closingFeerates: ClosingFeerates?
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
@@ -784,7 +798,8 @@ data class Negotiating(
         from.localShutdown,
         from.remoteShutdown,
         from.closingTxProposed.map { x -> x.map { ClosingTxProposed(it) } },
-        from.bestUnpublishedClosingTx
+        from.bestUnpublishedClosingTx,
+        from.closingFeerates?.let { ClosingFeerates(it) }
     )
 
     override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.Negotiating(
@@ -795,7 +810,8 @@ data class Negotiating(
         localShutdown,
         remoteShutdown,
         closingTxProposed.map { x -> x.map { it.export() } },
-        bestUnpublishedClosingTx
+        bestUnpublishedClosingTx,
+        closingFeerates?.export()
     )
 }
 
