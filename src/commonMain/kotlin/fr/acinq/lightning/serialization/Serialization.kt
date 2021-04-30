@@ -13,6 +13,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.contextual
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 
@@ -72,6 +73,9 @@ object Serialization {
     private val serializationModules = SerializersModule {
         include(tlvSerializersModule)
         include(updateSerializersModule)
+        include(SerializersModule {
+            contextual(EncryptedChannelDataSerializer)
+        })
     }
 
     // used by the "test node" JSON API

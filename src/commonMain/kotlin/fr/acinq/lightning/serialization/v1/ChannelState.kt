@@ -10,7 +10,14 @@ import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlin.math.min
 
 @Serializable
 sealed class DirectedHtlc {
@@ -256,6 +263,25 @@ data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputIn
     fun export() = fr.acinq.lightning.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
 }
 
+@OptIn(ExperimentalSerializationApi::class)
+@Serializer(EncryptedChannelData::class)
+object EncryptedChannelDataSerializer : KSerializer<EncryptedChannelData> {
+    @Serializable
+    data class EncryptedChannelDataSurrogate(@Serializable(with = ByteVectorKSerializer::class) val data: ByteVector)
+
+    override fun deserialize(decoder: Decoder): EncryptedChannelData {
+        val surrogate = decoder.decodeSerializableValue(EncryptedChannelDataSurrogate.serializer())
+        return EncryptedChannelData(surrogate.data)
+    }
+
+    override val descriptor: SerialDescriptor
+        get() = EncryptedChannelDataSurrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: EncryptedChannelData) {
+        val surrogate = EncryptedChannelDataSurrogate(value.data)
+        encoder.encodeSerializableValue(EncryptedChannelDataSurrogate.serializer(), surrogate)
+    }
+}
 @Serializable
 data class Commitments(
     val channelVersion: ChannelVersion,
@@ -273,7 +299,7 @@ data class Commitments(
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
     @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
-    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
+    @Serializable(with = EncryptedChannelDataSerializer::class) val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     constructor(from: fr.acinq.lightning.channel.Commitments) : this(
         ChannelVersion(from.channelVersion),

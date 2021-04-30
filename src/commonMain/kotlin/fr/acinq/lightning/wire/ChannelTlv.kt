@@ -7,9 +7,9 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelVersion
-import fr.acinq.lightning.serialization.v1.ByteVectorKSerializer
 import fr.acinq.lightning.utils.BitField
 import fr.acinq.lightning.utils.toByteVector
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -17,7 +17,7 @@ import kotlinx.serialization.Serializable
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
     @Serializable
-    data class UpfrontShutdownScript(@Serializable(with = ByteVectorKSerializer::class) val scriptPubkey: ByteVector) : ChannelTlv() {
+    data class UpfrontShutdownScript(@Contextual val scriptPubkey: ByteVector) : ChannelTlv() {
         val isEmpty: Boolean get() = scriptPubkey.isEmpty()
 
         override val tag: Long get() = UpfrontShutdownScript.tag
@@ -104,7 +104,7 @@ sealed class ChannelTlv : Tlv {
 @Serializable
 sealed class FundingSignedTlv : Tlv {
     @Serializable
-    data class ChannelData(val ecb: EncryptedChannelData) : FundingSignedTlv() {
+    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : FundingSignedTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -118,7 +118,7 @@ sealed class FundingSignedTlv : Tlv {
 @Serializable
 sealed class CommitSigTlv : Tlv {
     @Serializable
-    data class ChannelData(val ecb: EncryptedChannelData) : CommitSigTlv() {
+    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : CommitSigTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -132,7 +132,7 @@ sealed class CommitSigTlv : Tlv {
 @Serializable
 sealed class RevokeAndAckTlv : Tlv {
     @Serializable
-    data class ChannelData(val ecb: EncryptedChannelData) : RevokeAndAckTlv() {
+    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : RevokeAndAckTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -146,7 +146,7 @@ sealed class RevokeAndAckTlv : Tlv {
 @Serializable
 sealed class ChannelReestablishTlv : Tlv {
     @Serializable
-    data class ChannelData(val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
+    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -160,7 +160,7 @@ sealed class ChannelReestablishTlv : Tlv {
 @Serializable
 sealed class ShutdownTlv : Tlv {
     @Serializable
-    data class ChannelData(val ecb: EncryptedChannelData) : ShutdownTlv() {
+    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ShutdownTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -174,7 +174,7 @@ sealed class ShutdownTlv : Tlv {
 @Serializable
 sealed class ClosingSignedTlv : Tlv {
     @Serializable
-    data class ChannelData(val ecb: EncryptedChannelData) : ClosingSignedTlv() {
+    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ClosingSignedTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
