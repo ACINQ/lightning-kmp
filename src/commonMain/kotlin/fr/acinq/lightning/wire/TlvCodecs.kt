@@ -5,8 +5,8 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.serialization.v1.ByteVectorKSerializer
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -40,7 +40,7 @@ interface TlvValueReader<T : Tlv> {
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
-data class GenericTlv(override val tag: Long, @Serializable(with = ByteVectorKSerializer::class) val value: ByteVector) : Tlv {
+data class GenericTlv(override val tag: Long, @Contextual val value: ByteVector) : Tlv {
     init {
         require(tag.rem(2L) != 0L) { "unknown even tag ($tag) " }
     }
