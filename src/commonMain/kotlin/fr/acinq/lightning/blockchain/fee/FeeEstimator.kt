@@ -1,7 +1,7 @@
 package fr.acinq.lightning.blockchain.fee
 
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.lightning.serialization.SatoshiKSerializer
+import fr.acinq.lightning.serialization.v1.SatoshiKSerializer
 import fr.acinq.lightning.utils.sat
 import kotlinx.serialization.Serializable
 

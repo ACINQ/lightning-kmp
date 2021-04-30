@@ -2,7 +2,7 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.sha256
-import fr.acinq.lightning.serialization.ByteVector32KSerializer
+import fr.acinq.lightning.serialization.v1.ByteVector32KSerializer
 import fr.acinq.lightning.utils.startsWith
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer

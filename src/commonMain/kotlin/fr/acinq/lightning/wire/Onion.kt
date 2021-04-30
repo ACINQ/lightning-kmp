@@ -11,9 +11,9 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.serialization.ByteVector32KSerializer
-import fr.acinq.lightning.serialization.ByteVectorKSerializer
-import fr.acinq.lightning.serialization.PublicKeyKSerializer
+import fr.acinq.lightning.serialization.v1.ByteVector32KSerializer
+import fr.acinq.lightning.serialization.v1.ByteVectorKSerializer
+import fr.acinq.lightning.serialization.v1.PublicKeyKSerializer
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector

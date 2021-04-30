@@ -6,9 +6,9 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.serialization.ByteVector32KSerializer
-import fr.acinq.lightning.serialization.ByteVectorKSerializer
-import fr.acinq.lightning.serialization.PublicKeyKSerializer
+import fr.acinq.lightning.serialization.v1.ByteVector32KSerializer
+import fr.acinq.lightning.serialization.v1.ByteVectorKSerializer
+import fr.acinq.lightning.serialization.v1.PublicKeyKSerializer
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LightningCodecs
 import kotlinx.serialization.Serializable

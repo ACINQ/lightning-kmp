@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.ShaChain
-import fr.acinq.lightning.serialization.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.BitField
 import fr.acinq.lightning.utils.Either

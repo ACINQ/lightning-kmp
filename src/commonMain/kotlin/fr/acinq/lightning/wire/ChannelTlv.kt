@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelVersion
-import fr.acinq.lightning.serialization.ByteVectorKSerializer
+import fr.acinq.lightning.serialization.v1.ByteVectorKSerializer
 import fr.acinq.lightning.utils.BitField
 import fr.acinq.lightning.utils.toByteVector
 import kotlinx.serialization.Serializable

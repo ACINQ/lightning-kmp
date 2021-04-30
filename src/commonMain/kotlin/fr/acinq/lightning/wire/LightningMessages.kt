@@ -9,7 +9,7 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelVersion
 import fr.acinq.lightning.router.Announcements
-import fr.acinq.lightning.serialization.*
+import fr.acinq.lightning.serialization.v1.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Serializable

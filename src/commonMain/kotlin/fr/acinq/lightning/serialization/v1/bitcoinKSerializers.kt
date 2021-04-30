@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.v1
 
 import fr.acinq.bitcoin.*
 import fr.acinq.secp256k1.Hex

@@ -3,7 +3,7 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.serialization.ByteVector32KSerializer
+import fr.acinq.lightning.serialization.v1.ByteVector32KSerializer
 import kotlinx.serialization.Serializable
 
 /** Tlv types used inside Init messages. */
