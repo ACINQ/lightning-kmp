@@ -10,7 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.payment.OutgoingPacket
 import fr.acinq.lightning.router.ChannelHop
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.UUID

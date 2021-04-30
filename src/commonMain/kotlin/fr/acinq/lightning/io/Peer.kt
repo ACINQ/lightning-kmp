@@ -18,7 +18,7 @@ import fr.acinq.lightning.payment.IncomingPaymentHandler
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.payment.OutgoingPaymentHandler
 import fr.acinq.lightning.payment.PaymentRequest
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping

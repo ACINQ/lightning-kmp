@@ -3,6 +3,7 @@ package fr.acinq.lightning.serialization.v1
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.BitField
@@ -16,6 +17,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Serializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.descriptors.element
@@ -23,6 +25,10 @@ import kotlinx.serialization.descriptors.mapSerialDescriptor
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.contextual
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 import kotlin.math.min
 
 @Serializable
@@ -269,25 +275,6 @@ data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputIn
     fun export() = fr.acinq.lightning.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
 }
 
-@OptIn(ExperimentalSerializationApi::class)
-@Serializer(EncryptedChannelData::class)
-object EncryptedChannelDataSerializer : KSerializer<EncryptedChannelData> {
-    @Serializable
-    data class EncryptedChannelDataSurrogate(@Serializable(with = ByteVectorKSerializer::class) val data: ByteVector)
-
-    override fun deserialize(decoder: Decoder): EncryptedChannelData {
-        val surrogate = decoder.decodeSerializableValue(EncryptedChannelDataSurrogate.serializer())
-        return EncryptedChannelData(surrogate.data)
-    }
-
-    override val descriptor: SerialDescriptor
-        get() = EncryptedChannelDataSurrogate.serializer().descriptor
-
-    override fun serialize(encoder: Encoder, value: EncryptedChannelData) {
-        val surrogate = EncryptedChannelDataSurrogate(value.data)
-        encoder.encodeSerializableValue(EncryptedChannelDataSurrogate.serializer(), surrogate)
-    }
-}
 @Serializable
 data class Commitments(
     val channelVersion: ChannelVersion,
@@ -305,7 +292,7 @@ data class Commitments(
     val commitInput: Transactions.InputInfo,
     @Serializable(with = ShaChainSerializer::class) val remotePerCommitmentSecrets: ShaChain,
     @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
-    @Serializable(with = EncryptedChannelDataSerializer::class) val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
+    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     constructor(from: fr.acinq.lightning.channel.Commitments) : this(
         ChannelVersion(from.channelVersion),

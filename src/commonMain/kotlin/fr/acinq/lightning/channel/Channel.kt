@@ -17,7 +17,7 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.router.Announcements
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions

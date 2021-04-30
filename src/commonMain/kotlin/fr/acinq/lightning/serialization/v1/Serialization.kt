@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.v1
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
-import fr.acinq.lightning.serialization.v1.*
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -74,7 +73,6 @@ object Serialization {
         include(tlvSerializersModule)
         include(updateSerializersModule)
         include(SerializersModule {
-            contextual(EncryptedChannelDataSerializer)
             contextual(ByteVector64KSerializer)
             contextual(ByteVector32KSerializer)
             contextual(ByteVectorKSerializer)

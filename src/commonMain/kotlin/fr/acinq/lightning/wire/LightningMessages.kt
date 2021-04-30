@@ -129,7 +129,8 @@ interface HasChainHash : LightningMessage {
     val chainHash: ByteVector32
 }
 
-data class EncryptedChannelData(val data: ByteVector) {
+@Serializable
+data class EncryptedChannelData(@Contextual val data: ByteVector) {
     /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
     override fun toString(): String {
         val bytes = data.take(min(data.size(), 10))
