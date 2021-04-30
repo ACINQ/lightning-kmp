@@ -18,7 +18,7 @@ import fr.acinq.lightning.payment.IncomingPaymentHandler
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.payment.OutgoingPaymentHandler
 import fr.acinq.lightning.payment.PaymentRequest
-import fr.acinq.lightning.serialization.v1.Serialization
+import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
@@ -552,7 +552,7 @@ class Peer(
                         if (msg.channelData.isEmpty()) {
                             sendToPeer(Error(msg.channelId, "unknown channel"))
                         } else {
-                            when (val decrypted = runTrying { Serialization.decrypt(nodeParams.nodePrivateKey, msg.channelData, nodeParams) }) {
+                            when (val decrypted = runTrying { Serialization.decrypt(nodeParams.nodePrivateKey.value, msg.channelData, nodeParams) }) {
                                 is Try.Success -> {
                                     logger.warning { "n:$remoteNodeId restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result

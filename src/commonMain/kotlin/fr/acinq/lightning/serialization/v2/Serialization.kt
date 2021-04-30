@@ -12,7 +12,6 @@ import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
-import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -185,23 +184,28 @@ object Serialization {
         override fun encodeFloat(value: Float) {
             TODO()
         }
+
         override fun encodeDouble(value: Double) {
             TODO()
         }
+
         override fun encodeChar(value: Char) = output.write(value.toInt())
         override fun encodeString(value: String) {
             val bytes = value.encodeToByteArray()
             encodeInt(bytes.size)
             output.write(bytes)
         }
+
         override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) = output.write(index)
         override fun beginCollection(descriptor: SerialDescriptor, collectionSize: Int): CompositeEncoder {
             encodeInt(collectionSize)
             return this
         }
+
         override fun encodeNull() = encodeBoolean(false)
         override fun encodeNotNullMark() = encodeBoolean(true)
     }
+
     @OptIn(ExperimentalSerializationApi::class)
     @ExperimentalSerializationApi
     class DataInputDecoder(val input: ByteArrayInput, var elementsCount: Int = 0) : AbstractDecoder() {
@@ -217,17 +221,24 @@ object Serialization {
         override fun decodeChar(): Char = input.read().toChar()
         override fun decodeString(): String {
             val len = decodeInt()
+            require(len <= input.availableBytes)
             val decoded = input.readNBytes(len).decodeToString()
             return decoded
         }
+
         override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = input.read()
         override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
             if (elementIndex == elementsCount) return CompositeDecoder.DECODE_DONE
             return elementIndex++
         }
+
         override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = DataInputDecoder(input, descriptor.elementsCount)
         override fun decodeSequentially(): Boolean = true
-        override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = decodeInt().also { elementsCount = it }
+        override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = decodeInt().also {
+            require(it <= input.availableBytes)
+            elementsCount = it
+        }
+
         override fun decodeNotNullMark(): Boolean = decodeBoolean()
     }
 }

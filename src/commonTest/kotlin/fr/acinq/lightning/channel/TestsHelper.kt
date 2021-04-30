@@ -10,7 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.payment.OutgoingPacket
 import fr.acinq.lightning.router.ChannelHop
-import fr.acinq.lightning.serialization.v2.Serialization
+import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.UUID
@@ -18,6 +18,11 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.*
+import fr.acinq.secp256k1.Hex
+import org.kodein.memory.file.FileSystem
+import org.kodein.memory.file.Path
+import org.kodein.memory.file.openWriteableFile
+import org.kodein.memory.file.resolve
 import kotlin.test.*
 
 // LN Message
@@ -416,8 +421,13 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    fun checkSerialization(state: ChannelStateWithCommitments) {
+    fun checkSerialization(state: ChannelStateWithCommitments, saveFiles: Boolean = false) {
         val serialized = Serialization.serialize(state)
+        if (saveFiles) {
+            val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(serialized).take(8).toByteArray())}.bin"
+            val file: Path = FileSystem.workingDir().resolve(name)
+            file.openWriteableFile(false).putBytes(serialized)
+        }
         val deserialized = Serialization.deserialize(serialized, state.staticParams.nodeParams)
         assertEquals(deserialized, state, "serialization error")
     }

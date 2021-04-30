@@ -3,7 +3,6 @@ package fr.acinq.lightning.serialization
 import fr.acinq.bitcoin.Block
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.TestsHelper
-import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
@@ -28,7 +27,7 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     @Test
     fun `encrypt - decrypt normal state`() {
         val (alice, bob) = TestsHelper.reachNormal()
-        val priv = randomKey()
+        val priv = randomKey().value
         val bytes = Serialization.encrypt(priv, alice)
         val check = Serialization.decrypt(priv, bytes, alice.staticParams.nodeParams)
         assertEquals(alice, check)
@@ -41,15 +40,15 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     @Test
     fun `don't restore data from a different chain`() {
         val (alice, _) = TestsHelper.reachNormal()
-        val priv = randomKey()
+        val priv = randomKey().value
         val bytes = Serialization.encrypt(priv, alice)
         val check = Serialization.decrypt(priv, bytes, alice.staticParams.nodeParams)
         assertEquals(alice, check)
 
-        val error = assertFails {
+        // we cannot test the exception's error message anymore because v2 serialization will fail (invalid chain) then we'll try v1 serialization which will return a different error
+        assertFails {
             Serialization.decrypt(priv, bytes, alice.staticParams.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash))
         }
-        assertTrue(error.message!!.contains("restoring data from a different chain"))
     }
 
     @Test

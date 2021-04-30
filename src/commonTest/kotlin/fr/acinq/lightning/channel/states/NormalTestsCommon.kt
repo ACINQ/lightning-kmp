@@ -21,7 +21,7 @@ import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.signAndRevack
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.Announcements
-import fr.acinq.lightning.serialization.v1.Serialization
+import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.weight2fee

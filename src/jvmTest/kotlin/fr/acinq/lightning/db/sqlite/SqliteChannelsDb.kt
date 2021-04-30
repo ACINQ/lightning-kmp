@@ -5,7 +5,7 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.db.ChannelsDb
-import fr.acinq.lightning.serialization.v1.Serialization
+import fr.acinq.lightning.serialization.Serialization
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.sql.Connection
