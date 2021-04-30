@@ -75,6 +75,17 @@ object Serialization {
         include(updateSerializersModule)
         include(SerializersModule {
             contextual(EncryptedChannelDataSerializer)
+            contextual(ByteVector64KSerializer)
+            contextual(ByteVector32KSerializer)
+            contextual(ByteVectorKSerializer)
+            contextual(SatoshiKSerializer)
+            contextual(PrivateKeyKSerializer)
+            contextual(PublicKeyKSerializer)
+            contextual(OutPointKSerializer)
+            contextual(TxInKSerializer)
+            contextual(TxOutKSerializer)
+            contextual(TransactionKSerializer)
+            contextual(BlockHeaderKSerializer)
         })
     }
 

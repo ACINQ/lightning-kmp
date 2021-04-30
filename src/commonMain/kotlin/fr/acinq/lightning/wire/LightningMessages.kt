@@ -9,9 +9,9 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelVersion
 import fr.acinq.lightning.router.Announcements
-import fr.acinq.lightning.serialization.v1.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.math.max
@@ -154,7 +154,7 @@ interface ChannelMessage
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
-data class Init(@Serializable(with = ByteVectorKSerializer::class) val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
+data class Init(@Contextual val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     @Transient
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
 
@@ -258,23 +258,23 @@ data class Pong(val data: ByteVector) : SetupMessage {
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class OpenChannel(
-    @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
-    @Serializable(with = ByteVector32KSerializer::class) override val temporaryChannelId: ByteVector32,
-    @Serializable(with = SatoshiKSerializer::class) val fundingSatoshis: Satoshi,
+    @Contextual override val chainHash: ByteVector32,
+    @Contextual override val temporaryChannelId: ByteVector32,
+    @Contextual val fundingSatoshis: Satoshi,
     val pushMsat: MilliSatoshi,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimitSatoshis: Satoshi,
+    @Contextual val dustLimitSatoshis: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    @Serializable(with = SatoshiKSerializer::class) val channelReserveSatoshis: Satoshi,
+    @Contextual val channelReserveSatoshis: Satoshi,
     val htlcMinimumMsat: MilliSatoshi,
     val feeratePerKw: FeeratePerKw,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    @Serializable(with = PublicKeyKSerializer::class) val fundingPubkey: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val firstPerCommitmentPoint: PublicKey,
+    @Contextual val fundingPubkey: PublicKey,
+    @Contextual val revocationBasepoint: PublicKey,
+    @Contextual val paymentBasepoint: PublicKey,
+    @Contextual val delayedPaymentBasepoint: PublicKey,
+    @Contextual val htlcBasepoint: PublicKey,
+    @Contextual val firstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
@@ -348,20 +348,20 @@ data class OpenChannel(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class AcceptChannel(
-    @Serializable(with = ByteVector32KSerializer::class) override val temporaryChannelId: ByteVector32,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimitSatoshis: Satoshi,
+    @Contextual override val temporaryChannelId: ByteVector32,
+    @Contextual val dustLimitSatoshis: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    @Serializable(with = SatoshiKSerializer::class) val channelReserveSatoshis: Satoshi,
+    @Contextual val channelReserveSatoshis: Satoshi,
     val htlcMinimumMsat: MilliSatoshi,
     val minimumDepth: Long,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    @Serializable(with = PublicKeyKSerializer::class) val fundingPubkey: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val firstPerCommitmentPoint: PublicKey,
+    @Contextual val fundingPubkey: PublicKey,
+    @Contextual val revocationBasepoint: PublicKey,
+    @Contextual val paymentBasepoint: PublicKey,
+    @Contextual val delayedPaymentBasepoint: PublicKey,
+    @Contextual val htlcBasepoint: PublicKey,
+    @Contextual val firstPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId {
     override val type: Long get() = AcceptChannel.type
@@ -422,10 +422,10 @@ data class AcceptChannel(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingCreated(
-    @Serializable(with = ByteVector32KSerializer::class) override val temporaryChannelId: ByteVector32,
-    @Serializable(with = ByteVector32KSerializer::class) val fundingTxid: ByteVector32,
+    @Contextual override val temporaryChannelId: ByteVector32,
+    @Contextual val fundingTxid: ByteVector32,
     val fundingOutputIndex: Int,
-    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64
+    @Contextual val signature: ByteVector64
 ) : ChannelMessage, HasTemporaryChannelId {
     override val type: Long get() = FundingCreated.type
 
@@ -453,8 +453,8 @@ data class FundingCreated(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingSigned(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val signature: ByteVector64,
     val tlvStream: TlvStream<FundingSignedTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = FundingSigned.type
@@ -487,8 +487,8 @@ data class FundingSigned(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingLocked(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    @Serializable(with = PublicKeyKSerializer::class) val nextPerCommitmentPoint: PublicKey
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val nextPerCommitmentPoint: PublicKey
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = FundingLocked.type
 
@@ -512,10 +512,10 @@ data class FundingLocked(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateAddHtlc(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Contextual override val channelId: ByteVector32,
     val id: Long,
     val amountMsat: MilliSatoshi,
-    @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32,
+    @Contextual val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
     val onionRoutingPacket: OnionRoutingPacket
 ) : HtlcMessage, UpdateMessage, HasChannelId {
@@ -548,9 +548,9 @@ data class UpdateAddHtlc(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFulfillHtlc(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Contextual override val channelId: ByteVector32,
     override val id: Long,
-    @Serializable(with = ByteVector32KSerializer::class) val paymentPreimage: ByteVector32
+    @Contextual val paymentPreimage: ByteVector32
 ) : HtlcMessage, HtlcSettlementMessage, HasChannelId {
     override val type: Long get() = UpdateFulfillHtlc.type
 
@@ -576,9 +576,9 @@ data class UpdateFulfillHtlc(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFailHtlc(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Contextual override val channelId: ByteVector32,
     override val id: Long,
-    @Serializable(with = ByteVectorKSerializer::class) val reason: ByteVector
+    @Contextual val reason: ByteVector
 ) : HtlcMessage, HtlcSettlementMessage, HasChannelId {
     override val type: Long get() = UpdateFailHtlc.type
 
@@ -605,9 +605,9 @@ data class UpdateFailHtlc(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFailMalformedHtlc(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Contextual override val channelId: ByteVector32,
     override val id: Long,
-    @Serializable(with = ByteVector32KSerializer::class) val onionHash: ByteVector32,
+    @Contextual val onionHash: ByteVector32,
     val failureCode: Int
 ) : HtlcMessage, HtlcSettlementMessage, HasChannelId {
     override val type: Long get() = UpdateFailMalformedHtlc.type
@@ -636,9 +636,9 @@ data class UpdateFailMalformedHtlc(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class CommitSig(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    val htlcSignatures: List<@Serializable(with = ByteVector64KSerializer::class) ByteVector64>,
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val signature: ByteVector64,
+    val htlcSignatures: List<@Contextual ByteVector64>,
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
 ) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = CommitSig.type
@@ -712,7 +712,7 @@ data class RevokeAndAck(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFee(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Contextual override val channelId: ByteVector32,
     val feeratePerKw: FeeratePerKw
 ) : ChannelMessage, UpdateMessage, HasChannelId {
     override val type: Long get() = UpdateFee.type
@@ -737,11 +737,11 @@ data class UpdateFee(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelReestablish(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
+    @Contextual override val channelId: ByteVector32,
     val nextLocalCommitmentNumber: Long,
     val nextRemoteRevocationNumber: Long,
-    @Serializable(with = PrivateKeyKSerializer::class) val yourLastCommitmentSecret: PrivateKey,
-    @Serializable(with = PublicKeyKSerializer::class) val myCurrentPerCommitmentPoint: PublicKey,
+    @Contextual val yourLastCommitmentSecret: PrivateKey,
+    @Contextual val myCurrentPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelReestablishTlv> = TlvStream.empty()
 ) : HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ChannelReestablish.type
@@ -810,18 +810,18 @@ data class AnnouncementSignatures(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelAnnouncement(
-    @Serializable(with = ByteVector64KSerializer::class) val nodeSignature1: ByteVector64,
-    @Serializable(with = ByteVector64KSerializer::class) val nodeSignature2: ByteVector64,
-    @Serializable(with = ByteVector64KSerializer::class) val bitcoinSignature1: ByteVector64,
-    @Serializable(with = ByteVector64KSerializer::class) val bitcoinSignature2: ByteVector64,
+    @Contextual val nodeSignature1: ByteVector64,
+    @Contextual val nodeSignature2: ByteVector64,
+    @Contextual val bitcoinSignature1: ByteVector64,
+    @Contextual val bitcoinSignature2: ByteVector64,
     val features: Features,
-    @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
+    @Contextual override val chainHash: ByteVector32,
     val shortChannelId: ShortChannelId,
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId1: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId2: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val bitcoinKey1: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val bitcoinKey2: PublicKey,
-    @Serializable(with = ByteVectorKSerializer::class) val unknownFields: ByteVector = ByteVector.empty
+    @Contextual val nodeId1: PublicKey,
+    @Contextual val nodeId2: PublicKey,
+    @Contextual val bitcoinKey1: PublicKey,
+    @Contextual val bitcoinKey2: PublicKey,
+    @Contextual val unknownFields: ByteVector = ByteVector.empty
 ) : AnnouncementMessage, HasChainHash {
     override val type: Long get() = ChannelAnnouncement.type
 
@@ -879,8 +879,8 @@ data class ChannelAnnouncement(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelUpdate(
-    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
-    @Serializable(with = ByteVector32KSerializer::class) override val chainHash: ByteVector32,
+    @Contextual val signature: ByteVector64,
+    @Contextual override val chainHash: ByteVector32,
     val shortChannelId: ShortChannelId,
     override val timestampSeconds: Long,
     val messageFlags: Byte,
@@ -890,7 +890,7 @@ data class ChannelUpdate(
     val feeBaseMsat: MilliSatoshi,
     val feeProportionalMillionths: Long,
     val htlcMaximumMsat: MilliSatoshi?,
-    @Serializable(with = ByteVectorKSerializer::class) val unknownFields: ByteVector = ByteVector.empty
+    @Contextual val unknownFields: ByteVector = ByteVector.empty
 ) : AnnouncementMessage, HasTimestamp, HasChainHash {
     init {
         require(((messageFlags.toInt() and 1) != 0) == (htlcMaximumMsat != null)) { "htlcMaximumMsat is not consistent with messageFlags" }
@@ -960,8 +960,8 @@ data class ChannelUpdate(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class Shutdown(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    @Serializable(with = ByteVectorKSerializer::class) val scriptPubKey: ByteVector,
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val scriptPubKey: ByteVector,
     val tlvStream: TlvStream<ShutdownTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = Shutdown.type
@@ -995,9 +995,9 @@ data class Shutdown(
 @OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ClosingSigned(
-    @Serializable(with = ByteVector32KSerializer::class) override val channelId: ByteVector32,
-    @Serializable(with = SatoshiKSerializer::class) val feeSatoshis: Satoshi,
-    @Serializable(with = ByteVector64KSerializer::class) val signature: ByteVector64,
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val feeSatoshis: Satoshi,
+    @Contextual val signature: ByteVector64,
     val tlvStream: TlvStream<ClosingSignedTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ClosingSigned.type
@@ -1148,7 +1148,7 @@ data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHa
 }
 
 @Serializable
-data class FCMToken(@Serializable(with = ByteVectorKSerializer::class) val token: ByteVector) : LightningMessage {
+data class FCMToken(@Contextual val token: ByteVector) : LightningMessage {
     constructor(token: String) : this(ByteVector(token.encodeToByteArray()))
 
     override val type: Long get() = FCMToken.type

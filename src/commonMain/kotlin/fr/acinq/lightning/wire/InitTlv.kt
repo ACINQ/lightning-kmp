@@ -3,7 +3,7 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.serialization.v1.ByteVector32KSerializer
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 /** Tlv types used inside Init messages. */
@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 sealed class InitTlv : Tlv {
     @Serializable
-    data class Networks(val chainHashes: List<@Serializable(with = ByteVector32KSerializer::class) ByteVector32>) : InitTlv() {
+    data class Networks(val chainHashes: List<@Contextual ByteVector32>) : InitTlv() {
         override val tag: Long get() = Networks.tag
 
         override fun write(out: Output) {

@@ -23,12 +23,11 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.io.*
-import fr.acinq.lightning.serialization.*
-import fr.acinq.lightning.serialization.v1.*
 import fr.acinq.lightning.transactions.CommitmentOutput.InHtlc
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 /** Type alias for a collection of commitment output links */
@@ -42,9 +41,9 @@ object Transactions {
 
     @Serializable
     data class InputInfo constructor(
-        @Serializable(with = OutPointKSerializer::class) val outPoint: OutPoint,
-        @Serializable(with = TxOutKSerializer::class) val txOut: TxOut,
-        @Serializable(with = ByteVectorKSerializer::class) val redeemScript: ByteVector
+        @Contextual val outPoint: OutPoint,
+        @Contextual val txOut: TxOut,
+        @Contextual val redeemScript: ByteVector
     ) {
         constructor(outPoint: OutPoint, txOut: TxOut, redeemScript: List<ScriptElt>) : this(outPoint, txOut, ByteVector(Script.write(redeemScript)))
     }
@@ -61,7 +60,7 @@ object Transactions {
             }
 
         @Serializable
-        data class CommitTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        data class CommitTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
         sealed class HtlcTx : TransactionWithInputInfo() {
@@ -70,13 +69,13 @@ object Transactions {
             @Serializable
             data class HtlcSuccessTx(
                 override val input: InputInfo,
-                @Serializable(with = TransactionKSerializer::class) override val tx: Transaction,
-                @Serializable(with = ByteVector32KSerializer::class) val paymentHash: ByteVector32,
+                @Contextual override val tx: Transaction,
+                @Contextual val paymentHash: ByteVector32,
                 override val htlcId: Long
             ) : HtlcTx()
 
             @Serializable
-            data class HtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, override val htlcId: Long) : HtlcTx()
+            data class HtlcTimeoutTx(override val input: InputInfo, @Contextual override val tx: Transaction, override val htlcId: Long) : HtlcTx()
         }
 
         @Serializable
@@ -84,44 +83,44 @@ object Transactions {
             abstract val htlcId: Long
 
             @Serializable
-            data class ClaimHtlcSuccessTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, override val htlcId: Long) : ClaimHtlcTx()
+            data class ClaimHtlcSuccessTx(override val input: InputInfo, @Contextual override val tx: Transaction, override val htlcId: Long) : ClaimHtlcTx()
 
             @Serializable
-            data class ClaimHtlcTimeoutTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, override val htlcId: Long) : ClaimHtlcTx()
+            data class ClaimHtlcTimeoutTx(override val input: InputInfo, @Contextual override val tx: Transaction, override val htlcId: Long) : ClaimHtlcTx()
         }
 
         @Serializable
         sealed class ClaimAnchorOutputTx : TransactionWithInputInfo() {
             @Serializable
-            data class ClaimLocalAnchorOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimAnchorOutputTx()
+            data class ClaimLocalAnchorOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : ClaimAnchorOutputTx()
 
             @Serializable
-            data class ClaimRemoteAnchorOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimAnchorOutputTx()
+            data class ClaimRemoteAnchorOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : ClaimAnchorOutputTx()
         }
 
         @Serializable
-        data class ClaimLocalDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        data class ClaimLocalDelayedOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
         sealed class ClaimRemoteCommitMainOutputTx : TransactionWithInputInfo() {
             @Serializable
-            data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
+            data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
 
             @Serializable
-            data class ClaimRemoteDelayedOutputTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
+            data class ClaimRemoteDelayedOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
         }
 
         @Serializable
-        data class MainPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        data class MainPenaltyTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class HtlcPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        data class HtlcPenaltyTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class ClaimHtlcDelayedOutputPenaltyTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction) : TransactionWithInputInfo()
+        data class ClaimHtlcDelayedOutputPenaltyTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class ClosingTx(override val input: InputInfo, @Serializable(with = TransactionKSerializer::class) override val tx: Transaction, val toLocalIndex: Int?) : TransactionWithInputInfo() {
+        data class ClosingTx(override val input: InputInfo, @Contextual override val tx: Transaction, val toLocalIndex: Int?) : TransactionWithInputInfo() {
             val toLocalOutput: TxOut? get() = toLocalIndex?.let { tx.txOut[it] }
         }
     }
