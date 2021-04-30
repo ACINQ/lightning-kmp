@@ -14,7 +14,13 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Serializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.descriptors.element
+import kotlinx.serialization.descriptors.mapSerialDescriptor
+import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlin.math.min
@@ -297,7 +303,7 @@ data class Commitments(
     val payments: Map<Long, UUID>,
     val remoteNextCommitInfo: Either<WaitingForRevocation, @Serializable(with = PublicKeyKSerializer::class) PublicKey>,
     val commitInput: Transactions.InputInfo,
-    val remotePerCommitmentSecrets: ShaChain,
+    @Serializable(with = ShaChainSerializer::class) val remotePerCommitmentSecrets: ShaChain,
     @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
     @Serializable(with = EncryptedChannelDataSerializer::class) val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
@@ -872,4 +878,44 @@ data class ErrorInformationLeak(
         currentOnChainFeerates.export(),
         commitments.export(nodeParams)
     )
+}
+
+object ShaChainSerializer : KSerializer<ShaChain> {
+    @OptIn(ExperimentalSerializationApi::class)
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ShaChain") {
+        element("knownHashes", mapSerialDescriptor(String.serializer().descriptor, ByteVector32KSerializer.descriptor))
+        element<Long>("lastIndex", isOptional = true)
+    }
+
+    private fun List<Boolean>.toBinaryString(): String = this.map { if (it) '1' else '0' }.joinToString(separator = "")
+    private fun String.toBooleanList(): List<Boolean> = this.map { it == '1' }
+
+    private val mapSerializer = MapSerializer(String.serializer(), ByteVector32KSerializer)
+
+    override fun serialize(encoder: Encoder, value: ShaChain) {
+        val compositeEncoder = encoder.beginStructure(descriptor)
+        compositeEncoder.encodeSerializableElement(descriptor, 0, mapSerializer, value.knownHashes.mapKeys { it.key.toBinaryString() })
+        if (value.lastIndex != null) compositeEncoder.encodeLongElement(descriptor, 1, value.lastIndex)
+        compositeEncoder.endStructure(descriptor)
+    }
+
+    override fun deserialize(decoder: Decoder): ShaChain {
+        var knownHashes: Map<List<Boolean>, ByteVector32>? = null
+        var lastIndex: Long? = null
+
+        val compositeDecoder = decoder.beginStructure(descriptor)
+        loop@ while (true) {
+            when (compositeDecoder.decodeElementIndex(descriptor)) {
+                CompositeDecoder.DECODE_DONE -> break@loop
+                0 -> knownHashes = compositeDecoder.decodeSerializableElement(descriptor, 0, mapSerializer).mapKeys { it.key.toBooleanList() }
+                1 -> lastIndex = compositeDecoder.decodeLongElement(descriptor, 1)
+            }
+        }
+        compositeDecoder.endStructure(descriptor)
+
+        return ShaChain(
+            knownHashes ?: error("No knownHashes in structure"),
+            lastIndex
+        )
+    }
 }
