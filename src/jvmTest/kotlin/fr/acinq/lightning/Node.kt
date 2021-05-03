@@ -221,6 +221,7 @@ object Node {
                 install(ContentNegotiation) {
                     register(ContentType.Application.Json, SerializationConverter(Json {
                         serializersModule = Serialization.lightningSerializersModule
+                        allowStructuredMapKeys = true
                     }))
                 }
                 routing {

@@ -102,8 +102,7 @@ object Serialization {
     // used by the "test node" JSON API
     val lightningSerializersModule = SerializersModule {
         include(serializersModule)
-        include(tlvSerializersModule)
-        include(updateSerializersModule)
+        include(serializationModules)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
