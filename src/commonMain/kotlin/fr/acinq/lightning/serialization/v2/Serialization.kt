@@ -25,6 +25,8 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 
 object Serialization {
+    private val versionMagic = 2
+
     /**
      * Versioned serialized data.
      *
@@ -51,6 +53,7 @@ object Serialization {
         polymorphic(Tlv::class) {
             subclass(ChannelTlv.UpfrontShutdownScript.serializer())
             subclass(ChannelTlv.ChannelVersionTlv.serializer())
+            subclass(ChannelTlv.ChannelOriginTlv.serializer())
             subclass(InitTlv.Networks.serializer())
             subclass(OnionTlv.AmountToForward.serializer())
             subclass(OnionTlv.OutgoingCltv.serializer())
@@ -73,6 +76,7 @@ object Serialization {
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)
             subclass(Closing::class)
+            subclass(Closed::class)
             subclass(ErrorInformationLeak::class)
         }
     }
@@ -108,7 +112,7 @@ object Serialization {
         val encoder = DataOutputEncoder(output)
         encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)
         val bytes = output.toByteArray()
-        val versioned = SerializedData(version = 1, data = bytes.toByteVector())
+        val versioned = SerializedData(version = versionMagic, data = bytes.toByteVector())
         val output1 = ByteArrayOutput()
         val encoder1 = DataOutputEncoder(output1)
         encoder1.encodeSerializableValue(SerializedData.serializer(), versioned)
@@ -126,7 +130,7 @@ object Serialization {
         val decoder = DataInputDecoder(input)
         val versioned = decoder.decodeSerializableValue(SerializedData.serializer())
         return when (versioned.version) {
-            1 -> {
+            versionMagic -> {
                 val input1 = ByteArrayInput(versioned.data.toByteArray())
                 val decoder1 = DataInputDecoder(input1)
                 decoder1.decodeSerializableValue(ChannelStateWithCommitments.serializer()).export(nodeParams)
@@ -179,7 +183,7 @@ object Serialization {
         override fun encodeBoolean(value: Boolean) = output.write(if (value) 1 else 0)
         override fun encodeByte(value: Byte) = output.write(value.toInt())
         override fun encodeShort(value: Short) = output.write(Pack.writeInt16BE(value))
-        override fun encodeInt(value: Int) = output.write(Pack.writeInt64BE(value.toLong()))
+        override fun encodeInt(value: Int) = output.write(Pack.writeInt32BE(value))
         override fun encodeLong(value: Long) = output.write(Pack.writeInt64BE(value))
         override fun encodeFloat(value: Float) {
             TODO()
@@ -214,7 +218,7 @@ object Serialization {
         override fun decodeBoolean(): Boolean = input.read() != 0
         override fun decodeByte(): Byte = input.read().toByte()
         override fun decodeShort(): Short = Pack.int16BE(input.readNBytes(2))
-        override fun decodeInt(): Int = Pack.int64BE(input.readNBytes(8)).toInt()
+        override fun decodeInt(): Int = Pack.int32BE(input.readNBytes(4))
         override fun decodeLong(): Long = Pack.int64BE(input.readNBytes(8))
         override fun decodeFloat(): Float = TODO()
         override fun decodeDouble(): Double = TODO()

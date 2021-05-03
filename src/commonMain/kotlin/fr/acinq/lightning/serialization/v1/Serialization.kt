@@ -43,6 +43,7 @@ object Serialization {
         polymorphic(Tlv::class) {
             subclass(ChannelTlv.UpfrontShutdownScript.serializer())
             subclass(ChannelTlv.ChannelVersionTlv.serializer())
+            subclass(ChannelTlv.ChannelOriginTlv.serializer())
             subclass(InitTlv.Networks.serializer())
             subclass(OnionTlv.AmountToForward.serializer())
             subclass(OnionTlv.OutgoingCltv.serializer())
@@ -65,6 +66,7 @@ object Serialization {
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)
             subclass(Closing::class)
+            subclass(Closed::class)
             subclass(ErrorInformationLeak::class)
         }
     }

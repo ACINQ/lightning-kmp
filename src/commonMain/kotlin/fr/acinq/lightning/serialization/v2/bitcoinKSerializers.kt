@@ -50,7 +50,6 @@ object ByteVector32KSerializer : KSerializer<ByteVector32> {
     }
 }
 
-
 object ByteVector64KSerializer : KSerializer<ByteVector64> {
     @Serializable
     private data class ByteVector64Surrogate(val value: ByteArray)

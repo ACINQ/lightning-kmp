@@ -61,9 +61,9 @@ data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<Upda
 
 @Serializable
 data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>) {
-    constructor(from: fr.acinq.lightning.channel.RemoteChanges) : this(from.proposed, from.signed, from.acked)
+    constructor(from: fr.acinq.lightning.channel.RemoteChanges) : this(from.proposed, from.acked, from.signed)
 
-    fun export() = fr.acinq.lightning.channel.RemoteChanges(proposed, signed, acked)
+    fun export() = fr.acinq.lightning.channel.RemoteChanges(proposed, acked, signed)
 }
 
 @Serializable
