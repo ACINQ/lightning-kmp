@@ -422,14 +422,22 @@ object TestsHelper {
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
     fun checkSerialization(state: ChannelStateWithCommitments, saveFiles: Boolean = false) {
-        val serialized = Serialization.serialize(state)
-        if (saveFiles) {
-            val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(serialized).take(8).toByteArray())}.bin"
+        val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
+        val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
+
+        fun save(blob: ByteArray, suffix: String) {
+            val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
             val file: Path = FileSystem.workingDir().resolve(name)
-            file.openWriteableFile(false).putBytes(serialized)
+            file.openWriteableFile(false).putBytes(blob)
         }
-        val deserialized = Serialization.deserialize(serialized, state.staticParams.nodeParams)
-        assertEquals(deserialized, state, "serialization error")
+        if (saveFiles) {
+            save(serializedv1, "v1")
+            save(serializedv2, "v2")
+        }
+        val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
+        assertEquals(deserializedv1, state, "serialization error (v1)")
+        val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
+        assertEquals(deserializedv2, state, "serialization error (v2)")
     }
 
     fun checkSerialization(actions: List<ChannelAction>) {
