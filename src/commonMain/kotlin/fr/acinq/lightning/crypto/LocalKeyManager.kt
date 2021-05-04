@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.channel.ChannelKeys
+import fr.acinq.lightning.channel.RecoveredChannelKeys
 import fr.acinq.lightning.transactions.Transactions
 
 data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
@@ -81,10 +82,22 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
 
     override fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys {
         val fundingPubKey = fundingPublicKey(fundingKeyPath)
-        val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
+        val recoveredChannelKeys = recoverChannelKeys(fundingPubKey.publicKey)
         return ChannelKeys(
             fundingKeyPath,
             privateKey(fundingPubKey.path).privateKey,
+            recoveredChannelKeys.paymentKey,
+            recoveredChannelKeys.delayedPaymentKey,
+            recoveredChannelKeys.htlcKey,
+            recoveredChannelKeys.revocationKey,
+            recoveredChannelKeys.shaSeed
+       )
+    }
+
+    override fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys {
+        val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
+        return RecoveredChannelKeys(
+            fundingPubKey,
             paymentKey = privateKey(paymentPoint(channelKeyPath).path).privateKey,
             delayedPaymentKey = privateKey(delayedPaymentPoint(channelKeyPath).path).privateKey,
             htlcKey = privateKey(htlcPoint(channelKeyPath).path).privateKey,
