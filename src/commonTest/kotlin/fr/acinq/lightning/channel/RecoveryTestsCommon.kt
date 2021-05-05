@@ -36,7 +36,7 @@ class RecoveryTestsCommon {
         val pub2 = PublicKey((redeemScript[2] as OP_PUSHDATA).data)
 
         // use Bob's mnemonic words to initialise his key manager
-        val seed = MnemonicCode.toSeed(TestConstants.Bob.mnemmonics, "").toByteVector32()
+        val seed = MnemonicCode.toSeed(TestConstants.Bob.mnemonics, "").toByteVector32()
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
         // recompute our channel keys from the extracted funding pubkey and see if we can find and spend our output
