@@ -34,7 +34,7 @@ object TestConstants {
 
     object Alice {
         private val entropy = Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")
-        val mnemmonics = MnemonicCode.toMnemonics(entropy)
+        val mnemonics = MnemonicCode.toMnemonics(entropy)
         val seed = MnemonicCode.toSeed(mnemmonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
