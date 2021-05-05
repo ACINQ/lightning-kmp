@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.channel.ChannelVersion
 import fr.acinq.lightning.channel.LocalParams
+import fr.acinq.lightning.channel.RecoveredChannelKeys
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
 interface KeyManager {
@@ -56,10 +57,17 @@ interface KeyManager {
 
     /**
      * generate channel-specific keys and secrets
-     * @params funding public key BIP32 path
+     * @params fundingKeyPath funding public key BIP32 path
      * @return channel keys and secrets
      */
     fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys
+
+    /**
+     * generate channel-specific keys and secrets (note that we cannot re-compute the channel's funding private key)
+     * @params fundingPubKey funding public key
+     * @return channel keys and secrets
+     */
+    fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys
 
     /**
      *
