@@ -26,7 +26,7 @@ class RecoveryTestsCommon {
         val commitTx = transactions[0]
         val aliceTx = transactions[1]
 
-        // how can Bob find and spend his output in Alice's published commit tx with just his wallet seed (derived for his mnemmonic words) and nothing else ?
+        // how can Bob find and spend his output in Alice's published commit tx with just his wallet seed (derived from his mnemonic words) and nothing else?
 
         // extract funding pubkeys from the commit tx witness, which is a multisig 2-of-2
         val redeemScript = Script.parse(commitTx.txIn[0].witness.last())
