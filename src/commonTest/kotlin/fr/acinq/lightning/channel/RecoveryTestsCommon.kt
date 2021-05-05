@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 class RecoveryTestsCommon {
     @Test
     fun `use funding pubkeys from publish commitment to spend our output`() {
-        // Alice creates and uses a LN chnnel to Bob
+        // Alice creates and uses a LN channel to Bob
         val (alice, bob) = TestsHelper.reachNormal()
         val (alice1, _) = TestsHelper.addHtlc(MilliSatoshi(50000), alice, bob).first
 
