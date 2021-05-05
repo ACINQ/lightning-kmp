@@ -35,7 +35,7 @@ object TestConstants {
     object Alice {
         private val entropy = Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")
         val mnemonics = MnemonicCode.toMnemonics(entropy)
-        val seed = MnemonicCode.toSeed(mnemmonics, "").toByteVector32()
+        val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))

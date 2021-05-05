@@ -6,6 +6,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector32
@@ -60,7 +61,18 @@ class RecoveryTestsCommon {
             }
         }
 
+        // this is the script of the output that we're spending
         val bobTx = findAndSpend(pub1) ?: findAndSpend(pub2)!!
         assertNotEquals(aliceTx, bobTx)
+
+        val outputScript = Script.parse(commitTx.txOut[bobTx.txIn[0].outPoint.index.toInt()].publicKeyScript)
+
+        // this is what our main output script should be
+        fun ourDelayedOutputScript(pub: PublicKey): List<ScriptElt> {
+            val channelKeys = keyManager.recoverChannelKeys(pub)
+            return Script.pay2wsh(Scripts.toRemoteDelayed(channelKeys.paymentBasepoint))
+        }
+
+        assertTrue(outputScript == ourDelayedOutputScript(pub1) || outputScript == ourDelayedOutputScript(pub2))
     }
 }
