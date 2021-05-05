@@ -105,8 +105,8 @@ object TestConstants {
 
     object Bob {
         private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
-        val mnemmonics = MnemonicCode.toMnemonics(entropy)
-        val seed = MnemonicCode.toSeed(mnemmonics, "").toByteVector32()
+        val mnemonics = MnemonicCode.toMnemonics(entropy)
+        val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
