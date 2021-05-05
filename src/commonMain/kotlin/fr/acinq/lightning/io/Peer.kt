@@ -552,7 +552,7 @@ class Peer(
                         if (msg.channelData.isEmpty()) {
                             sendToPeer(Error(msg.channelId, "unknown channel"))
                         } else {
-                            when (val decrypted = runTrying { Serialization.decrypt(nodeParams.nodePrivateKey, msg.channelData, nodeParams) }) {
+                            when (val decrypted = runTrying { Serialization.decrypt(nodeParams.nodePrivateKey.value, msg.channelData, nodeParams) }) {
                                 is Try.Success -> {
                                     logger.warning { "n:$remoteNodeId restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result

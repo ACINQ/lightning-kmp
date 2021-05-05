@@ -6,11 +6,9 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.serialization.ByteVector32KSerializer
-import fr.acinq.lightning.serialization.ByteVectorKSerializer
-import fr.acinq.lightning.serialization.PublicKeyKSerializer
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LightningCodecs
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.experimental.and
@@ -20,9 +18,9 @@ data class PaymentRequest(
     val prefix: String,
     val amount: MilliSatoshi?,
     val timestampSeconds: Long,
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
+    @Contextual val nodeId: PublicKey,
     val tags: List<TaggedField>,
-    @Serializable(with = ByteVectorKSerializer::class) val signature: ByteVector
+    @Contextual val signature: ByteVector
 ) {
     @Transient
     val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
@@ -313,7 +311,7 @@ data class PaymentRequest(
 
         /** @param hash sha256 hash of an associated description */
         @Serializable
-        data class DescriptionHash(@Serializable(with = ByteVector32KSerializer::class) val hash: ByteVector32) : TaggedField() {
+        data class DescriptionHash(@Contextual val hash: ByteVector32) : TaggedField() {
             override val tag: Int5 = DescriptionHash.tag
             override fun encode(): List<Int5> = Bech32.eight2five(hash.toByteArray()).toList()
 
@@ -328,7 +326,7 @@ data class PaymentRequest(
 
         /** @param hash payment hash */
         @Serializable
-        data class PaymentHash(@Serializable(with = ByteVector32KSerializer::class) val hash: ByteVector32) : TaggedField() {
+        data class PaymentHash(@Contextual val hash: ByteVector32) : TaggedField() {
             override val tag: Int5 = PaymentHash.tag
             override fun encode(): List<Int5> = Bech32.eight2five(hash.toByteArray()).toList()
 
@@ -343,7 +341,7 @@ data class PaymentRequest(
 
         /** @param secret payment secret */
         @Serializable
-        data class PaymentSecret(@Serializable(with = ByteVector32KSerializer::class) val secret: ByteVector32) : TaggedField() {
+        data class PaymentSecret(@Contextual val secret: ByteVector32) : TaggedField() {
             override val tag: Int5 = PaymentSecret.tag
             override fun encode(): List<Int5> = Bech32.eight2five(secret.toByteArray()).toList()
 
@@ -400,7 +398,7 @@ data class PaymentRequest(
 
         /** Fallback on-chain payment address to be used if LN payment cannot be processed */
         @Serializable
-        data class FallbackAddress(val version: Byte, @Serializable(with = ByteVectorKSerializer::class) val data: ByteVector) : TaggedField() {
+        data class FallbackAddress(val version: Byte, @Contextual val data: ByteVector) : TaggedField() {
             override val tag: Int5 = FallbackAddress.tag
             override fun encode(): List<Int5> = listOf(version) + Bech32.eight2five(data.toByteArray()).toList()
 
@@ -428,7 +426,7 @@ data class PaymentRequest(
         }
 
         @Serializable
-        data class Features(@Serializable(with = ByteVectorKSerializer::class) val bits: ByteVector) : TaggedField() {
+        data class Features(@Contextual val bits: ByteVector) : TaggedField() {
             override val tag: Int5 = Features.tag
 
             override fun encode(): List<Int5> {
@@ -467,7 +465,7 @@ data class PaymentRequest(
          */
         @Serializable
         data class ExtraHop(
-            @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
+            @Contextual val nodeId: PublicKey,
             val shortChannelId: ShortChannelId,
             val feeBase: MilliSatoshi,
             val feeProportionalMillionths: Long,

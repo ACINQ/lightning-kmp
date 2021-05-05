@@ -16,7 +16,7 @@ import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.db.sqlite.SqliteChannelsDb
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.utils.*
 import io.ktor.application.*
@@ -221,6 +221,7 @@ object Node {
                 install(ContentNegotiation) {
                     register(ContentType.Application.Json, SerializationConverter(Json {
                         serializersModule = Serialization.lightningSerializersModule
+                        allowStructuredMapKeys = true
                     }))
                 }
                 routing {

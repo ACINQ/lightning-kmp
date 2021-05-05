@@ -1,41 +1,97 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.v2
 
 import fr.acinq.bitcoin.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.serializer
 
+object ByteVectorKSerializer : KSerializer<ByteVector> {
+    @Serializable
+    private data class ByteVectorSurrogate(val value: ByteArray)
 
-abstract class AbstractStringKSerializer<T>(
-    name: String,
-    private val toString: (T) -> String,
-    private val fromString: (String) -> T
-) : KSerializer<T> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor(name, PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor = ByteVectorSurrogate.serializer().descriptor
 
-    override fun serialize(encoder: Encoder, value: T) {
-        encoder.encodeString(toString(value))
+    override fun serialize(encoder: Encoder, value: ByteVector) {
+        val surrogate = ByteVectorSurrogate(value.toByteArray())
+        return encoder.encodeSerializableValue(ByteVectorSurrogate.serializer(), surrogate)
     }
 
-    override fun deserialize(decoder: Decoder): T {
-        return fromString(decoder.decodeString())
+    override fun deserialize(decoder: Decoder): ByteVector {
+        val surrogate = decoder.decodeSerializableValue(ByteVectorSurrogate.serializer())
+        return ByteVector(surrogate.value)
     }
 }
 
-object ByteVectorKSerializer : AbstractStringKSerializer<ByteVector>("ByteVector", ByteVector::toHex, ::ByteVector)
+object ByteVector32KSerializer : KSerializer<ByteVector32> {
+    @Serializable
+    private data class ByteVector32Surrogate(val value: ByteArray) {
+        init {
+            require(value.size == 32)
+        }
+    }
 
-object ByteVector32KSerializer : AbstractStringKSerializer<ByteVector32>("ByteVector32", ByteVector32::toHex, ::ByteVector32)
+    override val descriptor: SerialDescriptor = ByteVector32Surrogate.serializer().descriptor
 
-object ByteVector64KSerializer : AbstractStringKSerializer<ByteVector64>("ByteVector64", ByteVector64::toHex, ::ByteVector64)
+    override fun serialize(encoder: Encoder, value: ByteVector32) {
+        val surrogate = ByteVector32Surrogate(value.toByteArray())
+        return encoder.encodeSerializableValue(ByteVector32Surrogate.serializer(), surrogate)
+    }
 
-object PrivateKeyKSerializer : AbstractStringKSerializer<PrivateKey>("PrivateKey", { it.value.toHex() }, { PrivateKey(ByteVector32(it)) })
+    override fun deserialize(decoder: Decoder): ByteVector32 {
+        val surrogate = decoder.decodeSerializableValue(ByteVector32Surrogate.serializer())
+        return ByteVector32(surrogate.value)
+    }
+}
 
-object PublicKeyKSerializer : AbstractStringKSerializer<PublicKey>("PublicKey", { it.value.toHex() }, { PublicKey(ByteVector(it)) })
+object ByteVector64KSerializer : KSerializer<ByteVector64> {
+    @Serializable
+    private data class ByteVector64Surrogate(val value: ByteArray)
+
+    override val descriptor: SerialDescriptor = ByteVector64Surrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: ByteVector64) {
+        val surrogate = ByteVector64Surrogate(value.toByteArray())
+        return encoder.encodeSerializableValue(ByteVector64Surrogate.serializer(), surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): ByteVector64 {
+        val surrogate = decoder.decodeSerializableValue(ByteVector64Surrogate.serializer())
+        return ByteVector64(surrogate.value)
+    }
+}
+
+object PrivateKeyKSerializer : KSerializer<PrivateKey> {
+
+    override fun deserialize(decoder: Decoder): PrivateKey {
+        return PrivateKey(ByteVector32KSerializer.deserialize(decoder))
+    }
+
+    override val descriptor: SerialDescriptor get() = ByteVector32KSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: PrivateKey) {
+        ByteVector32KSerializer.serialize(encoder, value.value)
+    }
+}
+
+object PublicKeyKSerializer : KSerializer<PublicKey> {
+
+    override fun deserialize(decoder: Decoder): PublicKey {
+        return PublicKey(ByteVectorKSerializer.deserialize(decoder))
+    }
+
+    override val descriptor: SerialDescriptor get() = ByteVectorKSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: PublicKey) {
+        ByteVectorKSerializer.serialize(encoder, value.value)
+    }
+}
 
 object SatoshiKSerializer : KSerializer<Satoshi> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Satoshi", PrimitiveKind.LONG)
@@ -49,18 +105,20 @@ object SatoshiKSerializer : KSerializer<Satoshi> {
     }
 }
 
-abstract class AbstractBtcSerializableKSerializer<T : BtcSerializable<T>>(
-    val name: String,
-    val btcSerializer: BtcSerializer<T>
-) : KSerializer<T> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor(name, PrimitiveKind.STRING)
+abstract class AbstractBtcSerializableKSerializer<T : BtcSerializable<T>>(val name: String, val btcSerializer: BtcSerializer<T>) : KSerializer<T> {
+    @Serializable
+    data class Surrogate(val name: String, val bytes: ByteArray)
+
+    override val descriptor: SerialDescriptor = Surrogate.serializer().descriptor
 
     override fun serialize(encoder: Encoder, value: T) {
-        encoder.encodeString(Hex.encode(btcSerializer.write(value)))
+        val surrogate = Surrogate(name, btcSerializer.write(value))
+        return encoder.encodeSerializableValue(Surrogate.serializer(), surrogate)
     }
 
     override fun deserialize(decoder: Decoder): T {
-        return btcSerializer.read(Hex.decode(decoder.decodeString()))
+        val surrogate = decoder.decodeSerializableValue(Surrogate.serializer())
+        return btcSerializer.read(surrogate.bytes)
     }
 }
 

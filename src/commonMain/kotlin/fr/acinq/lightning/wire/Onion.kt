@@ -11,21 +11,19 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.serialization.ByteVector32KSerializer
-import fr.acinq.lightning.serialization.ByteVectorKSerializer
-import fr.acinq.lightning.serialization.PublicKeyKSerializer
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector32
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class OnionRoutingPacket(
     val version: Int,
-    @Serializable(with = ByteVectorKSerializer::class) val publicKey: ByteVector,
-    @Serializable(with = ByteVectorKSerializer::class) val payload: ByteVector,
-    @Serializable(with = ByteVector32KSerializer::class) val hmac: ByteVector32
+    @Contextual val publicKey: ByteVector,
+    @Contextual val payload: ByteVector,
+    @Contextual val hmac: ByteVector32
 ) {
     companion object {
         const val PaymentPacketLength = 1300
@@ -109,7 +107,7 @@ sealed class OnionTlv : Tlv {
      * @param totalAmount total amount in multi-part payments. When missing, assumed to be equal to AmountToForward.
      */
     @Serializable
-    data class PaymentData(@Serializable(with = ByteVector32KSerializer::class) val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
+    data class PaymentData(@Contextual val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionTlv() {
         override val tag: Long get() = PaymentData.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(secret, out)
@@ -127,7 +125,7 @@ sealed class OnionTlv : Tlv {
      * because the final recipient doesn't support trampoline.
      */
     @Serializable
-    data class InvoiceFeatures(@Serializable(with = ByteVectorKSerializer::class) val features: ByteVector) : OnionTlv() {
+    data class InvoiceFeatures(@Contextual val features: ByteVector) : OnionTlv() {
         override val tag: Long get() = InvoiceFeatures.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(features, out)
 
@@ -139,7 +137,7 @@ sealed class OnionTlv : Tlv {
 
     /** Id of the next node. */
     @Serializable
-    data class OutgoingNodeId(@Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey) : OnionTlv() {
+    data class OutgoingNodeId(@Contextual val nodeId: PublicKey) : OnionTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
 

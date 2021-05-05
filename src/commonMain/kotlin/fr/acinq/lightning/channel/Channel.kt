@@ -838,7 +838,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     waitForTheirReestablishMessage -> {
                         val nextState = if (!event.message.channelData.isEmpty()) {
                             logger.info { "c:${state.channelId} channel_reestablish includes a peer backup" }
-                            when (val decrypted = runTrying { Serialization.decrypt(state.staticParams.nodeParams.nodePrivateKey, event.message.channelData, staticParams.nodeParams) }) {
+                            when (val decrypted = runTrying { Serialization.decrypt(state.staticParams.nodeParams.nodePrivateKey.value, event.message.channelData, staticParams.nodeParams) }) {
                                 is Try.Success -> {
                                     if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
                                         logger.warning { "c:${state.channelId} they have a more recent commitment, using it instead" }

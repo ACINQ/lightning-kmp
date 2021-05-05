@@ -18,6 +18,11 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.*
+import fr.acinq.secp256k1.Hex
+import org.kodein.memory.file.FileSystem
+import org.kodein.memory.file.Path
+import org.kodein.memory.file.openWriteableFile
+import org.kodein.memory.file.resolve
 import kotlin.test.*
 
 // LN Message
@@ -416,10 +421,23 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    fun checkSerialization(state: ChannelStateWithCommitments) {
-        val serialized = Serialization.serialize(state)
-        val deserialized = Serialization.deserialize(serialized, state.staticParams.nodeParams)
-        assertEquals(deserialized, state, "serialization error")
+    fun checkSerialization(state: ChannelStateWithCommitments, saveFiles: Boolean = false) {
+        val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
+        val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
+
+        fun save(blob: ByteArray, suffix: String) {
+            val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
+            val file: Path = FileSystem.workingDir().resolve(name)
+            file.openWriteableFile(false).putBytes(blob)
+        }
+        if (saveFiles) {
+            save(serializedv1, "v1")
+            save(serializedv2, "v2")
+        }
+        val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
+        assertEquals(deserializedv1, state, "serialization error (v1)")
+        val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
+        assertEquals(deserializedv2, state, "serialization error (v2)")
     }
 
     fun checkSerialization(actions: List<ChannelAction>) {
