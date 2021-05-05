@@ -2,9 +2,12 @@ package fr.acinq.lightning.serialization
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.utils.getValue
+import fr.acinq.lightning.utils.lightningLogger
 import fr.acinq.lightning.wire.EncryptedChannelData
 
 object Serialization {
+    private val logger by lightningLogger()
 
     fun serialize(state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
         return fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
@@ -14,6 +17,7 @@ object Serialization {
         return try {
             fr.acinq.lightning.serialization.v2.Serialization.deserialize(bin, nodeParams)
         } catch (e: Throwable) {
+            logger.warning(e) { "v2 serialization failed, trying legacy v1 format" }
             // try legacy format
             fr.acinq.lightning.serialization.v1.Serialization.deserialize(bin, nodeParams)
         }
