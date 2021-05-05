@@ -11,7 +11,9 @@ import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.io.PeerChannels
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.OnionRoutingPacket
+import fr.acinq.secp256k1.Hex
 
 @OptIn(ExperimentalUnsignedTypes::class)
 object TestConstants {
@@ -31,7 +33,10 @@ object TestConstants {
     )
 
     object Alice {
-        private val seed = ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")
+        private val entropy = Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")
+        val mnemmonics = MnemonicCode.toMnemonics(entropy)
+        val seed = MnemonicCode.toSeed(mnemmonics, "").toByteVector32()
+
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
@@ -99,7 +104,9 @@ object TestConstants {
     }
 
     object Bob {
-        private val seed = ByteVector32("0202020202020202020202020202020202020202020202020202020202020202")
+        private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
+        val mnemmonics = MnemonicCode.toMnemonics(entropy)
+        val seed = MnemonicCode.toSeed(mnemmonics, "").toByteVector32()
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(

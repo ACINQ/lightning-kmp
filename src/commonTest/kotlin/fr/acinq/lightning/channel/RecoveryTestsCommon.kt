@@ -1,0 +1,66 @@
+package fr.acinq.lightning.channel
+
+import fr.acinq.bitcoin.*
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.TestsHelper.processEx
+import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector32
+import kotlin.test.Test
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+
+class RecoveryTestsCommon {
+    @Test
+    fun `use funding pubkeys from publish commitment to spend our output`() {
+        // Alice creates and uses a LN chnnel to Bob
+        val (alice, bob) = TestsHelper.reachNormal()
+        val (alice1, _) = TestsHelper.addHtlc(MilliSatoshi(50000), alice, bob).first
+
+        // Alice force-closes the channel and publishes her commit tx
+        val (_, actions) = alice1.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        val transactions = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+        val commitTx = transactions[0]
+        val aliceTx = transactions[1]
+
+        // how can Bob find and spend his output in Alice's published commit tx with just his wallet seed (derived for his mnemmonic words) and nothing else ?
+
+        // extract funding pubkeys from the commit tx witness, which is a multisig 2-of-2
+        val redeemScript = Script.parse(commitTx.txIn[0].witness.last())
+        assertTrue(redeemScript.size == 5 && redeemScript[0] == OP_2 && redeemScript[3] == OP_2 && redeemScript[4] == OP_CHECKMULTISIG)
+        val pub1 = PublicKey((redeemScript[1] as OP_PUSHDATA).data)
+        val pub2 = PublicKey((redeemScript[2] as OP_PUSHDATA).data)
+
+        // use Bob's mnemonic words to initialise his key manager
+        val seed = MnemonicCode.toSeed(TestConstants.Bob.mnemmonics, "").toByteVector32()
+        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+
+        // recompute our channel keys from the extracted funding pubkey and see if we can find and spend our output
+        fun findAndSpend(fundingKey: PublicKey): Transaction? {
+            val channelKeys = keyManager.recoverChannelKeys(fundingKey)
+            val localPaymentPoint = channelKeys.paymentBasepoint
+            val mainTx = Transactions.makeClaimRemoteDelayedOutputTx(
+                commitTx,
+                TestConstants.Bob.nodeParams.dustLimit,
+                localPaymentPoint,
+                Script.write(Script.pay2wpkh(fundingKey)).toByteVector(),
+                FeeratePerKw(Satoshi(750))
+            )
+            return when (mainTx) {
+                is Transactions.TxResult.Success -> {
+                    val sig = keyManager.sign(mainTx.result, channelKeys.paymentKey)
+                    val signedTx = Transactions.addSigs(mainTx.result, sig).tx
+                    Transaction.correctlySpends(signedTx, commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+                    signedTx
+                }
+                else -> null
+            }
+        }
+
+        val bobTx = findAndSpend(pub1) ?: findAndSpend(pub2)!!
+        assertNotEquals(aliceTx, bobTx)
+    }
+}
