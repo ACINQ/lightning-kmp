@@ -74,7 +74,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val trampolinePayload = PaymentAttempt.TrampolinePayload(trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket)
                 val childPayments = createChildPayments(request, result.value, trampolinePayload)
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, childPayments.map { it.first }, OutgoingPayment.Status.Pending))
-                val payment = PaymentAttempt.PaymentInProgress(request, 0, trampolinePayload, childPayments.map { it.first.id to Pair(it.first, it.second) }.toMap(), setOf(), listOf())
+                val payment = PaymentAttempt.PaymentInProgress(request, 0, trampolinePayload, childPayments.associate { it.first.id to Pair(it.first, it.second) }, setOf(), listOf())
                 pending[request.paymentId] = payment
                 Progress(request, payment.fees, childPayments.map { it.third })
             }
@@ -176,7 +176,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                                     payment.request,
                                     payment.attemptNumber + 1,
                                     trampolinePayload,
-                                    childPayments.map { it.first.id to Pair(it.first, it.second) }.toMap(),
+                                    childPayments.associate { it.first.id to Pair(it.first, it.second) },
                                     setOf(), // we reset ignored channels
                                     payment.failures + Either.Right(failure)
                                 )
@@ -313,7 +313,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
         val finalPayload = FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.details.paymentRequest.paymentSecret)
 
-        val invoiceFeatures = request.details.paymentRequest.features?.let { Features(it) } ?: Features(mapOf())
+        val invoiceFeatures = Features(request.details.paymentRequest.features)
         val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment)) {
             OutgoingPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, OnionRoutingPacket.TrampolinePacketLength)
         } else {

@@ -9,6 +9,7 @@ import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.CMD_ADD_HTLC
 import fr.acinq.lightning.channel.CMD_FAIL_HTLC
+import fr.acinq.lightning.channel.Channel
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
@@ -31,7 +32,7 @@ object OutgoingPacket {
         val payloadsBin = payloads
             .map {
                 when (it) {
-                    is RelayLegacyPayload -> it.write()
+                    is ChannelRelayPayload -> it.write()
                     is NodeRelayPayload -> it.write()
                     is FinalPayload -> it.write()
                 }
@@ -42,19 +43,19 @@ object OutgoingPacket {
     /**
      * Build the onion payloads for each hop.
      *
-     * @param hops         the hops as computed by the router + extra routes from payment request
+     * @param hops the hops as computed by the router + extra routes from payment request
      * @param finalPayload payload data for the final node (amount, expiry, etc)
      * @return a (firstAmount, firstExpiry, payloads) tuple where:
-     *         - firstAmount is the amount for the first htlc in the route
-     *         - firstExpiry is the cltv expiry for the first htlc in the route
-     *         - a sequence of payloads that will be used to build the onion
+     *  - firstAmount is the amount for the first htlc in the route
+     *  - firstExpiry is the cltv expiry for the first htlc in the route
+     *  - a sequence of payloads that will be used to build the onion
      */
     private fun buildPayloads(hops: List<Hop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PerHopPayload>> {
         return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PerHopPayload>(finalPayload))) { triple, hop ->
             val (amount, expiry, payloads) = triple
             val payload = when (hop) {
                 // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
-                is ChannelHop -> RelayLegacyPayload(hop.lastUpdate.shortChannelId, amount, expiry)
+                is ChannelHop -> ChannelRelayPayload.create(hop.lastUpdate.shortChannelId, amount, expiry)
                 is NodeHop -> NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
             }
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
@@ -65,13 +66,13 @@ object OutgoingPacket {
      * Build an encrypted trampoline onion packet when the final recipient doesn't support trampoline.
      * The next-to-last trampoline node payload will contain instructions to convert to a legacy payment.
      *
-     * @param invoice      Bolt 11 invoice (features and routing hints will be provided to the next-to-last node).
-     * @param hops         the trampoline hops (including ourselves in the first hop, and the non-trampoline final recipient in the last hop).
+     * @param invoice Bolt 11 invoice (features and routing hints will be provided to the next-to-last node).
+     * @param hops the trampoline hops (including ourselves in the first hop, and the non-trampoline final recipient in the last hop).
      * @param finalPayload payload data for the final node (amount, expiry, etc)
      * @return a (firstAmount, firstExpiry, onion) triple where:
-     *         - firstAmount is the amount for the trampoline node in the route
-     *         - firstExpiry is the cltv expiry for the first trampoline node in the route
-     *         - the trampoline onion to include in final payload of a normal onion
+     *  - firstAmount is the amount for the trampoline node in the route
+     *  - firstExpiry is the cltv expiry for the first trampoline node in the route
+     *  - the trampoline onion to include in final payload of a normal onion
      */
     fun buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: List<NodeHop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
         val (firstAmount, firstExpiry, payloads) = hops.drop(1).reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PerHopPayload>(finalPayload))) { triple, hop ->
@@ -91,12 +92,12 @@ object OutgoingPacket {
     /**
      * Build an encrypted onion packet with the given final payload.
      *
-     * @param hops         the hops as computed by the router + extra routes from payment request, including ourselves in the first hop
+     * @param hops the hops as computed by the router + extra routes from payment request, including ourselves in the first hop
      * @param finalPayload payload data for the final node (amount, expiry, etc)
      * @return a (firstAmount, firstExpiry, onion) tuple where:
-     *         - firstAmount is the amount for the first htlc in the route
-     *         - firstExpiry is the cltv expiry for the first htlc in the route
-     *         - the onion to include in the HTLC
+     *  - firstAmount is the amount for the first htlc in the route
+     *  - firstExpiry is the cltv expiry for the first htlc in the route
+     *  - the onion to include in the HTLC
      */
     fun buildPacket(paymentHash: ByteVector32, hops: List<Hop>, finalPayload: FinalPayload, payloadLength: Int): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
         val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
@@ -129,4 +130,5 @@ object OutgoingPacket {
             is Either.Left -> Either.Left(result.value)
         }
     }
+
 }
