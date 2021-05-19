@@ -88,13 +88,19 @@ class Peer(
 
     private val logger by lightningLogger()
 
-    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
-    private var _channels by _channelsFlow
+    // The channels map, as initially loaded from the database at "boot" (on Peer.init).
+    // As the channelsFlow is unavailable until the electrum connection is up-and-running,
+    // this may provide useful information for the UI.
+    private val _bootChannelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>?>(null)
+    val bootChannelsFlow: StateFlow<Map<ByteVector32, ChannelState>?> get() = _bootChannelsFlow
 
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
-    val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
+    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
     val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
+
+    private var _channels by _channelsFlow
+    val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
 
     private val _connectionState = MutableStateFlow(Connection.CLOSED)
     val connectionState: StateFlow<Connection> get() = _connectionState
@@ -149,9 +155,16 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            val channelIds = db.channels.listLocalChannels().filterNot { it is Closed }.map {
+            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
+            _bootChannelsFlow.value = bootChannels.map { it.channelId to it }.toMap()
+            // restore channels (nb: suspends on currentTipFlow & onChainFeeratesFlow)
+            val channelIds = bootChannels.map {
                 logger.info { "n:$remoteNodeId restoring ${it.channelId}" }
-                val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTipFlow.filterNotNull().first(), onChainFeeratesFlow.filterNotNull().first())
+                val state = WaitForInit(
+                    staticParams = StaticParams(nodeParams, remoteNodeId),
+                    currentTip = currentTipFlow.filterNotNull().first(),
+                    currentOnChainFeerates = onChainFeeratesFlow.filterNotNull().first()
+                )
                 val (state1, actions) = state.process(ChannelEvent.Restore(it as ChannelState))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
