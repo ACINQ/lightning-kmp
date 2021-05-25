@@ -235,99 +235,46 @@ interface PerHopPayloadReader<T : PerHopPayload> {
     fun read(bytes: ByteArray): T = read(ByteArrayInput(bytes))
 }
 
-sealed class FinalPayload : PerHopPayload() {
-    abstract val amount: MilliSatoshi
-    abstract val expiry: CltvExpiry
-    abstract val paymentSecret: ByteVector32?
-    abstract val totalAmount: MilliSatoshi
-
-    companion object : PerHopPayloadReader<FinalPayload> {
-        override fun read(input: Input): FinalPayload {
-            val bin = LightningCodecs.bytes(input, input.availableBytes)
-            return when (bin.first()) {
-                0.toByte() -> FinalLegacyPayload.read(ByteArrayInput(bin))
-                else -> FinalTlvPayload.read(bin)
-            }
-        }
-
-        fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32? = null, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload {
-            return when {
-                paymentSecret == null && userCustomTlvs.isNotEmpty() -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry)), userCustomTlvs))
-                paymentSecret == null -> FinalLegacyPayload(amount, expiry)
-                else -> FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
-            }
-        }
-
-        fun createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: List<OnionTlv> = listOf(), userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload =
-            FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount)) + additionalTlvs, userCustomTlvs))
-
-        /** Create a trampoline outer payload. */
-        fun createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload =
-            FinalTlvPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount), OnionTlv.TrampolineOnion(trampolinePacket))))
-    }
-}
-
-data class FinalLegacyPayload(override val amount: MilliSatoshi, override val expiry: CltvExpiry) : FinalPayload() {
-    override val paymentSecret: ByteVector32? = null
-    override val totalAmount = amount
-
-    override fun write(out: Output) {
-        LightningCodecs.writeByte(0, out) // realm is always 0
-        LightningCodecs.writeBytes(ByteArray(8), out)
-        LightningCodecs.writeU64(amount.toLong(), out)
-        LightningCodecs.writeU32(expiry.toLong().toInt(), out)
-        LightningCodecs.writeBytes(ByteArray(12), out)
-    }
-
-    companion object : PerHopPayloadReader<FinalLegacyPayload> {
-        override fun read(input: Input): FinalLegacyPayload {
-            val realm = LightningCodecs.byte(input)
-            require(realm == 0) { "invalid realm: $realm" }
-            LightningCodecs.bytes(input, 8)
-            val amount = MilliSatoshi(LightningCodecs.u64(input))
-            val expiry = CltvExpiry(LightningCodecs.u32(input).toLong())
-            LightningCodecs.bytes(input, 12)
-            return FinalLegacyPayload(amount, expiry)
-        }
-    }
-}
-
-data class RelayLegacyPayload(val outgoingChannelId: ShortChannelId, val amountToForward: MilliSatoshi, val outgoingCltv: CltvExpiry) : PerHopPayload() {
-    override fun write(out: Output) {
-        LightningCodecs.writeByte(0, out) // realm is always 0
-        LightningCodecs.writeU64(outgoingChannelId.toLong(), out)
-        LightningCodecs.writeU64(amountToForward.toLong(), out)
-        LightningCodecs.writeU32(outgoingCltv.toLong().toInt(), out)
-        LightningCodecs.writeBytes(ByteArray(12), out)
-    }
-
-    companion object : PerHopPayloadReader<RelayLegacyPayload> {
-        override fun read(input: Input): RelayLegacyPayload {
-            val realm = LightningCodecs.byte(input)
-            require(realm == 0) { "invalid realm: $realm" }
-            val shortChannelId = ShortChannelId(LightningCodecs.u64(input))
-            val amount = MilliSatoshi(LightningCodecs.u64(input))
-            val expiry = CltvExpiry(LightningCodecs.u32(input).toLong())
-            LightningCodecs.bytes(input, 12)
-            return RelayLegacyPayload(shortChannelId, amount, expiry)
-        }
-    }
-}
-
-@OptIn(ExperimentalUnsignedTypes::class)
-data class FinalTlvPayload(val records: TlvStream<OnionTlv>) : FinalPayload() {
-    override val amount = records.get<OnionTlv.AmountToForward>()!!.amount
-    override val expiry = records.get<OnionTlv.OutgoingCltv>()!!.cltv
-    override val paymentSecret = records.get<OnionTlv.PaymentData>()?.secret
-    override val totalAmount = run {
-        val total = records.get<OnionTlv.PaymentData>()?.totalAmount
-        if (total != null && total > 0.msat) total else amount
+data class FinalPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() {
+    val amount = records.get<OnionTlv.AmountToForward>()!!.amount
+    val expiry = records.get<OnionTlv.OutgoingCltv>()!!.cltv
+    val paymentSecret = records.get<OnionTlv.PaymentData>()!!.secret
+    val totalAmount = run {
+        val total = records.get<OnionTlv.PaymentData>()!!.totalAmount
+        if (total > 0.msat) total else amount
     }
 
     override fun write(out: Output) = tlvSerializer.write(records, out)
 
-    companion object : PerHopPayloadReader<FinalTlvPayload> {
-        override fun read(input: Input): FinalTlvPayload = FinalTlvPayload(tlvSerializer.read(input))
+    companion object : PerHopPayloadReader<FinalPayload> {
+        override fun read(input: Input): FinalPayload = FinalPayload(tlvSerializer.read(input))
+
+        /** Create a single-part payment (total amount sent at once). */
+        fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload =
+            FinalPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
+
+        /** Create a partial payment (total amount split between multiple payments). */
+        fun createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: List<OnionTlv> = listOf(), userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload =
+            FinalPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount)) + additionalTlvs, userCustomTlvs))
+
+        /** Create a trampoline outer payload. */
+        fun createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload =
+            FinalPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.PaymentData(paymentSecret, totalAmount), OnionTlv.TrampolineOnion(trampolinePacket))))
+    }
+}
+
+data class ChannelRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() {
+    val amountToForward = records.get<OnionTlv.AmountToForward>()!!.amount
+    val outgoingCltv = records.get<OnionTlv.OutgoingCltv>()!!.cltv
+    val outgoingChannelId = records.get<OnionTlv.OutgoingChannelId>()!!.shortChannelId
+
+    override fun write(out: Output) = tlvSerializer.write(records, out)
+
+    companion object : PerHopPayloadReader<ChannelRelayPayload> {
+        override fun read(input: Input): ChannelRelayPayload = ChannelRelayPayload(tlvSerializer.read(input))
+
+        fun create(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry): ChannelRelayPayload =
+            ChannelRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(amountToForward), OnionTlv.OutgoingCltv(outgoingCltv), OnionTlv.OutgoingChannelId(outgoingChannelId))))
     }
 }
 
@@ -343,6 +290,7 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
             else -> paymentData.totalAmount
         }
     }
+    // NB: the following fields are only included in the trampoline-to-legacy case.
     val paymentSecret = records.get<OnionTlv.PaymentData>()?.secret
     val invoiceFeatures = records.get<OnionTlv.InvoiceFeatures>()?.features
     val invoiceRoutingInfo = records.get<OnionTlv.InvoiceRoutingInfo>()?.extraHops
@@ -355,18 +303,19 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
         fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) = NodeRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.OutgoingNodeId(nextNodeId))))
 
         /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-        fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload {
-            val tlvs = mutableListOf(
-                OnionTlv.AmountToForward(amount),
-                OnionTlv.OutgoingCltv(expiry),
-                OnionTlv.OutgoingNodeId(targetNodeId),
-                OnionTlv.InvoiceFeatures(invoice.features ?: ByteVector.empty),
-                OnionTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints })
+        fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload =
+            NodeRelayPayload(
+                TlvStream(
+                    listOf(
+                        OnionTlv.AmountToForward(amount),
+                        OnionTlv.OutgoingCltv(expiry),
+                        OnionTlv.OutgoingNodeId(targetNodeId),
+                        OnionTlv.PaymentData(invoice.paymentSecret, totalAmount),
+                        OnionTlv.InvoiceFeatures(invoice.features),
+                        OnionTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints })
+                    )
+                )
             )
-            if (invoice.paymentSecret != null) {
-                tlvs.add(OnionTlv.PaymentData(invoice.paymentSecret, totalAmount))
-            }
-            return NodeRelayPayload(TlvStream(tlvs))
-        }
+
     }
 }

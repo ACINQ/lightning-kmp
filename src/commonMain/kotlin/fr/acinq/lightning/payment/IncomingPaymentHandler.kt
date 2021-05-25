@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -84,6 +85,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             description,
             PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             invoiceFeatures,
+            randomBytes32(),
             expirySeconds,
             extraHops,
             timestampSeconds

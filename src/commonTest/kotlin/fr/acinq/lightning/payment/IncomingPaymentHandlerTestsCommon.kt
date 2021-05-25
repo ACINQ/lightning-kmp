@@ -1,8 +1,11 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
@@ -29,14 +32,11 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             makeMppPayload(100_000.msat, 150_000.msat, randomBytes32(), currentBlockHeight = alice.currentBlockHeight)
         )
 
-        var processResult: Pair<ChannelState, List<ChannelAction>>
-        var actions: List<ChannelAction>
-
         // Step 1: alice ---> update_add_htlc ---> bob
 
-        processResult = alice.process(ChannelEvent.ExecuteCommand(cmdAddHtlc))
+        var processResult = alice.process(ChannelEvent.ExecuteCommand(cmdAddHtlc))
         alice = processResult.first as Normal
-        actions = processResult.second
+        var actions = processResult.second
         assertEquals(2, actions.size)
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val aliceCmdSign = actions.findCommand<CMD_SIGN>()
@@ -125,17 +125,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue { bob.commitments.remoteChanges.proposed.isEmpty() }
         assertTrue { bob.commitments.remoteChanges.acked.isEmpty() }
         assertTrue { bob.commitments.remoteChanges.signed.isEmpty() }
-    }
-
-    @Test
-    fun `unsupported legacy onion (payment secret missing)`() = runSuspendTest {
-        val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
-        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeLegacyPayload(defaultAmount))
-        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-
-        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-        val expected = ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
-        assertEquals(setOf(WrappedChannelEvent(add.channelId, expected)), result.actions.toSet())
     }
 
     @Test
@@ -330,7 +319,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val channelId = randomBytes32()
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 15_000_000.msat,
-            origin = ChannelOrigin.PayToOpenOrigin(paymentHash = preimage.sha256(), fee = 1000.sat))
+            origin = ChannelOrigin.PayToOpenOrigin(paymentHash = preimage.sha256(), fee = 1000.sat)
+        )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         // simulate payment processed as a pay-to-open
         handler.db.addIncomingPayment(preimage, IncomingPayment.Origin.KeySend)
@@ -349,7 +339,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val channelId = randomBytes32()
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 33_000_000.msat,
-            origin = ChannelOrigin.SwapInOrigin("tb1q97tpc0y4rvdnu9wm7nu354lmmzdm8du228u3g4", 1_200.sat))
+            origin = ChannelOrigin.SwapInOrigin("tb1q97tpc0y4rvdnu9wm7nu354lmmzdm8du228u3g4", 1_200.sat)
+        )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         handler.process(channelId, amountOrigin)
         val dbPayment = handler.db.getIncomingPayment(channelId.sha256().sha256())
@@ -1001,11 +992,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return UpdateAddHtlc(channelId, id, finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet)
         }
 
-        private fun makeLegacyPayload(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144), currentBlockHeight: Int = TestConstants.defaultBlockHeight): FinalPayload {
-            val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-            return FinalPayload.createSinglePartPayload(amount, expiry)
-        }
-
         private fun makeMppPayload(
             amount: MilliSatoshi,
             totalAmount: MilliSatoshi,
@@ -1037,7 +1023,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, "unit test", listOf(), expirySeconds, timestamp)
-            return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret!!)
+            return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

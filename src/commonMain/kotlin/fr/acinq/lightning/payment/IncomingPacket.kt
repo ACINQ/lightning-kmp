@@ -21,13 +21,11 @@ object IncomingPacket {
     fun decrypt(add: UpdateAddHtlc, privateKey: PrivateKey): Either<FailureMessage, FinalPayload> {
         return when (val decrypted = decryptOnion(add.paymentHash, add.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength, privateKey)) {
             is Either.Left -> Either.Left(decrypted.value)
-            is Either.Right -> when (val outer = decrypted.value) {
-                is FinalLegacyPayload -> validate(add, outer)
-                is FinalTlvPayload -> run {
-                    val trampolineOnion = outer.records.get<OnionTlv.TrampolineOnion>()
-                    if (trampolineOnion == null) {
-                        validate(add, outer)
-                    } else {
+            is Either.Right -> {
+                val outer = decrypted.value
+                when (val trampolineOnion = outer.records.get<OnionTlv.TrampolineOnion>()) {
+                    null -> validate(add, outer)
+                    else -> {
                         when (val inner = decryptOnion(add.paymentHash, trampolineOnion.packet, OnionRoutingPacket.TrampolinePacketLength, privateKey)) {
                             is Either.Left -> Either.Left(inner.value)
                             is Either.Right -> validate(add, outer, inner.value)
@@ -73,12 +71,10 @@ object IncomingPacket {
             outerPayload.expiry != innerPayload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
             // previous trampoline didn't forward the right amount
             outerPayload.totalAmount != innerPayload.amount -> Either.Left(FinalIncorrectHtlcAmount(outerPayload.totalAmount))
-            // trampoline recipients always provide a payment secret in the invoice
-            innerPayload.paymentSecret == null -> Either.Left(InvalidOnionPayload(8U, 0))
             else -> {
                 // We merge contents from the outer and inner payloads.
                 // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-                Either.Right(FinalPayload.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret!!))
+                Either.Right(FinalPayload.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret))
             }
         }
     }

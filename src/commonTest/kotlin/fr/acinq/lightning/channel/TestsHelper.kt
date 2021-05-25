@@ -2,7 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Lightning
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
@@ -302,12 +302,12 @@ object TestsHelper {
         return Pair(alice2, bob1)
     }
 
-    fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = Lightning.randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, CMD_ADD_HTLC> {
+    fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, CMD_ADD_HTLC> {
         val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
         val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
-        val cmd = OutgoingPacket.buildCommand(paymentId, paymentHash, listOf(ChannelHop(dummyKey, destination, dummyUpdate)), FinalLegacyPayload(amount, expiry)).first.copy(commit = false)
+        val cmd = OutgoingPacket.buildCommand(paymentId, paymentHash, listOf(ChannelHop(dummyKey, destination, dummyUpdate)), FinalPayload.createSinglePartPayload(amount, expiry, randomBytes32())).first.copy(commit = false)
         return Pair(paymentPreimage, cmd)
     }
 

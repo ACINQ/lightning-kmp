@@ -342,7 +342,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
             assertEquals(payment.recipient, innerB.outgoingNodeId)
             assertEquals(invoice.paymentSecret, innerB.paymentSecret)
-            assertEquals(invoice.features!!, innerB.invoiceFeatures)
+            assertEquals(invoice.features, innerB.invoiceFeatures)
             assertFalse(innerB.invoiceRoutingInfo.isNullOrEmpty())
             assertEquals(invoice.routingInfo.map { it.hints }, innerB.invoiceRoutingInfo)
         }
@@ -858,7 +858,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Pair(ShortChannelId(4), 10_000.msat),
             Pair(ShortChannelId(5), 200_000.msat),
         )
-        return channelDetails.map {
+        return channelDetails.associate {
             val channelId = randomBytes32()
             val channel = alice.copy(
                 shortChannelId = it.first,
@@ -868,7 +868,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
                 )
             )
             channelId to channel
-        }.toMap()
+        }
     }
 
     private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<Pair<ByteVector32, CMD_ADD_HTLC>> {

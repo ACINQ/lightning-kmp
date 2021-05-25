@@ -26,7 +26,7 @@ data class PaymentRequest(
     val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
 
     @Transient
-    val paymentSecret: ByteVector32? = tags.find { it is TaggedField.PaymentSecret }?.run { (this as TaggedField.PaymentSecret).secret }
+    val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
 
     @Transient
     val description: String? = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
@@ -44,22 +44,21 @@ data class PaymentRequest(
     val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
 
     @Transient
-    val features: ByteVector? = tags.find { it is TaggedField.Features }?.run { (this as TaggedField.Features).bits }
+    val features: ByteVector = tags.find { it is TaggedField.Features }.run { (this as TaggedField.Features).bits }
 
     @Transient
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
     init {
+        val f = Features(features)
+        require(f.hasFeature(Feature.VariableLengthOnion)) { "${Feature.VariableLengthOnion.rfcName} must be supported" }
+        require(f.hasFeature(Feature.PaymentSecret)) { "${Feature.PaymentSecret.rfcName} must be supported" }
+        require(Features.validateFeatureGraph(f) == null)
+
         require(amount == null || amount > 0.msat) { "amount is not valid" }
         require(tags.filterIsInstance<TaggedField.PaymentHash>().size == 1) { "there must be exactly one payment hash tag" }
+        require(tags.filterIsInstance<TaggedField.PaymentSecret>().size == 1) { "there must be exactly one payment secret tag" }
         require(description != null || descriptionHash != null) { "there must be exactly one description tag or one description hash tag" }
-        if (features != null) {
-            val f = Features(features)
-            require(Features.validateFeatureGraph(f) == null)
-            if (f.hasFeature(Feature.PaymentSecret)) {
-                require(tags.filterIsInstance<TaggedField.PaymentSecret>().size == 1) { "there must be exactly one payment secret tag when feature bit is set" }
-            }
-        }
     }
 
     fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean = when (expirySeconds) {
@@ -163,6 +162,7 @@ data class PaymentRequest(
             description: String,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features,
+            paymentSecret: ByteVector32 = randomBytes32(),
             expirySeconds: Long? = null,
             extraHops: List<List<TaggedField.ExtraHop>> = listOf(),
             timestampSeconds: Long = currentTimestampSeconds()
@@ -172,6 +172,7 @@ data class PaymentRequest(
                 TaggedField.PaymentHash(paymentHash),
                 TaggedField.Description(description),
                 TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),
+                TaggedField.PaymentSecret(paymentSecret),
                 TaggedField.Features(features.toByteArray().toByteVector())
             )
             if (expirySeconds != null) {
@@ -179,9 +180,6 @@ data class PaymentRequest(
             }
             if (extraHops.isNotEmpty()) {
                 extraHops.forEach { tags.add(TaggedField.RoutingInfo(it)) }
-            }
-            if (features.hasFeature(Feature.PaymentSecret)) {
-                tags.add(TaggedField.PaymentSecret(randomBytes32()))
             }
 
             return PaymentRequest(
@@ -457,11 +455,11 @@ data class PaymentRequest(
         /**
          * Extra hop contained in RoutingInfoTag
          *
-         * @param nodeId                    start of the channel
-         * @param shortChannelId            channel id
-         * @param feeBase                   node fixed fee
+         * @param nodeId start of the channel
+         * @param shortChannelId channel id
+         * @param feeBase node fixed fee
          * @param feeProportionalMillionths node proportional fee
-         * @param cltvExpiryDelta           node cltv expiry delta
+         * @param cltvExpiryDelta node cltv expiry delta
          */
         @Serializable
         data class ExtraHop(
