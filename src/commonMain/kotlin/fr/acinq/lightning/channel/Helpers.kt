@@ -795,6 +795,9 @@ object Helpers {
          * - by spending the delayed output of [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] if those get confirmed; because the output of these txs is protected by
          * an OP_CSV delay, we will have time to spend them with a revocation key. In that case, we generate the spending transactions "on demand",
          * this is the purpose of this method.
+         *
+         * NB: when anchor outputs is used, htlc transactions can be aggregated in a single transaction if they share the same
+         * lockTime (thanks to the use of sighash_single | sighash_anyonecanpay), so we may need to claim multiple outputs.
          */
         fun claimRevokedHtlcTxOutputs(
             keyManager: KeyManager,
@@ -802,7 +805,7 @@ object Helpers {
             revokedCommitPublished: RevokedCommitPublished,
             htlcTx: Transaction,
             feerates: OnChainFeerates
-        ): Pair<RevokedCommitPublished, ClaimHtlcDelayedOutputPenaltyTx?> {
+        ): Pair<RevokedCommitPublished, List<ClaimHtlcDelayedOutputPenaltyTx>> {
             val claimTxs = buildList {
                 revokedCommitPublished.claimMainOutputTx?.let { add(it) }
                 revokedCommitPublished.mainPenaltyTx?.let { add(it) }
@@ -819,29 +822,31 @@ object Helpers {
                 // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
                 val feeratePenalty = feerates.fastFeerate
 
-                val signedTx = generateTx("claim-htlc-delayed-penalty") {
-                    Transactions.makeClaimDelayedOutputPenaltyTx(
-                        htlcTx,
-                        commitments.localParams.dustLimit,
-                        remoteRevocationPubkey,
-                        commitments.localParams.toSelfDelay,
-                        remoteDelayedPaymentPubkey,
-                        commitments.localParams.defaultFinalScriptPubKey.toByteArray(),
-                        feeratePenalty
-                    )
-                }?.let {
-                    val sig = keyManager.sign(it, commitments.localParams.channelKeys.revocationKey, revokedCommitPublished.remotePerCommitmentSecret)
-                    val signedTx = Transactions.addSigs(it, sig)
-                    // we need to make sure that the tx is indeed valid
-                    when (runTrying { Transaction.correctlySpends(signedTx.tx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
-                        is Try.Success -> signedTx
-                        is Try.Failure -> null
+                val penaltyTxs = Transactions.makeClaimDelayedOutputPenaltyTxs(
+                    htlcTx,
+                    commitments.localParams.dustLimit,
+                    remoteRevocationPubkey,
+                    commitments.localParams.toSelfDelay,
+                    remoteDelayedPaymentPubkey,
+                    commitments.localParams.defaultFinalScriptPubKey.toByteArray(),
+                    feeratePenalty
+                ).mapNotNull { claimDelayedOutputPenaltyTx ->
+                    generateTx("claim-htlc-delayed-penalty") {
+                        claimDelayedOutputPenaltyTx
+                    }?.let {
+                        val sig = keyManager.sign(it, commitments.localParams.channelKeys.revocationKey, revokedCommitPublished.remotePerCommitmentSecret)
+                        val signedTx = Transactions.addSigs(it, sig)
+                        // we need to make sure that the tx is indeed valid
+                        when (runTrying { Transaction.correctlySpends(signedTx.tx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
+                            is Try.Success -> signedTx
+                            is Try.Failure -> null
+                        }
                     }
-                } ?: return revokedCommitPublished to null
+                }
 
-                return revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs + signedTx) to signedTx
+                return revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs + penaltyTxs) to penaltyTxs
             } else {
-                return revokedCommitPublished to null
+                return revokedCommitPublished to listOf()
             }
         }
 

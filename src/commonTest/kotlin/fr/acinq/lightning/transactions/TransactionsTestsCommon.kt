@@ -37,6 +37,7 @@ import fr.acinq.lightning.transactions.Transactions.encodeTxNumber
 import fr.acinq.lightning.transactions.Transactions.getCommitTxNumber
 import fr.acinq.lightning.transactions.Transactions.htlcPenaltyWeight
 import fr.acinq.lightning.transactions.Transactions.mainPenaltyWeight
+import fr.acinq.lightning.transactions.Transactions.makeClaimDelayedOutputPenaltyTxs
 import fr.acinq.lightning.transactions.Transactions.makeClaimHtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.makeClaimHtlcTimeoutTx
 import fr.acinq.lightning.transactions.Transactions.makeClaimLocalDelayedOutputTx
@@ -384,6 +385,21 @@ class TransactionsTestsCommon : LightningTestSuite() {
         }
 
         run {
+            // remote spends htlc1's htlc-timeout tx with revocation key
+            val claimHtlcDelayedPenaltyTxs = makeClaimDelayedOutputPenaltyTxs(htlcTimeoutTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
+            assertEquals(1, claimHtlcDelayedPenaltyTxs.size)
+            val claimHtlcDelayedPenaltyTx = claimHtlcDelayedPenaltyTxs.first()
+            assertTrue(claimHtlcDelayedPenaltyTx is Success, "is $claimHtlcDelayedPenaltyTx")
+            val sig = sign(claimHtlcDelayedPenaltyTx.result, localRevocationPriv)
+            val signed = addSigs(claimHtlcDelayedPenaltyTx.result, sig)
+            val csResult = checkSpendable(signed)
+            assertTrue(csResult.isSuccess, "is $csResult")
+            // remote can't claim revoked output of htlc3's htlc-timeout tx because it is below the dust limit
+            val claimHtlcDelayedPenaltyTxsSkipped = makeClaimDelayedOutputPenaltyTxs(htlcTimeoutTxs[0].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
+            assertEquals(listOf(Skipped(AmountBelowDustLimit)), claimHtlcDelayedPenaltyTxsSkipped)
+        }
+
+        run {
             // remote spends remote->local htlc output directly in case of timeout
             val claimHtlcTimeoutTx =
                 makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc2, feerate)
@@ -392,6 +408,35 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val signed = addSigs(claimHtlcTimeoutTx.result, remoteSig)
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
+        }
+
+        run {
+            // remote spends htlc2's htlc-success tx with revocation key
+            val claimHtlcDelayedPenaltyTxs = makeClaimDelayedOutputPenaltyTxs(htlcSuccessTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
+            assertEquals(1, claimHtlcDelayedPenaltyTxs.size)
+            val claimHtlcDelayedPenaltyTx = claimHtlcDelayedPenaltyTxs.first()
+            assertTrue(claimHtlcDelayedPenaltyTx is Success, "is $claimHtlcDelayedPenaltyTx")
+            val sig = sign(claimHtlcDelayedPenaltyTx.result, localRevocationPriv)
+            val signed = addSigs(claimHtlcDelayedPenaltyTx.result, sig)
+            val csResult = checkSpendable(signed)
+            assertTrue(csResult.isSuccess, "is $csResult")
+            // remote can't claim revoked output of htlc4's htlc-success tx because it is below the dust limit
+            val claimHtlcDelayedPenaltyTxsSkipped = makeClaimDelayedOutputPenaltyTxs(htlcSuccessTxs[0].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
+            assertEquals(listOf(Skipped(AmountBelowDustLimit)), claimHtlcDelayedPenaltyTxsSkipped)
+        }
+
+        run {
+            // remote spends all htlc txs aggregated in a single tx
+            val txIn = htlcTimeoutTxs.flatMap { it.tx.txIn } + htlcSuccessTxs.flatMap { it.tx.txIn }
+            val txOut = htlcTimeoutTxs.flatMap { it.tx.txOut } + htlcSuccessTxs.flatMap { it.tx.txOut }
+            val aggregatedHtlcTx = Transaction(2, txIn, txOut, 0)
+            val claimHtlcDelayedPenaltyTxs = makeClaimDelayedOutputPenaltyTxs(aggregatedHtlcTx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
+            assertEquals(4, claimHtlcDelayedPenaltyTxs.size)
+            val skipped = claimHtlcDelayedPenaltyTxs.filterIsInstance<Skipped<AmountBelowDustLimit>>()
+            assertEquals(2, skipped.size)
+            val claimed = claimHtlcDelayedPenaltyTxs.filterIsInstance<Success<Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx>>()
+            assertEquals(2, claimed.size)
+            assertEquals(2, claimed.map { it.result.input.outPoint }.toSet().size)
         }
 
         run {

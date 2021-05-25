@@ -2586,8 +2586,8 @@ data class Closing(
 
                         val revokedCommitPublishActions = mutableListOf<ChannelAction>()
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
-                            val (newRevokedCommitPublished, tx) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
-                            tx?.let {
+                            val (newRevokedCommitPublished, penaltyTxs) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
+                            penaltyTxs.forEach {
                                 revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it.tx)
                                 revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
                             }
