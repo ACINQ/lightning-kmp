@@ -261,6 +261,28 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CMD_ADD_HTLC (over max offered htlcs)`() {
+        val (alice0, _) = reachNormal()
+        // Bob accepts a maximum of 100 htlcs, but for Alice that value is only 5
+        val alice1 = alice0.copy(commitments = alice0.commitments.copy(localParams = alice0.commitments.localParams.copy(maxAcceptedHtlcs = 5)))
+
+        val alice2 = run {
+            var alice = alice1
+            for (i in 0 until 5) {
+                val (tempAlice, actions) = alice.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
+                actions.hasOutgoingMessage<UpdateAddHtlc>()
+                alice = tempAlice as Normal
+            }
+            alice
+        }
+
+        val (_, actions) = alice2.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
+        val actualError = actions.findCommandError<TooManyOfferedHtlcs>()
+        val expectedError = TooManyOfferedHtlcs(alice0.channelId, maximum = 5)
+        assertEquals(expectedError, actualError)
+    }
+
+    @Test
     fun `recv CMD_ADD_HTLC (over capacity)`() {
         val (alice0, _) = reachNormal()
         val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = TestConstants.fundingAmount.toMilliSatoshi() * 2 / 3)))

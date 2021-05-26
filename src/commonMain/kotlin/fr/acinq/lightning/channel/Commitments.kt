@@ -270,6 +270,11 @@ data class Commitments(
             return Either.Left(TooManyAcceptedHtlcs(channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs.toLong()))
         }
 
+        // README: this is not part of the LN Bolts: we also check against our own limit, to avoid creating commit txs that have too many outputs
+        if (outgoingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
+            return Either.Left(TooManyOfferedHtlcs(channelId, maximum = commitments1.localParams.maxAcceptedHtlcs.toLong()))
+        }
+
         return Either.Right(Pair(commitments1, add))
     }
 
