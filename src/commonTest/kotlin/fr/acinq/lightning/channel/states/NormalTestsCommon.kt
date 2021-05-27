@@ -220,8 +220,11 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over max in-flight htlc value)`() {
-        val (_, bob0) = reachNormal()
+    fun `recv CMD_ADD_HTLC (over their max in-flight htlc value)`() {
+        val bob0 = run {
+            val (_, bob) = reachNormal()
+            bob.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
+        }
         val (_, actions) = bob0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 151_000_000.msat)))
         val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
         val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
@@ -229,8 +232,23 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CMD_ADD_HTLC (over our max in-flight htlc value)`() {
+        val bob0 = run {
+            val (_, bob) = reachNormal()
+            bob.copy(commitments = bob.commitments.copy(localParams = bob.commitments.localParams.copy(maxHtlcValueInFlightMsat = 100_000_000)))
+        }
+        val (_, actions) = bob0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 101_000_000.msat)))
+        val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
+        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 100_000_000UL, actual = 101_000_000.msat)
+        assertEquals(expectedError, actualError)
+    }
+
+    @Test
     fun `recv CMD_ADD_HTLC (over max in-flight htlc value with duplicate amounts)`() {
-        val (_, bob0) = reachNormal()
+        val bob0 = run {
+            val (_, bob) = reachNormal()
+            bob.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
+        }
         val (bob1, actionsBob1) = bob0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 75_500_000.msat)))
         actionsBob1.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsBob2) = bob1.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 75_500_000.msat)))
@@ -392,7 +410,10 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv UpdateAddHtlc (over max in-flight htlc value)`() {
-        val (alice0, _) = reachNormal()
+        val alice0 = run {
+            val (alice, _) = reachNormal()
+            alice.copy(commitments = alice.commitments.copy(localParams = alice.commitments.localParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
+        }
         val add = UpdateAddHtlc(alice0.channelId, 0, 151_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(add))
         assertTrue(alice1 is Closing)
