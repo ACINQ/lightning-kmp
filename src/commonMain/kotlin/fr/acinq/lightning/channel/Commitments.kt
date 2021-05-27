@@ -26,6 +26,7 @@ import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import org.kodein.log.Logger
+import kotlin.math.min
 
 // @formatter:off
 data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
@@ -261,13 +262,20 @@ data class Commitments(
             }
         }
 
+        // README: we check against our peer's max_htlc_value_in_flight_msat parameter, as per the BOLTS, but also against our own setting
         val htlcValueInFlight = outgoingHtlcs.map { it.amountMsat }.sum()
-        if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight.toLong()) {
-            return Either.Left(HtlcValueTooHighInFlight(channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight))
+        val maxHtlcValueInFlightMsat = min(commitments1.remoteParams.maxHtlcValueInFlightMsat, commitments1.localParams.maxHtlcValueInFlightMsat)
+        if (htlcValueInFlight.toLong() > maxHtlcValueInFlightMsat) {
+            return Either.Left(HtlcValueTooHighInFlight(channelId, maximum = maxHtlcValueInFlightMsat.toULong(), actual = htlcValueInFlight))
         }
 
         if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
             return Either.Left(TooManyAcceptedHtlcs(channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs.toLong()))
+        }
+
+        // README: this is not part of the LN Bolts: we also check against our own limit, to avoid creating commit txs that have too many outputs
+        if (outgoingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
+            return Either.Left(TooManyOfferedHtlcs(channelId, maximum = commitments1.localParams.maxAcceptedHtlcs.toLong()))
         }
 
         return Either.Right(Pair(commitments1, add))

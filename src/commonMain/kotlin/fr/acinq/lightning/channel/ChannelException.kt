@@ -57,6 +57,7 @@ data class HtlcValueTooSmall                       (override val channelId: Byte
 @OptIn(ExperimentalUnsignedTypes::class)
 data class HtlcValueTooHighInFlight                (override val channelId: ByteVector32, val maximum: ULong, val actual: MilliSatoshi) : ChannelException(channelId, "in-flight htlcs hold too much value: maximum=$maximum actual=$actual")
 data class TooManyAcceptedHtlcs                    (override val channelId: ByteVector32, val maximum: Long) : ChannelException(channelId, "too many accepted htlcs: maximum=$maximum")
+data class TooManyOfferedHtlcs                     (override val channelId: ByteVector32, val maximum: Long) : ChannelException(channelId, "too many offered htlcs: maximum=$maximum")
 data class InsufficientFunds                       (override val channelId: ByteVector32, val amount: MilliSatoshi, val missing: Satoshi, val reserve: Satoshi, val fees: Satoshi) : ChannelException(channelId, "insufficient funds: missing=$missing reserve=$reserve fees=$fees")
 data class RemoteCannotAffordFeesForNewHtlc        (override val channelId: ByteVector32, val amount: MilliSatoshi, val missing: Satoshi, val reserve: Satoshi, val fees: Satoshi) : ChannelException(channelId, "remote can't afford increased commit tx fees once new HTLC is added: missing=$missing reserve=$reserve fees=$fees")
 data class InvalidHtlcPreimage                     (override val channelId: ByteVector32, val id: Long) : ChannelException(channelId, "invalid htlc preimage for htlc id=$id")
