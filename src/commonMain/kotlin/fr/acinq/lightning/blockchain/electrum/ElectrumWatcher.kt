@@ -78,7 +78,12 @@ private data class WatcherDisconnected(
             is ReceivedMessage -> when (val message = event.message) {
                 is HeaderSubscriptionResponse -> {
                     newState {
-                        state = (WatcherRunning(height = message.height, tip = message.header, block2tx = block2tx, watches = watches))
+                        state = WatcherRunning(
+                            height = message.height,
+                            tip = message.header,
+                            block2tx = block2tx,
+                            watches = watches
+                        )
                         actions = buildList {
                             watches.mapNotNull { registerToScriptHash(it) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
@@ -104,6 +109,7 @@ private data class WatcherRunning(
     val tip: BlockHeader,
     val watches: Set<Watch> = setOf(),
     val scriptHashStatus: Map<ByteVector32, String> = mapOf(),
+    val scriptHashSubscriptions: Set<ByteVector32> = setOf(),
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val sent: Set<Transaction> = setOf()
 ) : WatcherState() {
@@ -347,9 +353,26 @@ private data class WatcherRunning(
     private fun setupWatch(watch: Watch) = when (watch) {
         is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
-        else -> newState {
-            state = copy(watches = watches + watch)
-            actions = registerToScriptHash(watch)?.let { this.actions + it } ?: actions
+        else -> {
+            val action = registerToScriptHash(watch)
+            newState {
+                state = copy(
+                    watches = watches + watch,
+                    scriptHashSubscriptions = action?.let {
+                        scriptHashSubscriptions + it.scriptHash
+                    } ?: scriptHashSubscriptions
+                )
+                actions = action?.let {
+                    if (scriptHashSubscriptions.contains(it.scriptHash)) {
+                        // We've already registered to subscriptions from this scriptHash.
+                        // Both WatchSpent & WatchConfirmed can be translated into the exact same
+                        // electrum request, so we filter the duplicates here.
+                        actions
+                    } else {
+                        actions + it
+                    }
+                } ?: actions
+            }
         }
     }
 }
@@ -472,7 +495,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
     companion object {
         val logger by lightningLogger<ElectrumWatcher>()
 
-        internal fun registerToScriptHash(watch: Watch): WatcherAction? = when (watch) {
+        internal fun registerToScriptHash(watch: Watch): RegisterToScriptHashNotification? = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch
                 val scriptHash = computeScriptHash(publicKeyScript)
