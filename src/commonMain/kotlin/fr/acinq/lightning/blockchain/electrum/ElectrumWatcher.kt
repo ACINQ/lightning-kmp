@@ -12,13 +12,11 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.makeDumm
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.lightningLogger
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BroadcastChannel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.flow.*
 import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.native.concurrent.ThreadLocal
@@ -30,6 +28,11 @@ class ReceiveWatch(val watch: Watch) : WatcherEvent()
 class ReceiveWatchEvent(val watchEvent: WatchEvent) : WatcherEvent()
 class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
 class ClientStateUpdate(val connection: Connection) : WatcherEvent()
+
+sealed class NotifyEvent
+class NotifyWatchEvent(val watchEvent: WatchEvent): NotifyEvent()
+class NotifyTxEvent(val channelId: ByteVector32, val txWithMeta: GetTxWithMetaResponse): NotifyEvent()
+class NotifyUpToDateEvent(val millis: Long): NotifyEvent()
 
 internal sealed class WatcherAction
 private object AskForHeaderUpdate : WatcherAction()
@@ -393,18 +396,49 @@ private fun WatcherState.returnState(actions: List<WatcherAction> = emptyList())
 private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, List<WatcherAction>> = this to listOf(action)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : CoroutineScope by scope {
-    private val watchNotificationsChannel = BroadcastChannel<WatchEvent>(Channel.BUFFERED)
-    fun openWatchNotificationsSubscription() = watchNotificationsChannel.openSubscription()
-    private val txNotificationsChannel = BroadcastChannel<Pair<ByteVector32, GetTxWithMetaResponse>>(Channel.BUFFERED)
-    fun openTxNotificationsSubscription() = txNotificationsChannel.openSubscription()
+class ElectrumWatcher(
+    val client: ElectrumClient,
+    val scope: CoroutineScope
+) : CoroutineScope by scope {
+
+    private val _notificationsFlow = MutableSharedFlow<NotifyEvent>(
+        replay = 0,
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.SUSPEND
+    )
+    val notificationsFlow: SharedFlow<NotifyEvent> = _notificationsFlow
+
+    fun openWatchNotificationsFlow(): Flow<WatchEvent> =
+        _notificationsFlow.mapNotNull {
+            when (it) {
+                is NotifyWatchEvent -> it.watchEvent
+                else -> null
+            }
+        }
+
+    fun openTxNotificationsFlow(): Flow<Pair<ByteVector32, GetTxWithMetaResponse>> =
+        _notificationsFlow.mapNotNull {
+            when (it) {
+                is NotifyTxEvent -> Pair(it.channelId, it.txWithMeta)
+                else -> null
+            }
+        }
+
+    fun openUpToDateFlow(): Flow<Long> = _notificationsFlow.mapNotNull {
+        when (it) {
+            is NotifyUpToDateEvent -> it.millis
+            else -> null
+        }
+    }
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
 
     private val clientNotificationsSubscription = client.openNotificationsSubscription()
 
     private val input = produce(capacity = Channel.BUFFERED) {
-        launch { eventChannel.consumeEach { send(it) } }
+        launch {
+            eventChannel.consumeEach { send(it) }
+        }
         launch {
             client.connectionState.collect {
                 eventChannel.send(ClientStateUpdate(it))
@@ -420,6 +454,7 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
     private var state: WatcherState = WatcherDisconnected()
 
     private var runJob: Job? = null
+    private var timerJob: Job? = null
 
     init {
         logger.info { "initializing electrum watcher" }
@@ -430,7 +465,14 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
         input.consumeEach { input ->
 
             val (newState, actions) = state.process(input)
+            val oldState = state
             state = newState
+
+            if (oldState !is WatcherRunning && newState is WatcherRunning) {
+                startTimer()
+            } else if (oldState is WatcherRunning && newState !is WatcherRunning) {
+                stopTimer()
+            }
 
             actions.forEach { action ->
                 yield()
@@ -452,13 +494,81 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
                     )
                     is NotifyWatch -> {
                         if (action.broadcastNotification)
-                            watchNotificationsChannel.send(action.watchEvent)
+                            _notificationsFlow.emit(NotifyWatchEvent(action.watchEvent))
                         else
                             eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
-                    is NotifyTxWithMeta -> txNotificationsChannel.send(action.channelId to action.txWithMeta)
+                    is NotifyTxWithMeta -> {
+                       _notificationsFlow.emit(NotifyTxEvent(action.channelId, action.txWithMeta))
+                    }
                 }
             }
+        }
+    }
+
+    private fun startTimer() {
+        if (timerJob != null) return
+
+        val timeMillis: Long = 2 * 1_000 // fire timer every 2 seconds
+        timerJob = launch {
+            delay(timeMillis)
+            while(isActive) {
+                checkIsUpToDate()
+                delay(timeMillis)
+            }
+        }
+    }
+
+    private fun stopTimer() {
+        timerJob?.cancel()
+        timerJob = null
+    }
+
+    private suspend fun checkIsUpToDate(): Unit {
+
+        // Get a list of timestamps from the client for all outgoing requests.
+        // This returns an array of `RequestResponseTimestamp` instances, which includes:
+        // - id: Int
+        // - request: ElectrumRequest
+        // - lastResponseTimestamp: Long?
+        //
+        // If lastResponseTimestamp is null, we have an outstanding request pending.
+        //
+        val info = client.requestResponseTimestamps()
+        if (info == null) {
+            // Client isn't connected (i.e. client.state !is ClientRunning)
+            return
+        }
+
+        // We want to emit an "up-to-date" notification to the client.
+        // This is used during WatchTower operation, where the client connects to electrum
+        // in order to ensure the acinq server didn't publish an old commit (i.e. attempt to cheat).
+        //
+        // So we want to emit this message when we're fairly confident the electrum server
+        // has delivered all the pending information we need. Here's how we do it:
+        // - we track the last response time (timestamp in millis) per request
+        // - we filter the list to only include those operations related to the WatchTower
+        // - we wait until all such responses have arrived, and are older than 5 seconds
+
+        val now = currentTimestampMillis()
+        val isUpToDate = info.filter {
+            when (it.request) {
+                is ScriptHashSubscription -> true
+                is GetScriptHashHistory -> true
+                is GetTransaction -> true
+                is GetMerkle -> true
+                else -> false
+            }
+        }.all {
+            it.lastResponseTimestamp?.let {
+                now - it > 5_000
+            } ?: false
+        }
+
+        if (isUpToDate) {
+            logger.info { "Watcher is up-to-date" }
+            _notificationsFlow.emit(NotifyUpToDateEvent(now))
+            stopTimer()
         }
     }
 
@@ -484,9 +594,8 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope) : C
         clientNotificationsSubscription.cancel()
         // Cancel event consumer
         runJob?.cancel()
-        // Cancel broadcast channel
-        watchNotificationsChannel.cancel()
-        txNotificationsChannel.cancel()
+        // Cancel up-to-date timer
+        stopTimer()
         // Cancel event channels
         eventChannel.cancel()
     }

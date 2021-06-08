@@ -97,7 +97,13 @@ internal object WaitingForTip : ClientState() {
         }
 }
 
-internal data class ClientRunning(val height: Int, val tip: BlockHeader, val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf()) : ClientState() {
+internal data class ClientRunning(
+    val height: Int,
+    val tip: BlockHeader,
+    val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf(),
+    val responseTimestamps: MutableMap<Int, Long?> = mutableMapOf()
+) : ClientState() {
+
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
         is AskForHeader -> returnState(SendHeader(height, tip))
         is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
@@ -111,8 +117,13 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader, val req
                 else -> returnState()
             }
             is Either.Right -> {
-                requests[response.value.id]?.takeUnless { it is Ping }?.let { originRequest ->
-                    returnState(SendResponse(parseJsonResponse(originRequest, response.value)))
+                requests[response.value.id]?.let { request ->
+                    responseTimestamps[response.value.id!!] = currentTimestampMillis()
+                    if (request !is Ping) {
+                        returnState(SendResponse(parseJsonResponse(request, response.value)))
+                    } else {
+                        returnState()
+                    }
                 } ?: returnState()
             }
         }
@@ -122,6 +133,7 @@ internal data class ClientRunning(val height: Int, val tip: BlockHeader, val req
     private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
         val newRequestId = requests.maxOfOrNull { it.key + 1 } ?: 0
         requests[newRequestId] = electrumRequest
+        responseTimestamps[newRequestId] = null
         return SendRequest(electrumRequest.asJsonRPCRequest(newRequestId))
     }
 }
@@ -157,6 +169,12 @@ private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder()
 
 private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
 private fun ClientState.returnState(action: ElectrumClientAction): Pair<ClientState, List<ElectrumClientAction>> = this to listOf(action)
+
+data class RequestResponseTimestamp(
+    val id: Int,
+    val request: ElectrumRequest,
+    val lastResponseTimestamp: Long?
+)
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
@@ -304,6 +322,21 @@ class ElectrumClient(
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
                 else -> logger.warning{ "sendMessage does not support message: ${message::class}" }
+            }
+        }
+    }
+
+    /**
+     * Returns a list of requests, and when the most recent corresponding response was received.
+     */
+    fun requestResponseTimestamps(): List<RequestResponseTimestamp>? {
+        val state = state
+        if (state !is ClientRunning) {
+            return null
+        }
+        return state.requests.mapNotNull { (id, request) ->
+            state.responseTimestamps[id]?.let { lastResponseTimestamp ->
+                RequestResponseTimestamp(id, request, lastResponseTimestamp)
             }
         }
     }
