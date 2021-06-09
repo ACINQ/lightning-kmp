@@ -158,17 +158,21 @@ sealed class ChannelState {
     fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return try {
             val (newState, actions) = processInternal(event)
+            val oldState = when (this) {
+                is Offline -> this.state
+                else -> this
+            }
             val actions1 = when {
-                this is WaitForFundingCreated && newState is WaitForFundingConfirmed -> {
-                    actions + ChannelAction.Storage.StoreIncomingAmount(pushAmount, channelOrigin)
+                oldState is WaitForFundingCreated && newState is WaitForFundingConfirmed -> {
+                    actions + ChannelAction.Storage.StoreIncomingAmount(oldState.pushAmount, oldState.channelOrigin)
                 }
                 // we only want to fire the PaymentSent event when we transition to Closing for the first time
-                this is WaitForInit && newState is Closing -> actions
-                this is Closing && newState is Closing -> actions
-                this is ChannelStateWithCommitments && newState is Closing -> {
-                    val channelBalance = commitments.localCommit.spec.toLocal
+                oldState is WaitForInit && newState is Closing -> actions
+                oldState is Closing && newState is Closing -> actions
+                oldState is ChannelStateWithCommitments && newState is Closing -> {
+                    val channelBalance = oldState.commitments.localCommit.spec.toLocal
                     if (channelBalance > 0.msat) {
-                        val defaultScriptPubKey = commitments.localParams.defaultFinalScriptPubKey
+                        val defaultScriptPubKey = oldState.commitments.localParams.defaultFinalScriptPubKey
                         val localShutdown = when (this) {
                             is Normal -> this.localShutdown
                             is Negotiating -> this.localShutdown
