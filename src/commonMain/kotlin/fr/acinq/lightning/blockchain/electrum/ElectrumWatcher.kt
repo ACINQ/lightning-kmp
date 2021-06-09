@@ -557,6 +557,7 @@ class ElectrumWatcher(
                 is GetScriptHashHistory -> true
                 is GetTransaction -> true
                 is GetMerkle -> true
+                is BroadcastTransaction -> true
                 else -> false
             }
         }.all {
