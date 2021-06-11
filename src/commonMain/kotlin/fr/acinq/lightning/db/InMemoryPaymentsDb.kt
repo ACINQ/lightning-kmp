@@ -25,19 +25,36 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long) {
+    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: Set<IncomingPayment.ReceivedWith>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             else -> incoming[paymentHash] = run {
-                val alreadyReceived = payment.received?.amount ?: 0.msat
-                payment.copy(received = IncomingPayment.Received(amount + alreadyReceived, receivedWith, receivedAt))
+                payment.copy(received = IncomingPayment.Received(
+                    receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
+                    receivedAt = receivedAt))
             }
         }
     }
 
-    override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, createdAt: Long, receivedAt: Long) {
+    override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, amount: MilliSatoshi, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
         val paymentHash = preimage.sha256()
-        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(amount, receivedWith, receivedAt), createdAt)
+        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(receivedWith, receivedAt), createdAt)
+    }
+
+    override suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32) {
+        val payment = incoming[paymentHash]
+        when (payment?.received?.receivedWith) {
+            null -> Unit // no-op
+            else -> incoming[paymentHash] = run {
+                val receivedWith = payment.received.receivedWith.map {
+                    when (it) {
+                        is IncomingPayment.ReceivedWith.NewChannel -> it.copy(channelId = channelId)
+                        else -> it
+                    }
+                }.toSet()
+                payment.copy(received = payment.received.copy(receivedWith = receivedWith))
+            }
+        }
     }
 
     override suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =

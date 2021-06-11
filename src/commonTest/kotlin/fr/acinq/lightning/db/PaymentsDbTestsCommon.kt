@@ -18,30 +18,121 @@ import kotlin.test.*
 class PaymentsDbTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `receive incoming payments`() = runSuspendTest {
+    fun `receive incoming payment with 1 htlc`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         assertNull(db.getIncomingPayment(pr.paymentHash))
 
+        val channelId = randomBytes32()
         val incoming = IncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), null, 100)
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 100)
         val pending = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(pending)
         assertEquals(incoming, pending)
 
-        db.receivePayment(pr.paymentHash, 200_000.msat, IncomingPayment.ReceivedWith.LightningPayment, 110)
+        db.receivePayment(pr.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(
+            amount = 200_000.msat,
+            channelId = channelId,
+            htlcId = 1L
+        )), 110)
         val received = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received)
-        assertEquals(pending.copy(received = IncomingPayment.Received(200_000.msat, IncomingPayment.ReceivedWith.LightningPayment, 110)), received)
+        assertEquals(pending.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(
+            amount = 200_000.msat,
+            channelId = channelId,
+            htlcId = 1L
+        )), 110)), received)
     }
 
     @Test
-    fun `add and receive incoming payments`() = runSuspendTest {
+    fun `receive incoming payment with several parts`() = runSuspendTest {
+        val (db, preimage, pr) = createFixture()
+        assertNull(db.getIncomingPayment(pr.paymentHash))
+
+        val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
+        val incoming = IncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), null, 200)
+        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
+        val pending = db.getIncomingPayment(pr.paymentHash)
+        assertNotNull(pending)
+        assertEquals(incoming, pending)
+
+        db.receivePayment(pr.paymentHash, setOf(
+            IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
+            IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
+            IncomingPayment.ReceivedWith.NewChannel(amount = 100_000.msat, channelId = channelId3, fees = 1_000.msat)
+        ), 110)
+        val received = db.getIncomingPayment(pr.paymentHash)
+        assertNotNull(received)
+        assertEquals(199_000.msat, received.received!!.amount)
+        assertEquals(3, received.received!!.receivedWith.size)
+        assertEquals(57_000.msat, received.received!!.receivedWith.elementAt(0).amount)
+        assertEquals(0.msat, received.received!!.receivedWith.elementAt(0).fees)
+        assertEquals(channelId1, (received.received!!.receivedWith.elementAt(0) as IncomingPayment.ReceivedWith.LightningPayment).channelId)
+        assertEquals(54L, (received.received!!.receivedWith.elementAt(1) as IncomingPayment.ReceivedWith.LightningPayment).htlcId)
+        assertEquals(channelId3, (received.received!!.receivedWith.elementAt(2) as IncomingPayment.ReceivedWith.NewChannel).channelId)
+    }
+
+    @Test
+    fun `receiving several payments on the same payment hash is additive`() = runSuspendTest {
+        val (db, preimage, pr) = createFixture()
+        val channelId = randomBytes32()
+
+        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
+        db.receivePayment(pr.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(
+            amount = 200_000.msat,
+            channelId = channelId,
+            htlcId = 1L
+        )), 110)
+        val received1 = db.getIncomingPayment(pr.paymentHash)
+        assertNotNull(received1)
+        assertNotNull(received1.received)
+        assertEquals(200_000.msat, received1.received!!.amount)
+
+        db.receivePayment(pr.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(
+            amount = 100_000.msat,
+            channelId = channelId,
+            htlcId = 2L
+        )), 150)
+        val received2 = db.getIncomingPayment(pr.paymentHash)
+        assertNotNull(received2)
+        assertNotNull(received2.received)
+        assertEquals(300_000.msat, received2.received!!.amount)
+        assertEquals(150, received2.received!!.receivedAt)
+        assertEquals(setOf(
+            IncomingPayment.ReceivedWith.LightningPayment(
+                amount = 200_000.msat,
+                channelId = channelId,
+                htlcId = 1L
+            ),
+            IncomingPayment.ReceivedWith.LightningPayment(
+                amount = 100_000.msat,
+                channelId = channelId,
+                htlcId = 2L
+            )
+        ), received2.received!!.receivedWith)
+    }
+
+    @Test
+    fun `received total amount accounts for the fee`() = runSuspendTest {
+        val (db, preimage, pr) = createFixture()
+        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
+        db.receivePayment(pr.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(
+            amount = 500_000.msat,
+            fees = 15_000.msat,
+            channelId = randomBytes32()
+        )), 110)
+        val received1 = db.getIncomingPayment(pr.paymentHash)
+        assertNotNull(received1?.received)
+        assertEquals(485_000.msat, received1!!.received!!.amount)
+    }
+
+    @Test
+    fun `simultaneously add and receive incoming payment`() = runSuspendTest {
         val db = InMemoryPaymentsDb()
         val preimage = randomBytes32()
         val channelId = randomBytes32()
         val amount = MilliSatoshi(50_000_000)
         val origin = IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb")
-        val receivedWith = IncomingPayment.ReceivedWith.NewChannel(fees = MilliSatoshi(1234), channelId = channelId)
+        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, fees = MilliSatoshi(1234), channelId = channelId))
         assertNull(db.getIncomingPayment(randomBytes32()))
 
         db.addAndReceivePayment(preimage = preimage, origin = origin, amount = amount, receivedWith = receivedWith)
@@ -86,19 +177,19 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val preimage1 = randomBytes32()
         val received1 = createInvoice(preimage1)
         db.addIncomingPayment(preimage1, IncomingPayment.Origin.Invoice(received1))
-        db.receivePayment(received1.paymentHash, 180_000.msat, IncomingPayment.ReceivedWith.LightningPayment, 50)
+        db.receivePayment(received1.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 180_000.msat, channelId = randomBytes32(), 1)), 50)
         val payment1 = db.getIncomingPayment(received1.paymentHash)!!
 
         val preimage2 = randomBytes32()
         val received2 = createInvoice(preimage2)
         db.addIncomingPayment(preimage2, IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"))
-        db.receivePayment(received2.paymentHash, 180_000.msat, IncomingPayment.ReceivedWith.NewChannel(100.msat, channelId = null), 60)
+        db.receivePayment(received2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(180_000.msat, 10_000.msat, channelId = null, )), 60)
         val payment2 = db.getIncomingPayment(received2.paymentHash)!!
 
         val preimage3 = randomBytes32()
         val received3 = createInvoice(preimage3)
         db.addIncomingPayment(preimage3, IncomingPayment.Origin.Invoice(received3))
-        db.receivePayment(received3.paymentHash, 180_000.msat, IncomingPayment.ReceivedWith.LightningPayment, 70)
+        db.receivePayment(received3.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 180_000.msat, channelId = randomBytes32(), 1)), 70)
         val payment3 = db.getIncomingPayment(received3.paymentHash)!!
 
         val all = db.listReceivedPayments(count = 10, skip = 0)
@@ -312,18 +403,20 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         // Pending payments should not be listed.
         assertTrue(db.listPayments(count = 10, skip = 0).isEmpty())
 
-        db.receivePayment(incoming1.paymentHash, 20_000.msat, IncomingPayment.ReceivedWith.LightningPayment, receivedAt = 100)
-        val inFinal1 = incoming1.copy(received = IncomingPayment.Received(20_000.msat, IncomingPayment.ReceivedWith.LightningPayment, 100))
+        val channelId1 = randomBytes32()
+        db.receivePayment(incoming1.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 20_000.msat, channelId = channelId1, 1)), receivedAt = 100)
+        val inFinal1 = incoming1.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 20_000.msat, channelId = channelId1, 1)), 100))
         db.completeOutgoingPayment(outgoing1.id, randomBytes32(), completedAt = 102)
         val outFinal1 = db.getOutgoingPayment(outgoing1.id)!!
         db.completeOutgoingPayment(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
-        db.receivePayment(incoming2.paymentHash, 25_000.msat, IncomingPayment.ReceivedWith.NewChannel(250.msat, channelId = null), receivedAt = 105)
-        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(25_000.msat, IncomingPayment.ReceivedWith.NewChannel(250.msat, channelId = null), 105))
+        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 25_000.msat, 2_500.msat, channelId = null)), receivedAt = 105)
+        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 25_000.msat, 2_500.msat, channelId = null)), 105))
         db.completeOutgoingPayment(outgoing3.id, randomBytes32(), completedAt = 106)
         val outFinal3 = db.getOutgoingPayment(outgoing3.id)!!
-        db.receivePayment(incoming4.paymentHash, 10_000.msat, IncomingPayment.ReceivedWith.LightningPayment, receivedAt = 110)
-        val inFinal4 = incoming4.copy(received = IncomingPayment.Received(10_000.msat, IncomingPayment.ReceivedWith.LightningPayment, 110))
+        val channelId4 = randomBytes32()
+        db.receivePayment(incoming4.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 10_000.msat, channelId = channelId4, 1)), receivedAt = 110)
+        val inFinal4 = incoming4.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 10_000.msat, channelId = channelId4, 1)), 110))
         db.completeOutgoingPayment(outgoing5.id, randomBytes32(), completedAt = 112)
         val outFinal5 = db.getOutgoingPayment(outgoing5.id)!!
         // outgoing4 and incoming3 are still pending.

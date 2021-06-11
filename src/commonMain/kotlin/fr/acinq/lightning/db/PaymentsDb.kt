@@ -28,11 +28,21 @@ interface IncomingPaymentsDb {
     /**
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
+     *
+     * This method is additive:
+     * - receivedWith set is appended to the existing set in database.
+     * - receivedAt must be updated in database.
+     *
+     * @param receivedWith is a set containing the payment parts holding the incoming amount, its aggregated amount should be equal to the amount param.
      */
-    suspend fun receivePayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, receivedAt: Long = currentTimestampMillis())
+    suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: Set<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
 
-    /** Add and receive a payment. Use this method when receiving a spontaneous payment, for example a swap-in payment. */
-    suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, amount: MilliSatoshi, receivedWith: IncomingPayment.ReceivedWith, createdAt: Long = currentTimestampMillis(), receivedAt: Long = currentTimestampMillis())
+    /** Simultaneously add and receive a payment. Use this method when receiving a spontaneous payment, for example a swap-in payment. */
+    suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, amount: MilliSatoshi, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long = currentTimestampMillis(), receivedAt: Long = currentTimestampMillis())
+
+    /** Update the channel id of the payments parts that have been received with a new channel, for a given payment hash. If there is no payments for this payment hash,
+     * or if the payment has not received any payment parts yet, then this method is a no-op. */
+    suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32)
 
     /** List received payments (with most recent payments first). */
     suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
@@ -95,7 +105,7 @@ sealed class WalletPayment {
 
         /** Fees that applied to the payment. */
         fun fees(payment: WalletPayment): MilliSatoshi = when (payment) {
-            is IncomingPayment -> payment.received?.receivedWith?.fees ?: 0.msat
+            is IncomingPayment -> payment.received?.receivedWith?.map { it.fees }?.sum() ?: 0.msat
             is OutgoingPayment -> payment.fees
         }
     }
@@ -132,18 +142,22 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         }
     }
 
-    data class Received(val amount: MilliSatoshi, val receivedWith: ReceivedWith, val receivedAt: Long = currentTimestampMillis())
+    data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
+        /** Total amount received on this payment, _including_ fees. */
+        val amount = receivedWith.map { it.amount - it.fees }.sum()
+    }
 
     sealed class ReceivedWith {
+        abstract val amount: MilliSatoshi
         abstract val fees: MilliSatoshi
 
         /** Payment was received via existing lightning channels. */
-        object LightningPayment : ReceivedWith() {
+        data class LightningPayment(override val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : ReceivedWith() {
             override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
         /** Payment was received via a new channel opened to us. */
-        data class NewChannel(override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
+        data class NewChannel(override val amount: MilliSatoshi, override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
     }
 
     /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */
