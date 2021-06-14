@@ -111,7 +111,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.SwapIn(address = ""),
-                    amount = action.amount,
                     receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = action.amount, fees = 0.msat, channelId = channelId))
                 )
             }
@@ -126,7 +125,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
-                    amount = action.amount,
                     receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = action.amount, fees = action.origin.fee.toMilliSatoshi(), channelId = channelId))
                 )
             }

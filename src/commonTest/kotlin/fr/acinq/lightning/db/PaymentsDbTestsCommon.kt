@@ -130,17 +130,17 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val db = InMemoryPaymentsDb()
         val preimage = randomBytes32()
         val channelId = randomBytes32()
-        val amount = MilliSatoshi(50_000_000)
         val origin = IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb")
         val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, fees = MilliSatoshi(1234), channelId = channelId))
         assertNull(db.getIncomingPayment(randomBytes32()))
 
-        db.addAndReceivePayment(preimage = preimage, origin = origin, amount = amount, receivedWith = receivedWith)
+        db.addAndReceivePayment(preimage = preimage, origin = origin, receivedWith = receivedWith)
         val payment = db.getIncomingPayment(Crypto.sha256(preimage).toByteVector32())
         assertNotNull(payment)
         assertEquals(origin, payment.origin)
         assertNotNull(payment.received)
         assertEquals(receivedWith, payment.received?.receivedWith)
+        assertEquals(49_998_766.msat, payment.received!!.amount)
     }
 
     @Test
