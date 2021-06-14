@@ -140,15 +140,13 @@ class Peer(
             }
         }
         launch {
-            val watchNotifications = watcher.openWatchNotificationsSubscription()
-            watchNotifications.consumeEach {
+            watcher.openWatchNotificationsFlow().collect {
                 logger.debug { "n:$remoteNodeId notification: $it" }
                 input.send(WrappedChannelEvent(it.channelId, ChannelEvent.WatchReceived(it)))
             }
         }
         launch {
-            val txNotifications = watcher.openTxNotificationsSubscription()
-            txNotifications.consumeEach {
+            watcher.openTxNotificationsFlow().collect {
                 logger.debug { "n:$remoteNodeId tx: ${it.second} for channel: ${it.first}" }
                 input.send(WrappedChannelEvent(it.first, ChannelEvent.GetFundingTxResponse(it.second)))
             }
