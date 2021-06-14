@@ -15,11 +15,9 @@ import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sat
 import fr.acinq.secp256k1.Hex
 import io.ktor.util.*
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.consume
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
@@ -53,7 +51,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val (address, _) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -65,7 +63,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         )
         bitcoincli.generateBlocks(5)
 
-        val confirmed = listener.receive() as WatchEventConfirmed
+        val confirmed = listener.first() as WatchEventConfirmed
         assertEquals(tx.txid, confirmed.tx.txid)
 
         watcher.stop()
@@ -82,7 +80,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         bitcoincli.generateBlocks(5)
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -93,7 +91,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             )
         )
 
-        val confirmed = listener.receive() as WatchEventConfirmed
+        val confirmed = listener.first() as WatchEventConfirmed
         assertEquals(tx.txid, confirmed.tx.txid)
 
         watcher.stop()
@@ -134,7 +132,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
         Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchSpent(
                 ByteVector32.Zeroes,
@@ -150,7 +148,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        val msg = listener.receive() as WatchEventSpent
+        val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
 
         watcher.stop()
@@ -191,7 +189,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
         Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchSpent(
                 ByteVector32.Zeroes,
@@ -209,7 +207,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         client.connect(ServerAddress("localhost", 51001, null))
 
-        val msg = listener.receive() as WatchEventSpent
+        val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
 
         watcher.stop()
@@ -257,7 +255,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchSpent(
                 ByteVector32.Zeroes,
@@ -268,7 +266,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             )
         )
 
-        val msg = listener.receive() as WatchEventSpent
+        val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
 
         watcher.stop()
@@ -301,7 +299,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             }
         }
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -312,7 +310,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             )
         )
 
-        val watchEvent = listener.receive()
+        val watchEvent = listener.first()
         assertTrue(watchEvent is WatchEventConfirmed)
         assertEquals(tx2.txid, watchEvent.tx.txid)
 
@@ -329,7 +327,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val tx = bitcoincli.sendToAddress(address, 1.0)
         val (tx1, tx2) = bitcoincli.createUnspentTxChain(tx, privateKey)
 
-        val listener = watcher.openWatchNotificationsSubscription()
+        val listener = watcher.openWatchNotificationsFlow()
         watcher.watch(
             WatchConfirmed(
                 ByteVector32.Zeroes,
@@ -345,7 +343,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val sentTx2 = bitcoincli.sendRawTransaction(tx2)
         assertEquals(tx2, sentTx2)
 
-        val watchEvent = listener.receive()
+        val watchEvent = listener.first()
         assertTrue(watchEvent is WatchEventConfirmed)
         assertEquals(tx2.txid, watchEvent.tx.txid)
 
@@ -357,7 +355,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
         val watcher = ElectrumWatcher(client, this)
-        val watcherNotifications = watcher.openWatchNotificationsSubscription()
+        val watcherNotifications = watcher.openWatchNotificationsFlow()
 
         suspend fun awaitForBlockCount(height: Int) {
             do {
@@ -426,7 +424,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         bitcoincli.generateBlocks(1) // 156
         bitcoincli.getBlockCount()
 
-        val watchEvent1 = watcherNotifications.receive()
+        val watchEvent1 = watcherNotifications.first()
         assertTrue(watchEvent1 is WatchEventConfirmed)
         assertEquals(tx1.txid, watchEvent1.tx.txid)
 
@@ -451,7 +449,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         bitcoincli.generateBlocks(1) // 159
         bitcoincli.getBlockCount()
 
-        val watchEvent2 = watcherNotifications.receive()
+        val watchEvent2 = watcherNotifications.first()
         assertTrue(watchEvent2 is WatchEventConfirmed)
         assertEquals(tx2.txid, watchEvent2.tx.txid)
 
@@ -466,12 +464,11 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         bitcoincli.generateBlocks(3) // 163
         bitcoincli.getBlockCount()
 
-        val watchEvent3 = watcherNotifications.receive()
+        val watchEvent3 = watcherNotifications.first()
         assertTrue(watchEvent3 is WatchEventSpent)
         assertEquals(tx3.txid, watchEvent3.tx.txid)
         checkIfExistsInMempool(tx3)
 
-        watcherNotifications.cancel()
         watcher.stop()
         client.stop()
     }
@@ -486,9 +483,9 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         // tx is in the blockchain
         val txid1 = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
-        val txNotification = electrumWatcher.openTxNotificationsSubscription()
+        val txNotification = electrumWatcher.openTxNotificationsFlow()
         electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(ByteVector32.Zeroes, txid1)))
-        val res1 = txNotification.consumeAsFlow().first().second
+        val res1 = txNotification.first().second
         assertEquals(res1.txid, txid1)
         assertEquals(
             res1.tx_opt,
@@ -499,7 +496,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         // tx doesn't exist
         val txid2 = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
         electrumWatcher.send(GetTxWithMetaEvent(GetTxWithMeta(ByteVector32.Zeroes, txid2)))
-        val res2 = txNotification.consumeAsFlow().first().second
+        val res2 = txNotification.first().second
         assertEquals(res2.txid, txid2)
         assertNull(res2.tx_opt)
         assertTrue(res2.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync

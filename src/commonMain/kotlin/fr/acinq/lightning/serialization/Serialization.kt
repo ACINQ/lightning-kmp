@@ -1,6 +1,7 @@
 package fr.acinq.lightning.serialization
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.wire.EncryptedChannelData
 
@@ -24,6 +25,8 @@ object Serialization {
         return fr.acinq.lightning.serialization.v2.Serialization.encrypt(key, state)
     }
 
+    fun encrypt(key: PrivateKey, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, state)
+
     fun decrypt(key: ByteVector32, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
         return try {
             fr.acinq.lightning.serialization.v2.Serialization.decrypt(key, data, nodeParams)
@@ -32,6 +35,8 @@ object Serialization {
             fr.acinq.lightning.serialization.v1.Serialization.decrypt(key, data, nodeParams)
         }
     }
+
+    fun decrypt(key: PrivateKey, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data, nodeParams)
 
     fun decrypt(key: ByteVector32, backup: EncryptedChannelData, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray(), nodeParams)
 }
