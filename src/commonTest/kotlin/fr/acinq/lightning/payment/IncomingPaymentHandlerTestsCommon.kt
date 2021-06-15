@@ -971,7 +971,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `mpp success then new HTLC`() = runSuspendTest {
+    fun `reject htlcs for already paid invoices`() = runSuspendTest {
         val (amount1, amount2) = listOf(60_000.msat, 30_000.msat)
         val (channelId1, channelId2) = listOf(randomBytes32(), randomBytes32())
         val totalAmount = amount1 + amount2
