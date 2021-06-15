@@ -933,7 +933,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `mpp success then HTLC local replay`() = runSuspendTest {
+    fun `fulfill locally replayed htlcs`() = runSuspendTest {
         val (amount1, amount2) = listOf(12_000.msat, 50_000.msat)
         val (channelId1, channelId2) = listOf(randomBytes32(), randomBytes32())
         val totalAmount = amount1 + amount2
