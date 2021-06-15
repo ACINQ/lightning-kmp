@@ -173,15 +173,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 if (incomingPayment.received != null) {
                     return when (paymentPart) {
                         is HtlcPart -> {
-                            // The payment for this htlc has already been paid. Two possible scenarios:
+                            // The invoice for this payment hash has already been paid. Two possible scenarios:
                             //
                             // 1) The htlc is a local replay emitted by a channel, but it has already been set as paid in the database.
-                            //    This can happen when the wallet restarts or lose connection to the peer ; then, when reconnecting,
+                            //    This can happen when the wallet is stopped before the commands to fulfill htlcs have reached the channel. When the wallet restarts,
                             //    the channel will ask the handler to reprocess the htlc. So the htlc must be fulfilled again but the
                             //    payments database does not need to be updated.
                             //
                             // 2) This is a new htlc. This can happen when a sender pays an already paid invoice. In that case the
-                            //    htlc is rejected.
+                            //    htlc can be safely rejected.
                             val htlcsMapInDb = incomingPayment.received.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
                                 logger.info { "h:${paymentPart.paymentHash} accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
