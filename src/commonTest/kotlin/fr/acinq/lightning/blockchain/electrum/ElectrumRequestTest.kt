@@ -65,10 +65,37 @@ class ElectrumRequestTest : LightningTestSuite() {
     fun `JsonRPCError deserialization`() {
         val json = Json { ignoreUnknownKeys = true }
         val jsonRpc = buildString {
-            append("""{"jsonrpc":"2.0","error":{"code":-32700,"message":"messages must be encoded in UTF-8"},"id":null}""")
+            append("""
+                {
+                    "jsonrpc": "2.0",
+                    "id":null,
+                    "error": {
+                        "code": -32700,
+                        "message": "messages must be encoded in UTF-8"
+                    }
+                }
+            """.trimIndent())
             appendLine()
         }
         val response = json.decodeFromString(ElectrumResponseDeserializer, jsonRpc)
         assertEquals(Either.Right(JsonRPCResponse(null, JsonNull, JsonRPCError(-32700, "messages must be encoded in UTF-8"))), response)
+    }
+
+    @Test
+    fun `JsonRPCError non-standard format deserialization`() {
+        // electrum may return non standard errors, seemingly taken straight from bitcoin core response.
+        val json = Json { ignoreUnknownKeys = true }
+        val jsonRpc = buildString {
+            append("""
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "error": "sendrawtransaction RPC error: {\"code\":-27,\"message\":\"Transaction already in block chain\"}"
+                }
+            """.trimIndent())
+            appendLine()
+        }
+        val response = json.decodeFromString(ElectrumResponseDeserializer, jsonRpc)
+        assertEquals(Either.Right(JsonRPCResponse(4, JsonNull, JsonRPCError(0, """sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}"""))), response)
     }
 }
