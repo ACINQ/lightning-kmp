@@ -27,10 +27,20 @@ jobs:
       matrix:
         os: [ ubuntu-latest, macOS-latest ]
     steps:
+
+      # 1 - checkout repositories
       - name: Check out
         uses: actions/checkout@v2
         with:
           submodules: 'true'
+      - name: Checkout kodein-log with UTC fork
+        uses: actions/checkout@v2
+        with:
+          repository: dpad85/Kodein-Log
+          ref: utc-timezone
+          path: kodein-log
+
+      # 2 - setup cache and tools
       - name: Cached Konan
         uses: actions/cache@v2
         with:
@@ -52,6 +62,14 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 11
+
+      # 3 - build dependencies
+      - name: Build kodein-log and publish it to local maven
+        run: |
+          cd kodein-log
+          ./gradlew publishToMavenLocal
+
+      # 4 - tests
       - name: Check with integration
         if: matrix.os == 'ubuntu-latest'
         run: ./gradlew check -PintegrationTests=include
