@@ -3,7 +3,6 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
-import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKB
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.utils.*
@@ -190,10 +189,10 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
                         val status = params[1].jsonPrimitive.contentOrNull
                         Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status ?: ""))
                     }
-                    else -> throw SerializationException("JSON-RPC Method ${method.content} is not support")
+                    else -> throw SerializationException("JSON-RPC Method ${method.content} is not supported")
                 }
             }
-            else -> Either.Right(json.decodeFromJsonElement(JsonRPCResponse.serializer(), jsonObject))
+            else -> Either.Right(json.decodeFromJsonElement(JsonRPCResponseDeserializer(json), jsonObject))
         }
     }
 
@@ -203,6 +202,25 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
 
     override val descriptor: SerialDescriptor
         get() = buildClassSerialDescriptor("fr.acinq.lightning.utils.Either")
+}
+
+class JsonRPCResponseDeserializer(val json: Json) : KSerializer<JsonRPCResponse> {
+    override fun deserialize(decoder: Decoder): JsonRPCResponse {
+        val jsonObject = (decoder as? JsonDecoder)?.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected JsonObject")
+        val error = jsonObject["error"]
+        return if (error != null && error is JsonPrimitive && error.isString) {
+            JsonRPCResponse(id = (jsonObject["id"] as? JsonPrimitive)?.intOrNull ?: 0, error = JsonRPCError(code = 0, error.content))
+        } else {
+            json.decodeFromJsonElement(JsonRPCResponse.serializer(), jsonObject)
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: JsonRPCResponse) {
+        throw SerializationException("This ($value) is not meant to be serialized!")
+    }
+
+    override val descriptor: SerialDescriptor
+        get() = buildClassSerialDescriptor("fr.acinq.lightning.utils.JsonRPCResponse")
 }
 
 internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCResponse): ElectrumResponse =
