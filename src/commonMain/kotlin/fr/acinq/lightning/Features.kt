@@ -91,13 +91,82 @@ sealed class Feature {
         override val mandatory get() = 20
     }
 
-    // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
-    // We're not advertising these bits yet in our announcements, clients have to assume support.
-    // This is why we haven't added them yet to `areSupported`.
+    // The following features have not been standardised, hence the high feature bits to avoid conflicts.
+
     @Serializable
     object TrampolinePayment : Feature() {
         override val rfcName get() = "trampoline_payment"
         override val mandatory get() = 50
+    }
+
+    /** This feature bit should be activated when a node accepts having their channel reserve set to 0. */
+    @Serializable
+    object ZeroReserveChannels : Feature() {
+        override val rfcName get() = "zero_reserve_channels"
+        override val mandatory get() = 128
+    }
+
+    /** This feature bit should be activated when a node accepts unconfirmed channels (will set min_depth to 0 in accept_channel). */
+    @Serializable
+    object ZeroConfChannels : Feature() {
+        override val rfcName get() = "zero_conf_channels"
+        override val mandatory get() = 130
+    }
+
+    /** This feature bit should be activated when a mobile node supports waking up via push notifications. */
+    @Serializable
+    object WakeUpNotificationClient : Feature() {
+        override val rfcName get() = "wake_up_notification_client"
+        override val mandatory get() = 132
+    }
+
+    /** This feature bit should be activated when a node supports waking up their peers via push notifications. */
+    @Serializable
+    object WakeUpNotificationProvider : Feature() {
+        override val rfcName get() = "wake_up_notification_provider"
+        override val mandatory get() = 134
+    }
+
+    /** This feature bit should be activated when a node accepts on-the-fly channel creation. */
+    @Serializable
+    object PayToOpenClient : Feature() {
+        override val rfcName get() = "pay_to_open_client"
+        override val mandatory get() = 136
+    }
+
+    /** This feature bit should be activated when a node supports opening channels on-the-fly when liquidity is missing to receive a payment. */
+    @Serializable
+    object PayToOpenProvider : Feature() {
+        override val rfcName get() = "pay_to_open_provider"
+        override val mandatory get() = 138
+    }
+
+    /** This feature bit should be activated when a node accepts channel creation via trusted swaps-in. */
+    @Serializable
+    object TrustedSwapInClient : Feature() {
+        override val rfcName get() = "trusted_swap_in_client"
+        override val mandatory get() = 140
+    }
+
+    /** This feature bit should be activated when a node supports opening channels in exchange for on-chain funds (swap-in). */
+    @Serializable
+    object TrustedSwapInProvider : Feature() {
+        override val rfcName get() = "trusted_swap_in_provider"
+        override val mandatory get() = 142
+    }
+
+    /** This feature bit should be activated when a node wants to send channel backups to their peers. */
+    @Serializable
+    object ChannelBackupClient : Feature() {
+        override val rfcName get() = "channel_backup_client"
+        override val mandatory get() = 144
+    }
+
+    /** This feature bit should be activated when a node stores channel backups for their peers. */
+    @Serializable
+    object ChannelBackupProvider : Feature() {
+        override val rfcName get() = "channel_backup_provider"
+        override val mandatory get() = 146
     }
 }
 
@@ -153,7 +222,17 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
             Feature.AnchorOutputs,
-            Feature.TrampolinePayment
+            Feature.TrampolinePayment,
+            Feature.ZeroReserveChannels,
+            Feature.ZeroConfChannels,
+            Feature.WakeUpNotificationClient,
+            Feature.WakeUpNotificationProvider,
+            Feature.PayToOpenClient,
+            Feature.PayToOpenProvider,
+            Feature.TrustedSwapInClient,
+            Feature.TrustedSwapInProvider,
+            Feature.ChannelBackupClient,
+            Feature.ChannelBackupProvider,
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
