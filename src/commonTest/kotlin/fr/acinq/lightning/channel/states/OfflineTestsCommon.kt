@@ -225,6 +225,69 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `resume htlc settlement`() {
+        val (alice0, bob0, revB) = run {
+            val (alice0, bob0) = TestsHelper.reachNormal()
+            val (nodes1, r1, htlc1) = TestsHelper.addHtlc(15_000_000.msat, bob0, alice0)
+            val (bob1, alice1) = TestsHelper.crossSign(nodes1.first, nodes1.second)
+            val (bob2, alice2) = TestsHelper.fulfillHtlc(htlc1.id, r1, bob1, alice1)
+            val (alice3, bob3) = TestsHelper.crossSign(alice2, bob2)
+            val (nodes2, r2, htlc2) = TestsHelper.addHtlc(25_000_000.msat, bob3, alice3)
+            val (bob4, alice4) = TestsHelper.crossSign(nodes2.first, nodes2.second)
+            val (bob5, alice5) = TestsHelper.fulfillHtlc(htlc2.id, r2, bob4, alice4)
+            val (alice6, actionsAlice) = alice5.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+            val commitSig = actionsAlice.findOutgoingMessage<CommitSig>()
+            val (bob6, actionsBob) = bob5.processEx(ChannelEvent.MessageReceived(commitSig))
+            val revokeAndAck = actionsBob.findOutgoingMessage<RevokeAndAck>()
+            assertTrue(alice6 is Normal)
+            assertTrue(bob6 is Normal)
+            Triple(alice6, bob6, revokeAndAck)
+        }
+
+        val (alice1, _) = alice0.processEx(ChannelEvent.Disconnected)
+        val (bob1, _) = bob0.processEx(ChannelEvent.Disconnected)
+        assertTrue(alice1 is Offline)
+        assertTrue(bob1 is Offline)
+
+        val initA = Init(ByteVector(alice0.commitments.localParams.features.toByteArray()))
+        val initB = Init(ByteVector(bob0.commitments.localParams.features.toByteArray()))
+        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.Connected(initA, initB))
+        assertTrue(alice2 is Syncing)
+        val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+        val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.Connected(initB, initA))
+        assertTrue(bob2 is Syncing)
+        val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(channelReestablishA.nextLocalCommitmentNumber, 4)
+        assertEquals(channelReestablishA.nextRemoteRevocationNumber, 3)
+        assertEquals(channelReestablishB.nextLocalCommitmentNumber, 5)
+        assertEquals(channelReestablishB.nextRemoteRevocationNumber, 3)
+
+        val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.MessageReceived(channelReestablishB))
+        // alice does not re-send messages bob already received
+        assertTrue(actionsAlice3.filterIsInstance<ChannelAction.Message.Send>().isEmpty())
+
+        val (bob3, actionsBob3) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishA))
+        assertEquals(1, actionsBob3.filterIsInstance<ChannelAction.Message.Send>().size)
+        assertEquals(revB, actionsBob3.findOutgoingMessage())
+        actionsBob3.hasCommand<CMD_SIGN>()
+        val (bob4, actionsBob4) = bob3.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val sigB = actionsBob4.findOutgoingMessage<CommitSig>()
+
+        val (alice4, actionsAlice4) = alice3.processEx(ChannelEvent.MessageReceived(revB))
+        assertTrue(actionsAlice4.filterIsInstance<ChannelAction.Message.Send>().isEmpty())
+        val (alice5, actionsAlice5) = alice4.processEx(ChannelEvent.MessageReceived(sigB))
+        val revA = actionsAlice5.findOutgoingMessage<RevokeAndAck>()
+
+        val (bob5, actionsBob5) = bob4.processEx(ChannelEvent.MessageReceived(revA))
+        assertTrue(actionsBob5.filterIsInstance<ChannelAction.Message.Send>().isEmpty())
+
+        assertTrue(alice5 is Normal)
+        assertTrue(bob5 is Normal)
+        assertEquals(4, alice5.commitments.localCommit.index)
+        assertEquals(4, bob5.commitments.localCommit.index)
+    }
+
+    @Test
     fun `discover that we have a revoked commitment`() {
         val (alice, aliceOld, bob) = run {
             val (alice0, bob0) = TestsHelper.reachNormal()

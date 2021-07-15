@@ -3071,6 +3071,10 @@ object Channel {
                 sendQueue.add(ChannelAction.Message.Send(commitments1.remoteNextCommitInfo.left!!.sent))
                 if (revWasSentLast) resendRevocation()
             }
+            commitments1.remoteNextCommitInfo.isRight && commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber -> {
+                // there wasn't any sig in-flight when the disconnection occurred
+                resendRevocation()
+            }
         }
 
         if (commitments1.localHasChanges()) {
