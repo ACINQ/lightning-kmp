@@ -332,13 +332,12 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertEquals(error.toAscii(), PleasePublishYourCommitment(aliceOld.channelId).message)
         assertTrue(alice3 is WaitForRemotePublishFutureCommitment)
 
-        // bob is nice and publishes its commitment
-        val (bob3, _) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishA))
-        val (bob4, actionsBob4) = bob3.processEx(ChannelEvent.MessageReceived(error))
-        assertTrue(bob4 is Closing)
-        assertNotNull(bob4.localCommitPublished)
-        val bobCommitTx = bob4.localCommitPublished!!.commitTx
-        actionsBob4.hasTx(bobCommitTx)
+        // bob is nice and publishes its commitment as soon as it detects that alice has an outdated commitment
+        val (bob3, actionsBob3) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishA))
+        assertTrue(bob3 is Closing)
+        assertNotNull(bob3.localCommitPublished)
+        val bobCommitTx = bob3.localCommitPublished!!.commitTx
+        actionsBob3.hasTx(bobCommitTx)
 
         // alice is able to claim her main output
         val (alice4, actionsAlice4) = alice3.processEx(ChannelEvent.WatchReceived(WatchEventSpent(aliceOld.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))

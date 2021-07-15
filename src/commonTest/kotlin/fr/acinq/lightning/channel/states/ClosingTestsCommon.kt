@@ -1093,22 +1093,23 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(bob1 is Syncing)
         val channelReestablishB = bobActions1.findOutgoingMessage<ChannelReestablish>()
 
-        // peers exchange channel_reestablish messages
+        // alice realizes it has an old state and asks bob to publish its current commitment
         val (alice2, aliceActions2) = alice1.processEx(ChannelEvent.MessageReceived(channelReestablishB))
-        val (bob2, _) = bob1.processEx(ChannelEvent.MessageReceived(channelReestablishA))
-        assertNotEquals(bob0, bob2)
-
-        // alice then realizes it has an old state...
         assertTrue(alice2 is WaitForRemotePublishFutureCommitment)
         val error = aliceActions2.findOutgoingMessage<Error>()
         assertEquals(PleasePublishYourCommitment(alice2.channelId).message, error.toAscii())
-        // ... and asks bob to publish its current commitment
-        val (bob3, bobActions3) = bob2.processEx(ChannelEvent.MessageReceived(error))
-        assertTrue(bob3 is Closing)
-        bobActions3.has<ChannelAction.Storage.StoreChannelClosing>()
-        // bob is nice and publishes its commitment
-        val bobCommitTx = bob3.commitments.localCommit.publishableTxs.commitTx.tx
+
+        // bob is nice and publishes its commitment as soon as it detects that alice has an outdated commitment
+        val (bob2, bobActions2) = bob1.processEx(ChannelEvent.MessageReceived(channelReestablishA))
+        assertTrue(bob2 is Closing)
+        bobActions2.has<ChannelAction.Storage.StoreChannelClosing>()
+        bobActions2.hasOutgoingMessage<Error>()
+        val bobCommitTx = bob2.commitments.localCommit.publishableTxs.commitTx.tx
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs + 2 anchors + 2 HTLCs
+
+        val (bob3, bobActions3) = bob2.processEx(ChannelEvent.MessageReceived(error))
+        assertEquals(bob2, bob3)
+        assertTrue(bobActions3.isEmpty())
 
         val (alice3, aliceActions3) = alice2.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
         assertTrue(alice3 is Closing)
