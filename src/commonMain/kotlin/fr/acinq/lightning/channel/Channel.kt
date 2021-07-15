@@ -160,6 +160,7 @@ sealed class ChannelState {
             val (newState, actions) = processInternal(event)
             val oldState = when (this) {
                 is Offline -> this.state
+                is Syncing -> this.state
                 else -> this
             }
             val actions1 = when {
@@ -955,30 +956,36 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
                                     actions.add(ChannelAction.Message.Send(fundingLocked))
                                 }
-                                val (commitments1, sendQueue1) = handleSync(event.message, state, keyManager, logger)
-                                actions.addAll(sendQueue1)
 
-                                // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-                                state.localShutdown?.let {
-                                    logger.debug { "c:${state.channelId} re-sending local shutdown" }
-                                    actions.add(ChannelAction.Message.Send(it))
+                                try {
+                                    val (commitments1, sendQueue1) = handleSync(event.message, state, keyManager, logger)
+                                    actions.addAll(sendQueue1)
+
+                                    // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+                                    state.localShutdown?.let {
+                                        logger.debug { "c:${state.channelId} re-sending local shutdown" }
+                                        actions.add(ChannelAction.Message.Send(it))
+                                    }
+
+                                    if (!state.buried) {
+                                        // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
+                                        // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
+                                        val watchConfirmed = WatchConfirmed(
+                                            state.channelId,
+                                            state.commitments.commitInput.outPoint.txid,
+                                            state.commitments.commitInput.txOut.publicKeyScript,
+                                            ANNOUNCEMENTS_MINCONF.toLong(),
+                                            BITCOIN_FUNDING_DEEPLYBURIED
+                                        )
+                                        actions.add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
+                                    }
+
+                                    logger.info { "c:${state.channelId} switching to ${state::class}" }
+                                    Pair(state.copy(commitments = commitments1), actions)
+                                } catch (e: RevocationSyncError) {
+                                    val error = Error(state.channelId, e.message)
+                                    state.spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
                                 }
-
-                                if (!state.buried) {
-                                    // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
-                                    // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
-                                    val watchConfirmed = WatchConfirmed(
-                                        state.channelId,
-                                        state.commitments.commitInput.outPoint.txid,
-                                        state.commitments.commitInput.txOut.publicKeyScript,
-                                        ANNOUNCEMENTS_MINCONF.toLong(),
-                                        BITCOIN_FUNDING_DEEPLYBURIED
-                                    )
-                                    actions.add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                                }
-
-                                logger.info { "c:${state.channelId} switching to ${state::class}" }
-                                Pair(state.copy(commitments = commitments1), actions)
                             }
                         }
                     }
@@ -3071,6 +3078,11 @@ object Channel {
                 sendQueue.add(ChannelAction.Message.Send(commitments1.remoteNextCommitInfo.left!!.sent))
                 if (revWasSentLast) resendRevocation()
             }
+            commitments1.remoteNextCommitInfo.isRight && commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber -> {
+                // there wasn't any sig in-flight when the disconnection occurred
+                resendRevocation()
+            }
+            else -> throw RevocationSyncError(d.channelId)
         }
 
         if (commitments1.localHasChanges()) {
