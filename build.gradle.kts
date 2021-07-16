@@ -9,7 +9,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.0-beta13"
+    version = "1.0-SNAPSHOT"
 
     repositories {
         mavenLocal()
