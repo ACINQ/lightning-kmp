@@ -507,7 +507,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with a mix of HTLC and pay-to-open (amount too low)`() = runSuspendTest {
+    fun `receive multipart payment with a mix of HTLC and pay-to-open (total amount too low)`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
@@ -525,7 +525,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 2 of 2:
         // - Alice sends second multipart htlc to Bob
-        // - Bob now accepts the MPP set
+        // - Bob has received the complete MPP set
         run {
             val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret), payToOpenMinAmount = 200_000.msat)
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
@@ -549,6 +549,79 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         )
                     )
                 )
+            )
+            assertEquals(expected, result.actions.toSet())
+        }
+    }
+
+    @Test
+    fun `receive multipart payment with a mix of HTLC and pay-to-open (amount of the pay-to-open parts too low)`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val (amount1, amount2, amount3) = Triple(100_000.msat, 30_000.msat, 20_000.msat)
+        val totalAmount = amount1 + amount2 + amount3
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
+
+        // Step 1 of 3:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
+            assertTrue { result.actions.isEmpty() }
+        }
+
+        // Step 2 of 3:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        val payToOpenRequest1 = run {
+            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret), payToOpenMinAmount = 75_000.msat)
+            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
+            assertTrue { result.actions.isEmpty() }
+            payToOpenRequest
+        }
+
+        // Step 3 of 3:
+        // - Alice sends last multipart htlc to Bob
+        // - Bob has received the complete MPP set
+        run {
+            val payToOpenRequest2 = makePayToOpenRequest(incomingPayment, makeMppPayload(amount3, totalAmount, paymentSecret), payToOpenMinAmount = 75_000.msat)
+            val result = paymentHandler.process(payToOpenRequest2, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+            val expected = setOf(
+                WrappedChannelEvent(
+                    channelId,
+                    ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+                ),
+                PayToOpenResponseEvent(
+                    PayToOpenResponse(
+                        payToOpenRequest1.chainHash,
+                        payToOpenRequest1.paymentHash,
+                        PayToOpenResponse.Result.Failure(
+                            OutgoingPacket.buildHtlcFailure(
+                                paymentHandler.nodeParams.nodePrivateKey,
+                                payToOpenRequest1.paymentHash,
+                                payToOpenRequest1.finalPacket,
+                                CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong()))
+                            ).right!!
+                        )
+                    )
+                ),
+                PayToOpenResponseEvent(
+                    PayToOpenResponse(
+                        payToOpenRequest2.chainHash,
+                        payToOpenRequest2.paymentHash,
+                        PayToOpenResponse.Result.Failure(
+                            OutgoingPacket.buildHtlcFailure(
+                                paymentHandler.nodeParams.nodePrivateKey,
+                                payToOpenRequest2.paymentHash,
+                                payToOpenRequest2.finalPacket,
+                                CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong()))
+                            ).right!!
+                        )
+                    )
+                ),
             )
             assertEquals(expected, result.actions.toSet())
         }
@@ -1004,8 +1077,15 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val add = htlc1.copy(id = 3)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-            val expected = WrappedChannelEvent(channelId1, ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(3, CMD_FAIL_HTLC.Reason.Failure(
-                IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)))
+            val expected = WrappedChannelEvent(
+                channelId1, ChannelEvent.ExecuteCommand(
+                    CMD_FAIL_HTLC(
+                        3, CMD_FAIL_HTLC.Reason.Failure(
+                            IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
+                        ), commit = true
+                    )
+                )
+            )
             assertEquals(setOf(expected), result.actions.toSet())
         }
 
@@ -1015,8 +1095,15 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val add = htlc2.copy(channelId = channelId3)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-            val expected = WrappedChannelEvent(channelId3, ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(htlc2.id, CMD_FAIL_HTLC.Reason.Failure(
-                IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)))
+            val expected = WrappedChannelEvent(
+                channelId3, ChannelEvent.ExecuteCommand(
+                    CMD_FAIL_HTLC(
+                        htlc2.id, CMD_FAIL_HTLC.Reason.Failure(
+                            IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
+                        ), commit = true
+                    )
+                )
+            )
             assertEquals(setOf(expected), result.actions.toSet())
         }
     }
