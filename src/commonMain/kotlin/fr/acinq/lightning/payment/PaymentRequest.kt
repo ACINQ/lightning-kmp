@@ -125,7 +125,7 @@ data class PaymentRequest(
         val int5s = ArrayList<Int5>()
         while (stream.bitCount() >= 5) int5s.add(read5())
 
-        return Bech32.encode(hrp(), int5s.toByteArray())
+        return Bech32.encode(hrp(), int5s.toByteArray(), Bech32.Encoding.Bech32)
     }
 
     companion object {
