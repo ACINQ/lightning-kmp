@@ -397,6 +397,10 @@ data class PaymentRequest(
         /** Fallback on-chain payment address to be used if LN payment cannot be processed */
         @Serializable
         data class FallbackAddress(val version: Byte, @Contextual val data: ByteVector) : TaggedField() {
+            init {
+                // see BOLT 11: MUST skip over unknown fields, OR an f field with unknown version
+                require(version == 17.toByte() || version == 18.toByte() || version == 0.toByte()){ "unknown version $version" }
+            }
             override val tag: Int5 = FallbackAddress.tag
             override fun encode(): List<Int5> = listOf(version) + Bech32.eight2five(data.toByteArray()).toList()
 
