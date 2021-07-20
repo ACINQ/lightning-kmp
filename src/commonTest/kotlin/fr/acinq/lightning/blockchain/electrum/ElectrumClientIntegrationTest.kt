@@ -66,7 +66,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
         client.sendElectrumRequest(EstimateFees(3))
 
         notifications.consumerCheck<EstimateFeeResponse> { message ->
-            assertTrue { message.feerate!!.feerate >= Satoshi(FeeratePerKw.MinimumRelayFeeRate.toLong()) }
+            assertTrue { message.feerate!! >= FeeratePerKw.MinimumFeeratePerKw }
         }
 
         client.stop()
