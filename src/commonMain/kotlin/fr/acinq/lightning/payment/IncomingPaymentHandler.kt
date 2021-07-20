@@ -223,7 +223,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             pending[paymentPart.paymentHash] = payment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
-                        payToOpenMinAmount != null && payToOpenAmount < payToOpenMinAmount -> {
+                        payToOpenMinAmount != null && (payToOpenAmount < payToOpenMinAmount || payToOpenAmount < nodeParams.minFundingSatoshis) -> {
                             // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
                             // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
                             // rejected pay-to-open parts as they arrived, but it would have caused two issues:
