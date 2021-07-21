@@ -233,7 +233,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             //   regarding the failed pay-to-open
                             // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
                             // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
-                            logger.warning { "h:${paymentPart.paymentHash} amount received is too low for a pay-to-open (minimum ${payToOpenMinAmount}, received ${payment.amountReceived})" }
+                            logger.warning { "h:${paymentPart.paymentHash} amount received is too low for a pay-to-open (minimum ${payToOpenMinAmount}, minimum funding amount ${nodeParams.minFundingSatoshis}, received ${payToOpenAmount})" }
                             val actions = payment.parts.map { part ->
                                 val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                                 when (part) {
