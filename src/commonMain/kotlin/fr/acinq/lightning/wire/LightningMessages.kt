@@ -1038,7 +1038,7 @@ data class ClosingSigned(
  * @param chainHash chain we're on.
  * @param fundingSatoshis total capacity of the channel our peer will open to us (some of the funds may be on their side).
  * @param amountMsat payment amount covered by this new channel: we will receive push_msat = amountMsat - fees.
- * @param payToOpenMinAmountMsat minimum amount for a pay-to-open to be attempted, this should be compared to the total amount in the case of an AMP payment.
+ * @param payToOpenMinAmountMsat minimum amount for a pay-to-open to be attempted, this should be compared to the total amount in the case of an MPP payment.
  * @param payToOpenFeeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
  * @param paymentHash payment hash.
  * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
