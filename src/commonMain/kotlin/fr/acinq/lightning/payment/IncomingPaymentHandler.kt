@@ -223,7 +223,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             pending[paymentPart.paymentHash] = payment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
-                        payToOpenMinAmount != null && (payToOpenAmount < payToOpenMinAmount || payToOpenAmount < nodeParams.minFundingSatoshis) -> {
+                        payToOpenMinAmount != null && payToOpenAmount < payToOpenMinAmount -> {
                             // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
                             // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
                             // rejected pay-to-open parts as they arrived, but it would have caused two issues:
@@ -233,7 +233,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             //   regarding the failed pay-to-open
                             // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
                             // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
-                            logger.warning { "h:${paymentPart.paymentHash} amount received is too low for a pay-to-open (minimum ${payToOpenMinAmount}, minimum funding amount ${nodeParams.minFundingSatoshis}, received ${payToOpenAmount})" }
+                            logger.warning { "h:${paymentPart.paymentHash} amount received is too low for a pay-to-open (minimum ${payToOpenMinAmount}, received ${payToOpenAmount})" }
                             val actions = payment.parts.map { part ->
                                 val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                                 when (part) {
@@ -333,11 +333,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 //
                 //   Note: this allows the origin node to reduce information leakage by altering
                 //   the amount while not allowing for accidental gross overpayment.
-                logger.warning { "h:${paymentPart.paymentHash} received invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                logger.warning { "h:${paymentPart.paymentHash} invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
-                logger.warning { "h:${paymentPart.paymentHash} received payment with expiry too small: received ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
+                logger.warning { "h:${paymentPart.paymentHash} payment with expiry too small: received ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
+                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+            }
+            paymentPart is PayToOpenPart && paymentPart.payToOpenRequest.fundingSatoshis < nodeParams.minFundingSatoshis -> {
+                logger.warning { "h:${paymentPart.payToOpenRequest.paymentHash} received invalid funding amount for a pay-to-open: ${paymentPart.payToOpenRequest.fundingSatoshis}, min is ${nodeParams.minFundingSatoshis}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             else -> Either.Right(incomingPayment)
