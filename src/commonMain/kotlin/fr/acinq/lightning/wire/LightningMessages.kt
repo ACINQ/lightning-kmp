@@ -1084,23 +1084,6 @@ data class PayToOpenRequest(
                 finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input)
             )
         }
-
-        /**
-         * We use this method for non-trampoline multipart payments.
-         * The aggregation is done by the wallet, which may receive several pay-to-open requests for the same payment.
-         * Combining the requests allows us to create a single channel.
-         *
-         * We return the total amount for this set of pay-to-open requests, and the fee that will be deducted when the channel will be opened.
-         */
-        fun combine(requests: List<PayToOpenRequest>): Pair<MilliSatoshi, Satoshi> {
-            require(requests.isNotEmpty()) { "there needs to be at least one pay-to-open request" }
-            require(requests.map { it.chainHash }.toSet().size == 1) { "all pay-to-open chain hash must be equal" }
-            require(requests.map { it.paymentHash }.toSet().size == 1) { "all pay-to-open payment hash must be equal" }
-            require(requests.map { it.payToOpenMinAmountMsat }.toSet().size == 1) { "all pay-to-open min amounts must be equal" }
-            val totalAmount = requests.map { it.amountMsat }.sum()
-            val fees = requests.map { it.payToOpenFeeSatoshis }.sum()
-            return Pair(totalAmount, fees)
-        }
     }
 }
 
