@@ -3,6 +3,7 @@ package fr.acinq.lightning.db
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -287,6 +288,55 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertFails { db.completeOutgoingPayment(UUID.randomUUID(), preimage, 130) }
         assertEquals(paymentSucceeded, db.getOutgoingPayment(initialPayment.id))
         partsSettled.parts.forEach { assertEquals(paymentSucceeded, db.getOutgoingPart(it.id)) }
+    }
+
+    @Test
+    fun `outgoing payment from closed channel`() = runSuspendTest {
+
+        // When a channel is closed, a corresponding OutgoingPayment is
+        // automatically injected into the database (the user's ledger).
+        // The payment.recipientAmount is set to the channel's local balance
+        // at the time the channel is closed.
+
+        val (db, _, pr) = createFixture()
+        val paymentId = UUID.randomUUID()
+        val channelBalance = 100_000_000.msat
+        val pendingPayment = OutgoingPayment(
+            id = paymentId,
+            recipientAmount = channelBalance,
+            recipient = pr.nodeId,
+            details = OutgoingPayment.Details.ChannelClosing(
+                channelId = randomBytes32(),
+                closingAddress = "",
+                isSentToDefaultAddress = true
+            ),
+            parts = listOf(),
+            status = OutgoingPayment.Status.Pending
+        )
+        db.addOutgoingPayment(pendingPayment)
+
+        // Fees should be zero at this point, since the payment is still Pending.
+        // It's not completed until the transactions are confirmed on the blockchain.
+        assertEquals(pendingPayment.fees, MilliSatoshi(0))
+
+        val fundsLost = Satoshi(100)
+        db.completeOutgoingPayment(
+            id = paymentId,
+            completed = OutgoingPayment.Status.Completed.Succeeded.OnChain(
+                txids = listOf(),
+                claimed = channelBalance.truncateToSatoshi() - fundsLost,
+                closingType = ChannelClosingType.Mutual
+            )
+        )
+
+        val completedPayment = db.getOutgoingPayment(paymentId)
+        assertNotNull(completedPayment)
+
+        // Now that the payment has been settled on-chain, the fees can be calculated.
+        // If we failed to claim any amount of the channel balance,
+        // we can consider these as fees (in a generic sense).
+        // The UI is expected to provide a more detailed explanation.
+        assertEquals(completedPayment.fees, fundsLost.toMilliSatoshi())
     }
 
     @Test
