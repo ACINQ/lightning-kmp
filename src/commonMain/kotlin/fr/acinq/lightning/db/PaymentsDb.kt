@@ -87,28 +87,24 @@ enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing 
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
-    companion object {
-        /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
-        fun completedAt(payment: WalletPayment): Long = when (payment) {
-            is IncomingPayment -> payment.received?.receivedAt ?: 0
-            is OutgoingPayment -> when (val status = payment.status) {
-                is OutgoingPayment.Status.Completed -> status.completedAt
-                else -> 0
-            }
-        }
-
-        /** Amount sent or received. */
-        fun amount(payment: WalletPayment): MilliSatoshi = when (payment) {
-            is IncomingPayment -> payment.received?.amount ?: 0.msat
-            is OutgoingPayment -> payment.recipientAmount + payment.fees
-        }
-
-        /** Fees that applied to the payment. */
-        fun fees(payment: WalletPayment): MilliSatoshi = when (payment) {
-            is IncomingPayment -> payment.received?.receivedWith?.map { it.fees }?.sum() ?: 0.msat
-            is OutgoingPayment -> payment.fees
+    /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
+    fun completedAt(): Long = when (this) {
+        is IncomingPayment -> received?.receivedAt ?: 0
+        is OutgoingPayment -> when (status) {
+            is OutgoingPayment.Status.Completed -> status.completedAt
+            else -> 0
         }
     }
+
+    /** Fees applied to complete this payment. */
+    abstract val fees: MilliSatoshi
+
+    /**
+     * The actual amount that has been sent or received:
+     * - for outgoing payments, the fee is included. This is what left the wallet;
+     * - for incoming payments, the is the amount AFTER the fees are applied. This is what went into the wallet.
+     */
+    abstract val amount: MilliSatoshi
 }
 
 /**
@@ -124,6 +120,12 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, null, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+
+    /** Total fees paid to receive this payment. */
+    override val fees: MilliSatoshi = received?.fees ?: 0.msat
+
+    /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
+    override val amount: MilliSatoshi = received?.amount ?: 0.msat
 
     sealed class Origin {
         /** A normal, invoice-based lightning payment. */
@@ -143,12 +145,16 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     }
 
     data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
-        /** Total amount received on this payment, _including_ fees. */
-        val amount = receivedWith.map { it.amount - it.fees }.sum()
+        /** Total amount received after applying the fees. */
+        val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+        /** Fees applied to receive this payment. */
+        val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
     }
 
     sealed class ReceivedWith {
+        /** Amount received for this part after applying the fees. This is the final amount we can use. */
         abstract val amount: MilliSatoshi
+        /** Fees applied to receive this part. Is zero for Lightning payments. */
         abstract val fees: MilliSatoshi
 
         /** Payment was received via existing lightning channels. */
@@ -156,7 +162,13 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
-        /** Payment was received via a new channel opened to us. */
+        /**
+         * Payment was received via a new channel opened to us.
+         *
+         * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
+         * @param fees Fees paid to open this channel.
+         * @param channelId the long id of the channel created to receive this payment. May be null if the channel id is not known.
+         */
         data class NewChannel(override val amount: MilliSatoshi, override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
     }
 
@@ -179,7 +191,8 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
-    val fees: MilliSatoshi = when (status) {
+
+    override val fees: MilliSatoshi = when (status) {
         is Status.Pending -> 0.msat
         is Status.Completed.Failed -> 0.msat
         is Status.Completed.Succeeded.OffChain -> {
@@ -189,6 +202,9 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
             recipientAmount - status.claimed.toMilliSatoshi()
         }
     }
+
+    /** Amount actually sent for this payment. It does include the fees. */
+    override val amount: MilliSatoshi = recipientAmount + fees
 
     sealed class Details {
         abstract val paymentHash: ByteVector32

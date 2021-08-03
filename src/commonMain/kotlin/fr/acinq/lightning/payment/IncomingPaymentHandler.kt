@@ -268,8 +268,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                             result = PayToOpenResponse.Result.Success(incomingPayment.preimage)
                                         )
                                     ) to IncomingPayment.ReceivedWith.NewChannel(
-                                        amount = part.amount,
+                                        // The part's amount is the full amount, including the fee. The fee must be subtracted.
+                                        amount = part.amount - part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         fees = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
+                                        // At that point we do not know the channel's id. It will be set later on.
                                         channelId = null
                                     )
                                 }
