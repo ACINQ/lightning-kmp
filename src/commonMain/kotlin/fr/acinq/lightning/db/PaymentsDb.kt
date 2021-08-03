@@ -182,8 +182,11 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
     val fees: MilliSatoshi = when (status) {
         is Status.Pending -> 0.msat
         is Status.Completed.Failed -> 0.msat
-        is Status.Completed.Succeeded -> {
+        is Status.Completed.Succeeded.OffChain -> {
             parts.filter { it.status is Part.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+        }
+        is Status.Completed.Succeeded.OnChain -> {
+            recipientAmount - status.claimed.toMilliSatoshi()
         }
     }
 
