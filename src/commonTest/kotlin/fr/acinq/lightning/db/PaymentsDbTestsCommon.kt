@@ -59,11 +59,12 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.receivePayment(pr.paymentHash, setOf(
             IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
             IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
-            IncomingPayment.ReceivedWith.NewChannel(amount = 100_000.msat, channelId = channelId3, fees = 1_000.msat)
+            IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, fees = 1_000.msat)
         ), 110)
         val received = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received)
-        assertEquals(199_000.msat, received.received!!.amount)
+        assertEquals(199_000.msat, received.amount)
+        assertEquals(1_000.msat, received.fees)
         assertEquals(3, received.received!!.receivedWith.size)
         assertEquals(57_000.msat, received.received!!.receivedWith.elementAt(0).amount)
         assertEquals(0.msat, received.received!!.receivedWith.elementAt(0).fees)
@@ -86,7 +87,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val received1 = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received1)
         assertNotNull(received1.received)
-        assertEquals(200_000.msat, received1.received!!.amount)
+        assertEquals(200_000.msat, received1.amount)
 
         db.receivePayment(pr.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(
             amount = 100_000.msat,
@@ -96,7 +97,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val received2 = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received2)
         assertNotNull(received2.received)
-        assertEquals(300_000.msat, received2.received!!.amount)
+        assertEquals(300_000.msat, received2.amount)
         assertEquals(150, received2.received!!.receivedAt)
         assertEquals(setOf(
             IncomingPayment.ReceivedWith.LightningPayment(
@@ -123,7 +124,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         )), 110)
         val received1 = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received1?.received)
-        assertEquals(485_000.msat, received1!!.received!!.amount)
+        assertEquals(500_000.msat, received1!!.amount)
+        assertEquals(15_000.msat, received1.fees)
     }
 
     @Test
@@ -141,7 +143,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertEquals(origin, payment.origin)
         assertNotNull(payment.received)
         assertEquals(receivedWith, payment.received?.receivedWith)
-        assertEquals(49_998_766.msat, payment.received!!.amount)
+        assertEquals(50_000_000.msat, payment.amount)
+        assertEquals(1234.msat, payment.fees)
     }
 
     @Test

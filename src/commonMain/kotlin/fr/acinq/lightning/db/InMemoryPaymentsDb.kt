@@ -61,7 +61,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         incoming.values
             .asSequence()
             .filter { it.received != null && it.origin.matchesFilters(filters) }
-            .sortedByDescending { WalletPayment.completedAt(it) }
+            .sortedByDescending { it.completedAt() }
             .drop(skip)
             .take(count)
             .toList()
@@ -127,7 +127,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         outgoing.values
             .asSequence()
             .filter { it.details.matchesFilters(filters) && (it.status is OutgoingPayment.Status.Completed) }
-            .sortedByDescending { WalletPayment.completedAt(it) }
+            .sortedByDescending { it.completedAt() }
             .drop(skip)
             .take(count)
             .toList()
@@ -136,7 +136,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         val incoming: List<WalletPayment> = listReceivedPayments(count + skip, 0, filters)
         val outgoing: List<WalletPayment> = listOutgoingPayments(count + skip, 0, filters)
         return (incoming + outgoing)
-            .sortedByDescending { WalletPayment.completedAt(it) }
+            .sortedByDescending { it.completedAt() }
             .drop(skip)
             .take(count)
     }

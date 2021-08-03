@@ -161,7 +161,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         val expectedFees = defaultAmount * 0.1 // 10% fees
         assertEquals(defaultAmount - expectedFees, result.received.amount)
-        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = defaultAmount, expectedFees, channelId = null)), result.received.receivedWith)
+        assertEquals(expectedFees, result.received.fees)
+        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = defaultAmount - expectedFees, expectedFees, channelId = null)), result.received.receivedWith)
 
         checkDbPayment(result.incomingPayment, paymentHandler.db)
     }
@@ -365,7 +366,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertTrue { dbPayment.origin is IncomingPayment.Origin.KeySend }
         assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, fees = 1_000_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
-        assertEquals(14_000_000.msat, dbPayment.received?.amount)
+        assertEquals(15_000_000.msat, dbPayment.received?.amount)
+        assertEquals(1_000_000.msat, dbPayment.received?.fees)
     }
 
     @Test
@@ -381,7 +383,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertTrue { dbPayment.origin is IncomingPayment.Origin.SwapIn }
         assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 33_000_000.msat, fees = 1_200_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
-        assertEquals(31_800_000.msat, dbPayment.received?.amount)
+        assertEquals(33_000_000.msat, dbPayment.received?.amount)
+        assertEquals(1_200_000.msat, dbPayment.received?.fees)
     }
 
     @Test
@@ -465,6 +468,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `receive multipart payment via pay-to-open`() = runSuspendTest {
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val (fee1, fee2) = Pair(amount1 * 0.1, amount2 * 0.1)
         val totalAmount = amount1 + amount2
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
@@ -488,13 +492,14 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val (expectedActions, expectedReceivedWith) = setOf(
                 PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-                        to IncomingPayment.ReceivedWith.NewChannel(amount1, amount1 * 0.1, null),
+                        to IncomingPayment.ReceivedWith.NewChannel(amount1 - fee1, fee1, null),
                 PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-                        to IncomingPayment.ReceivedWith.NewChannel(amount2, amount2 * 0.1, null)
+                        to IncomingPayment.ReceivedWith.NewChannel(amount2 - fee2, fee2, null)
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             val expectedFees = 15_000.msat // 10% of 150_000 msat
             assertEquals(totalAmount - expectedFees, result.received.amount)
+            assertEquals(expectedFees, result.received.fees)
             assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
@@ -504,6 +509,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `receive multipart payment with a mix of HTLC and pay-to-open`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val fee2 = amount2 * 0.1
         val totalAmount = amount1 + amount2
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
@@ -529,11 +535,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true)))
                         to IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId, 0),
                 PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-                        to IncomingPayment.ReceivedWith.NewChannel(amount2, amount2 * 0.1, null),
+                        to IncomingPayment.ReceivedWith.NewChannel(amount2 - fee2, fee2, null),
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             val expectedFees = 5_000.msat // 10% of the amount sent via pay-to-open (50 000 msat)
             assertEquals(totalAmount - expectedFees, result.received.amount)
+            assertEquals(expectedFees, result.received.fees)
             assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
@@ -1213,7 +1220,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(incomingPayment.preimage, dbPayment.preimage)
             assertEquals(incomingPayment.paymentHash, dbPayment.paymentHash)
             assertEquals(incomingPayment.origin, dbPayment.origin)
-            assertEquals(incomingPayment.received?.amount, dbPayment.received?.amount)
+            assertEquals(incomingPayment.amount, dbPayment.amount)
             assertEquals(incomingPayment.received?.receivedWith, dbPayment.received?.receivedWith)
         }
 
