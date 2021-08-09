@@ -3009,8 +3009,10 @@ object Channel {
     val MAX_FUNDING = 10.btc
     const val MAX_ACCEPTED_HTLCS = 483
 
-    // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
-    val MIN_DUSTLIMIT = 546.sat
+    // We may need to rely on our peer's commit tx in certain cases (backup/restore) so we must ensure their transactions
+    // can propagate through the bitcoin network (assuming bitcoin core nodes with default policies).
+    // A minimal spend of a p2wsh output is 110 bytes and bitcoin core's dust-relay-fee is 3000 sat/kb, which amounts to 330 sat.
+    val MIN_DUST_LIMIT = 330.sat
 
     // we won't exchange more than this many signatures when negotiating the closing fee
     const val MAX_NEGOTIATION_ITERATIONS = 20
