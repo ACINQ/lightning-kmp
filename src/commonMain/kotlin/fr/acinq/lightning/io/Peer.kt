@@ -522,8 +522,13 @@ class Peer(
                     msg is Pong -> {
                         logger.debug { "n:$remoteNodeId received pong" }
                     }
+                    msg is Warning -> {
+                        // NB: we don't forward warnings to the channel because it shouldn't take any automatic action,
+                        // these warnings are meant for humans.
+                        logger.warning { "n:$remoteNodeId c:${msg.channelId} peer sent warning: ${msg.toAscii()}" }
+                    }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
-                        logger.error { "n:$remoteNodeId connection error, failing all channels: ${msg.toAscii()}" }
+                        logger.error { "n:$remoteNodeId connection error: ${msg.toAscii()}" }
                     }
                     msg is OpenChannel && theirInit == null -> {
                         logger.error { "n:$remoteNodeId they sent open_channel before init" }

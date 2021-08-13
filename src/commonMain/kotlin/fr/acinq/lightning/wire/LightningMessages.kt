@@ -49,6 +49,7 @@ interface LightningMessage {
             return when (code.toLong()) {
                 Init.type -> Init.read(stream)
                 ChannelReestablish.type -> ChannelReestablish.read(stream)
+                Warning.type -> Warning.read(stream)
                 Error.type -> Error.read(stream)
                 Ping.type -> Ping.read(stream)
                 Pong.type -> Pong.read(stream)
@@ -189,6 +190,32 @@ data class Init(@Contextual val features: ByteVector, val tlvs: TlvStream<InitTl
             val serializer = TlvStreamSerializer(false, tlvReaders)
             val tlvs = serializer.read(input)
             return Init(features, tlvs)
+        }
+    }
+}
+
+data class Warning(override val channelId: ByteVector32, val data: ByteVector) : SetupMessage, HasChannelId {
+    constructor(channelId: ByteVector32, message: String?) : this(channelId, ByteVector(message?.encodeToByteArray() ?: ByteArray(0)))
+    constructor(message: String?) : this(ByteVector32.Zeroes, message)
+
+    fun toAscii(): String = data.toByteArray().decodeToString()
+
+    override val type: Long get() = Warning.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeU16(data.size(), out)
+        LightningCodecs.writeBytes(data, out)
+    }
+
+    companion object : LightningMessageReader<Warning> {
+        const val type: Long = 1
+
+        override fun read(input: Input): Warning {
+            return Warning(
+                LightningCodecs.bytes(input, 32).toByteVector32(),
+                LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector()
+            )
         }
     }
 }

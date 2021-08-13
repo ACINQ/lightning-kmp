@@ -4,11 +4,11 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -198,7 +198,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode and decode init message`() {
+    fun `encode - decode init message`() {
         data class TestCase(val encoded: ByteVector, val rawFeatures: ByteVector, val networks: List<ByteVector32>, val valid: Boolean, val reEncoded: ByteVector? = null)
 
         val chainHash1 = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
@@ -239,6 +239,24 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `encode - decode warning message`() {
+        val testCases = mapOf(
+            Warning("") to ByteVector("000100000000000000000000000000000000000000000000000000000000000000000000"),
+            Warning("connection-level issue") to ByteVector("000100000000000000000000000000000000000000000000000000000000000000000016636f6e6e656374696f6e2d6c6576656c206973737565"),
+            Warning(ByteVector32.One, "") to ByteVector("000101000000000000000000000000000000000000000000000000000000000000000000"),
+            Warning(ByteVector32.One, "channel-specific issue") to ByteVector("0001010000000000000000000000000000000000000000000000000000000000000000166368616e6e656c2d7370656369666963206973737565"),
+        )
+
+        testCases.forEach {
+            val decoded = LightningMessage.decode(it.value.toByteArray())
+            assertNotNull(decoded)
+            assertEquals(it.key, decoded)
+            val reEncoded = LightningMessage.encode(decoded)
+            assertEquals(it.value, ByteVector(reEncoded))
+        }
+    }
+
+    @Test
     fun `encode - decode open_channel`() {
         val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1.sat, 1.msat, 1.sat, 1L, 1.sat, 1.msat, FeeratePerKw(1.sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte())
         // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
@@ -267,8 +285,30 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             // non-empty upfront_shutdown_script + unknown odd tlv records
             defaultEncoded + ByteVector("0002 1234 0303010203") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScript(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203"))))),
             // channel origin tlv records
-            defaultEncoded + ByteVector("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat))))),
-            defaultEncoded + ByteVector("fe47000005 2d 0002 223341754d3868536b584265746a644878577468524669483668596871463250726a72 00000000000001a4") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.SwapInOrigin("3AuM8hSkXBetjdHxWthRFiH6hYhqF2Prjr", 420.sat)))))
+            defaultEncoded + ByteVector("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2") to defaultOpen.copy(
+                tlvStream = TlvStream(
+                    listOf(
+                        ChannelTlv.ChannelOriginTlv(
+                            ChannelOrigin.PayToOpenOrigin(
+                                ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"),
+                                1234.sat
+                            )
+                        )
+                    )
+                )
+            ),
+            defaultEncoded + ByteVector("fe47000005 2d 0002 223341754d3868536b584265746a644878577468524669483668596871463250726a72 00000000000001a4") to defaultOpen.copy(
+                tlvStream = TlvStream(
+                    listOf(
+                        ChannelTlv.ChannelOriginTlv(
+                            ChannelOrigin.SwapInOrigin(
+                                "3AuM8hSkXBetjdHxWthRFiH6hYhqF2Prjr",
+                                420.sat
+                            )
+                        )
+                    )
+                )
+            )
         )
 
         testCases.forEach {
@@ -475,8 +515,33 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     @Test
     fun `encode - decode channel_announcement`() {
         val testCases = listOf(
-            ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(Hex.decode("09004200")), randomBytes32(), ShortChannelId(42), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey()),
-            ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(mapOf()), randomBytes32(), ShortChannelId(42), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), ByteVector("01020304")),
+            ChannelAnnouncement(
+                randomBytes64(),
+                randomBytes64(),
+                randomBytes64(),
+                randomBytes64(),
+                Features(Hex.decode("09004200")),
+                randomBytes32(),
+                ShortChannelId(42),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey()
+            ),
+            ChannelAnnouncement(
+                randomBytes64(),
+                randomBytes64(),
+                randomBytes64(),
+                randomBytes64(),
+                Features(mapOf()),
+                randomBytes32(),
+                ShortChannelId(42),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                randomKey().publicKey(),
+                ByteVector("01020304")
+            ),
         )
 
         testCases.forEach {
@@ -570,7 +635,10 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     fun `encode - decode swap-in messages`() {
         val testCases = listOf(
             Pair(SwapInRequest(Block.LivenetGenesisBlock.blockId), Hex.decode("88bf000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")),
-            Pair(SwapInResponse(Block.LivenetGenesisBlock.blockId, "bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv"), Hex.decode("88c1000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076")),
+            Pair(
+                SwapInResponse(Block.LivenetGenesisBlock.blockId, "bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv"),
+                Hex.decode("88c1000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076")
+            ),
             Pair(SwapInPending("bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv", Satoshi(123456)), Hex.decode("88bd002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076000000000001e240")),
             Pair(SwapInConfirmed("39gzznpTuzhtjdN5R2LZu8GgWLR9NovLdi", MilliSatoshi(42_000_000)), Hex.decode("88c700223339677a7a6e7054757a68746a644e3552324c5a75384767574c52394e6f764c6469000000000280de80"))
         )
