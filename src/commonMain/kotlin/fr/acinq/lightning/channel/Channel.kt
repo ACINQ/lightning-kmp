@@ -3011,8 +3011,10 @@ object Channel {
 
     // We may need to rely on our peer's commit tx in certain cases (backup/restore) so we must ensure their transactions
     // can propagate through the bitcoin network (assuming bitcoin core nodes with default policies).
-    // A minimal spend of a p2wsh output is 110 bytes and bitcoin core's dust-relay-fee is 3000 sat/kb, which amounts to 330 sat.
-    val MIN_DUST_LIMIT = 330.sat
+    // The various dust limits enforced by the bitcoin network are summarized here:
+    // https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#dust-limits
+    // A dust limit of 354 sat ensures all segwit outputs will relay with default relay policies.
+    val MIN_DUST_LIMIT = 354.sat
 
     // we won't exchange more than this many signatures when negotiating the closing fee
     const val MAX_NEGOTIATION_ITERATIONS = 20

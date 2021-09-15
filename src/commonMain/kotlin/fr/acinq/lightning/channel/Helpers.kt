@@ -451,10 +451,32 @@ object Helpers {
             remoteClosingSig: ByteVector64
         ): Either<ChannelException, ClosingTx> {
             val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
-            val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.channelKeys.fundingPubKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
-            return when (Transactions.checkSpendable(signedClosingTx)) {
-                is Try.Success -> Either.Right(signedClosingTx)
-                is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+            return if (checkClosingDustAmounts(closingTx)) {
+                val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.channelKeys.fundingPubKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+                when (Transactions.checkSpendable(signedClosingTx)) {
+                    is Try.Success -> Either.Right(signedClosingTx)
+                    is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+                }
+            } else {
+                Either.Left(InvalidCloseAmountBelowDust(commitments.channelId, closingTx.tx))
+            }
+        }
+
+        /**
+         * Check that all closing outputs are above bitcoin's dust limit for their script type, otherwise there is a risk
+         * that the closing transaction will not be relayed to miners' mempool and will not confirm.
+         * The various dust limits are detailed in https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#dust-limits
+         */
+        fun checkClosingDustAmounts(closingTx: ClosingTx): Boolean {
+            return closingTx.tx.txOut.all { txOut ->
+                val publicKeyScript = txOut.publicKeyScript.toByteArray()
+                when {
+                    Script.isPay2pkh(publicKeyScript) -> txOut.amount >= 546.sat
+                    Script.isPay2sh(publicKeyScript) -> txOut.amount >= 540.sat
+                    Script.isPay2wpkh(publicKeyScript) -> txOut.amount >= 294.sat
+                    Script.isPay2wsh(publicKeyScript) -> txOut.amount >= 330.sat
+                    else -> false
+                }
             }
         }
 
