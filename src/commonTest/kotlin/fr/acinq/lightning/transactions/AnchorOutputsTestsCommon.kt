@@ -14,6 +14,7 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Htl
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.kodein.memory.file.FileSystem
@@ -238,6 +239,7 @@ class AnchorOutputsTestsCommon {
             val file = resourceDir.resolve("bolt3_anchor_outputs_test_vectors.json")
             file.openReadableFile().run { readString(sizeBytes = remaining) }
         }
+        @OptIn(ExperimentalSerializationApi::class)
         val testCases = format.decodeFromString<Array<TestCase>>(json)
     }
 }

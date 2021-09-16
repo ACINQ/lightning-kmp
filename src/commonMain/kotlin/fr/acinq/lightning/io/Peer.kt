@@ -30,6 +30,7 @@ import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
+import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
 
@@ -60,6 +61,7 @@ data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListene
 data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
 
+@ObsoleteCoroutinesApi
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
     val nodeParams: NodeParams,
@@ -275,14 +277,14 @@ class Peer(
         suspend fun doPing() {
             val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
-                delay(30.seconds)
+                delay(Duration.seconds(30))
                 sendToPeer(ping)
             }
         }
 
         suspend fun checkPaymentsTimeout() {
             while (isActive) {
-                delay(30.seconds)
+                delay(Duration.seconds(30))
                 input.send(CheckPaymentsTimeout)
             }
         }

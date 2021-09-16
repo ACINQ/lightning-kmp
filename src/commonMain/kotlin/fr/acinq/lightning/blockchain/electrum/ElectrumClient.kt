@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.serialization.json.Json
 import kotlin.native.concurrent.ThreadLocal
+import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
 import kotlin.time.seconds
 
@@ -58,6 +59,7 @@ internal sealed class ClientState {
     abstract fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>>
 }
 
+@ObsoleteCoroutinesApi
 internal object WaitingForVersion : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
         event is ReceivedResponse && event.response is Either.Right -> {
@@ -77,6 +79,7 @@ internal object WaitingForVersion : ClientState() {
     }
 }
 
+@ObsoleteCoroutinesApi
 internal object WaitingForTip : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
@@ -97,6 +100,7 @@ internal object WaitingForTip : ClientState() {
         }
 }
 
+@ObsoleteCoroutinesApi
 internal data class ClientRunning(
     val height: Int,
     val tip: BlockHeader,
@@ -138,6 +142,7 @@ internal data class ClientRunning(
     }
 }
 
+@ObsoleteCoroutinesApi
 internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
@@ -149,6 +154,7 @@ internal object ClientClosed : ClientState() {
         }
 }
 
+@ObsoleteCoroutinesApi
 private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
         Disconnected -> ClientClosed to emptyList()
@@ -159,12 +165,14 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
         }
     }
 
+@ObsoleteCoroutinesApi
 private class ClientStateBuilder {
     var state: ClientState = ClientClosed
     var actions = emptyList<ElectrumClientAction>()
     fun build() = state to actions
 }
 
+@ObsoleteCoroutinesApi
 private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder().apply(init).build()
 
 private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
@@ -176,7 +184,7 @@ data class RequestResponseTimestamp(
     val lastResponseTimestamp: Long?
 )
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
@@ -284,7 +292,7 @@ class ElectrumClient(
 
         suspend fun ping() {
             while (isActive) {
-                delay(30.seconds)
+                delay(Duration.seconds(30))
                 send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
             }
         }

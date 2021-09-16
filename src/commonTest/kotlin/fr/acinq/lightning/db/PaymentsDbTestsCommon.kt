@@ -16,6 +16,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.TemporaryNodeFailure
 import kotlin.test.*
 
+@OptIn(kotlin.time.ExperimentalTime::class)
 class PaymentsDbTestsCommon : LightningTestSuite() {
 
     @Test

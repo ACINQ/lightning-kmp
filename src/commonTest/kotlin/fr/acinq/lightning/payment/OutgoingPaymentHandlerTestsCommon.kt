@@ -24,7 +24,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
-@ExperimentalUnsignedTypes
+@OptIn(ExperimentalUnsignedTypes::class, kotlin.time.ExperimentalTime::class)
 class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))

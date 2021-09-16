@@ -83,7 +83,7 @@ class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comp
 
             do {
                 --charPos
-                buf[charPos] = digits[work.toInt() and mask].toByte()
+                buf[charPos] = digits[work.toInt() and mask].code.toByte()
                 work = work ushr shift
             } while (charPos > offset)
         }

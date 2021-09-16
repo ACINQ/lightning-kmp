@@ -11,7 +11,7 @@ import kotlin.time.seconds
 expect fun runSuspendBlocking(block: suspend CoroutineScope.() -> Unit)
 
 @OptIn(ExperimentalTime::class)
-fun runSuspendTest(timeout: Duration = 30.seconds, test: suspend CoroutineScope.() -> Unit) {
+fun runSuspendTest(timeout: Duration = Duration.seconds(30), test: suspend CoroutineScope.() -> Unit) {
     runSuspendBlocking {
         withTimeout(timeout) {
             launch {

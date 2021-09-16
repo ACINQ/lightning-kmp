@@ -24,13 +24,14 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
 class PeerTest : LightningTestSuite() {
 
     fun buildOpenChannel(): OpenChannel = OpenChannel(
@@ -175,10 +176,10 @@ class PeerTest : LightningTestSuite() {
 
         run {
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 1.msat, "A description: \uD83D\uDE2C", 3600 * 3, deferredInvoice))
+            bob.send(ReceivePayment(randomBytes32(), 1.msat, "A description: \uD83D\uDE2C", 3600L * 3, deferredInvoice))
             val invoice = deferredInvoice.await()
             assertEquals(1.msat, invoice.amount)
-            assertEquals(3600 * 3, invoice.expirySeconds)
+            assertEquals(3600L * 3, invoice.expirySeconds)
             assertEquals("A description: \uD83D\uDE2C", invoice.description)
         }
     }
