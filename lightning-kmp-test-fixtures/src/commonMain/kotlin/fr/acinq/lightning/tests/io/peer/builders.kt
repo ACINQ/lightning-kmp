@@ -24,16 +24,13 @@ import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.FundingLocked
 import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LightningMessage
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.ObsoleteCoroutinesApi::class)
 public suspend fun newPeers(
     scope: CoroutineScope,
     nodeParams: Pair<NodeParams, NodeParams>,
@@ -114,6 +111,7 @@ public suspend fun newPeers(
     return PeerTuple(alice, bob, alice2bob, bob2alice)
 }
 
+@OptIn(ObsoleteCoroutinesApi::class)
 public suspend fun CoroutineScope.newPeer(
     nodeParams: NodeParams,
     walletParams: WalletParams,
@@ -161,7 +159,7 @@ public suspend fun CoroutineScope.newPeer(
     return peer
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.ObsoleteCoroutinesApi::class)
 public fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
