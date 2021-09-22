@@ -160,11 +160,22 @@ afterEvaluate {
 }
 
 afterEvaluate {
-    tasks.withType<AbstractTestTask>() {
+    tasks.withType<AbstractTestTask> {
+        val verboseTests = project.findProperty("verboseTests") == "ON"
         testLogging {
-            events("passed", "skipped", "failed", "standard_out", "standard_error")
             showExceptions = true
             showStackTraces = true
+            if (verboseTests) {
+                events("passed", "skipped", "failed")
+                showStandardStreams = true
+            } else {
+                events("skipped", "failed")
+            }
+            afterSuite(KotlinClosure2({ desc: TestDescriptor, result: TestResult ->
+                if (desc.parent == null && result.failedTestCount == 0L) {
+                    println("${result.testCount} tests completed: ${result.successfulTestCount} passed, ${result.failedTestCount} failed, ${result.skippedTestCount} skipped")
+                }
+            }))
         }
     }
     tasks.withType<org.jetbrains.kotlin.gradle.targets.jvm.tasks.KotlinJvmTest> {
