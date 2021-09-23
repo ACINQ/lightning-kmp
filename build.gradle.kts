@@ -2,8 +2,8 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.5.30"
-    kotlin("plugin.serialization") version "1.4.30"
+    kotlin("multiplatform") version "1.5.31"
+    kotlin("plugin.serialization") version "1.5.31"
     `maven-publish`
 }
 
@@ -25,13 +25,13 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 kotlin {
     val ktorVersion: String by extra { "1.6.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val secp256k1Version = "0.6.0-SNAPSHOT"
+    val secp256k1Version = "0.6.0"
     val serializationVersion = "1.2.2"
     val coroutineVersion = "1.5.2-native-mt"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.8.0-SNAPSHOT")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.8.0")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.11.1")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")

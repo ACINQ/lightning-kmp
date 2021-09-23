@@ -511,7 +511,7 @@ class ElectrumWatcher(
     private fun startTimer() {
         if (timerJob != null) return
 
-        val timeMillis: Long = 2 * 1_000 // fire timer every 2 seconds
+        val timeMillis: Long = 2L * 1_000 // fire timer every 2 seconds
         timerJob = launch {
             delay(timeMillis)
             while(isActive) {
