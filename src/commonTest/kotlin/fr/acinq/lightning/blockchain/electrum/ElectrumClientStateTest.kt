@@ -5,10 +5,12 @@ import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+@ObsoleteCoroutinesApi
 class ElectrumClientStateTest : LightningTestSuite() {
     private val testBlockHeader = BlockHeader.read("000000203e343602423924ffc4bccdc08ef468c3ba80187c2200dcb6b60e82d71cdbae236f4a9fd886c3d1ae9659a571f8d0d697c78cb0d6e23112859ba5fc26e46d6744a4f4175fffff7f2000000000")
 

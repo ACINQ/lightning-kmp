@@ -22,6 +22,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
+@OptIn(kotlin.time.ExperimentalTime::class)
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test

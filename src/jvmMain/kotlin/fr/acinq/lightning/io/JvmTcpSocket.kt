@@ -60,7 +60,6 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 
 }
 
-@OptIn(KtorExperimentalAPI::class)
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)

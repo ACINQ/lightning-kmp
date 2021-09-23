@@ -315,7 +315,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
                 var progress = 0
                 val inputSize = input.availableBytes
                 while (progress < inputSize) {
-                    val header = input.readNBytes(headerSize)
+                    val header = input.readNBytes(headerSize)!!
                     add(BlockHeader.read(header))
                     progress += headerSize
                 }

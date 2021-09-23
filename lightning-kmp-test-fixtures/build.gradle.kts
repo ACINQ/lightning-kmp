@@ -8,7 +8,6 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 kotlin {
     val ktorVersion: String by rootProject.extra
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val serializationVersion = "1.0.0-RC"
 
     val commonMain by sourceSets.getting {
         dependencies {
