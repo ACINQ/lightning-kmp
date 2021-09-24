@@ -1,41 +1,22 @@
-name: Check
+name: Publish release
 
 on:
-  pull_request:
-    paths-ignore:
-      - '**.md'
-      - '**.adoc'
-      - '**/.gitignore'
-      - '.github/**'
-      - '!.github/workflows/test.yml'
-  push:
-    branches:
-      - 'master'
-      - '!snapshot/*'
-    paths-ignore:
-      - '**.md'
-      - '**.adoc'
-      - '**/.gitignore'
-      - '.github/**'
-      - '!.github/workflows/test.yml'
+  release:
+    types: [published]
 
 jobs:
 
   upload:
-    name: Check
+    name: Upload
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, macOS-latest ]
+        os: [ubuntu-latest, macOS-latest]
     steps:
-
-      # 1 - checkout repositories
       - name: Check out
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-
-      # 2 - setup cache and tools
       - name: Cached Konan
         uses: actions/cache@v2
         with:
@@ -57,11 +38,24 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 11
-
-      # 4 - tests
-      - name: Check with integration
+      - name: Check
+        run: ./gradlew check
+      - name: Publish Linux
         if: matrix.os == 'ubuntu-latest'
-        run: ./gradlew check -PintegrationTests=include -PverboseTests=ON
-      - name: Check without integration
-        if: matrix.os != 'ubuntu-latest'
-        run: ./gradlew check -PverboseTests=ON
+        shell: bash
+        run: ./gradlew publishLinuxPublicationToMavenLocal
+      - name: Publish MacOS
+        if: matrix.os == 'macOS-latest'
+        shell: bash
+        run: ./gradlew publishToMavenLocal
+      - name: Copy artifact files
+        run: |
+          mkdir -p maven-local/release
+          cp -r ~/.m2/repository/* maven-local/release
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: release
+          path: |
+            maven-local
+            !maven-local/**/maven-metadata-local.xml
