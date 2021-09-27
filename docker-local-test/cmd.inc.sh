@@ -33,7 +33,7 @@ function btc_create {
         -fallbackfee=0.0002 \
         -rpcallowip=172.20.0.0/16 \
         -rpcbind=0.0.0.0 \
-        -zmqpubrawblock=tcp://0.0.0.0:29000 \
+        -zmqpubhashblock=tcp://0.0.0.0:29000 \
         -zmqpubrawtx=tcp://0.0.0.0:29001
 
     docker start bitcoind
