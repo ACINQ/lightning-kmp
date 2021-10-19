@@ -330,11 +330,12 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     fun `fail to build a trampoline payment when too much invoice data is provided`() {
         val extraHop = PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(12))
         val routingHintOverflow = listOf(extraHop, extraHop, extraHop, extraHop, extraHop, extraHop, extraHop)
+        val featuresOverflow = ByteVector("010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101024100")
         val invoice = PaymentRequest(
             "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
                 PaymentRequest.TaggedField.PaymentHash(paymentHash),
                 PaymentRequest.TaggedField.PaymentSecret(paymentSecret),
-                PaymentRequest.TaggedField.Features(ByteVector("024100")), // var_onion_optin, payment_secret, basic_mpp
+                PaymentRequest.TaggedField.Features(featuresOverflow),
                 PaymentRequest.TaggedField.DescriptionHash(randomBytes32()),
                 PaymentRequest.TaggedField.RoutingInfo(routingHintOverflow)
             ), ByteVector.empty
