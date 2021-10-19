@@ -290,6 +290,7 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
             else -> paymentData.totalAmount
         }
     }
+
     // NB: the following fields are only included in the trampoline-to-legacy case.
     val paymentSecret = records.get<OnionTlv.PaymentData>()?.secret
     val invoiceFeatures = records.get<OnionTlv.InvoiceFeatures>()?.features
@@ -303,8 +304,17 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
         fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) = NodeRelayPayload(TlvStream(listOf(OnionTlv.AmountToForward(amount), OnionTlv.OutgoingCltv(expiry), OnionTlv.OutgoingNodeId(nextNodeId))))
 
         /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-        fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload =
-            NodeRelayPayload(
+        fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload {
+            // NB: we limit the number of routing hints to ensure we don't overflow the onion.
+            // A better solution is to provide the routing hints outside the onion (in the `update_add_htlc` tlv stream).
+            val prunedRoutingHints = invoice.routingInfo.shuffled().fold(listOf<PaymentRequest.TaggedField.RoutingInfo>()) { previous, current ->
+                if (previous.flatMap { it.hints }.size + current.hints.size <= 4) {
+                    previous + current
+                } else {
+                    previous
+                }
+            }.map { it.hints }
+            return NodeRelayPayload(
                 TlvStream(
                     listOf(
                         OnionTlv.AmountToForward(amount),
@@ -312,10 +322,12 @@ data class NodeRelayPayload(val records: TlvStream<OnionTlv>) : PerHopPayload() 
                         OnionTlv.OutgoingNodeId(targetNodeId),
                         OnionTlv.PaymentData(invoice.paymentSecret, totalAmount),
                         OnionTlv.InvoiceFeatures(invoice.features),
-                        OnionTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints })
+                        OnionTlv.InvoiceRoutingInfo(prunedRoutingHints)
                     )
                 )
             )
+        }
 
     }
+
 }

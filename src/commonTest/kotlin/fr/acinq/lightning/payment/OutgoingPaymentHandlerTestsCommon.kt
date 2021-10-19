@@ -369,6 +369,44 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `prune routing hints when sending to legacy recipient`() = runSuspendTest {
+        val channels = makeChannels()
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
+        val recipientKey = randomKey()
+        val extraHops = listOf(
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(10), 10.msat, 100, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(12), 10.msat, 110, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(13), 10.msat, 120, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(14), 10.msat, 130, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(15), 10.msat, 140, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(16), 10.msat, 150, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(17), 10.msat, 160, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(18), 10.msat, 170, CltvExpiryDelta(48))),
+        )
+        val invoice = makeInvoice(amount = 200_000.msat, supportsTrampoline = false, privKey = recipientKey, extraHops = extraHops)
+        val payment = SendPayment(UUID.randomUUID(), 200_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+
+        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val (channelId, htlc) = run {
+            val adds = filterAddHtlcCommands(result)
+            assertEquals(1, adds.size)
+            adds.first()
+        }
+
+        val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, htlc), TestConstants.Bob.nodeParams.nodePrivateKey)
+        assertEquals(htlc.amount, outerB.amount)
+        assertEquals(210_000.msat, outerB.totalAmount)
+        assertEquals(200_000.msat, innerB.amountToForward)
+        assertEquals(payment.recipient, innerB.outgoingNodeId)
+        assertEquals(invoice.paymentSecret, innerB.paymentSecret)
+        assertEquals(invoice.features, innerB.invoiceFeatures)
+        // The trampoline node should receive a subset of the routing hints that fits inside the onion.
+        assertEquals(4, innerB.invoiceRoutingInfo?.flatten()?.toSet()?.size)
+        innerB.invoiceRoutingInfo?.flatten()?.forEach { assertTrue(extraHops.flatten().contains(it)) }
+    }
+
+    @Test
     fun `successful first attempt (multiple parts, recipient is our peer)`() = runSuspendTest {
         val channels = makeChannels()
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
