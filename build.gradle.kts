@@ -176,9 +176,9 @@ publishing {
         version = project.version.toString()
         artifact(javadocJar)
         pom {
-            name.set("Kotlin Multiplatform Bitcoin Library")
-            description.set("A simple Kotlin Multiplatform library which implements most of the bitcoin protocol")
-            url.set("https://github.com/ACINQ/bitcoin-kmp")
+            name.set("Kotlin Multiplatform Lightning Network Engine")
+            description.set("A Kotlin Multiplatform implementation of the Lightning Network")
+            url.set("https://github.com/ACINQ/lightning-kmp")
             licenses {
                 license {
                     name.set("Apache License v2.0")
@@ -187,11 +187,11 @@ publishing {
             }
             issueManagement {
                 system.set("Github")
-                url.set("https://github.com/ACINQ/bitcoin-kmp/issues")
+                url.set("https://github.com/ACINQ/lightning-kmp/issues")
             }
             scm {
-                connection.set("https://github.com/ACINQ/bitcoin-kmp.git")
-                url.set("https://github.com/ACINQ/bitcoin-kmp")
+                connection.set("https://github.com/ACINQ/lightning-kmp.git")
+                url.set("https://github.com/ACINQ/lightning-kmp")
             }
             developers {
                 developer {
