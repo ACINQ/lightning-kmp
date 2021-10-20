@@ -41,8 +41,8 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel (dust limit too low)`() {
         val (alice, _, accept) = init()
-        // we don't want their dust limit to be below 330
-        val lowDustLimitSatoshis = 329.sat
+        // we don't want their dust limit to be below 354
+        val lowDustLimitSatoshis = 353.sat
         // but we only enforce it on mainnet
         val aliceMainnet = alice.copy(staticParams = alice.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash)))
         val (alice1, actions1) = aliceMainnet.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)))
