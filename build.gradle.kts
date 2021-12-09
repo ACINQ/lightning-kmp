@@ -1,9 +1,11 @@
+import org.jetbrains.dokka.Platform
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
     kotlin("multiplatform") version "1.5.31"
     kotlin("plugin.serialization") version "1.5.31"
+    id("org.jetbrains.dokka") version "1.5.30"
     `maven-publish`
 }
 
@@ -130,6 +132,72 @@ kotlin {
         compilations.all {
             kotlinOptions {
                 allWarningsAsErrors = true
+            }
+        }
+    }
+}
+
+val dokkaOutputDir = buildDir.resolve("dokka")
+
+tasks.dokkaHtml {
+    outputDirectory.set(file(dokkaOutputDir))
+    dokkaSourceSets {
+        configureEach {
+            val platformName = when (platform.get()) {
+                Platform.jvm -> "jvm"
+                Platform.js -> "js"
+                Platform.native -> "native"
+                Platform.common -> "common"
+            }
+            displayName.set(platformName)
+
+            perPackageOption {
+                matchingRegex.set(".*\\.internal.*") // will match all .internal packages and sub-packages
+                suppress.set(true)
+            }
+        }
+    }
+}
+
+val deleteDokkaOutputDir by tasks.register<Delete>("deleteDokkaOutputDirectory") {
+    delete(dokkaOutputDir)
+}
+
+
+val javadocJar = tasks.create<Jar>("javadocJar") {
+    archiveClassifier.set("javadoc")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn(deleteDokkaOutputDir, tasks.dokkaHtml)
+    from(dokkaOutputDir)
+}
+
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        version = project.version.toString()
+        artifact(javadocJar)
+        pom {
+            name.set("Kotlin Multiplatform Lightning Network Engine")
+            description.set("A Kotlin Multiplatform implementation of the Lightning Network")
+            url.set("https://github.com/ACINQ/lightning-kmp")
+            licenses {
+                license {
+                    name.set("Apache License v2.0")
+                    url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                }
+            }
+            issueManagement {
+                system.set("Github")
+                url.set("https://github.com/ACINQ/lightning-kmp/issues")
+            }
+            scm {
+                connection.set("https://github.com/ACINQ/lightning-kmp.git")
+                url.set("https://github.com/ACINQ/lightning-kmp")
+            }
+            developers {
+                developer {
+                    name.set("ACINQ")
+                    email.set("hello@acinq.co")
+                }
             }
         }
     }
