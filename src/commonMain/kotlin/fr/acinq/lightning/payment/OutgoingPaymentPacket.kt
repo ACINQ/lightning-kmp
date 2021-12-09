@@ -9,7 +9,6 @@ import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.CMD_ADD_HTLC
 import fr.acinq.lightning.channel.CMD_FAIL_HTLC
-import fr.acinq.lightning.channel.Channel
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
@@ -19,22 +18,24 @@ import fr.acinq.lightning.router.Hop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.FailureMessage
+import fr.acinq.lightning.wire.OnionRoutingPacket
+import fr.acinq.lightning.wire.PaymentOnion
 
-object OutgoingPacket {
+object OutgoingPaymentPacket {
 
     /**
      * Build an encrypted onion packet from onion payloads and node public keys.
      */
-    private fun buildOnion(nodes: List<PublicKey>, payloads: List<PerHopPayload>, associatedData: ByteVector32, payloadLength: Int): PacketAndSecrets {
+    private fun buildOnion(nodes: List<PublicKey>, payloads: List<PaymentOnion.PerHopPayload>, associatedData: ByteVector32, payloadLength: Int): PacketAndSecrets {
         require(nodes.size == payloads.size)
         val sessionKey = Lightning.randomKey()
         val payloadsBin = payloads
             .map {
                 when (it) {
-                    is ChannelRelayPayload -> it.write()
-                    is NodeRelayPayload -> it.write()
-                    is FinalPayload -> it.write()
+                    is PaymentOnion.ChannelRelayPayload -> it.write()
+                    is PaymentOnion.NodeRelayPayload -> it.write()
+                    is PaymentOnion.FinalPayload -> it.write()
                 }
             }
         return Sphinx.create(sessionKey, nodes, payloadsBin, associatedData, payloadLength)
@@ -50,13 +51,13 @@ object OutgoingPacket {
      *  - firstExpiry is the cltv expiry for the first htlc in the route
      *  - a sequence of payloads that will be used to build the onion
      */
-    private fun buildPayloads(hops: List<Hop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PerHopPayload>> {
-        return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PerHopPayload>(finalPayload))) { triple, hop ->
+    private fun buildPayloads(hops: List<Hop>, finalPayload: PaymentOnion.FinalPayload): Triple<MilliSatoshi, CltvExpiry, List<PaymentOnion.PerHopPayload>> {
+        return hops.reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PaymentOnion.PerHopPayload>(finalPayload))) { triple, hop ->
             val (amount, expiry, payloads) = triple
             val payload = when (hop) {
                 // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
-                is ChannelHop -> ChannelRelayPayload.create(hop.lastUpdate.shortChannelId, amount, expiry)
-                is NodeHop -> NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
+                is ChannelHop -> PaymentOnion.ChannelRelayPayload.create(hop.lastUpdate.shortChannelId, amount, expiry)
+                is NodeHop -> PaymentOnion.NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
             }
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
         }
@@ -74,13 +75,13 @@ object OutgoingPacket {
      *  - firstExpiry is the cltv expiry for the first trampoline node in the route
      *  - the trampoline onion to include in final payload of a normal onion
      */
-    fun buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: List<NodeHop>, finalPayload: FinalPayload): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
-        val (firstAmount, firstExpiry, payloads) = hops.drop(1).reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PerHopPayload>(finalPayload))) { triple, hop ->
+    fun buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: List<NodeHop>, finalPayload: PaymentOnion.FinalPayload): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
+        val (firstAmount, firstExpiry, payloads) = hops.drop(1).reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PaymentOnion.PerHopPayload>(finalPayload))) { triple, hop ->
             val (amount, expiry, payloads) = triple
             val payload = when (payloads.size) {
                 // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
-                1 -> NodeRelayPayload.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
-                else -> NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
+                1 -> PaymentOnion.NodeRelayPayload.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
+                else -> PaymentOnion.NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
             }
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
         }
@@ -99,7 +100,7 @@ object OutgoingPacket {
      *  - firstExpiry is the cltv expiry for the first htlc in the route
      *  - the onion to include in the HTLC
      */
-    fun buildPacket(paymentHash: ByteVector32, hops: List<Hop>, finalPayload: FinalPayload, payloadLength: Int): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
+    fun buildPacket(paymentHash: ByteVector32, hops: List<Hop>, finalPayload: PaymentOnion.FinalPayload, payloadLength: Int): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
         val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
         val nodes = hops.map { it.nextNodeId }
         // BOLT 2 requires that associatedData == paymentHash
@@ -112,7 +113,7 @@ object OutgoingPacket {
      *
      * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
      */
-    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: FinalPayload): Pair<CMD_ADD_HTLC, SharedSecrets> {
+    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: PaymentOnion.FinalPayload): Pair<CMD_ADD_HTLC, SharedSecrets> {
         val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, OnionRoutingPacket.PaymentPacketLength)
         return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
     }

@@ -6,7 +6,7 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
-object IncomingPacket {
+object IncomingPaymentPacket {
 
     /**
      * Decrypt the onion packet of a received htlc. We expect to be the final recipient, and we validate that the HTLC
@@ -18,12 +18,12 @@ object IncomingPacket {
      *  - a decrypted and valid onion final payload
      *  - or a Bolt4 failure message that can be returned to the sender if the HTLC is invalid
      */
-    fun decrypt(add: UpdateAddHtlc, privateKey: PrivateKey): Either<FailureMessage, FinalPayload> {
+    fun decrypt(add: UpdateAddHtlc, privateKey: PrivateKey): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when (val decrypted = decryptOnion(add.paymentHash, add.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength, privateKey)) {
             is Either.Left -> Either.Left(decrypted.value)
             is Either.Right -> {
                 val outer = decrypted.value
-                when (val trampolineOnion = outer.records.get<OnionTlv.TrampolineOnion>()) {
+                when (val trampolineOnion = outer.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()) {
                     null -> validate(add, outer)
                     else -> {
                         when (val inner = decryptOnion(add.paymentHash, trampolineOnion.packet, OnionRoutingPacket.TrampolinePacketLength, privateKey)) {
@@ -37,7 +37,7 @@ object IncomingPacket {
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, packetLength: Int, privateKey: PrivateKey): Either<FailureMessage, FinalPayload> {
+    fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, packetLength: Int, privateKey: PrivateKey): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when (val decrypted = Sphinx.peel(privateKey, paymentHash, packet, packetLength)) {
             is Either.Left -> Either.Left(decrypted.value)
             is Either.Right -> run {
@@ -45,7 +45,7 @@ object IncomingPacket {
                     Either.Left(UnknownNextPeer)
                 } else {
                     try {
-                        Either.Right(FinalPayload.read(decrypted.value.payload.toByteArray()))
+                        Either.Right(PaymentOnion.FinalPayload.read(decrypted.value.payload.toByteArray()))
                     } catch (_: Throwable) {
                         Either.Left(InvalidOnionPayload(0U, 0))
                     }
@@ -54,7 +54,7 @@ object IncomingPacket {
         }
     }
 
-    private fun validate(add: UpdateAddHtlc, payload: FinalPayload): Either<FailureMessage, FinalPayload> {
+    private fun validate(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
             add.amountMsat != payload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
             add.cltvExpiry != payload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
@@ -63,7 +63,7 @@ object IncomingPacket {
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private fun validate(add: UpdateAddHtlc, outerPayload: FinalPayload, innerPayload: FinalPayload): Either<FailureMessage, FinalPayload> {
+    private fun validate(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.FinalPayload): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
             add.amountMsat != outerPayload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
             add.cltvExpiry != outerPayload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
@@ -74,7 +74,7 @@ object IncomingPacket {
             else -> {
                 // We merge contents from the outer and inner payloads.
                 // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-                Either.Right(FinalPayload.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret))
+                Either.Right(PaymentOnion.FinalPayload.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret))
             }
         }
     }

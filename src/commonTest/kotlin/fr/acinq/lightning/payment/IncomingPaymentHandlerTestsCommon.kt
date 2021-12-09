@@ -179,7 +179,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             payToOpenFeeSatoshis = 100.sat,
             paymentHash = ByteVector32.One, // <-- not associated to a pending invoice
             expireAt = Long.MAX_VALUE,
-            finalPacket = OutgoingPacket.buildPacket(
+            finalPacket = OutgoingPaymentPacket.buildPacket(
                 paymentHash = ByteVector32.One, // <-- has to be the same as the one above otherwise encryption fails
                 hops = channelHops(paymentHandler.nodeParams.nodeId),
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, randomBytes32()),
@@ -196,7 +196,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 payToOpenRequest.chainHash,
                 payToOpenRequest.paymentHash,
                 PayToOpenResponse.Result.Failure(
-                    OutgoingPacket.buildHtlcFailure(
+                    OutgoingPaymentPacket.buildHtlcFailure(
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
@@ -222,7 +222,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 payToOpenRequest.chainHash,
                 payToOpenRequest.paymentHash,
                 PayToOpenResponse.Result.Failure(
-                    OutgoingPacket.buildHtlcFailure(
+                    OutgoingPaymentPacket.buildHtlcFailure(
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
@@ -248,7 +248,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 payToOpenRequest.chainHash,
                 payToOpenRequest.paymentHash,
                 PayToOpenResponse.Result.Failure(
-                    OutgoingPacket.buildHtlcFailure(
+                    OutgoingPaymentPacket.buildHtlcFailure(
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
@@ -281,7 +281,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 payToOpenRequest.chainHash,
                 payToOpenRequest.paymentHash,
                 PayToOpenResponse.Result.Failure(
-                    OutgoingPacket.buildHtlcFailure(
+                    OutgoingPaymentPacket.buildHtlcFailure(
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
@@ -307,7 +307,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             payToOpenFeeSatoshis = 100.sat,
             paymentHash = incomingPayment.paymentHash,
             expireAt = Long.MAX_VALUE,
-            finalPacket = OutgoingPacket.buildPacket(
+            finalPacket = OutgoingPaymentPacket.buildPacket(
                 paymentHash = incomingPayment.paymentHash,
                 hops = trampolineHops,
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, paymentSecret.reversed()), // <-- wrong secret
@@ -324,7 +324,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 payToOpenRequest.chainHash,
                 payToOpenRequest.paymentHash,
                 PayToOpenResponse.Result.Failure(
-                    OutgoingPacket.buildHtlcFailure(
+                    OutgoingPaymentPacket.buildHtlcFailure(
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
@@ -581,7 +581,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         payToOpenRequest.chainHash,
                         payToOpenRequest.paymentHash,
                         PayToOpenResponse.Result.Failure(
-                            OutgoingPacket.buildHtlcFailure(
+                            OutgoingPaymentPacket.buildHtlcFailure(
                                 paymentHandler.nodeParams.nodePrivateKey,
                                 payToOpenRequest.paymentHash,
                                 payToOpenRequest.finalPacket,
@@ -640,7 +640,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         payToOpenRequest1.chainHash,
                         payToOpenRequest1.paymentHash,
                         PayToOpenResponse.Result.Failure(
-                            OutgoingPacket.buildHtlcFailure(
+                            OutgoingPaymentPacket.buildHtlcFailure(
                                 paymentHandler.nodeParams.nodePrivateKey,
                                 payToOpenRequest1.paymentHash,
                                 payToOpenRequest1.finalPacket,
@@ -654,7 +654,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         payToOpenRequest2.chainHash,
                         payToOpenRequest2.paymentHash,
                         PayToOpenResponse.Result.Failure(
-                            OutgoingPacket.buildHtlcFailure(
+                            OutgoingPaymentPacket.buildHtlcFailure(
                                 paymentHandler.nodeParams.nodePrivateKey,
                                 payToOpenRequest2.paymentHash,
                                 payToOpenRequest2.finalPacket,
@@ -1173,12 +1173,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return listOf(channelHop)
         }
 
-        private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: FinalPayload): CMD_ADD_HTLC {
-            return OutgoingPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).first.copy(commit = true)
+        private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): CMD_ADD_HTLC {
+            return OutgoingPaymentPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).first.copy(commit = true)
         }
 
-        private fun makeUpdateAddHtlc(id: Long, channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: FinalPayload): UpdateAddHtlc {
-            val (_, _, packetAndSecrets) = OutgoingPacket.buildPacket(paymentHash, channelHops(destination.nodeParams.nodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
+        private fun makeUpdateAddHtlc(id: Long, channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): UpdateAddHtlc {
+            val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destination.nodeParams.nodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
             return UpdateAddHtlc(channelId, id, finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet)
         }
 
@@ -1188,12 +1188,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             paymentSecret: ByteVector32,
             cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
             currentBlockHeight: Int = TestConstants.defaultBlockHeight
-        ): FinalPayload {
+        ): PaymentOnion.FinalPayload {
             val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-            return FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
+            return PaymentOnion.FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
         }
 
-        private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {
+        private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {
             return PayToOpenRequest(
                 chainHash = ByteVector32.Zeroes,
                 fundingSatoshis = 100_000.sat,
@@ -1202,7 +1202,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 payToOpenFeeSatoshis = finalPayload.amount.truncateToSatoshi() * 0.1, // 10%
                 paymentHash = incomingPayment.paymentHash,
                 expireAt = Long.MAX_VALUE,
-                finalPacket = OutgoingPacket.buildPacket(
+                finalPacket = OutgoingPaymentPacket.buildPacket(
                     paymentHash = incomingPayment.paymentHash,
                     hops = channelHops(TestConstants.Bob.nodeParams.nodeId),
                     finalPayload = finalPayload,
