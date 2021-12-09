@@ -384,14 +384,21 @@ object Helpers {
         // used only to compute tx weights and estimate fees
         private val dummyPublicKey by lazy { PrivateKey(ByteArray(32) { 1.toByte() }).publicKey() }
 
-        private fun isValidFinalScriptPubkey(scriptPubKey: ByteArray): Boolean {
+        private fun isValidFinalScriptPubkey(scriptPubKey: ByteArray, allowAnySegwit: Boolean): Boolean {
             return runTrying {
                 val script = Script.parse(scriptPubKey)
-                Script.isPay2pkh(script) || Script.isPay2sh(script) || Script.isPay2wpkh(script) || Script.isPay2wsh(script)
+                when {
+                    Script.isPay2pkh(script) -> true
+                    Script.isPay2sh(script) -> true
+                    Script.isPay2wpkh(script) -> true
+                    Script.isPay2wsh(script) -> true
+                    Script.isNativeWitnessScript(script) -> allowAnySegwit
+                    else -> false
+                }
             }.getOrElse { false }
         }
 
-        fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
+        fun isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray(), allowAnySegwit)
 
         // To be replaced with corresponding function in bitcoin-kmp
         fun btcAddressFromScriptPubKey(scriptPubKey: ByteVector, chainHash: ByteVector32): String? {
@@ -465,8 +472,9 @@ object Helpers {
             remoteScriptPubkey: ByteArray,
             closingFees: ClosingFees
         ): Pair<ClosingTx, ClosingSigned> {
-            require(isValidFinalScriptPubkey(localScriptPubkey)) { "invalid localScriptPubkey" }
-            require(isValidFinalScriptPubkey(remoteScriptPubkey)) { "invalid remoteScriptPubkey" }
+            val allowAnySegwit = Features.canUseFeature(commitments.localParams.features, commitments.remoteParams.features, Feature.ShutdownAnySegwit)
+            require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit)) { "invalid localScriptPubkey" }
+            require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFees.preferred, commitments.localCommit.spec)
             val localClosingSig = keyManager.sign(closingTx, commitments.localParams.channelKeys.fundingPrivateKey)

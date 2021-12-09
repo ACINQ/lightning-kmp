@@ -1887,12 +1887,13 @@ data class Normal(
                         }
                     }
                     is CMD_CLOSE -> {
+                        val allowAnySegwit = Features.canUseFeature(commitments.localParams.features, commitments.remoteParams.features, Feature.ShutdownAnySegwit)
                         val localScriptPubkey = event.command.scriptPubKey ?: commitments.localParams.defaultFinalScriptPubKey
                         when {
                             this.localShutdown != null -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId), channelUpdate)
                             this.commitments.localHasUnsignedOutgoingHtlcs() -> handleCommandError(event.command, CannotCloseWithUnsignedOutgoingHtlcs(channelId), channelUpdate)
                             this.commitments.localHasUnsignedOutgoingUpdateFee() -> handleCommandError(event.command, CannotCloseWithUnsignedOutgoingUpdateFee(channelId), channelUpdate)
-                            !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey) -> handleCommandError(event.command, InvalidFinalScript(channelId), channelUpdate)
+                            !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit) -> handleCommandError(event.command, InvalidFinalScript(channelId), channelUpdate)
                             else -> {
                                 val shutdown = Shutdown(channelId, localScriptPubkey)
                                 val newState = this.copy(localShutdown = shutdown, closingFeerates = event.command.feerates)
@@ -1995,6 +1996,7 @@ data class Normal(
                         }
                     }
                     is Shutdown -> {
+                        val allowAnySegwit = Features.canUseFeature(commitments.localParams.features, commitments.remoteParams.features, Feature.ShutdownAnySegwit)
                         // they have pending unsigned htlcs         => they violated the spec, close the channel
                         // they don't have pending unsigned htlcs
                         //    we have pending unsigned htlcs
@@ -2010,7 +2012,7 @@ data class Normal(
                         //        there are pending signed changes  => go to SHUTDOWN
                         //        there are no changes              => go to NEGOTIATING
                         when {
-                            !Helpers.Closing.isValidFinalScriptPubkey(event.message.scriptPubKey) -> handleLocalError(event, InvalidFinalScript(channelId))
+                            !Helpers.Closing.isValidFinalScriptPubkey(event.message.scriptPubKey, allowAnySegwit) -> handleLocalError(event, InvalidFinalScript(channelId))
                             commitments.remoteHasUnsignedOutgoingHtlcs() -> handleLocalError(event, CannotCloseWithUnsignedOutgoingHtlcs(channelId))
                             commitments.remoteHasUnsignedOutgoingUpdateFee() -> handleLocalError(event, CannotCloseWithUnsignedOutgoingUpdateFee(channelId))
                             commitments.localHasUnsignedOutgoingHtlcs() -> {

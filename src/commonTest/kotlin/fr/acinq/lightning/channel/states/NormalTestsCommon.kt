@@ -1,11 +1,8 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Feature
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -1414,6 +1411,28 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CMD_CLOSE (with unsupported native segwit script)`() {
+        val (alice, _) = reachNormal()
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(ByteVector("51050102030405"), null)))
+        assertTrue(alice1 is Normal)
+        actions1.hasCommandError<InvalidFinalScript>()
+    }
+
+    @Test
+    fun `recv CMD_CLOSE (with native segwit script)`() {
+        val (alice, _) = reachNormal(
+            aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
+            bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
+        )
+        assertNull(alice.localShutdown)
+        val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(ByteVector("51050102030405"), null)))
+        actions1.hasOutgoingMessage<Shutdown>()
+        assertTrue(alice1 is Normal)
+        assertNotNull(alice1.localShutdown)
+    }
+
+    @Test
     fun `recv CMD_CLOSE (with signed sent htlcs)`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
@@ -1549,6 +1568,27 @@ class NormalTestsCommon : LightningTestSuite() {
         actions1.hasOutgoingMessage<Error>()
         assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         actions1.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv Shutdown (with unsupported native segwit script)`() {
+        val (_, bob) = reachNormal()
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
+        assertTrue(bob1 is Closing)
+        actions1.hasOutgoingMessage<Error>()
+        assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        actions1.hasWatch<WatchConfirmed>()
+    }
+
+    @Test
+    fun `recv Shutdown (with native segwit script)`() {
+        val (_, bob) = reachNormal(
+            aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
+            bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
+        )
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
+        assertTrue(bob1 is Negotiating)
+        actions1.hasOutgoingMessage<Shutdown>()
     }
 
     @Test
