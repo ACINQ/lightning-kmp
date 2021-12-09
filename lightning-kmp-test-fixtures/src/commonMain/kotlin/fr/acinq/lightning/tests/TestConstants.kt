@@ -34,8 +34,8 @@ object TestConstants {
 
     object Alice {
         private val entropy = Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")
-        val mnemonics = MnemonicCode.toMnemonics(entropy)
-        val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
+        private val mnemonics = MnemonicCode.toMnemonics(entropy)
+        private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
@@ -53,13 +53,12 @@ object TestConstants {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Mandatory,
                 Feature.AnchorOutputs to FeatureSupport.Mandatory,
+                Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.TrampolinePayment to FeatureSupport.Optional,
-                Feature.ZeroReserveChannels to FeatureSupport.Optional,
-                Feature.ZeroConfChannels to FeatureSupport.Optional,
-                Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-                Feature.PayToOpenClient to FeatureSupport.Optional,
-                Feature.TrustedSwapInClient to FeatureSupport.Optional,
-                Feature.ChannelBackupClient to FeatureSupport.Optional,
+                Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
+                Feature.PayToOpenProvider to FeatureSupport.Optional,
+                Feature.TrustedSwapInProvider to FeatureSupport.Optional,
+                Feature.ChannelBackupProvider to FeatureSupport.Optional,
             ),
             dustLimit = 1_100.sat,
             maxRemoteDustLimit = 1_500.sat,
@@ -100,7 +99,7 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
-        val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
+        private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
@@ -112,7 +111,7 @@ object TestConstants {
     object Bob {
         private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
         val mnemonics = MnemonicCode.toMnemonics(entropy)
-        val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
+        private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
@@ -129,9 +128,8 @@ object TestConstants {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Mandatory,
                 Feature.AnchorOutputs to FeatureSupport.Mandatory,
+                Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.TrampolinePayment to FeatureSupport.Optional,
-                Feature.ZeroReserveChannels to FeatureSupport.Optional,
-                Feature.ZeroConfChannels to FeatureSupport.Optional,
                 Feature.WakeUpNotificationClient to FeatureSupport.Optional,
                 Feature.PayToOpenClient to FeatureSupport.Optional,
                 Feature.TrustedSwapInClient to FeatureSupport.Optional,
@@ -176,7 +174,7 @@ object TestConstants {
             enableTrampolinePayment = true
         )
 
-        val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
+        private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),

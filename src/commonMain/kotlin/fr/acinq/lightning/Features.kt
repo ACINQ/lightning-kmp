@@ -91,6 +91,12 @@ sealed class Feature {
         override val mandatory get() = 20
     }
 
+    @Serializable
+    object ChannelType : Feature() {
+        override val rfcName get() = "option_channel_type"
+        override val mandatory get() = 44
+    }
+
     // The following features have not been standardised, hence the high feature bits to avoid conflicts.
 
     @Serializable
@@ -222,6 +228,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
             Feature.AnchorOutputs,
+            Feature.ChannelType,
             Feature.TrampolinePayment,
             Feature.ZeroReserveChannels,
             Feature.ZeroConfChannels,
