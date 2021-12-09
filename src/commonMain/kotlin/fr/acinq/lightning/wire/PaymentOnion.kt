@@ -76,6 +76,21 @@ sealed class OnionPaymentPayloadTlv : Tlv {
     }
 
     /**
+     * When payment metadata is included in a Bolt 9 invoice, we should send it as-is to the recipient.
+     * This lets recipients generate invoices without having to store anything on their side until the invoice is paid.
+     */
+    @Serializable
+    data class PaymentMetadata(@Contextual val data: ByteVector) : OnionPaymentPayloadTlv() {
+        override val tag: Long get() = PaymentMetadata.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
+
+        companion object : TlvValueReader<PaymentMetadata> {
+            const val tag: Long = 16
+            override fun read(input: Input): PaymentMetadata = PaymentMetadata(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
+        }
+    }
+
+    /**
      * Invoice feature bits. Only included for intermediate trampoline nodes when they should convert to a legacy payment
      * because the final recipient doesn't support trampoline.
      */
@@ -176,6 +191,7 @@ object PaymentOnion {
                     OnionPaymentPayloadTlv.OutgoingCltv.tag to OnionPaymentPayloadTlv.OutgoingCltv.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.OutgoingChannelId.tag to OnionPaymentPayloadTlv.OutgoingChannelId.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.PaymentData.tag to OnionPaymentPayloadTlv.PaymentData.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
+                    OnionPaymentPayloadTlv.PaymentMetadata.tag to OnionPaymentPayloadTlv.PaymentMetadata.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.InvoiceFeatures.tag to OnionPaymentPayloadTlv.InvoiceFeatures.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.OutgoingNodeId.tag to OnionPaymentPayloadTlv.OutgoingNodeId.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.InvoiceRoutingInfo.tag to OnionPaymentPayloadTlv.InvoiceRoutingInfo.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
@@ -198,6 +214,7 @@ object PaymentOnion {
             val total = records.get<OnionPaymentPayloadTlv.PaymentData>()!!.totalAmount
             if (total > 0.msat) total else amount
         }
+        val paymentMetadata = records.get<OnionPaymentPayloadTlv.PaymentMetadata>()?.data
 
         override fun write(out: Output) = tlvSerializer.write(records, out)
 
@@ -205,23 +222,46 @@ object PaymentOnion {
             override fun read(input: Input): FinalPayload = FinalPayload(tlvSerializer.read(input))
 
             /** Create a single-part payment (total amount sent at once). */
-            fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload =
-                FinalPayload(TlvStream(listOf(OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, amount)), userCustomTlvs))
+            fun createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: ByteVector?, userCustomTlvs: List<GenericTlv> = listOf()): FinalPayload {
+                val tlvs = buildList {
+                    add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                    add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                    add(OnionPaymentPayloadTlv.PaymentData(paymentSecret, amount))
+                    paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
+                }
+                return FinalPayload(TlvStream(tlvs, userCustomTlvs))
+            }
 
             /** Create a partial payment (total amount split between multiple payments). */
             fun createMultiPartPayload(
-                amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: List<OnionPaymentPayloadTlv> = listOf(), userCustomTlvs: List<GenericTlv> = listOf()
-            ): FinalPayload =
-                FinalPayload(TlvStream(listOf(OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount)) + additionalTlvs, userCustomTlvs))
+                amount: MilliSatoshi,
+                totalAmount: MilliSatoshi,
+                expiry: CltvExpiry,
+                paymentSecret: ByteVector32,
+                paymentMetadata: ByteVector?,
+                additionalTlvs: List<OnionPaymentPayloadTlv> = listOf(),
+                userCustomTlvs: List<GenericTlv> = listOf()
+            ): FinalPayload {
+                val tlvs = buildList {
+                    add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                    add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                    add(OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount))
+                    paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
+                    addAll(additionalTlvs)
+                }
+                return FinalPayload(TlvStream(tlvs, userCustomTlvs))
+            }
 
             /** Create a trampoline outer payload. */
-            fun createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload = FinalPayload(
-                TlvStream(
-                    listOf(
-                        OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount), OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)
-                    )
-                )
-            )
+            fun createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload {
+                val tlvs = buildList {
+                    add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                    add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                    add(OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount))
+                    add(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket))
+                }
+                return FinalPayload(TlvStream(tlvs))
+            }
         }
     }
 
@@ -255,6 +295,7 @@ object PaymentOnion {
 
         // NB: the following fields are only included in the trampoline-to-legacy case.
         val paymentSecret = records.get<OnionPaymentPayloadTlv.PaymentData>()?.secret
+        val paymentMetadata = records.get<OnionPaymentPayloadTlv.PaymentMetadata>()?.data
         val invoiceFeatures = records.get<OnionPaymentPayloadTlv.InvoiceFeatures>()?.features
         val invoiceRoutingInfo = records.get<OnionPaymentPayloadTlv.InvoiceRoutingInfo>()?.extraHops
 
@@ -279,14 +320,15 @@ object PaymentOnion {
                 }.map { it.hints }
                 return NodeRelayPayload(
                     TlvStream(
-                        listOf(
-                            OnionPaymentPayloadTlv.AmountToForward(amount),
-                            OnionPaymentPayloadTlv.OutgoingCltv(expiry),
-                            OnionPaymentPayloadTlv.OutgoingNodeId(targetNodeId),
-                            OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, totalAmount),
-                            OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features),
-                            OnionPaymentPayloadTlv.InvoiceRoutingInfo(prunedRoutingHints)
-                        )
+                        buildList {
+                            add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                            add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                            add(OnionPaymentPayloadTlv.OutgoingNodeId(targetNodeId))
+                            add(OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, totalAmount))
+                            invoice.paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
+                            add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features))
+                            add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(prunedRoutingHints))
+                        }
                     )
                 )
             }

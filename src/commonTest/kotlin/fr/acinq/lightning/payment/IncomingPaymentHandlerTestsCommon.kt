@@ -1190,7 +1190,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             currentBlockHeight: Int = TestConstants.defaultBlockHeight
         ): PaymentOnion.FinalPayload {
             val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-            return PaymentOnion.FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret)
+            return PaymentOnion.FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, null)
         }
 
         private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {

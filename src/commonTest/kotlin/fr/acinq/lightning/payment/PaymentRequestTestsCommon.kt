@@ -363,6 +363,24 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `On mainnet, please send 0,01 BTC with payment metadata 0x01fafaf0`() {
+        val ref = "lnbc10m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdp9wpshjmt9de6zqmt9w3skgct5vysxjmnnd9jx2mq8q8a04uqsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q2gqqqqqqsgq7hf8he7ecf7n4ffphs6awl9t6676rrclv9ckg3d3ncn7fct63p6s365duk5wrk202cfy3aj5xnnp5gs3vrdvruverwwq7yzhkf5a3xqpd05wjc"
+        val pr = PaymentRequest.read(ref)
+        assertEquals(pr.prefix, "lnbc")
+        assertEquals(pr.amount, MilliSatoshi(1000000000))
+        assertEquals(pr.paymentHash, ByteVector32("0001020304050607080900010203040506070809000102030405060708090102"))
+        assertEquals(pr.features, Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory).toByteArray().toByteVector())
+        assertEquals(pr.timestampSeconds, 1496314658L)
+        assertEquals(pr.nodeId, PublicKey.fromHex("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+        assertEquals(pr.paymentSecret, ByteVector32("1111111111111111111111111111111111111111111111111111111111111111"))
+        assertEquals(pr.description, "payment metadata inside")
+        assertEquals(pr.paymentMetadata, ByteVector("01fafaf0"))
+        assertEquals(pr.tags.size, 5)
+        val check = pr.sign(priv).write()
+        assertEquals(ref, check)
+    }
+
+    @Test
     fun `reject invalid invoices`() {
         val refs = listOf(
             // Bech32 checksum is invalid.

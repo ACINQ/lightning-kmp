@@ -312,7 +312,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
 
         val finalExpiryDelta = request.details.paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
         val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-        val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.details.paymentRequest.paymentSecret)
+        val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.details.paymentRequest.paymentSecret, request.details.paymentRequest.paymentMetadata)
 
         val invoiceFeatures = Features(request.details.paymentRequest.features)
         val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment)) {

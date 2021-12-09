@@ -59,6 +59,7 @@ object Serialization {
             subclass(OnionPaymentPayloadTlv.OutgoingCltv.serializer())
             subclass(OnionPaymentPayloadTlv.OutgoingChannelId.serializer())
             subclass(OnionPaymentPayloadTlv.PaymentData.serializer())
+            subclass(OnionPaymentPayloadTlv.PaymentMetadata.serializer())
             subclass(OnionPaymentPayloadTlv.InvoiceFeatures.serializer())
             subclass(OnionPaymentPayloadTlv.OutgoingNodeId.serializer())
             subclass(OnionPaymentPayloadTlv.InvoiceRoutingInfo.serializer())

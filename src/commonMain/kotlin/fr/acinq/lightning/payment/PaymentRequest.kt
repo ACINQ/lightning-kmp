@@ -29,6 +29,9 @@ data class PaymentRequest(
     val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
 
     @Transient
+    val paymentMetadata: ByteVector? = tags.find { it is TaggedField.PaymentMetadata }?.run { (this as TaggedField.PaymentMetadata).data }
+
+    @Transient
     val description: String? = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
 
     @Transient
@@ -147,6 +150,7 @@ data class PaymentRequest(
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features,
             paymentSecret: ByteVector32 = randomBytes32(),
+            paymentMetadata: ByteVector? = null,
             expirySeconds: Long? = null,
             extraHops: List<List<TaggedField.ExtraHop>> = listOf(),
             timestampSeconds: Long = currentTimestampSeconds()
@@ -159,9 +163,8 @@ data class PaymentRequest(
                 TaggedField.PaymentSecret(paymentSecret),
                 TaggedField.Features(features.invoiceFeatures().toByteArray().toByteVector())
             )
-            if (expirySeconds != null) {
-                tags.add(TaggedField.Expiry(expirySeconds))
-            }
+            paymentMetadata?.let { tags.add(TaggedField.PaymentMetadata(it)) }
+            expirySeconds?.let { tags.add(TaggedField.Expiry(it)) }
             if (extraHops.isNotEmpty()) {
                 extraHops.forEach { tags.add(TaggedField.RoutingInfo(it)) }
             }
@@ -210,6 +213,7 @@ data class PaymentRequest(
                     when (tag) {
                         TaggedField.PaymentHash.tag -> tags.add(kotlin.runCatching { TaggedField.PaymentHash.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.PaymentSecret.tag -> tags.add(kotlin.runCatching { TaggedField.PaymentSecret.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
+                        TaggedField.PaymentMetadata.tag -> tags.add(kotlin.runCatching { TaggedField.PaymentMetadata.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.Description.tag -> tags.add(kotlin.runCatching { TaggedField.Description.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.DescriptionHash.tag -> tags.add(kotlin.runCatching { TaggedField.DescriptionHash.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.Expiry.tag -> tags.add(kotlin.runCatching { TaggedField.Expiry.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
@@ -336,6 +340,17 @@ data class PaymentRequest(
                     require(input.size == 52)
                     return PaymentSecret(Bech32.five2eight(input.toTypedArray(), 0).toByteVector32())
                 }
+            }
+        }
+
+        @Serializable
+        data class PaymentMetadata(@Contextual val data: ByteVector) : TaggedField() {
+            override val tag: Int5 = PaymentMetadata.tag
+            override fun encode(): List<Int5> = Bech32.eight2five(data.toByteArray()).toList()
+
+            companion object {
+                const val tag: Int5 = 27
+                fun decode(input: List<Int5>): PaymentMetadata = PaymentMetadata(Bech32.five2eight(input.toTypedArray(), 0).toByteVector())
             }
         }
 

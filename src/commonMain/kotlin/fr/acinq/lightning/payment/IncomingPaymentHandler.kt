@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
@@ -88,6 +89,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             nodeParams.features,
             randomBytes32(),
+            // We always include a payment metadata in our invoices, which lets us test whether senders support it
+            randomBytes(64).toByteVector(),
             expirySeconds,
             extraHops,
             timestampSeconds
@@ -248,7 +251,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         }
                         else -> {
                             // We have received all the payment parts.
-                            logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived})" }
+                            when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
+                                null -> logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived}) without payment metadata" }
+                                else -> logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
+                            }
                             val (actions, receivedWith) = payment.parts.map { part ->
                                 when (part) {
                                     is HtlcPart -> {
