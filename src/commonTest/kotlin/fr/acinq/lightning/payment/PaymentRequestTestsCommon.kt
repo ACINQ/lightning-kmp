@@ -465,28 +465,4 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
         }
     }
 
-    @Test
-    fun filterFeatures() {
-        assertEquals(
-            expected = PaymentRequest.invoiceFeatures(
-                Features(
-                    activated = mapOf(
-                        Feature.InitialRoutingSync to FeatureSupport.Optional,
-                        Feature.StaticRemoteKey to FeatureSupport.Mandatory,
-                        Feature.PaymentSecret to FeatureSupport.Mandatory,
-                        Feature.TrampolinePayment to FeatureSupport.Optional,
-                    ),
-                    unknown = setOf(
-                        UnknownFeature(47)
-                    )
-                )
-            ),
-            actual = Features(
-                activated = mapOf(
-                    Feature.PaymentSecret to FeatureSupport.Mandatory,
-                    Feature.TrampolinePayment to FeatureSupport.Optional
-                )
-            )
-        )
-    }
 }

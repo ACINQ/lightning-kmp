@@ -3,8 +3,11 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -75,7 +78,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         timestampSeconds: Long = currentTimestampSeconds()
     ): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-        val invoiceFeatures = PaymentRequest.invoiceFeatures(nodeParams.features)
         logger.debug { "h:$paymentHash using routing hints $extraHops" }
         val pr = PaymentRequest.create(
             nodeParams.chainHash,
@@ -84,7 +86,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             nodeParams.nodePrivateKey,
             description,
             PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            invoiceFeatures,
+            nodeParams.features,
             randomBytes32(),
             expirySeconds,
             extraHops,
@@ -352,7 +354,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
     fun checkPaymentsTimeout(currentTimestampSeconds: Long): List<PeerEvent> {
         val actions = mutableListOf<PeerEvent>()
-        val keysToRemove = mutableListOf<ByteVector32>()
+        val keysToRemove = mutableSetOf<ByteVector32>()
 
         // BOLT 04:
         // - MUST fail all HTLCs in the HTLC set after some reasonable timeout.

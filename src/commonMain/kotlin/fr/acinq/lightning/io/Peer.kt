@@ -115,7 +115,7 @@ class Peer(
 
     private val features = nodeParams.features
 
-    private val ourInit = Init(features.toByteArray().toByteVector())
+    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector())
     private var theirInit: Init? = null
 
     public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
