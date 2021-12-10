@@ -58,34 +58,50 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             logger.error { "h:${request.paymentHash} p:${request.paymentId} invoice has already been paid" }
             return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
         }
+
+        suspend fun failNothingSent(request: SendPayment, finalFailure: FinalFailure): Failure {
+            logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: $finalFailure" }
+            db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
+            db.completeOutgoingPayment(request.paymentId, finalFailure)
+            return Failure(request, finalFailure.toPaymentFailure())
+        }
+
         val trampolineFees = request.trampolineFeesOverride ?: walletParams.trampolineFees
-        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)
-        return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
-            is Either.Left -> {
-                logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
-                db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
-                val finalFailure = result.value
-                db.completeOutgoingPayment(request.paymentId, finalFailure)
-                Failure(request, finalFailure.toPaymentFailure())
-            }
+        return when (val packet = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)) {
+            is Either.Left -> failNothingSent(request, packet.value)
             is Either.Right -> {
-                // We generate a random secret for this payment to avoid leaking the invoice secret to the trampoline node.
-                val trampolinePaymentSecret = Lightning.randomBytes32()
-                val trampolinePayload = PaymentAttempt.TrampolinePayload(trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket)
-                val childPayments = createChildPayments(request, result.value, trampolinePayload)
-                db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, childPayments.map { it.first }, OutgoingPayment.Status.Pending))
-                val payment = PaymentAttempt.PaymentInProgress(request, 0, trampolinePayload, childPayments.associate { it.first.id to Pair(it.first, it.second) }, setOf(), listOf())
-                pending[request.paymentId] = payment
-                Progress(request, payment.fees, childPayments.map { it.third })
+                val (trampolineAmount, trampolineExpiry, trampolinePacket) = packet.value
+                when (val routes = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
+                    is Either.Left -> failNothingSent(request, routes.value)
+                    is Either.Right -> {
+                        // We generate a random secret for this payment to avoid leaking the invoice secret to the trampoline node.
+                        val trampolinePaymentSecret = Lightning.randomBytes32()
+                        val trampolinePayload = PaymentAttempt.TrampolinePayload(trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket)
+                        when (val childPayments = createChildPayments(request, routes.value, trampolinePayload)) {
+                            is Either.Left -> failNothingSent(request, childPayments.value)
+                            is Either.Right -> {
+                                db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, childPayments.value.map { it.first }, OutgoingPayment.Status.Pending))
+                                val payment = PaymentAttempt.PaymentInProgress(request, 0, trampolinePayload, childPayments.value.associate { it.first.id to Pair(it.first, it.second) }, setOf(), listOf())
+                                pending[request.paymentId] = payment
+                                Progress(request, payment.fees, childPayments.value.map { it.third })
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    private fun createChildPayments(request: SendPayment, routes: List<RouteCalculation.Route>, trampolinePayload: PaymentAttempt.TrampolinePayload): List<Triple<OutgoingPayment.Part, SharedSecrets, WrappedChannelEvent>> {
-        val childPayments = routes.map { createOutgoingPart(request, it, trampolinePayload) }
-        childToParentId.putAll(childPayments.map { it.first.id to request.paymentId })
-        childPayments.forEach { logger.info { "h:${request.paymentHash} p:${request.paymentId} i:${it.first.id} sending ${it.first.amount} to channel ${it.third.channelId}" } }
-        return childPayments
+    private fun createChildPayments(
+        request: SendPayment,
+        routes: List<RouteCalculation.Route>,
+        trampolinePayload: PaymentAttempt.TrampolinePayload
+    ): Either<FinalFailure, List<Triple<OutgoingPayment.Part, SharedSecrets, WrappedChannelEvent>>> {
+        return routes.map { createOutgoingPart(request, it, trampolinePayload) }.toEither().map { childPayments ->
+            childToParentId.putAll(childPayments.map { it.first.id to request.paymentId })
+            childPayments.forEach { logger.info { "h:${request.paymentHash} p:${request.paymentId} i:${it.first.id} sending ${it.first.amount} to channel ${it.third.channelId}" } }
+            childPayments
+        }
     }
 
     suspend fun processAddFailed(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddFailed, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
@@ -101,12 +117,16 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, add.amount, channels - ignore)) {
                     is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, Either.Left(event.error), db, logger)
                     is Either.Right -> {
-                        val newPayments = createChildPayments(payment.request, routes.value, payment.trampolinePayload)
-                        db.addOutgoingParts(payment.request.paymentId, newPayments.map { it.first })
-                        val updatedPayments = payment.pending - add.paymentId + newPayments.map { it.first.id to Pair(it.first, it.second) }
-                        val updated = payment.copy(ignore = ignore, failures = payment.failures + Either.Left(event.error), pending = updatedPayments)
-                        val result = Progress(payment.request, updated.fees, newPayments.map { it.third })
-                        Pair(updated, result)
+                        when (val newPayments = createChildPayments(payment.request, routes.value, payment.trampolinePayload)) {
+                            is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, newPayments.value, payment.pending, payment.failures).failChild(add.paymentId, Either.Left(event.error), db, logger)
+                            is Either.Right -> {
+                                db.addOutgoingParts(payment.request.paymentId, newPayments.value.map { it.first })
+                                val updatedPayments = payment.pending - add.paymentId + newPayments.value.map { it.first.id to Pair(it.first, it.second) }
+                                val updated = payment.copy(ignore = ignore, failures = payment.failures + Either.Left(event.error), pending = updatedPayments)
+                                val result = Progress(payment.request, updated.fees, newPayments.value.map { it.third })
+                                Pair(updated, result)
+                            }
+                        }
                     }
                 }
             }
@@ -158,31 +178,43 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                     } else {
                         val nextFees = trampolineFees[payment.attemptNumber + 1]
                         logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
-                        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, nextFees, currentBlockHeight)
-                        when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
-                            is Either.Left -> {
-                                logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
-                                val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
-                                val result = Failure(payment.request, OutgoingPaymentFailure(aborted.reason, aborted.failures))
-                                db.completeOutgoingPayment(payment.request.paymentId, result.failure.reason)
-                                Pair(aborted, result)
-                            }
+
+                        suspend fun failCouldNotSend(finalFailure: FinalFailure): Pair<PaymentAttempt.PaymentAborted, Failure> {
+                            logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: $finalFailure" }
+                            val aborted = PaymentAttempt.PaymentAborted(payment.request, finalFailure, mapOf(), payment.failures + Either.Right(failure))
+                            val result = Failure(payment.request, OutgoingPaymentFailure(aborted.reason, aborted.failures))
+                            db.completeOutgoingPayment(payment.request.paymentId, result.failure.reason)
+                            return Pair(aborted, result)
+                        }
+
+                        when (val packet = createTrampolinePayload(payment.request, nextFees, currentBlockHeight)) {
+                            is Either.Left -> failCouldNotSend(packet.value)
                             is Either.Right -> {
-                                // We generate a random secret for this payment to avoid leaking the invoice secret to the trampoline node.
-                                val trampolinePaymentSecret = Lightning.randomBytes32()
-                                val trampolinePayload = PaymentAttempt.TrampolinePayload(trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket)
-                                val childPayments = createChildPayments(payment.request, routes.value, trampolinePayload)
-                                db.addOutgoingParts(payment.request.paymentId, childPayments.map { it.first })
-                                val newAttempt = PaymentAttempt.PaymentInProgress(
-                                    payment.request,
-                                    payment.attemptNumber + 1,
-                                    trampolinePayload,
-                                    childPayments.associate { it.first.id to Pair(it.first, it.second) },
-                                    setOf(), // we reset ignored channels
-                                    payment.failures + Either.Right(failure)
-                                )
-                                val result = Progress(newAttempt.request, newAttempt.fees, childPayments.map { it.third })
-                                Pair(newAttempt, result)
+                                val (trampolineAmount, trampolineExpiry, trampolinePacket) = packet.value
+                                when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
+                                    is Either.Left -> failCouldNotSend(routes.value)
+                                    is Either.Right -> {
+                                        // We generate a random secret for this payment to avoid leaking the invoice secret to the trampoline node.
+                                        val trampolinePaymentSecret = Lightning.randomBytes32()
+                                        val trampolinePayload = PaymentAttempt.TrampolinePayload(trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket)
+                                        when (val childPayments = createChildPayments(payment.request, routes.value, trampolinePayload)) {
+                                            is Either.Left -> failCouldNotSend(childPayments.value)
+                                            is Either.Right -> {
+                                                db.addOutgoingParts(payment.request.paymentId, childPayments.value.map { it.first })
+                                                val newAttempt = PaymentAttempt.PaymentInProgress(
+                                                    payment.request,
+                                                    payment.attemptNumber + 1,
+                                                    trampolinePayload,
+                                                    childPayments.value.associate { it.first.id to Pair(it.first, it.second) },
+                                                    setOf(), // we reset ignored channels
+                                                    payment.failures + Either.Right(failure)
+                                                )
+                                                val result = Progress(newAttempt.request, newAttempt.fees, childPayments.value.map { it.third })
+                                                Pair(newAttempt, result)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -285,7 +317,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         }
     }
 
-    private fun createOutgoingPart(request: SendPayment, route: RouteCalculation.Route, trampolinePayload: PaymentAttempt.TrampolinePayload): Triple<OutgoingPayment.Part, SharedSecrets, WrappedChannelEvent> {
+    private fun createOutgoingPart(request: SendPayment, route: RouteCalculation.Route, trampolinePayload: PaymentAttempt.TrampolinePayload): Either<FinalFailure, Triple<OutgoingPayment.Part, SharedSecrets, WrappedChannelEvent>> {
         val childId = UUID.randomUUID()
         val outgoingPayment = OutgoingPayment.Part(
             childId,
@@ -294,11 +326,16 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             OutgoingPayment.Part.Status.Pending
         )
         val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
-        val (add, secrets) = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
-        return Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ChannelEvent.ExecuteCommand(add)))
+        return when (val command = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))) {
+            is Try.Failure -> Either.Left(FinalFailure.InvoiceTooBig)
+            is Try.Success -> {
+                val (add, secrets) = command.result
+                Either.Right(Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ChannelEvent.ExecuteCommand(add))))
+            }
+        }
     }
 
-    private fun createTrampolinePayload(request: SendPayment, fees: TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
+    private fun createTrampolinePayload(request: SendPayment, fees: TrampolineFees, currentBlockHeight: Int): Either<FinalFailure, Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket>> {
         // We are either directly paying our peer (the trampoline node) or a remote node via our peer (using trampoline).
         val trampolineRoute = when (request.recipient) {
             walletParams.trampolineNode.id -> listOf(
@@ -315,12 +352,18 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.details.paymentRequest.paymentSecret, request.details.paymentRequest.paymentMetadata)
 
         val invoiceFeatures = Features(request.details.paymentRequest.features)
-        val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment)) {
+        val packet = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment)) {
             OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, OnionRoutingPacket.TrampolinePacketLength)
         } else {
             OutgoingPaymentPacket.buildTrampolineToLegacyPacket(request.details.paymentRequest, trampolineRoute, finalPayload)
         }
-        return Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
+        return when (packet) {
+            is Try.Failure -> Either.Left(FinalFailure.InvoiceTooBig)
+            is Try.Success -> {
+                val (trampolineAmount, trampolineExpiry, trampolineOnion) = packet.result
+                Either.Right(Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet))
+            }
+        }
     }
 
     sealed class PaymentAttempt {

@@ -4,7 +4,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class BitFieldsCommon : LightningTestSuite() {
+class BitFieldTestsCommon : LightningTestSuite() {
 
     @Test
     fun `Creation and simple get and set from left`() {

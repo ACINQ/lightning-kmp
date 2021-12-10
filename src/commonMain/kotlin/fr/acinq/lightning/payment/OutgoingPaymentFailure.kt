@@ -14,6 +14,7 @@ sealed class FinalFailure {
 
     // @formatter:off
     object AlreadyPaid : FinalFailure() { override fun toString(): String = "this invoice has already been paid" }
+    object InvoiceTooBig : FinalFailure() { override fun toString(): String = "this invoice contains too much metadata to be paid" }
     object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
     object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
     object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
@@ -33,7 +34,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<O
      * A detailed summary of the all internal errors.
      * This is targeted at users with technical knowledge of the lightning protocol.
      */
-    fun details(): String = failures.foldIndexed("", { index, msg, problem -> msg + "${index + 1}: ${problem.details}\n" })
+    fun details(): String = failures.foldIndexed("") { index, msg, problem -> msg + "${index + 1}: ${problem.details}\n" }
 
     companion object {
         fun convertFailure(failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis()): OutgoingPayment.Part.Status.Failed = when (failure) {

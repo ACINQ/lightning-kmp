@@ -1,9 +1,6 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -402,8 +399,27 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(invoice.paymentSecret, innerB.paymentSecret)
         assertEquals(invoice.features, innerB.invoiceFeatures)
         // The trampoline node should receive a subset of the routing hints that fits inside the onion.
-        assertEquals(4, innerB.invoiceRoutingInfo?.flatten()?.toSet()?.size)
+        assertEquals(3, innerB.invoiceRoutingInfo?.flatten()?.toSet()?.size)
         innerB.invoiceRoutingInfo?.flatten()?.forEach { assertTrue(extraHops.flatten().contains(it)) }
+    }
+
+    @Test
+    fun `insufficient space in the onion`() = runSuspendTest {
+        val channels = makeChannels()
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, walletParams, InMemoryPaymentsDb())
+        val extraHops = listOf(
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(10), 10.msat, 100, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(12), 10.msat, 110, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(13), 10.msat, 120, CltvExpiryDelta(48))),
+            listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(14), 10.msat, 130, CltvExpiryDelta(48))),
+        )
+        val paymentMetadata = ByteVector("01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
+        val invoice = makeInvoice(amount = 200_000.msat, supportsTrampoline = false, extraHops = extraHops, paymentMetadata = paymentMetadata)
+        val payment = SendPayment(UUID.randomUUID(), 200_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+
+        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        assertEquals(result, OutgoingPaymentHandler.Failure(payment, FinalFailure.InvoiceTooBig.toPaymentFailure()))
     }
 
     @Test
@@ -861,7 +877,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
     }
 
-    private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey(), extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>> = listOf()): PaymentRequest {
+    private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey(), extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>> = listOf(), paymentMetadata: ByteVector? = null): PaymentRequest {
         val paymentPreimage: ByteVector32 = randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
 
@@ -882,6 +898,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             description = "unit test",
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures.toMap()),
+            paymentMetadata = paymentMetadata,
             extraHops = extraHops
         )
     }

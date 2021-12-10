@@ -39,7 +39,7 @@ object Sphinx {
 
     fun mac(key: ByteArray, message: ByteArray): ByteVector32 = Digest.sha256().hmac(key, message, 64).toByteVector32()
 
-    fun mac(key: ByteVector, message: ByteVector): ByteVector32 = mac(key.toByteArray(), message.toByteArray())
+    private fun mac(key: ByteVector, message: ByteVector): ByteVector32 = mac(key.toByteArray(), message.toByteArray())
 
     private fun generateKey(keyType: ByteArray, secret: ByteVector32): ByteVector32 = mac(keyType, secret.toByteArray())
 
@@ -49,9 +49,9 @@ object Sphinx {
 
     fun generateStream(key: ByteVector32, length: Int): ByteArray = ChaCha20.encrypt(zeroes(length), key.toByteArray(), zeroes(12))
 
-    fun computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.times(secret).value).toByteVector32()
+    private fun computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.times(secret).value).toByteVector32()
 
-    fun computeBlindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.value + secret).toByteVector32()
+    private fun computeBlindingFactor(pub: PublicKey, secret: ByteVector): ByteVector32 = Crypto.sha256(pub.value + secret).toByteVector32()
 
     fun blind(pub: PublicKey, blindingFactor: ByteVector32): PublicKey = pub.times(PrivateKey(blindingFactor))
 
@@ -256,7 +256,9 @@ object Sphinx {
      * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
      *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
      */
-    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32, packetLength: Int): PacketAndSecrets {
+    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32, packetLength: Int): Try<PacketAndSecrets> = runTrying {
+        require(payloads.sumOf { it.size + MacLength } <= packetLength) { "packet per-hop payloads cannot exceed $packetLength bytes" }
+
         val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
         val filler = generateFiller("rho", sharedsecrets.dropLast(1), payloads.dropLast(1), packetLength)
 
@@ -272,7 +274,7 @@ object Sphinx {
         }
 
         val packet = loop(payloads.dropLast(1), ephemeralPublicKeys.dropLast(1), sharedsecrets.dropLast(1), lastPacket)
-        return PacketAndSecrets(packet, SharedSecrets(sharedsecrets.zip(publicKeys)))
+        PacketAndSecrets(packet, SharedSecrets(sharedsecrets.zip(publicKeys)))
     }
 }
 

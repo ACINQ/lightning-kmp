@@ -184,7 +184,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 hops = channelHops(paymentHandler.nodeParams.nodeId),
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, randomBytes32()),
                 payloadLength = OnionRoutingPacket.PaymentPacketLength
-            ).third.packet
+            ).get().third.packet
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
@@ -312,7 +312,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 hops = trampolineHops,
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, paymentSecret.reversed()), // <-- wrong secret
                 payloadLength = OnionRoutingPacket.TrampolinePacketLength
-            ).third.packet
+            ).get().third.packet
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
@@ -1174,11 +1174,11 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): CMD_ADD_HTLC {
-            return OutgoingPaymentPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).first.copy(commit = true)
+            return OutgoingPaymentPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).get().first.copy(commit = true)
         }
 
         private fun makeUpdateAddHtlc(id: Long, channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): UpdateAddHtlc {
-            val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destination.nodeParams.nodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
+            val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destination.nodeParams.nodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength).get()
             return UpdateAddHtlc(channelId, id, finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet)
         }
 
@@ -1207,7 +1207,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                     hops = channelHops(TestConstants.Bob.nodeParams.nodeId),
                     finalPayload = finalPayload,
                     payloadLength = OnionRoutingPacket.PaymentPacketLength
-                ).third.packet
+                ).get().third.packet
             )
         }
 

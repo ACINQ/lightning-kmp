@@ -32,8 +32,16 @@ sealed class Either<out A, out B> {
 }
 
 @Suppress("UNCHECKED_CAST")
-fun <L, R, T> Either<L, R>.flatMap(f: (R) -> Either<L, T>): Either<L, T> =
-    this.fold({ this as Either<L, T> }, f)
+fun <L, R, T> Either<L, R>.flatMap(f: (R) -> Either<L, T>): Either<L, T> = this.fold({ this as Either<L, T> }, f)
 
-fun <L, R, T> Either<L, R>.map(f: (R) -> T): Either<L, T> =
-    flatMap { Either.Right(f(it)) }
+fun <L, R, T> Either<L, R>.map(f: (R) -> T): Either<L, T> = flatMap { Either.Right(f(it)) }
+
+fun <L, R> List<Either<L, R>>.toEither(): Either<L, List<R>> = this.fold(Either.Right(listOf())) { current, element ->
+    when (current) {
+        is Either.Left -> current
+        is Either.Right -> when (element) {
+            is Either.Left -> Either.Left(element.value)
+            is Either.Right -> Either.Right(current.value + element.value)
+        }
+    }
+}

@@ -312,7 +312,7 @@ object PaymentOnion {
                 // NB: we limit the number of routing hints to ensure we don't overflow the onion.
                 // A better solution is to provide the routing hints outside the onion (in the `update_add_htlc` tlv stream).
                 val prunedRoutingHints = invoice.routingInfo.shuffled().fold(listOf<PaymentRequest.TaggedField.RoutingInfo>()) { previous, current ->
-                    if (previous.flatMap { it.hints }.size + current.hints.size <= 4) {
+                    if (previous.flatMap { it.hints }.size + current.hints.size <= 3) {
                         previous + current
                     } else {
                         previous

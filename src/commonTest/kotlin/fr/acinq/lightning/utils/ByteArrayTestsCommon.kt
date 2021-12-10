@@ -4,7 +4,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class ByteArraysCommon : LightningTestSuite() {
+class ByteArrayTestsCommon : LightningTestSuite() {
 
     @Test
     fun `Left pad`() {

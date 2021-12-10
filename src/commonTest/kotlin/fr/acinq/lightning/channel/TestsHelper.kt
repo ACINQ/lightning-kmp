@@ -320,7 +320,7 @@ object TestsHelper {
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
         val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
-        val cmd = OutgoingPaymentPacket.buildCommand(paymentId, paymentHash, listOf(ChannelHop(dummyKey, destination, dummyUpdate)), PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, randomBytes32(), null)).first.copy(commit = false)
+        val cmd = OutgoingPaymentPacket.buildCommand(paymentId, paymentHash, listOf(ChannelHop(dummyKey, destination, dummyUpdate)), PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, randomBytes32(), null)).get().first.copy(commit = false)
         return Pair(paymentPreimage, cmd)
     }
 
