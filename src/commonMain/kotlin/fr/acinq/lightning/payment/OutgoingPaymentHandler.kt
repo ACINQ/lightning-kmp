@@ -58,8 +58,8 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             logger.error { "h:${request.paymentHash} p:${request.paymentId} invoice has already been paid" }
             return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
         }
-
-        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, walletParams.trampolineFees.first(), currentBlockHeight)
+        val trampolineFees = request.trampolineFeesOverride ?: walletParams.trampolineFees
+        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)
         return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
@@ -138,8 +138,9 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
 
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
+                val trampolineFees = payment.request.trampolineFeesOverride ?: walletParams.trampolineFees
                 val finalError = when {
-                    walletParams.trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
+                    trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
                     failure == UnknownNextPeer -> FinalFailure.RecipientUnreachable
                     failure != TrampolineExpiryTooSoon && failure != TrampolineFeeInsufficient -> FinalFailure.UnknownError // non-retriable error
                     else -> null
@@ -155,9 +156,9 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                         // NB: we don't update failures here to avoid duplicate trampoline errors
                         Pair(updated, null)
                     } else {
-                        val trampolineFees = walletParams.trampolineFees[payment.attemptNumber + 1]
-                        logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${trampolineFees.feeBase}, proportional=${trampolineFees.feeProportional})..." }
-                        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, trampolineFees, currentBlockHeight)
+                        val nextFees = trampolineFees[payment.attemptNumber + 1]
+                        logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
+                        val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, nextFees, currentBlockHeight)
                         when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
                             is Either.Left -> {
                                 logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
