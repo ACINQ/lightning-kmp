@@ -58,7 +58,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             logger.error { "h:${request.paymentHash} p:${request.paymentId} invoice has already been paid" }
             return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
         }
-        val trampolineFees = request.trampolineFees ?: walletParams.trampolineFees
+        val trampolineFees = request.trampolineFeesOverride ?: walletParams.trampolineFees
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)
         return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
@@ -138,7 +138,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
 
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
-                val trampolineFees = payment.request.trampolineFees ?: walletParams.trampolineFees
+                val trampolineFees = payment.request.trampolineFeesOverride ?: walletParams.trampolineFees
                 val finalError = when {
                     trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
                     failure == UnknownNextPeer -> FinalFailure.RecipientUnreachable
