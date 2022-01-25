@@ -10,5 +10,6 @@ pluginManagement {
 
 include(
     ":PhoenixCrypto",
-    ":lightning-kmp-test-fixtures"
+    ":lightning-kmp-test-fixtures",
+    ":lightning-kmp-node"
 )

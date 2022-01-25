@@ -1,5 +1,6 @@
-package fr.acinq.lightning
+package fr.acinq.phoenix
 
+import com.squareup.sqldelight.sqlite.driver.JdbcSqliteDriver
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -11,14 +12,15 @@ import fr.acinq.lightning.channel.CMD_CLOSE
 import fr.acinq.lightning.channel.ChannelEvent
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.db.Databases
-import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.OutgoingPayment
-import fr.acinq.lightning.db.sqlite.SqliteChannelsDb
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.serialization.v1.Serialization
-import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.utils.*
+import fr.acinq.phoenix.db.ChannelsDatabase
+import fr.acinq.phoenix.db.PaymentsDatabase
+import fr.acinq.phoenix.db.SqliteChannelsDb
+import fr.acinq.phoenix.db.SqlitePaymentsDb
 import io.ktor.application.*
 import io.ktor.features.*
 import io.ktor.http.*
@@ -30,11 +32,11 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
-import java.sql.DriverManager
 
 /**
  * this is a very simple Phoenix node that can be used to "test" Phoenix without the actual apps
@@ -112,6 +114,61 @@ object Node {
         return MnemonicCode.toSeed(mnemonics, "").toByteVector64()
     }
 
+    fun startApi(peer: Peer, port: Int): NettyApplicationEngine {
+        logger.info { "starting API on port $port" }
+        return embeddedServer(Netty, port) {
+            install(StatusPages) {
+                exception<Throwable> {
+                    call.respondText(it.localizedMessage, ContentType.Text.Plain, HttpStatusCode.InternalServerError)
+                }
+            }
+            install(ContentNegotiation) {
+                register(ContentType.Application.Json, SerializationConverter(Json {
+                    serializersModule = Serialization.lightningSerializersModule
+                    allowStructuredMapKeys = true
+                }))
+            }
+            routing {
+                post("/ping") {
+                    val ping = call.receive<Ping>()
+                    call.respond(ping)
+                }
+                post("/invoice/create") {
+                    val request = call.receive<CreateInvoiceRequest>()
+                    val paymentPreimage = randomBytes32()
+                    val amount = fr.acinq.lightning.MilliSatoshi(request.amount ?: 50000L)
+                    val result = CompletableDeferred<PaymentRequest>()
+                    peer.send(ReceivePayment(paymentPreimage, amount, request.description.orEmpty(), null, result))
+                    call.respond(CreateInvoiceResponse(result.await().write()))
+                }
+                post("/invoice/pay") {
+                    val request = call.receive<PayInvoiceRequest>()
+                    val pr = PaymentRequest.read(request.invoice)
+                    val amount = pr.amount ?: request.amount?.let { fr.acinq.lightning.MilliSatoshi(it) } ?: fr.acinq.lightning.MilliSatoshi(50000)
+                    peer.send(SendPayment(UUID.randomUUID(), amount, pr.nodeId, OutgoingPayment.Details.Normal(pr)))
+                    call.respond(PayInvoiceResponse("pending"))
+                }
+                post("/invoice/decode") {
+                    val request = call.receive<DecodeInvoiceRequest>()
+                    val pr = PaymentRequest.read(request.invoice)
+                    call.respond(pr)
+                }
+                get("/channels") {
+                    call.respond(peer.channels.values.toList().map { fr.acinq.lightning.serialization.v1.ChannelState.import(it) })
+                }
+                get("/channels/{channelId}") {
+                    val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
+                    call.respond(peer.channels[channelId]?.let { fr.acinq.lightning.serialization.v1.ChannelState.import(it) } ?: "")
+                }
+                post("/channels/{channelId}/close") {
+                    val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
+                    peer.send(WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_CLOSE(null))))
+                    call.respond(CloseChannelResponse("pending"))
+                }
+            }
+        }.start(wait = false)
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
         val datadir = File(System.getProperty("phoenix.datadir", System.getProperty("user.home") + "/.phoenix"))
@@ -132,28 +189,36 @@ object Node {
         val electrumServerAddress = parseElectrumServerAddress(config.getString("phoenix.electrum-server"))
         val keyManager = LocalKeyManager(seed, chainHash)
         logger.info { "node ${keyManager.nodeId} is starting" }
-        val walletParams = WalletParams(NodeUri(nodeId, nodeAddress, nodePort), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        val trampolineFees = listOf(
+            fr.acinq.lightning.TrampolineFees(0.sat, 0, fr.acinq.lightning.CltvExpiryDelta(576)),
+            fr.acinq.lightning.TrampolineFees(1.sat, 100, fr.acinq.lightning.CltvExpiryDelta(576)),
+            fr.acinq.lightning.TrampolineFees(3.sat, 100, fr.acinq.lightning.CltvExpiryDelta(576)),
+            fr.acinq.lightning.TrampolineFees(5.sat, 500, fr.acinq.lightning.CltvExpiryDelta(576)),
+            fr.acinq.lightning.TrampolineFees(5.sat, 1000, fr.acinq.lightning.CltvExpiryDelta(576)),
+            fr.acinq.lightning.TrampolineFees(5.sat, 1200, fr.acinq.lightning.CltvExpiryDelta(576))
+        )
+        val walletParams = fr.acinq.lightning.WalletParams(fr.acinq.lightning.NodeUri(nodeId, nodeAddress, nodePort), trampolineFees, fr.acinq.lightning.InvoiceDefaultRoutingFees(1_000.msat, 100, fr.acinq.lightning.CltvExpiryDelta(144)))
         // We only support anchor_outputs commitments, so we should anchor_outputs to mandatory.
         // However we're currently only connecting to the Acinq node, which will reject mandatory anchors but will always use anchor_outputs when opening channels to us.
         // We will change that and set this feature to mandatory once the Acinq node is ready to publicly activate anchor_outputs.
-        val nodeParams = NodeParams(
+        val nodeParams = fr.acinq.lightning.NodeParams(
             keyManager = keyManager,
             alias = "phoenix",
-            features = Features(
-                Feature.OptionDataLossProtect to FeatureSupport.Mandatory,
-                Feature.VariableLengthOnion to FeatureSupport.Mandatory,
-                Feature.PaymentSecret to FeatureSupport.Mandatory,
-                Feature.BasicMultiPartPayment to FeatureSupport.Optional,
-                Feature.Wumbo to FeatureSupport.Optional,
-                Feature.StaticRemoteKey to FeatureSupport.Optional,
-                Feature.AnchorOutputs to FeatureSupport.Optional,
-                Feature.TrampolinePayment to FeatureSupport.Optional,
-                Feature.ZeroReserveChannels to FeatureSupport.Optional,
-                Feature.ZeroConfChannels to FeatureSupport.Optional,
-                Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-                Feature.PayToOpenClient to FeatureSupport.Optional,
-                Feature.TrustedSwapInClient to FeatureSupport.Optional,
-                Feature.ChannelBackupClient to FeatureSupport.Optional,
+            features = fr.acinq.lightning.Features(
+                fr.acinq.lightning.Feature.OptionDataLossProtect to fr.acinq.lightning.FeatureSupport.Mandatory,
+                fr.acinq.lightning.Feature.VariableLengthOnion to fr.acinq.lightning.FeatureSupport.Mandatory,
+                fr.acinq.lightning.Feature.PaymentSecret to fr.acinq.lightning.FeatureSupport.Mandatory,
+                fr.acinq.lightning.Feature.BasicMultiPartPayment to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.Wumbo to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.StaticRemoteKey to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.AnchorOutputs to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.TrampolinePayment to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.ZeroReserveChannels to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.ZeroConfChannels to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.WakeUpNotificationClient to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.PayToOpenClient to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.TrustedSwapInClient to fr.acinq.lightning.FeatureSupport.Optional,
+                fr.acinq.lightning.Feature.ChannelBackupClient to fr.acinq.lightning.FeatureSupport.Optional,
             ),
             dustLimit = 546.sat,
             maxRemoteDustLimit = 600.sat,
@@ -168,13 +233,13 @@ object Node {
             ),
             maxHtlcValueInFlightMsat = 5000000000L,
             maxAcceptedHtlcs = 30,
-            expiryDeltaBlocks = CltvExpiryDelta(144),
-            fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(24),
+            expiryDeltaBlocks = fr.acinq.lightning.CltvExpiryDelta(144),
+            fulfillSafetyBeforeTimeoutBlocks = fr.acinq.lightning.CltvExpiryDelta(24),
             checkHtlcTimeoutAfterStartupDelaySeconds = 15,
             htlcMinimum = 1.msat,
             minDepthBlocks = 3,
-            toRemoteDelayBlocks = CltvExpiryDelta(2016),
-            maxToLocalDelayBlocks = CltvExpiryDelta(2016),
+            toRemoteDelayBlocks = fr.acinq.lightning.CltvExpiryDelta(2016),
+            maxToLocalDelayBlocks = fr.acinq.lightning.CltvExpiryDelta(2016),
             feeBase = 1000.msat,
             feeProportionalMillionth = 100,
             reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -199,11 +264,17 @@ object Node {
         )
 
         val db = object : Databases {
-            override val channels = SqliteChannelsDb(nodeParams, DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
-            override val payments = InMemoryPaymentsDb()
+            override val channels = run {
+                val driver = JdbcSqliteDriver("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}")
+                ChannelsDatabase.Schema.create(driver)
+                SqliteChannelsDb(driver, nodeParams)
+            }
+            override val payments = run {
+                val driver = JdbcSqliteDriver("jdbc:sqlite:${File(chaindir, "payments.sqlite")}")
+                PaymentsDatabase.Schema.create(driver)
+                SqlitePaymentsDb(driver)
+            }
         }
-
-        Class.forName("org.sqlite.JDBC")
 
         suspend fun connectLoop(peer: Peer) {
             peer.connectionState.collect {
@@ -218,57 +289,13 @@ object Node {
 
             launch { connectLoop(peer) }
 
-            embeddedServer(Netty, 8080) {
-                install(StatusPages) {
-                    exception<Throwable> {
-                        call.respondText(it.localizedMessage, ContentType.Text.Plain, HttpStatusCode.InternalServerError)
-                    }
-                }
-                install(ContentNegotiation) {
-                    register(ContentType.Application.Json, SerializationConverter(Json {
-                        serializersModule = Serialization.lightningSerializersModule
-                        allowStructuredMapKeys = true
-                    }))
-                }
-                routing {
-                    post("/ping") {
-                        val ping = call.receive<Ping>()
-                        call.respond(ping)
-                    }
-                    post("/invoice/create") {
-                        val request = call.receive<CreateInvoiceRequest>()
-                        val paymentPreimage = Lightning.randomBytes32()
-                        val amount = MilliSatoshi(request.amount ?: 50000L)
-                        val result = CompletableDeferred<PaymentRequest>()
-                        peer.send(ReceivePayment(paymentPreimage, amount, request.description.orEmpty(), null, result))
-                        call.respond(CreateInvoiceResponse(result.await().write()))
-                    }
-                    post("/invoice/pay") {
-                        val request = call.receive<PayInvoiceRequest>()
-                        val pr = PaymentRequest.read(request.invoice)
-                        val amount = pr.amount ?: request.amount?.let { MilliSatoshi(it) } ?: MilliSatoshi(50000)
-                        peer.send(SendPayment(UUID.randomUUID(), amount, pr.nodeId, OutgoingPayment.Details.Normal(pr)))
-                        call.respond(PayInvoiceResponse("pending"))
-                    }
-                    post("/invoice/decode") {
-                        val request = call.receive<DecodeInvoiceRequest>()
-                        val pr = PaymentRequest.read(request.invoice)
-                        call.respond(pr)
-                    }
-                    get("/channels") {
-                        call.respond(peer.channels.values.toList().map { fr.acinq.lightning.serialization.v1.ChannelState.import(it) })
-                    }
-                    get("/channels/{channelId}") {
-                        val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        call.respond(peer.channels[channelId]?.let { fr.acinq.lightning.serialization.v1.ChannelState.import(it) } ?: "")
-                    }
-                    post("/channels/{channelId}/close") {
-                        val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        peer.send(WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_CLOSE(null))))
-                        call.respond(CloseChannelResponse("pending"))
-                    }
-                }
-            }.start(wait = false)
+            launch {
+                electrum.connectionState.first { it == Connection.ESTABLISHED }
+                logger.info { "electrum connection ok" }
+                peer.connectionState.first { it == Connection.ESTABLISHED }
+                logger.info { "peer connection ok" }
+                startApi(peer, 8080)
+            }
 
             launch { peer.connect() }
         }

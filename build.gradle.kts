@@ -73,9 +73,6 @@ kotlin {
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             implementation("ch.qos.logback:logback-classic:1.2.3")
-            implementation("io.ktor:ktor-server-netty:$ktorVersion")
-            implementation("io.ktor:ktor-serialization:$ktorVersion")
-            implementation("com.typesafe:config:1.4.1")
         }
     }
 
