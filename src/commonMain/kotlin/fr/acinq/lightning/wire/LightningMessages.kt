@@ -169,6 +169,8 @@ data class Init(@Contextual val features: ByteVector, val tlvs: TlvStream<InitTl
         val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
         @Suppress("UNCHECKED_CAST")
         tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
+        @Suppress("UNCHECKED_CAST")
+        tlvReaders[InitTlv.PhoenixAndroidLegacyNodeId.tag] = InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>
         val serializer = TlvStreamSerializer(false, tlvReaders)
         serializer.write(tlvs, out)
     }
@@ -187,6 +189,8 @@ data class Init(@Contextual val features: ByteVector, val tlvs: TlvStream<InitTl
             val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
             tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
+            @Suppress("UNCHECKED_CAST")
+            tlvReaders[InitTlv.PhoenixAndroidLegacyNodeId.tag] = InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>
             val serializer = TlvStreamSerializer(false, tlvReaders)
             val tlvs = serializer.read(input)
             return Init(features, tlvs)

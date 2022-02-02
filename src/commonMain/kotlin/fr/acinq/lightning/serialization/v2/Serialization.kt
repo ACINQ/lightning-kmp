@@ -55,6 +55,7 @@ object Serialization {
             subclass(ChannelTlv.ChannelVersionTlv.serializer())
             subclass(ChannelTlv.ChannelOriginTlv.serializer())
             subclass(InitTlv.Networks.serializer())
+            subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())
             subclass(OnionTlv.AmountToForward.serializer())
             subclass(OnionTlv.OutgoingCltv.serializer())
             subclass(OnionTlv.OutgoingChannelId.serializer())
