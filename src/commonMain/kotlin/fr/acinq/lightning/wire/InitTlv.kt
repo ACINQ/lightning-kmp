@@ -35,7 +35,7 @@ sealed class InitTlv : Tlv {
 
     @Serializable
     data class PhoenixAndroidLegacyNodeId(@Contextual val legacyNodeId: PublicKey) : InitTlv() {
-        override val tag: Long get() = Networks.tag
+        override val tag: Long get() = PhoenixAndroidLegacyNodeId.tag
 
         override fun write(out: Output) {
             LightningCodecs.writeBytes(legacyNodeId.value, out)

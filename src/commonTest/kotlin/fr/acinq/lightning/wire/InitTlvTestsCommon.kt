@@ -23,7 +23,10 @@ class InitTlvTestsCommon : LightningTestSuite() {
             val decoded = tlvStreamSerializer.read(it.second)
             val legacyNodeId = decoded.records.mapNotNull { record ->
                 when (record) {
-                    is InitTlv.PhoenixAndroidLegacyNodeId -> record.legacyNodeId
+                    is InitTlv.PhoenixAndroidLegacyNodeId -> {
+                        assertEquals(InitTlv.PhoenixAndroidLegacyNodeId.tag, record.tag)
+                        record.legacyNodeId
+                    }
                     else -> null
                 }
             }.first()
