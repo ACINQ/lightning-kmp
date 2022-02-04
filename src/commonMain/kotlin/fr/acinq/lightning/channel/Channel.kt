@@ -572,48 +572,44 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.localParams, event.channelConfig, event.remoteInit)
                 Pair(nextState, listOf())
             }
+            event is ChannelEvent.InitFunder && isValidChannelType(event.channelType) -> {
+                val fundingPubKey = event.localParams.channelKeys.fundingPubKey
+                val paymentBasepoint = event.localParams.channelKeys.paymentBasepoint
+                val open = OpenChannel(
+                    staticParams.nodeParams.chainHash,
+                    temporaryChannelId = event.temporaryChannelId,
+                    fundingSatoshis = event.fundingAmount,
+                    pushMsat = event.pushAmount,
+                    dustLimitSatoshis = event.localParams.dustLimit,
+                    maxHtlcValueInFlightMsat = event.localParams.maxHtlcValueInFlightMsat,
+                    channelReserveSatoshis = event.localParams.channelReserve,
+                    htlcMinimumMsat = event.localParams.htlcMinimum,
+                    feeratePerKw = event.initialFeerate,
+                    toSelfDelay = event.localParams.toSelfDelay,
+                    maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
+                    fundingPubkey = fundingPubKey,
+                    revocationBasepoint = event.localParams.channelKeys.revocationBasepoint,
+                    paymentBasepoint = paymentBasepoint,
+                    delayedPaymentBasepoint = event.localParams.channelKeys.delayedPaymentBasepoint,
+                    htlcBasepoint = event.localParams.channelKeys.htlcBasepoint,
+                    firstPerCommitmentPoint = keyManager.commitmentPoint(event.localParams.channelKeys.shaSeed, 0),
+                    channelFlags = event.channelFlags,
+                    tlvStream = TlvStream(
+                        buildList {
+                            // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
+                            // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+                            add(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))
+                            add(ChannelTlv.ChannelTypeTlv(event.channelType))
+                            if (event.channelOrigin != null) add(ChannelTlv.ChannelOriginTlv(event.channelOrigin))
+                        }
+                    )
+                )
+                val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnChainFeerates, event, open)
+                Pair(nextState, listOf(ChannelAction.Message.Send(open)))
+            }
             event is ChannelEvent.InitFunder -> {
-                when (event.channelType) {
-                    ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve -> {
-                        val fundingPubKey = event.localParams.channelKeys.fundingPubKey
-                        val paymentBasepoint = event.localParams.channelKeys.paymentBasepoint
-                        val open = OpenChannel(
-                            staticParams.nodeParams.chainHash,
-                            temporaryChannelId = event.temporaryChannelId,
-                            fundingSatoshis = event.fundingAmount,
-                            pushMsat = event.pushAmount,
-                            dustLimitSatoshis = event.localParams.dustLimit,
-                            maxHtlcValueInFlightMsat = event.localParams.maxHtlcValueInFlightMsat,
-                            channelReserveSatoshis = event.localParams.channelReserve,
-                            htlcMinimumMsat = event.localParams.htlcMinimum,
-                            feeratePerKw = event.initialFeerate,
-                            toSelfDelay = event.localParams.toSelfDelay,
-                            maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
-                            fundingPubkey = fundingPubKey,
-                            revocationBasepoint = event.localParams.channelKeys.revocationBasepoint,
-                            paymentBasepoint = paymentBasepoint,
-                            delayedPaymentBasepoint = event.localParams.channelKeys.delayedPaymentBasepoint,
-                            htlcBasepoint = event.localParams.channelKeys.htlcBasepoint,
-                            firstPerCommitmentPoint = keyManager.commitmentPoint(event.localParams.channelKeys.shaSeed, 0),
-                            channelFlags = event.channelFlags,
-                            tlvStream = TlvStream(
-                                buildList {
-                                    // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
-                                    // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-                                    add(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))
-                                    add(ChannelTlv.ChannelTypeTlv(event.channelType))
-                                    if (event.channelOrigin != null) add(ChannelTlv.ChannelOriginTlv(event.channelOrigin))
-                                }
-                            )
-                        )
-                        val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnChainFeerates, event, open)
-                        Pair(nextState, listOf(ChannelAction.Message.Send(open)))
-                    }
-                    else -> {
-                        logger.warning { "c:${event.temporaryChannelId} cannot open channel with invalid channel_type=${event.channelType.name}" }
-                        Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
-                    }
-                }
+                logger.warning { "c:${event.temporaryChannelId} cannot open channel with invalid channel_type=${event.channelType.name}" }
+                Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
             event is ChannelEvent.Restore && event.state is Closing && event.state.commitments.nothingAtStake() -> {
                 logger.info { "c:${event.state.channelId} we have nothing at stake, going straight to CLOSED" }
@@ -703,6 +699,14 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             else -> unhandled(event)
+        }
+    }
+
+    private fun isValidChannelType(channelType: ChannelType.SupportedChannelType): Boolean {
+        return when (channelType) {
+            ChannelType.SupportedChannelType.AnchorOutputs -> true
+            ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve -> true
+            else -> false
         }
     }
 
