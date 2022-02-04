@@ -51,7 +51,7 @@ object Serialization {
 
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
-            subclass(ChannelTlv.UpfrontShutdownScript.serializer())
+            subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
             subclass(ChannelTlv.ChannelVersionTlv.serializer())
             subclass(ChannelTlv.ChannelOriginTlv.serializer())
             subclass(InitTlv.Networks.serializer())
@@ -225,8 +225,7 @@ object Serialization {
         override fun decodeString(): String {
             val len = decodeInt()
             require(len <= input.availableBytes)
-            val decoded = input.readNBytes(len)!!.decodeToString()
-            return decoded
+            return input.readNBytes(len)!!.decodeToString()
         }
 
         override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = input.read()

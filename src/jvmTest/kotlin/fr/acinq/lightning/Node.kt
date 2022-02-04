@@ -147,6 +147,7 @@ object Node {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Optional,
                 Feature.AnchorOutputs to FeatureSupport.Optional,
+                Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.TrampolinePayment to FeatureSupport.Optional,
                 Feature.ZeroReserveChannels to FeatureSupport.Optional,
                 Feature.ZeroConfChannels to FeatureSupport.Optional,
