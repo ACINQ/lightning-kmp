@@ -208,9 +208,10 @@ class FeaturesTestsCommon : LightningTestSuite() {
             byteArrayOf(0x09, 0x00, 0x42, 0x00) to Features(
                 mapOf(
                     VariableLengthOnion to FeatureSupport.Optional,
-                    PaymentSecret to FeatureSupport.Mandatory
+                    PaymentSecret to FeatureSupport.Mandatory,
+                    ShutdownAnySegwit to FeatureSupport.Optional
                 ),
-                setOf(UnknownFeature(24), UnknownFeature(27))
+                setOf(UnknownFeature(24))
             ),
             byteArrayOf(0x52, 0x00, 0x00, 0x00) to Features(
                 mapOf(),

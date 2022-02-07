@@ -92,6 +92,12 @@ sealed class Feature {
     }
 
     @Serializable
+    object ShutdownAnySegwit : Feature() {
+        override val rfcName get() = "option_shutdown_anysegwit"
+        override val mandatory get() = 26
+    }
+
+    @Serializable
     object ChannelType : Feature() {
         override val rfcName get() = "option_channel_type"
         override val mandatory get() = 44
@@ -228,6 +234,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
             Feature.AnchorOutputs,
+            Feature.ShutdownAnySegwit,
             Feature.ChannelType,
             Feature.TrampolinePayment,
             Feature.ZeroReserveChannels,
