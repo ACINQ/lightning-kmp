@@ -435,14 +435,14 @@ object Helpers {
             }.getOrElse { null }
         }
 
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: FeeratePerKw): Satoshi {
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
-            return Transactions.weight2fee(requestedFeerate, closingWeight)
+            return requestedFeerate.computeFees(closingWeight)
         }
 
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, requestedFeerate: FeeratePerKw): Satoshi =
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, requestedFeerate: ClosingFeerates): ClosingFees =
             firstClosingFee(commitments, localScriptPubkey.toByteArray(), remoteScriptPubkey.toByteArray(), requestedFeerate)
 
         fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
@@ -452,10 +452,10 @@ object Helpers {
             commitments: Commitments,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
-            requestedFeerate: FeeratePerKw
-        ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
-            val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, requestedFeerate)
-            return makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+            requestedFeerate: ClosingFeerates
+        ): Pair<ClosingTx, ClosingSigned> {
+            val closingFees = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, requestedFeerate)
+            return makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFees)
         }
 
         fun makeClosingTx(
@@ -463,14 +463,14 @@ object Helpers {
             commitments: Commitments,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
-            closingFee: Satoshi
-        ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
+            closingFees: ClosingFees
+        ): Pair<ClosingTx, ClosingSigned> {
             require(isValidFinalScriptPubkey(localScriptPubkey)) { "invalid localScriptPubkey" }
             require(isValidFinalScriptPubkey(remoteScriptPubkey)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
-            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFee, commitments.localCommit.spec)
+            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFees.preferred, commitments.localCommit.spec)
             val localClosingSig = keyManager.sign(closingTx, commitments.localParams.channelKeys.fundingPrivateKey)
-            val closingSigned = ClosingSigned(commitments.channelId, closingFee, localClosingSig)
+            val closingSigned = ClosingSigned(commitments.channelId, closingFees.preferred, localClosingSig, TlvStream(listOf(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max))))
             return Pair(closingTx, closingSigned)
         }
 
@@ -481,12 +481,12 @@ object Helpers {
             remoteScriptPubkey: ByteArray,
             remoteClosingFee: Satoshi,
             remoteClosingSig: ByteVector64
-        ): Either<ChannelException, ClosingTx> {
-            val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
+        ): Either<ChannelException, Pair<ClosingTx, ClosingSigned>> {
+            val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee))
             return if (checkClosingDustAmounts(closingTx)) {
                 val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.channelKeys.fundingPubKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
                 when (Transactions.checkSpendable(signedClosingTx)) {
-                    is Try.Success -> Either.Right(signedClosingTx)
+                    is Try.Success -> Either.Right(Pair(signedClosingTx, closingSigned))
                     is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
                 }
             } else {

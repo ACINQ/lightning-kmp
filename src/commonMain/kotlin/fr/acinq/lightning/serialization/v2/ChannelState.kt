@@ -724,7 +724,8 @@ data class Normal(
         channelUpdate,
         remoteChannelUpdate,
         localShutdown,
-        remoteShutdown
+        remoteShutdown,
+        null
     )
 }
 
@@ -752,7 +753,8 @@ data class ShuttingDown(
         currentOnChainFeerates.export(),
         commitments.export(nodeParams),
         localShutdown,
-        remoteShutdown
+        remoteShutdown,
+        null
     )
 }
 
@@ -791,7 +793,8 @@ data class Negotiating(
         localShutdown,
         remoteShutdown,
         closingTxProposed.map { x -> x.map { it.export() } },
-        bestUnpublishedClosingTx
+        bestUnpublishedClosingTx,
+        null
     )
 }
 

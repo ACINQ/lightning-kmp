@@ -220,6 +220,21 @@ sealed class ShutdownTlv : Tlv {
 @Serializable
 sealed class ClosingSignedTlv : Tlv {
     @Serializable
+    data class FeeRange(@Contextual val min: Satoshi, @Contextual val max: Satoshi) : ClosingSignedTlv() {
+        override val tag: Long get() = FeeRange.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeU64(min.toLong(), out)
+            LightningCodecs.writeU64(max.toLong(), out)
+        }
+
+        companion object : TlvValueReader<FeeRange> {
+            const val tag: Long = 1
+            override fun read(input: Input): FeeRange = FeeRange(Satoshi(LightningCodecs.u64(input)), Satoshi(LightningCodecs.u64(input)))
+        }
+    }
+
+    @Serializable
     data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ClosingSignedTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
