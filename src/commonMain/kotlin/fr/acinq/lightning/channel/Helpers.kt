@@ -392,7 +392,8 @@ object Helpers {
                     Script.isPay2sh(script) -> true
                     Script.isPay2wpkh(script) -> true
                     Script.isPay2wsh(script) -> true
-                    Script.isNativeWitnessScript(script) -> allowAnySegwit
+                    // option_shutdown_anysegwit doesn't cover segwit v0
+                    Script.isNativeWitnessScript(script) && script[0] != OP_0 -> allowAnySegwit
                     else -> false
                 }
             }.getOrElse { false }
