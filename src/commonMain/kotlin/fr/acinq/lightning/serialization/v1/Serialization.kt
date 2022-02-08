@@ -41,18 +41,19 @@ object Serialization {
 
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
-            subclass(ChannelTlv.UpfrontShutdownScript.serializer())
+            subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
             subclass(ChannelTlv.ChannelVersionTlv.serializer())
             subclass(ChannelTlv.ChannelOriginTlv.serializer())
             subclass(InitTlv.Networks.serializer())
-            subclass(OnionTlv.AmountToForward.serializer())
-            subclass(OnionTlv.OutgoingCltv.serializer())
-            subclass(OnionTlv.OutgoingChannelId.serializer())
-            subclass(OnionTlv.PaymentData.serializer())
-            subclass(OnionTlv.InvoiceFeatures.serializer())
-            subclass(OnionTlv.OutgoingNodeId.serializer())
-            subclass(OnionTlv.InvoiceRoutingInfo.serializer())
-            subclass(OnionTlv.TrampolineOnion.serializer())
+            subclass(OnionPaymentPayloadTlv.AmountToForward.serializer())
+            subclass(OnionPaymentPayloadTlv.OutgoingCltv.serializer())
+            subclass(OnionPaymentPayloadTlv.OutgoingChannelId.serializer())
+            subclass(OnionPaymentPayloadTlv.PaymentData.serializer())
+            subclass(OnionPaymentPayloadTlv.PaymentMetadata.serializer())
+            subclass(OnionPaymentPayloadTlv.InvoiceFeatures.serializer())
+            subclass(OnionPaymentPayloadTlv.OutgoingNodeId.serializer())
+            subclass(OnionPaymentPayloadTlv.InvoiceRoutingInfo.serializer())
+            subclass(OnionPaymentPayloadTlv.TrampolineOnion.serializer())
             subclass(GenericTlv.serializer())
         }
     }

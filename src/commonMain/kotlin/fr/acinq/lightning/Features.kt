@@ -6,6 +6,9 @@ import fr.acinq.lightning.utils.leftPaddedCopyOf
 import fr.acinq.lightning.utils.or
 import kotlinx.serialization.Serializable
 
+/** Feature scope as defined in Bolt 9. */
+enum class FeatureScope { Init, Node, Invoice }
+
 enum class FeatureSupport {
     Mandatory {
         override fun toString() = "mandatory"
@@ -20,6 +23,7 @@ sealed class Feature {
 
     abstract val rfcName: String
     abstract val mandatory: Int
+    abstract val scopes: Set<FeatureScope>
     val optional: Int get() = mandatory + 1
 
     fun supportBit(support: FeatureSupport): Int = when (support) {
@@ -33,6 +37,7 @@ sealed class Feature {
     object OptionDataLossProtect : Feature() {
         override val rfcName get() = "option_data_loss_protect"
         override val mandatory get() = 0
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     @Serializable
@@ -41,54 +46,84 @@ sealed class Feature {
 
         // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
         override val mandatory get() = 2
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
     @Serializable
     object ChannelRangeQueries : Feature() {
         override val rfcName get() = "gossip_queries"
         override val mandatory get() = 6
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     @Serializable
     object VariableLengthOnion : Feature() {
         override val rfcName get() = "var_onion_optin"
         override val mandatory get() = 8
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     @Serializable
     object ChannelRangeQueriesExtended : Feature() {
         override val rfcName get() = "gossip_queries_ex"
         override val mandatory get() = 10
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     @Serializable
     object StaticRemoteKey : Feature() {
         override val rfcName get() = "option_static_remotekey"
         override val mandatory get() = 12
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     @Serializable
     object PaymentSecret : Feature() {
         override val rfcName get() = "payment_secret"
         override val mandatory get() = 14
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     @Serializable
     object BasicMultiPartPayment : Feature() {
         override val rfcName get() = "basic_mpp"
         override val mandatory get() = 16
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     @Serializable
     object Wumbo : Feature() {
         override val rfcName get() = "option_support_large_channel"
         override val mandatory get() = 18
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     @Serializable
     object AnchorOutputs : Feature() {
         override val rfcName get() = "option_anchor_outputs"
         override val mandatory get() = 20
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
+    @Serializable
+    object ShutdownAnySegwit : Feature() {
+        override val rfcName get() = "option_shutdown_anysegwit"
+        override val mandatory get() = 26
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
+    @Serializable
+    object ChannelType : Feature() {
+        override val rfcName get() = "option_channel_type"
+        override val mandatory get() = 44
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
+    @Serializable
+    object PaymentMetadata : Feature() {
+        override val rfcName get() = "option_payment_metadata"
+        override val mandatory get() = 48
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Invoice)
     }
 
     // The following features have not been standardised, hence the high feature bits to avoid conflicts.
@@ -97,6 +132,7 @@ sealed class Feature {
     object TrampolinePayment : Feature() {
         override val rfcName get() = "trampoline_payment"
         override val mandatory get() = 50
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     /** This feature bit should be activated when a node accepts having their channel reserve set to 0. */
@@ -104,6 +140,7 @@ sealed class Feature {
     object ZeroReserveChannels : Feature() {
         override val rfcName get() = "zero_reserve_channels"
         override val mandatory get() = 128
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     /** This feature bit should be activated when a node accepts unconfirmed channels (will set min_depth to 0 in accept_channel). */
@@ -111,6 +148,7 @@ sealed class Feature {
     object ZeroConfChannels : Feature() {
         override val rfcName get() = "zero_conf_channels"
         override val mandatory get() = 130
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     /** This feature bit should be activated when a mobile node supports waking up via push notifications. */
@@ -118,6 +156,7 @@ sealed class Feature {
     object WakeUpNotificationClient : Feature() {
         override val rfcName get() = "wake_up_notification_client"
         override val mandatory get() = 132
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
     /** This feature bit should be activated when a node supports waking up their peers via push notifications. */
@@ -125,6 +164,7 @@ sealed class Feature {
     object WakeUpNotificationProvider : Feature() {
         override val rfcName get() = "wake_up_notification_provider"
         override val mandatory get() = 134
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     /** This feature bit should be activated when a node accepts on-the-fly channel creation. */
@@ -132,6 +172,7 @@ sealed class Feature {
     object PayToOpenClient : Feature() {
         override val rfcName get() = "pay_to_open_client"
         override val mandatory get() = 136
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
     /** This feature bit should be activated when a node supports opening channels on-the-fly when liquidity is missing to receive a payment. */
@@ -139,6 +180,7 @@ sealed class Feature {
     object PayToOpenProvider : Feature() {
         override val rfcName get() = "pay_to_open_provider"
         override val mandatory get() = 138
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     /** This feature bit should be activated when a node accepts channel creation via trusted swaps-in. */
@@ -146,6 +188,7 @@ sealed class Feature {
     object TrustedSwapInClient : Feature() {
         override val rfcName get() = "trusted_swap_in_client"
         override val mandatory get() = 140
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
     /** This feature bit should be activated when a node supports opening channels in exchange for on-chain funds (swap-in). */
@@ -153,6 +196,7 @@ sealed class Feature {
     object TrustedSwapInProvider : Feature() {
         override val rfcName get() = "trusted_swap_in_provider"
         override val mandatory get() = 142
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     /** This feature bit should be activated when a node wants to send channel backups to their peers. */
@@ -160,6 +204,7 @@ sealed class Feature {
     object ChannelBackupClient : Feature() {
         override val rfcName get() = "channel_backup_client"
         override val mandatory get() = 144
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
     /** This feature bit should be activated when a node stores channel backups for their peers. */
@@ -167,6 +212,7 @@ sealed class Feature {
     object ChannelBackupProvider : Feature() {
         override val rfcName get() = "channel_backup_provider"
         override val mandatory get() = 146
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 }
 
@@ -176,9 +222,16 @@ data class UnknownFeature(val bitIndex: Int)
 @Serializable
 data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Set<UnknownFeature> = emptySet()) {
 
-    fun hasFeature(feature: Feature, support: FeatureSupport? = null): Boolean =
-        if (support != null) activated[feature] == support
-        else activated.containsKey(feature)
+    fun hasFeature(feature: Feature, support: FeatureSupport? = null): Boolean = when (support) {
+        null -> activated.containsKey(feature)
+        else -> activated[feature] == support
+    }
+
+    fun initFeatures(): Features = Features(activated.filter { it.key.scopes.contains(FeatureScope.Init) }, unknown)
+
+    fun nodeAnnouncementFeatures(): Features = Features(activated.filter { it.key.scopes.contains(FeatureScope.Node) }, unknown)
+
+    fun invoiceFeatures(): Features = Features(activated.filter { it.key.scopes.contains(FeatureScope.Invoice) }, unknown)
 
     /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
     fun areSupported(remoteFeatures: Features): Boolean {
@@ -222,6 +275,9 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
             Feature.AnchorOutputs,
+            Feature.ShutdownAnySegwit,
+            Feature.ChannelType,
+            Feature.PaymentMetadata,
             Feature.TrampolinePayment,
             Feature.ZeroReserveChannels,
             Feature.ZeroConfChannels,

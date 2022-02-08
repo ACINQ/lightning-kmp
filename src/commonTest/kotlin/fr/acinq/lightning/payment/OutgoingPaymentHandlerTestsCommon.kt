@@ -231,7 +231,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // The recipient should receive the right amount and expiry.
         val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
-        val payloadC = FinalPayload.read(payloadBytesC.payload.toByteArray())
+        val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
         assertEquals(200_000.msat, payloadC.amount)
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
         assertEquals(payloadC.amount, payloadC.totalAmount)
@@ -286,7 +286,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
-            val payloadC = FinalPayload.read(payloadBytesC.payload.toByteArray())
+            val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
             assertEquals(300_000.msat, payloadC.amount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
             assertEquals(payloadC.amount, payloadC.totalAmount)
@@ -423,7 +423,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
         adds.forEach { (channelId, add) ->
             // Bob should receive the right final information.
-            val payloadB = IncomingPacket.decrypt(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey).right!!
+            val payloadB = IncomingPaymentPacket.decrypt(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey).right!!
             assertEquals(add.amount, payloadB.amount)
             assertEquals(300_000.msat, payloadB.totalAmount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadB.expiry)
@@ -498,7 +498,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
-            val payloadC = FinalPayload.read(payloadBytesC.payload.toByteArray())
+            val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
             assertEquals(300_000.msat, payloadC.amount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
             assertEquals(payloadC.amount, payloadC.totalAmount)

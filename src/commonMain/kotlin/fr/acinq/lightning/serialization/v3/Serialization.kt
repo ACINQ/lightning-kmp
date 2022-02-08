@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization.v2
+package fr.acinq.lightning.serialization.v3
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
@@ -25,7 +25,7 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 
 object Serialization {
-    private val versionMagic = 2
+    private const val versionMagic = 3
 
     /**
      * Versioned serialized data.
