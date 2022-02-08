@@ -3,6 +3,7 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
@@ -427,6 +428,16 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `filter non-invoice features`() {
+        val nodeFeatures = Features(
+            mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.ShutdownAnySegwit to FeatureSupport.Optional),
+            setOf(UnknownFeature(103), UnknownFeature(256))
+        )
+        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 500.msat, randomBytes32(), randomKey(), "non-invoice features", CltvExpiryDelta(6), nodeFeatures)
+        assertEquals(Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), Features(pr.features))
+    }
+
+    @Test
     fun `feature bits to minimally-encoded feature bytes`() {
         val testCases = listOf(
             // 01000 01000 00101
@@ -454,8 +465,7 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
 
     @Test
     fun `payment secret`() {
-        val features =
-            Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
+        val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
         val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features)
         assertNotNull(pr.paymentSecret)
         assertEquals(ByteVector("024100"), pr.features)

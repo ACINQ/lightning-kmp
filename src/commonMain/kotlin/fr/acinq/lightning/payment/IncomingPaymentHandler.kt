@@ -88,7 +88,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             nodeParams.nodePrivateKey,
             description,
             PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            nodeParams.features,
+            nodeParams.features.invoiceFeatures(),
             randomBytes32(),
             // We always include a payment metadata in our invoices, which lets us test whether senders support it
             ByteVector("2a"),
