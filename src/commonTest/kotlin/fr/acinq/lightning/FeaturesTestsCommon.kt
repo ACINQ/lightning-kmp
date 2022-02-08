@@ -192,6 +192,37 @@ class FeaturesTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `filter features based on their usage`() {
+        val features = Features(
+            mapOf(
+                OptionDataLossProtect to FeatureSupport.Optional,
+                InitialRoutingSync to FeatureSupport.Optional,
+                VariableLengthOnion to FeatureSupport.Mandatory,
+                PaymentMetadata to FeatureSupport.Optional,
+            ),
+            setOf(UnknownFeature(753), UnknownFeature(852)),
+        )
+        assertEquals(
+            Features(
+                mapOf(OptionDataLossProtect to FeatureSupport.Optional, InitialRoutingSync to FeatureSupport.Optional, VariableLengthOnion to FeatureSupport.Mandatory),
+                setOf(UnknownFeature(753), UnknownFeature(852)),
+            ), features.initFeatures()
+        )
+        assertEquals(
+            Features(
+                mapOf(OptionDataLossProtect to FeatureSupport.Optional, VariableLengthOnion to FeatureSupport.Mandatory),
+                setOf(UnknownFeature(753), UnknownFeature(852)),
+            ), features.nodeAnnouncementFeatures()
+        )
+        assertEquals(
+            Features(
+                mapOf(VariableLengthOnion to FeatureSupport.Mandatory, PaymentMetadata to FeatureSupport.Optional),
+                setOf(UnknownFeature(753), UnknownFeature(852)),
+            ), features.invoiceFeatures()
+        )
+    }
+
+    @Test
     fun `features to bytes`() {
         val testCases = mapOf(
             byteArrayOf() to Features.empty,

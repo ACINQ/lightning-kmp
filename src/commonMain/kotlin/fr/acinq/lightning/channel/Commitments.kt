@@ -11,7 +11,7 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
-import fr.acinq.lightning.payment.OutgoingPacket
+import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.CommitTx
@@ -370,7 +370,7 @@ data class Commitments(
             // we have already sent a fail/fulfill for this htlc
             alreadyProposed(localChanges.proposed, htlc.id) -> Either.Left(UnknownHtlcId(channelId, cmd.id))
             else -> {
-                when (val result = OutgoingPacket.buildHtlcFailure(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, cmd.reason)) {
+                when (val result = OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, cmd.reason)) {
                     is Either.Right -> {
                         val fail = UpdateFailHtlc(channelId, cmd.id, result.value)
                         val commitments1 = addLocalProposal(fail)
