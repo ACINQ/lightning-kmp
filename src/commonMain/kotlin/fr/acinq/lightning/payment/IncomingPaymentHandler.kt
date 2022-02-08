@@ -1,5 +1,6 @@
 package fr.acinq.lightning.payment
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
@@ -90,7 +91,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             nodeParams.features,
             randomBytes32(),
             // We always include a payment metadata in our invoices, which lets us test whether senders support it
-            randomBytes(64).toByteVector(),
+            ByteVector("2a"),
             expirySeconds,
             extraHops,
             timestampSeconds

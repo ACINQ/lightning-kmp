@@ -1213,6 +1213,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, "unit test", listOf(), expirySeconds, timestamp)
+            assertNotNull(paymentRequest.paymentMetadata)
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
         }
 
