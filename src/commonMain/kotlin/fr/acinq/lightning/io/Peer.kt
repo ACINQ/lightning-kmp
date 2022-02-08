@@ -282,7 +282,7 @@ class Peer(
 
         suspend fun checkPaymentsTimeout() {
             while (isActive) {
-                delay(Duration.seconds(30))
+                delay(Duration.seconds(10)) // we schedule a check every 10 seconds
                 input.send(CheckPaymentsTimeout)
             }
         }
