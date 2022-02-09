@@ -147,6 +147,8 @@ object Node {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Optional,
                 Feature.AnchorOutputs to FeatureSupport.Optional,
+                Feature.ChannelType to FeatureSupport.Mandatory,
+                Feature.PaymentMetadata to FeatureSupport.Optional,
                 Feature.TrampolinePayment to FeatureSupport.Optional,
                 Feature.ZeroReserveChannels to FeatureSupport.Optional,
                 Feature.ZeroConfChannels to FeatureSupport.Optional,
@@ -264,7 +266,7 @@ object Node {
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        peer.send(WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_CLOSE(null))))
+                        peer.send(WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null))))
                         call.respond(CloseChannelResponse("pending"))
                     }
                 }

@@ -1,10 +1,15 @@
 package fr.acinq.lightning.payment
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -18,16 +23,16 @@ sealed class PaymentPart {
     abstract val amount: MilliSatoshi
     abstract val totalAmount: MilliSatoshi
     abstract val paymentHash: ByteVector32
-    abstract val finalPayload: FinalPayload
+    abstract val finalPayload: PaymentOnion.FinalPayload
 }
 
-data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: FinalPayload) : PaymentPart() {
+data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = htlc.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = htlc.paymentHash
 }
 
-data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val finalPayload: FinalPayload) : PaymentPart() {
+data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = payToOpenRequest.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
@@ -75,7 +80,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         timestampSeconds: Long = currentTimestampSeconds()
     ): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-        val invoiceFeatures = PaymentRequest.invoiceFeatures(nodeParams.features)
         logger.debug { "h:$paymentHash using routing hints $extraHops" }
         val pr = PaymentRequest.create(
             nodeParams.chainHash,
@@ -84,8 +88,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             nodeParams.nodePrivateKey,
             description,
             PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            invoiceFeatures,
+            nodeParams.features.invoiceFeatures(),
             randomBytes32(),
+            // We always include a payment metadata in our invoices, which lets us test whether senders support it
+            ByteVector("2a"),
             expirySeconds,
             extraHops,
             timestampSeconds
@@ -246,7 +252,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         }
                         else -> {
                             // We have received all the payment parts.
-                            logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived})" }
+                            when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
+                                null -> logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived}) without payment metadata" }
+                                else -> logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
+                            }
                             val (actions, receivedWith) = payment.parts.map { part ->
                                 when (part) {
                                     is HtlcPart -> {
@@ -352,7 +361,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
     fun checkPaymentsTimeout(currentTimestampSeconds: Long): List<PeerEvent> {
         val actions = mutableListOf<PeerEvent>()
-        val keysToRemove = mutableListOf<ByteVector32>()
+        val keysToRemove = mutableSetOf<ByteVector32>()
 
         // BOLT 04:
         // - MUST fail all HTLCs in the HTLC set after some reasonable timeout.
@@ -379,7 +388,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
         private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult.Rejected, HtlcPart> {
             // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
-            return when (val decrypted = IncomingPacket.decrypt(htlc, privateKey)) {
+            return when (val decrypted = IncomingPaymentPacket.decrypt(htlc, privateKey)) {
                 is Either.Left -> { // Unable to decrypt onion
                     val failureMsg = decrypted.value
                     val action = actionForFailureMessage(failureMsg, htlc)
@@ -394,7 +403,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
          * This is very similar to the processing of a htlc, except that we only have a packet, to decrypt into a final payload.
          */
         private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
-            return when (val decrypted = IncomingPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
+            return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
                 is Either.Left -> {
                     val failureMsg = decrypted.value
                     val action = actionForPayToOpenFailure(privateKey, failureMsg, payToOpenRequest)
@@ -424,7 +433,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
         private fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseEvent {
             val reason = CMD_FAIL_HTLC.Reason.Failure(failure)
-            val encryptedReason = when (val result = OutgoingPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
+            val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
                 is Either.Right -> result.value
                 is Either.Left -> null
             }

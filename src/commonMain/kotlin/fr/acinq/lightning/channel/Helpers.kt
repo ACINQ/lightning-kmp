@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.BITCOIN_OUTPUT_SPENT
@@ -56,7 +57,13 @@ object Helpers {
         }
 
     /** Called by the fundee. */
-    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, channelVersion: ChannelVersion): Either<ChannelException, Unit> {
+    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, localParams: LocalParams, remoteFeatures: Features): Either<ChannelException, ChannelFeatures> {
+        // NB: we only accept channels from peers who support explicit channel type negotiation.
+        val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
+        if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve).contains(channelType)) {
+            return Either.Left(InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, channelType))
+        }
+
         // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
         // MUST reject the channel.
         if (nodeParams.chainHash != open.chainHash) {
@@ -96,8 +103,8 @@ object Helpers {
             return Either.Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.maxRemoteDustLimit))
         }
 
-        if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
-            // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
+        if (open.channelReserveSatoshis == 0.sat && localParams.features.hasFeature(Feature.ZeroReserveChannels)) {
+            // NB: if the funder doesn't require us to have a reserve, we can't ensure that dust_limit_satoshis is greater than our reserve.
         } else {
             // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
             if (open.dustLimitSatoshis > open.channelReserveSatoshis) {
@@ -128,11 +135,28 @@ object Helpers {
             return Either.Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
         }
 
-        return Either.Right(Unit)
+        val channelFeatures = ChannelFeatures(
+            buildSet {
+                addAll(channelType.features)
+                if (Features.canUseFeature(localParams.features, remoteFeatures, Feature.Wumbo)) add(Feature.Wumbo)
+                if (open.channelReserveSatoshis == 0.sat) add(Feature.ZeroReserveChannels)
+            }
+        )
+
+        return Either.Right(channelFeatures)
     }
 
     /** Called by the funder. */
-    fun validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Either<ChannelException, Unit> {
+    fun validateParamsFunder(nodeParams: NodeParams, init: ChannelEvent.InitFunder, open: OpenChannel, accept: AcceptChannel): Either<ChannelException, ChannelFeatures> {
+        require(open.channelType != null) { "we should have sent a channel type in open_channel" }
+        if (accept.channelType == null) {
+            // We only open channels to peers who support explicit channel type negotiation.
+            return Either.Left(MissingChannelType(accept.temporaryChannelId))
+        }
+        if (open.channelType != accept.channelType) {
+            return Either.Left(InvalidChannelType(accept.temporaryChannelId, open.channelType!!, accept.channelType!!))
+        }
+
         if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) {
             return Either.Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
         }
@@ -155,8 +179,8 @@ object Helpers {
             return Either.Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
         }
 
-        if ((open.channelVersion ?: ChannelVersion.STANDARD).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
-            // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
+        if (open.channelReserveSatoshis == 0.sat) {
+            // if we proposed a zero-reserve channel to our peer, we don't make any additional requirement on dust limit.
         } else {
             // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
             // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
@@ -175,7 +199,15 @@ object Helpers {
             return Either.Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
         }
 
-        return Either.Right(Unit)
+        val channelFeatures = ChannelFeatures(
+            buildSet {
+                addAll(init.channelType.features)
+                if (Features.canUseFeature(init.localParams.features, Features(init.remoteInit.features), Feature.Wumbo)) add(Feature.Wumbo)
+                if (open.channelReserveSatoshis == 0.sat || accept.channelReserveSatoshis == 0.sat) add(Feature.ZeroReserveChannels)
+            }
+        )
+
+        return Either.Right(channelFeatures)
     }
 
     /**
@@ -352,14 +384,22 @@ object Helpers {
         // used only to compute tx weights and estimate fees
         private val dummyPublicKey by lazy { PrivateKey(ByteArray(32) { 1.toByte() }).publicKey() }
 
-        private fun isValidFinalScriptPubkey(scriptPubKey: ByteArray): Boolean {
+        private fun isValidFinalScriptPubkey(scriptPubKey: ByteArray, allowAnySegwit: Boolean): Boolean {
             return runTrying {
                 val script = Script.parse(scriptPubKey)
-                Script.isPay2pkh(script) || Script.isPay2sh(script) || Script.isPay2wpkh(script) || Script.isPay2wsh(script)
+                when {
+                    Script.isPay2pkh(script) -> true
+                    Script.isPay2sh(script) -> true
+                    Script.isPay2wpkh(script) -> true
+                    Script.isPay2wsh(script) -> true
+                    // option_shutdown_anysegwit doesn't cover segwit v0
+                    Script.isNativeWitnessScript(script) && script[0] != OP_0 -> allowAnySegwit
+                    else -> false
+                }
             }.getOrElse { false }
         }
 
-        fun isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray())
+        fun isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray(), allowAnySegwit)
 
         // To be replaced with corresponding function in bitcoin-kmp
         fun btcAddressFromScriptPubKey(scriptPubKey: ByteVector, chainHash: ByteVector32): String? {
@@ -403,14 +443,14 @@ object Helpers {
             }.getOrElse { null }
         }
 
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: FeeratePerKw): Satoshi {
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
-            return Transactions.weight2fee(requestedFeerate, closingWeight)
+            return requestedFeerate.computeFees(closingWeight)
         }
 
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, requestedFeerate: FeeratePerKw): Satoshi =
+        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, requestedFeerate: ClosingFeerates): ClosingFees =
             firstClosingFee(commitments, localScriptPubkey.toByteArray(), remoteScriptPubkey.toByteArray(), requestedFeerate)
 
         fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
@@ -420,10 +460,10 @@ object Helpers {
             commitments: Commitments,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
-            requestedFeerate: FeeratePerKw
-        ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
-            val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, requestedFeerate)
-            return makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+            requestedFeerate: ClosingFeerates
+        ): Pair<ClosingTx, ClosingSigned> {
+            val closingFees = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, requestedFeerate)
+            return makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, closingFees)
         }
 
         fun makeClosingTx(
@@ -431,14 +471,15 @@ object Helpers {
             commitments: Commitments,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
-            closingFee: Satoshi
-        ): Pair<Transactions.TransactionWithInputInfo.ClosingTx, ClosingSigned> {
-            require(isValidFinalScriptPubkey(localScriptPubkey)) { "invalid localScriptPubkey" }
-            require(isValidFinalScriptPubkey(remoteScriptPubkey)) { "invalid remoteScriptPubkey" }
+            closingFees: ClosingFees
+        ): Pair<ClosingTx, ClosingSigned> {
+            val allowAnySegwit = Features.canUseFeature(commitments.localParams.features, commitments.remoteParams.features, Feature.ShutdownAnySegwit)
+            require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit)) { "invalid localScriptPubkey" }
+            require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
-            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFee, commitments.localCommit.spec)
+            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFees.preferred, commitments.localCommit.spec)
             val localClosingSig = keyManager.sign(closingTx, commitments.localParams.channelKeys.fundingPrivateKey)
-            val closingSigned = ClosingSigned(commitments.channelId, closingFee, localClosingSig)
+            val closingSigned = ClosingSigned(commitments.channelId, closingFees.preferred, localClosingSig, TlvStream(listOf(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max))))
             return Pair(closingTx, closingSigned)
         }
 
@@ -449,12 +490,12 @@ object Helpers {
             remoteScriptPubkey: ByteArray,
             remoteClosingFee: Satoshi,
             remoteClosingSig: ByteVector64
-        ): Either<ChannelException, ClosingTx> {
-            val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
+        ): Either<ChannelException, Pair<ClosingTx, ClosingSigned>> {
+            val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee))
             return if (checkClosingDustAmounts(closingTx)) {
                 val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.channelKeys.fundingPubKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
                 when (Transactions.checkSpendable(signedClosingTx)) {
-                    is Try.Success -> Either.Right(signedClosingTx)
+                    is Try.Success -> Either.Right(Pair(signedClosingTx, closingSigned))
                     is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
                 }
             } else {
@@ -565,7 +606,6 @@ object Helpers {
          * @return a list of transactions (one per output that we can claim).
          */
         fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
-            val channelVersion = commitments.channelVersion
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
             val commitInput = commitments.commitInput
@@ -579,7 +619,7 @@ object Helpers {
             )
             require(remoteCommitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
 
-            val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
+            val channelKeyPath = keyManager.channelKeyPath(localParams, commitments.channelConfig)
             val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
             val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
@@ -693,7 +733,7 @@ object Helpers {
          */
         private fun extractTxNumber(keyManager: KeyManager, commitments: Commitments, tx: Transaction): Long {
             require(tx.txIn.size == 1) { "commitment tx should have 1 input" }
-            val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+            val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelConfig)
             val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
             val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
             // this tx has been published by remote, so we need to invert local/remote params

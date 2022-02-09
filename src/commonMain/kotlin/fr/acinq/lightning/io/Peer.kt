@@ -115,7 +115,7 @@ class Peer(
 
     private val features = nodeParams.features
 
-    private val ourInit = Init(features.toByteArray().toByteVector())
+    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector())
     private var theirInit: Init? = null
 
     public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
@@ -282,7 +282,7 @@ class Peer(
 
         suspend fun checkPaymentsTimeout() {
             while (isActive) {
-                delay(Duration.seconds(30))
+                delay(Duration.seconds(10)) // we schedule a check every 10 seconds
                 input.send(CheckPaymentsTimeout)
             }
         }
@@ -558,7 +558,8 @@ class Peer(
                             currentTipFlow.filterNotNull().first(),
                             onChainFeeratesFlow.filterNotNull().first()
                         )
-                        val (state1, actions1) = state.process(ChannelEvent.InitFundee(msg.temporaryChannelId, localParams, theirInit!!))
+                        val channelConfig = ChannelConfig.standard
+                        val (state1, actions1) = state.process(ChannelEvent.InitFundee(msg.temporaryChannelId, localParams, channelConfig, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
                         processActions(msg.temporaryChannelId, actions1 + actions2)
                         _channels = _channels + (msg.temporaryChannelId to state2)
