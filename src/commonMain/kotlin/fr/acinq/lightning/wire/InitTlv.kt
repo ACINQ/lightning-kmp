@@ -1,6 +1,7 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import kotlinx.serialization.Contextual
@@ -28,6 +29,24 @@ sealed class InitTlv : Tlv {
                     networks.add(ByteVector32(LightningCodecs.bytes(input, 32)))
                 }
                 return Networks(networks.toList())
+            }
+        }
+    }
+
+    @Serializable
+    data class PhoenixAndroidLegacyNodeId(@Contextual val legacyNodeId: PublicKey) : InitTlv() {
+        override val tag: Long get() = PhoenixAndroidLegacyNodeId.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(legacyNodeId.value, out)
+        }
+
+        companion object : TlvValueReader<PhoenixAndroidLegacyNodeId> {
+            const val tag: Long = 0x47020001
+
+            override fun read(input: Input): PhoenixAndroidLegacyNodeId {
+                val legacyNodeId = PublicKey(LightningCodecs.bytes(input, 33))
+                return PhoenixAndroidLegacyNodeId(legacyNodeId)
             }
         }
     }
