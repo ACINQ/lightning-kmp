@@ -59,12 +59,24 @@ data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListene
 data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
 
+/**
+ * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
+ * the events on those channels and processes the relevant actions. The dialogue with the peer is done in coroutines.
+ *
+ * @param nodeParams Low level, Lightning related parameters that our node will use in relation to this Peer.
+ * @param walletParams High level parameters for our node. It especially contains the Peer's [NodeUri].
+ * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
+ * @param watcher Watches events from the Electrum client and publishes transactions and events.
+ * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
+ * @param socketBuilder Builds the TCP socket used to connect to the Peer.
+ */
 @ObsoleteCoroutinesApi
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
-    val watcher: ElectrumWatcher,
+    private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty(),
+    private val watcher: ElectrumWatcher,
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
@@ -115,7 +127,7 @@ class Peer(
 
     private val features = nodeParams.features
 
-    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector())
+    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector(), initTlvStream)
     private var theirInit: Init? = null
 
     public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
