@@ -8,6 +8,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
 interface KeyManager {
+    val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey
     val nodeKey: DeterministicWallet.ExtendedPrivateKey
 
     val nodeId: PublicKey
