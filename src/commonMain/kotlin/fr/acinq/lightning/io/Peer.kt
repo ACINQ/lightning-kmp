@@ -53,6 +53,8 @@ data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : P
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
+data class LegacyChannelsFound(val message: String) : PeerListenerEvent()
+data class LegacyChannelsNone(val message: String) : PeerListenerEvent()
 
 object SendSwapInRequest : PeerEvent()
 data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListenerEvent()
@@ -65,21 +67,21 @@ data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerList
  *
  * @param nodeParams Low level, Lightning related parameters that our node will use in relation to this Peer.
  * @param walletParams High level parameters for our node. It especially contains the Peer's [NodeUri].
- * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  * @param watcher Watches events from the Electrum client and publishes transactions and events.
  * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
+ * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
 @ObsoleteCoroutinesApi
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
-    private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty(),
     private val watcher: ElectrumWatcher,
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
 ) : CoroutineScope by scope {
     companion object {
         private const val prefix: Byte = 0x00
@@ -538,6 +540,15 @@ class Peer(
                         // NB: we don't forward warnings to the channel because it shouldn't take any automatic action,
                         // these warnings are meant for humans.
                         logger.warning { "n:$remoteNodeId c:${msg.channelId} peer sent warning: ${msg.toAscii()}" }
+                        val message = msg.toAscii()
+                        if (message.contains("hasChannels=")) {
+                            val hasChannels = message.substringAfterLast("=").toBooleanStrictOrNull() ?: false
+                            if (hasChannels) {
+                                listenerEventChannel.send(LegacyChannelsFound(message))
+                            } else {
+                                listenerEventChannel.send(LegacyChannelsNone(message))
+                            }
+                        }
                     }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "n:$remoteNodeId connection error: ${msg.toAscii()}" }
