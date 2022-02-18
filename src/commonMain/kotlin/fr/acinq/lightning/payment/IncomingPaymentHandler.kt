@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
@@ -382,6 +381,21 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
         pending.minusAssign(keysToRemove)
         return actions
+    }
+
+    /**
+     * Purge all expired unpaid normal payments with creation times in the given time range.
+     *
+     * @param fromCreatedAt from absolute time in milliseconds since UNIX epoch when the payment request was generated.
+     * @param toCreatedAt to absolute time in milliseconds since UNIX epoch when the payment request was generated.
+     * @return number of invoices purged
+     */
+    suspend fun purgeExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): Int {
+        val expiredInvoices = db.listExpiredPayments(fromCreatedAt, toCreatedAt)
+        expiredInvoices.forEach { payment ->
+            db.removeIncomingPayment(payment.paymentHash)
+        }
+        return expiredInvoices.size
     }
 
     companion object {
