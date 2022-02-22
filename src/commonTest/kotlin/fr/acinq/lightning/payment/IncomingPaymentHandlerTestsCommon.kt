@@ -11,6 +11,7 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
+import fr.acinq.lightning.db.PaymentTypeFilter
 import fr.acinq.lightning.io.PayToOpenResponseEvent
 import fr.acinq.lightning.io.WrappedChannelEvent
 import fr.acinq.lightning.router.ChannelHop
@@ -20,6 +21,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.delay
 import kotlin.test.*
 
 @OptIn(kotlin.time.ExperimentalTime::class)
@@ -1147,6 +1149,38 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             )
             assertEquals(setOf(expected), result.actions.toSet())
         }
+    }
+
+    @Test
+    fun `purge expired incoming payments`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+
+        // create incoming payment that has expired and not been paid
+        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600,
+            timestampSeconds = currentTimestampSeconds() - 3600 - 60)
+
+        // create incoming payment that has expired and been paid
+        val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600,
+            timestampSeconds = currentTimestampSeconds() - 3600 + 2)
+
+        // pay incoming invoice before it expires
+        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paidInvoice.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paidInvoice.paymentSecret))
+        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
+        delay(2_000) // wait for 2 seconds so paid invoice expires
+
+        // create unexpired payment
+        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "unexpired", listOf(), expirySeconds = 3600)
+
+        val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
+        val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
+        val expiredPayment = paymentHandler.db.getIncomingPayment(expiredInvoice.paymentHash)!!
+
+        assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment, expiredPayment))
+        assertEquals(paymentHandler.db.listExpiredPayments(), listOf(expiredPayment))
+        assertEquals(paymentHandler.purgeExpiredPayments(), 1)
+        assertEquals(paymentHandler.db.listExpiredPayments(), emptyList())
+        assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment))
     }
 
     companion object {

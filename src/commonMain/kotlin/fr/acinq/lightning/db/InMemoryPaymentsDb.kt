@@ -63,6 +63,15 @@ class InMemoryPaymentsDb : PaymentsDb {
             .take(count)
             .toList()
 
+    override suspend fun listIncomingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
+        incoming.values
+            .asSequence()
+            .filter { it.origin.matchesFilters(filters) }
+            .sortedByDescending { it.createdAt }
+            .drop(skip)
+            .take(count)
+            .toList()
+    
     override suspend fun listExpiredPayments(fromCreatedAt: Long, toCreatedAt: Long): List<IncomingPayment> =
         incoming.values
             .asSequence()
