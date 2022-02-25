@@ -21,7 +21,6 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import kotlinx.coroutines.delay
 import kotlin.test.*
 
 @OptIn(kotlin.time.ExperimentalTime::class)
@@ -1157,17 +1156,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // create incoming payment that has expired and not been paid
         val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600,
-            timestampSeconds = currentTimestampSeconds() - 3600 - 60)
+            timestampSeconds = 1)
 
         // create incoming payment that has expired and been paid
         val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600,
-            timestampSeconds = currentTimestampSeconds() - 3600 + 2)
-
-        // pay incoming invoice before it expires
-        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paidInvoice.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paidInvoice.paymentSecret))
-        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
-        delay(2_000) // wait for 2 seconds so paid invoice expires
+            timestampSeconds = 100)
+        paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, fees = 1_000_000.msat, null)),
+            receivedAt = 101) // simulate incoming payment being paid before it expired
 
         // create unexpired payment
         val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "unexpired", listOf(), expirySeconds = 3600)
