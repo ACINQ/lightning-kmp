@@ -391,11 +391,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
      * @return number of invoices purged
      */
     suspend fun purgeExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): Int {
-        val expiredInvoices = db.listExpiredPayments(fromCreatedAt, toCreatedAt)
-        expiredInvoices.forEach { payment ->
-            db.removeIncomingPayment(payment.paymentHash)
-        }
-        return expiredInvoices.size
+        return db.listExpiredPayments(fromCreatedAt, toCreatedAt).map {
+            db.removeIncomingPayment(it.paymentHash)
+        }.count()
     }
 
     companion object {

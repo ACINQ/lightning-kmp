@@ -81,11 +81,11 @@ class InMemoryPaymentsDb : PaymentsDb {
             .sortedByDescending { it.createdAt }
             .toList()
 
-    override suspend fun removeIncomingPayment(paymentHash: ByteVector32) {
+    override suspend fun removeIncomingPayment(paymentHash: ByteVector32): Boolean {
         val payment = getIncomingPayment(paymentHash)
-        when (payment?.received) {
-            null -> incoming.remove(paymentHash)
-            else -> Unit // do nothing if payment already received
+        return when (payment?.received) {
+            null -> incoming.remove(paymentHash) != null
+            else -> false // do nothing if payment already partially paid
         }
     }
 

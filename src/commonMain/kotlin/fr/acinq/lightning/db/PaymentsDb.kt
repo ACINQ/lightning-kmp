@@ -54,7 +54,7 @@ interface IncomingPaymentsDb {
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
 
     /** Remove a pending incoming payment.*/
-    suspend fun removeIncomingPayment(paymentHash: ByteVector32)
+    suspend fun removeIncomingPayment(paymentHash: ByteVector32): Boolean
 }
 
 interface OutgoingPaymentsDb {
