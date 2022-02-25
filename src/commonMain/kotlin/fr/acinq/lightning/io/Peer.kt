@@ -45,6 +45,7 @@ data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : Pe
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val details: OutgoingPayment.Details.Normal, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent() {
     val paymentHash: ByteVector32 = details.paymentHash
 }
+data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentEvent()
 
 sealed class PeerListenerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
@@ -702,6 +703,9 @@ class Peer(
                     }
                     is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
                 }
+            }
+            event is PurgeExpiredPayments -> {
+                incomingPaymentHandler.purgeExpiredPayments(event.fromCreatedAt, event.toCreatedAt)
             }
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
