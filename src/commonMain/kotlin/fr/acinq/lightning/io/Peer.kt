@@ -53,13 +53,13 @@ data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : P
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
-data class LegacyChannelsFound(val message: String) : PeerListenerEvent()
-data class LegacyChannelsNone(val message: String) : PeerListenerEvent()
 
 object SendSwapInRequest : PeerEvent()
 data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListenerEvent()
 data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
+
+data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerListenerEvent()
 
 /**
  * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
@@ -540,15 +540,6 @@ class Peer(
                         // NB: we don't forward warnings to the channel because it shouldn't take any automatic action,
                         // these warnings are meant for humans.
                         logger.warning { "n:$remoteNodeId c:${msg.channelId} peer sent warning: ${msg.toAscii()}" }
-                        val message = msg.toAscii()
-                        if (message.contains("hasChannels=")) {
-                            val hasChannels = message.substringAfterLast("=").toBooleanStrictOrNull() ?: false
-                            if (hasChannels) {
-                                listenerEventChannel.send(LegacyChannelsFound(message))
-                            } else {
-                                listenerEventChannel.send(LegacyChannelsNone(message))
-                            }
-                        }
                     }
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "n:$remoteNodeId connection error: ${msg.toAscii()}" }
@@ -671,6 +662,10 @@ class Peer(
                     msg is SwapInConfirmed -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
                         listenerEventChannel.send(SwapInConfirmedEvent(msg))
+                    }
+                    msg is PhoenixAndroidLegacyInfo -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
+                        listenerEventChannel.send(PhoenixAndroidLegacyInfoEvent(msg))
                     }
                     else -> logger.warning { "n:$remoteNodeId received unhandled message ${Hex.encode(event.data)}" }
                 }

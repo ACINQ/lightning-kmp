@@ -78,8 +78,9 @@ interface LightningMessage {
                 SwapInResponse.type -> SwapInResponse.read(stream)
                 SwapInPending.type -> SwapInPending.read(stream)
                 SwapInConfirmed.type -> SwapInConfirmed.read(stream)
+                PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 else -> {
-                    logger.warning { "cannot decode ${Hex.encode(input)}" }
+                    logger.warning { "unhandled code=${code}, cannot decode input=${Hex.encode(input)}" }
                     null
                 }
             }
@@ -1292,6 +1293,26 @@ data class SwapInConfirmed(
                 bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString(),
                 amount = MilliSatoshi(LightningCodecs.u64(input))
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class PhoenixAndroidLegacyInfo(
+    val hasChannels: Boolean
+) : LightningMessage {
+
+    override val type: Long get() = PhoenixAndroidLegacyInfo.type
+
+    override fun write(out: Output) {
+       LightningCodecs.writeByte(if (hasChannels) 1 else 0, out)
+    }
+
+    companion object : LightningMessageReader<PhoenixAndroidLegacyInfo> {
+        const val type: Long = 35023
+
+        override fun read(input: Input): PhoenixAndroidLegacyInfo {
+            return PhoenixAndroidLegacyInfo(LightningCodecs.byte(input) == 1)
         }
     }
 }

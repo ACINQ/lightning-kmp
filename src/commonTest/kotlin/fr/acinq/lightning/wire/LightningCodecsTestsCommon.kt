@@ -733,4 +733,19 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertArrayEquals(it.second, encoded)
         }
     }
+
+    @Test
+    fun `encode - decode phoenix-android-legacy-info messages`() {
+        val testCases = listOf(
+            Pair(PhoenixAndroidLegacyInfo(hasChannels = true), Hex.decode("88cf01")),
+            Pair(PhoenixAndroidLegacyInfo(hasChannels = false), Hex.decode("88cf00")),
+        )
+        testCases.forEach {
+            val decoded = LightningMessage.decode(it.second)
+            assertNotNull(decoded)
+            assertEquals(it.first, decoded)
+            val encoded = LightningMessage.encode(decoded)
+            assertArrayEquals(it.second, encoded)
+        }
+    }
 }
