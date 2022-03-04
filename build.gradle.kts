@@ -104,7 +104,6 @@ kotlin {
                 else -> error("Unsupported target $name")
             }
 
-            compilations["main"].cinterops.create("ios_network_framework")
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 val interopTask = tasks[interopProcessingTaskName]
                 interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
