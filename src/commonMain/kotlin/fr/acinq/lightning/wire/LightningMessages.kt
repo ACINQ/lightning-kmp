@@ -1301,7 +1301,6 @@ data class SwapInConfirmed(
 data class PhoenixAndroidLegacyInfo(
     val hasChannels: Boolean
 ) : LightningMessage {
-
     override val type: Long get() = PhoenixAndroidLegacyInfo.type
 
     override fun write(out: Output) {
