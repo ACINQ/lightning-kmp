@@ -2,14 +2,14 @@ import Foundation
 import CryptoKit
 import os.log
 
-//#if DEBUG && true
+#if DEBUG && true
 fileprivate var log = Logger(
 	subsystem: Bundle.main.bundleIdentifier!,
 	category: "NativeChaChaPoly"
 )
-//#else
-//fileprivate var log = Logger(OSLog.disabled)
-//#endif
+#else
+fileprivate var log = Logger(OSLog.disabled)
+#endif
 
 @objc
 public class NativeChaChaPoly: NSObject {
