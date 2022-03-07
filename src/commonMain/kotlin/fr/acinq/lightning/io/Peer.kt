@@ -77,7 +77,7 @@ data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : P
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
-    private val watcher: ElectrumWatcher,
+    val watcher: ElectrumWatcher,
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
