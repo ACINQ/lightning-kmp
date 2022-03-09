@@ -2,13 +2,10 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelException
-import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.FailureMessage
 
@@ -65,6 +62,32 @@ class InMemoryPaymentsDb : PaymentsDb {
             .drop(skip)
             .take(count)
             .toList()
+
+    override suspend fun listIncomingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
+        incoming.values
+            .asSequence()
+            .filter { it.origin.matchesFilters(filters) }
+            .sortedByDescending { it.createdAt }
+            .drop(skip)
+            .take(count)
+            .toList()
+    
+    override suspend fun listExpiredPayments(fromCreatedAt: Long, toCreatedAt: Long): List<IncomingPayment> =
+        incoming.values
+            .asSequence()
+            .filter { it.createdAt in fromCreatedAt until toCreatedAt }
+            .filter { it.isExpired() }
+            .filter { it.received == null }
+            .sortedByDescending { it.createdAt }
+            .toList()
+
+    override suspend fun removeIncomingPayment(paymentHash: ByteVector32): Boolean {
+        val payment = getIncomingPayment(paymentHash)
+        return when (payment?.received) {
+            null -> incoming.remove(paymentHash) != null
+            else -> false // do nothing if payment already partially paid
+        }
+    }
 
     override suspend fun addOutgoingPayment(outgoingPayment: OutgoingPayment) {
         require(!outgoing.contains(outgoingPayment.id)) { "an outgoing payment with id=${outgoingPayment.id} already exists" }
