@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.lang.IllegalArgumentException
 import java.nio.file.Files
 import java.sql.DriverManager
 
@@ -77,10 +78,11 @@ object Node {
 
     fun parseElectrumServerAddress(address: String): ServerAddress {
         val a = address.split(':')
-        require(a.size == 3) { "invalid server address: $address" }
-        val tls = when (a[2]) {
-            "tls" -> TcpSocket.TLS.UNSAFE_CERTIFICATES
-            else -> TcpSocket.TLS.DISABLED
+        val tls = when (a.size) {
+            2 -> TcpSocket.TLS.TRUSTED_CERTIFICATES
+            3 -> TcpSocket.TLS.UNSAFE_CERTIFICATES
+            4 -> TcpSocket.TLS.PINNED_PUBLIC_KEY(a[3])
+            else -> throw IllegalArgumentException("invalid server address=$address")
         }
         return ServerAddress(a[0], a[1].toInt(), tls)
     }

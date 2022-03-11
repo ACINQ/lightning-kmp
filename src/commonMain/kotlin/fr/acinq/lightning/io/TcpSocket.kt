@@ -24,23 +24,26 @@ interface TcpSocket {
     fun close()
 
     sealed class TLS {
-        /** used for Lightning connections */
-        object DISABLED: TLS()
-        /** used for Electrum servers when expecting a valid certificate */
-        object TRUSTED_CERTIFICATES: TLS()
-        /** only used in unit tests */
-        object UNSAFE_CERTIFICATES: TLS()
+        /** Used for Lightning connections */
+        object DISABLED : TLS()
+
+        /** Used for Electrum servers when expecting a valid certificate */
+        object TRUSTED_CERTIFICATES : TLS()
+
+        /** Only used in unit tests */
+        object UNSAFE_CERTIFICATES : TLS()
+
         /**
-         * used for Electrum servers when expecting a specific public key
+         * Used for Electrum servers when expecting a specific public key
          * (for example self-signed certificates)
          */
         data class PINNED_PUBLIC_KEY(
             /**
-             *  DER-encoded publicKey as base64 string.
+             * DER-encoded publicKey as base64 string.
              * (I.e. same as PEM format, without BEGIN/END header/footer)
              */
             val pubKey: String
-        ): TLS()
+        ) : TLS()
     }
 
     interface Builder {
@@ -65,5 +68,5 @@ fun TcpSocket.linesFlow(): Flow<String> =
             emit(buffer.subArray(size))
         }
     }
-    .decodeToString()
-    .splitByLines()
+        .decodeToString()
+        .splitByLines()
