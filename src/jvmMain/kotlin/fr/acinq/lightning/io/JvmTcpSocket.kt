@@ -87,67 +87,68 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)
     private val logger by lightningLogger<JvmTcpSocket>()
 
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket = withContext(Dispatchers.IO + CoroutineExceptionHandler { _, e ->
-        throw when (e) {
-            is ConnectException -> TcpSocket.IOException.ConnectionRefused()
-            is SocketException -> TcpSocket.IOException.Unknown(e.message)
-            else -> throw e
-        }
-    }) {
-        val socket = aSocket(selectorManager).tcp().connect(host, port)
-        when (tls) {
-            TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
-            TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
-                logger.warning { "using unsafe TLS!" }
-                trustManager = object : X509TrustManager {
-                    override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
-                    override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
-                    override fun getAcceptedIssuers(): Array<X509Certificate>? = null
-                }
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket =
+        withContext(Dispatchers.IO  + CoroutineExceptionHandler { _, e ->
+            throw when (e) {
+                is ConnectException -> TcpSocket.IOException.ConnectionRefused()
+                is SocketException -> TcpSocket.IOException.Unknown(e.message)
+                else -> throw e
             }
-            is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                logger.info { "using certificate pinning for connections with $host" }
-                socket.tls(coroutineContext, TLSConfigBuilder().apply {
-                    // build a default X509 trust manager.
-                    val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())!!
-                    factory.init(null as KeyStore?)
-                    val defaultX509TrustManager = factory.trustManagers!!.filterIsInstance<X509TrustManager>().first()
-
-                    // create a new trust manager that always accepts certificates for the pinned public key, or falls back to standard procedure.
-                    trustManager = object : X509TrustManager {
-                        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-                            defaultX509TrustManager.checkClientTrusted(chain, authType)
+        }) {
+            JvmTcpSocket(aSocket(selectorManager).tcp().connect(host, port).let { socket ->
+                when (tls) {
+                    TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
+                    TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
+                        logger.warning { "using unsafe TLS!" }
+                        trustManager = object : X509TrustManager {
+                            override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
+                            override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
+                            override fun getAcceptedIssuers(): Array<X509Certificate>? = null
                         }
-
-                        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-                            val serverKey = try {
-                                JvmTcpSocket.buildPublicKey(chain?.asList()?.firstOrNull()?.publicKey?.encoded ?: throw RuntimeException("certificate missing"))
-                            } catch (e: Exception) {
-                                logger.error(e) { "failed to read server's pubkey=${tls.pubKey}" }
-                                throw e
-                            }
-
-                            val pinnedKey = try {
-                                JvmTcpSocket.buildPublicKey(Base64.getDecoder().decode(tls.pubKey))
-                            } catch (e: Exception) {
-                                logger.error(e) { "failed to read pinned pubkey=${tls.pubKey}" }
-                                throw e
-                            }
-
-                            if (serverKey == pinnedKey) {
-                                logger.info { "successfully checked server's certificate against pinned pubkey" }
-                            } else {
-                                logger.warning { "server's certificate does not match pinned pubkey, fallback to default check" }
-                                defaultX509TrustManager.checkServerTrusted(chain, authType)
-                            }
-                        }
-
-                        override fun getAcceptedIssuers(): Array<X509Certificate> = defaultX509TrustManager.acceptedIssuers
                     }
-                }.build())
-            }
-            else -> Unit
+                    is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
+                        logger.info { "using certificate pinning for connections with $host" }
+                        socket.tls(coroutineContext, TLSConfigBuilder().apply {
+                            // build a default X509 trust manager.
+                            val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())!!
+                            factory.init(null as KeyStore?)
+                            val defaultX509TrustManager = factory.trustManagers!!.filterIsInstance<X509TrustManager>().first()
+
+                            // create a new trust manager that always accepts certificates for the pinned public key, or falls back to standard procedure.
+                            trustManager = object : X509TrustManager {
+                                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+                                    defaultX509TrustManager.checkClientTrusted(chain, authType)
+                                }
+
+                                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+                                    val serverKey = try {
+                                        JvmTcpSocket.buildPublicKey(chain?.asList()?.firstOrNull()?.publicKey?.encoded ?: throw RuntimeException("certificate missing"))
+                                    } catch (e: Exception) {
+                                        logger.error(e) { "failed to read server's pubkey=${tls.pubKey}" }
+                                        throw e
+                                    }
+
+                                    val pinnedKey = try {
+                                        JvmTcpSocket.buildPublicKey(Base64.getDecoder().decode(tls.pubKey))
+                                    } catch (e: Exception) {
+                                        logger.error(e) { "failed to read pinned pubkey=${tls.pubKey}" }
+                                        throw e
+                                    }
+
+                                    if (serverKey == pinnedKey) {
+                                        logger.info { "successfully checked server's certificate against pinned pubkey" }
+                                    } else {
+                                        logger.warning { "server's certificate does not match pinned pubkey, fallback to default check" }
+                                        defaultX509TrustManager.checkServerTrusted(chain, authType)
+                                    }
+                                }
+
+                                override fun getAcceptedIssuers(): Array<X509Certificate> = defaultX509TrustManager.acceptedIssuers
+                            }
+                        }.build())
+                    }
+                    else -> socket
+                }
+            })
         }
-        JvmTcpSocket(socket)
-    }
 }
