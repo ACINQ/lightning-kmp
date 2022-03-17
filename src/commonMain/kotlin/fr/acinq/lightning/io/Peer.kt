@@ -60,6 +60,19 @@ data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListene
 data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
 
+data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerListenerEvent()
+
+/**
+ * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
+ * the events on those channels and processes the relevant actions. The dialogue with the peer is done in coroutines.
+ *
+ * @param nodeParams Low level, Lightning related parameters that our node will use in relation to this Peer.
+ * @param walletParams High level parameters for our node. It especially contains the Peer's [NodeUri].
+ * @param watcher Watches events from the Electrum client and publishes transactions and events.
+ * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
+ * @param socketBuilder Builds the TCP socket used to connect to the Peer.
+ * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
+ */
 @ObsoleteCoroutinesApi
 @OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class Peer(
@@ -68,7 +81,8 @@ class Peer(
     val watcher: ElectrumWatcher,
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
 ) : CoroutineScope by scope {
     companion object {
         private const val prefix: Byte = 0x00
@@ -116,7 +130,7 @@ class Peer(
 
     private val features = nodeParams.features
 
-    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector())
+    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector(), initTlvStream)
     private var theirInit: Init? = null
 
     public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
@@ -649,6 +663,10 @@ class Peer(
                     msg is SwapInConfirmed -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
                         listenerEventChannel.send(SwapInConfirmedEvent(msg))
+                    }
+                    msg is PhoenixAndroidLegacyInfo -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
+                        listenerEventChannel.send(PhoenixAndroidLegacyInfoEvent(msg))
                     }
                     else -> logger.warning { "n:$remoteNodeId received unhandled message ${Hex.encode(event.data)}" }
                 }

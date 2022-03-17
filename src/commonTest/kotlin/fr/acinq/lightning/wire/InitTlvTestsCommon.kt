@@ -1,16 +1,23 @@
 package fr.acinq.lightning.wire
 
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
+import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
+import org.kodein.memory.text.toHexString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class InitTlvTestsCommon : LightningTestSuite() {
     @Test
     fun `legacy phoenix TLV`() {
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), Block.TestnetGenesisBlock.hash)
         val testCases = listOf(
-            Pair(PublicKey(Hex.decode("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")), Hex.decode("fe47020001 21 03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"))
+            Pair(
+                first = keyManager.legacyNodeKey.publicKey,
+                second = Hex.decode("fe47020001 61 0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc abc7feb0f7b2473552864bcbf76406aecee86ed6d29349392a8876ce4cb543ee5d67a7ea48248970c7605e2861e93ab2336c813a30d1376bd6d0eb6e619c8d9f")
+            )
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -21,16 +28,18 @@ class InitTlvTestsCommon : LightningTestSuite() {
 
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
-            val legacyNodeId = decoded.records.mapNotNull { record ->
+            val result = decoded.records.mapNotNull { record ->
                 when (record) {
                     is InitTlv.PhoenixAndroidLegacyNodeId -> {
                         assertEquals(InitTlv.PhoenixAndroidLegacyNodeId.tag, record.tag)
-                        record.legacyNodeId
+                        record
                     }
                     else -> null
                 }
             }.first()
-            assertEquals(it.first, legacyNodeId)
+            assertEquals(it.first, result.legacyNodeId)
+            // signature is legacy public key signed with the regular private key
+            assertTrue { Crypto.verifySignature(Crypto.sha256(it.first.toUncompressedBin()), result.signature, keyManager.nodeKey.publicKey) }
         }
     }
 }
