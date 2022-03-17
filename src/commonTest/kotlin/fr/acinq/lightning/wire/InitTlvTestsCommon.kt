@@ -1,10 +1,10 @@
 package fr.acinq.lightning.wire
 
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.DeterministicWallet
-import fr.acinq.bitcoin.MnemonicCode
+import fr.acinq.bitcoin.*
+import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
+import org.kodein.memory.text.toHexString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -12,10 +12,11 @@ import kotlin.test.assertTrue
 class InitTlvTestsCommon : LightningTestSuite() {
     @Test
     fun `legacy phoenix TLV`() {
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), Block.TestnetGenesisBlock.hash)
         val testCases = listOf(
             Pair(
-                first = DeterministicWallet.generate(MnemonicCode.toSeed("ghost runway obscure", passphrase = "")).publicKey,
-                second = Hex.decode("fe47020001 61 0284a00b96b3fc7b1d874d639cd9e679c22149da5c51976f29738340c9e6b770a0 d0cb0003e64e3dcfce82a11065cccca82d29c446cc094303cf03a9286abbcf7e720d68e89abb18102bb5cf9f6db47156698527c75b70b8c51fa886e6fd11b1e4")
+                first = keyManager.legacyNodeKey.publicKey,
+                second = Hex.decode("fe47020001 61 0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc abc7feb0f7b2473552864bcbf76406aecee86ed6d29349392a8876ce4cb543ee5d67a7ea48248970c7605e2861e93ab2336c813a30d1376bd6d0eb6e619c8d9f")
             )
         )
 
@@ -37,7 +38,8 @@ class InitTlvTestsCommon : LightningTestSuite() {
                 }
             }.first()
             assertEquals(it.first, result.legacyNodeId)
-            assertTrue { Crypto.verifySignature(Crypto.sha256(result.legacyNodeId.toUncompressedBin()), result.signature, it.first) }
+            // signature is legacy public key signed with the regular private key
+            assertTrue { Crypto.verifySignature(Crypto.sha256(it.first.toUncompressedBin()), result.signature, keyManager.nodeKey.publicKey) }
         }
     }
 }
