@@ -1,70 +1,99 @@
 package fr.acinq.lightning.io
 
-import fr.acinq.lightning.io.ios_network_framework.nw_k_connection_receive
-import fr.acinq.lightning.io.ios_network_framework.nw_k_parameters_create_secure_tcp
-import fr.acinq.lightning.io.ios_network_framework.nw_k_parameters_create_secure_tcp_custom
+import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.utils.lightningLogger
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
+import platform.Foundation.NSData
 import platform.Network.*
-import platform.Security.sec_protocol_options_set_verify_block
-import platform.darwin.dispatch_data_apply
-import platform.darwin.dispatch_data_create
-import platform.darwin.dispatch_data_get_size
-import platform.darwin.dispatch_get_main_queue
 import platform.posix.ECONNREFUSED
 import platform.posix.ECONNRESET
-import platform.posix.memcpy
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.native.concurrent.ThreadLocal
+import swift.phoenix_crypto.NativeSocket
+import swift.phoenix_crypto.NativeSocketError
+import swift.phoenix_crypto.NativeSocketTLS
 
 @OptIn(ExperimentalUnsignedTypes::class)
-class IosTcpSocket(private val connection: nw_connection_t) : TcpSocket {
-    override suspend fun send(bytes: ByteArray?, flush: Boolean): Unit =
-        suspendCancellableCoroutine { continuation ->
-            val pinned = bytes?.pin()
-            val data = pinned?.let {
-                dispatch_data_create(
-                    pinned.addressOf(0),
-                    bytes.size.convert(),
-                    dispatch_get_main_queue(),
-                    ({ pinned.unpin() }))
-            }
-            nw_connection_send(connection, data, null, flush) { error ->
-                if (error != null) continuation.resumeWithException(error.toIOException())
-                else continuation.resume(Unit)
-            }
-        }
+class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
 
-    private suspend fun receive(buffer: ByteArray, min: Int): Int =
-        suspendCancellableCoroutine { continuation ->
-            nw_k_connection_receive(connection, min.convert(), buffer.size.convert()) { data, isComplete, error ->
-                when {
-                    error != null -> continuation.resumeWithException(error.toIOException())
-                    data != null -> {
-                        buffer.usePinned { pinned ->
-                            dispatch_data_apply(data) { _, offset, src, size ->
-                                memcpy(pinned.addressOf(offset.convert()), src, size)
-                                true
-                            }
-                        }
-                        continuation.resume(dispatch_data_get_size(data).convert())
-                    }
-                    isComplete -> continuation.resumeWithException(TcpSocket.IOException.ConnectionClosed())
+    override suspend fun send(
+        bytes: ByteArray?,
+        flush: Boolean
+    ): Unit = suspendCancellableCoroutine { continuation ->
+
+        // @kotlinx.cinterop.ObjCMethod
+        // public open external fun sendWithData(
+        //   data: platform.Foundation.NSData,
+        //   completion: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
+        // ): kotlin.Unit { /* compiled code */ }
+
+        val data = bytes?.let { it.toNSData() } ?: NSData()
+        socket.sendWithData(
+            data = data,
+            completion = { error ->
+                if (error != null) {
+                    continuation.resumeWithException(error.toIOException())
+                } else {
+                    continuation.resume(Unit)
                 }
             }
-        }
-
-    override suspend fun receiveFully(buffer: ByteArray) {
-        receive(buffer, buffer.size)
+        )
     }
 
+    override suspend fun receiveAvailable(
+        buffer: ByteArray
+    ): Int = suspendCancellableCoroutine { continuation ->
 
-    override suspend fun receiveAvailable(buffer: ByteArray): Int = receive(buffer, 0)
+        // @kotlinx.cinterop.ObjCMethod
+        // public open external fun receiveAvailableWithMaximumLength(
+        //   maximumLength: platform.darwin.NSInteger /* = kotlin.Long */,
+        //   success: (platform.Foundation.NSData?) -> kotlin.Unit,
+        //   failure: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
+        // ): kotlin.Unit { /* compiled code */ }
 
-    override fun close() {
-        nw_connection_cancel(connection)
+        socket.receiveAvailableWithMaximumLength(
+            maximumLength = buffer.size.convert(),
+            success = { data ->
+                data!!.copyTo(buffer)
+                continuation.resume(data.length.convert())
+            },
+            failure = { error ->
+                continuation.resumeWithException(error!!.toIOException())
+            }
+        )
+    }
+
+    override suspend fun receiveFully(
+        buffer: ByteArray
+    ): Unit = suspendCancellableCoroutine { continuation ->
+
+        // @kotlinx.cinterop.ObjCMethod
+        // public open external fun receiveFullyWithLength(
+        //   length: platform.darwin.NSInteger /* = kotlin.Long */,
+        //   success: (platform.Foundation.NSData?) -> kotlin.Unit,
+        //   failure: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
+        // ): kotlin.Unit { /* compiled code */ }
+
+        socket.receiveFullyWithLength(
+            length = buffer.size.convert(),
+            success = { data ->
+                data!!.copyTo(buffer)
+                continuation.resume(Unit)
+            },
+            failure = { error ->
+                continuation.resumeWithException(error!!.toIOException())
+            }
+        )
+    }
+
+    override fun close(): Unit {
+
+        // @kotlinx.cinterop.ObjCMethod
+        // public open external fun close(): kotlin.Unit { /* compiled code */ }
+
+        socket.close()
     }
 }
 
@@ -73,51 +102,55 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     private val logger by lightningLogger<IosTcpSocket>()
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
-        suspendCancellableCoroutine { continuation ->
-            val endpoint = nw_endpoint_create_host(host, port.toString())
+    override suspend fun connect(
+        host: String,
+        port: Int,
+        tls: TcpSocket.TLS?
+    ): TcpSocket = suspendCancellableCoroutine { continuation ->
 
-            val parameters =
-                when (tls) {
-                    null -> nw_k_parameters_create_secure_tcp(false)
-                    TcpSocket.TLS.SAFE -> nw_k_parameters_create_secure_tcp(true)
-                    TcpSocket.TLS.UNSAFE_CERTIFICATES -> nw_k_parameters_create_secure_tcp_custom {
-                        logger.warning { "Using unsafe TLS!" }
-                        val sec_options = nw_tls_copy_sec_protocol_options(it)
-                        sec_protocol_options_set_verify_block(sec_options, { _, _, handler ->
-                            handler!!(true)
-                        }, dispatch_get_main_queue())
-                    }
-                }
+        // @kotlinx.cinterop.ObjCMethod
+        // public open external fun connectWithHost(
+        //   host: kotlin.String,
+        //   port: platform.posix.uint16_t /* = kotlin.UShort */,
+        //   tls: swift.phoenix_crypto.NativeSocketTLS,
+        //   success: (swift.phoenix_crypto.NativeSocket?) -> kotlin.Unit,
+        //   failure: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
+        // ): kotlin.Unit { /* compiled code */ }
 
-            val connection = nw_connection_create(endpoint, parameters)
-
-            nw_connection_set_queue(connection, dispatch_get_main_queue())
-            var called = false
-            nw_connection_set_state_changed_handler(connection) { state, error ->
-                when {
-                    error != null -> if (!called) {
-                        called = true
-                        continuation.resumeWithException(error.toIOException())
-                    }
-                    state == nw_connection_state_ready -> if (!called) {
-                        called = true
-                        continuation.resume(IosTcpSocket(connection))
-                    }
-                }
-            }
-            nw_connection_start(connection)
+        val tlsOptions = when (tls) {
+            TcpSocket.TLS.SAFE ->
+                NativeSocketTLS(disabled = false, allowUntrustedCerts = false)
+            TcpSocket.TLS.UNSAFE_CERTIFICATES ->
+                NativeSocketTLS(disabled = false, allowUntrustedCerts = true)
+            else ->
+                NativeSocketTLS(disabled = true, allowUntrustedCerts = false)
         }
+
+        NativeSocket.connectWithHost(
+            host = host,
+            port = port.toUShort(),
+            tls = tlsOptions,
+            success = { socket ->
+                continuation.resume(IosTcpSocket(socket!!))
+            },
+            failure = { error ->
+                continuation.resumeWithException(error!!.toIOException())
+            }
+        )
+    }
 }
 
-private fun nw_error_t.toIOException(): TcpSocket.IOException =
-    when (nw_error_get_error_domain(this)) {
-        nw_error_domain_posix -> when (nw_error_get_error_code(this)) {
+private fun NativeSocketError.toIOException(): TcpSocket.IOException =
+    when {
+        isPosixErrorCode() -> when (posixErrorCode()) {
             ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused()
             ECONNRESET -> TcpSocket.IOException.ConnectionClosed()
-            else -> TcpSocket.IOException.Unknown(this?.debugDescription)
+            else -> TcpSocket.IOException.Unknown(errorDescription())
         }
-        nw_error_domain_dns -> TcpSocket.IOException.Unknown("DNS: ${this?.debugDescription}")
-        nw_error_domain_tls -> TcpSocket.IOException.Unknown("TLS: ${this?.debugDescription}")
-        else -> TcpSocket.IOException.Unknown("Unknown: ${this?.debugDescription}")
+        isDnsServiceErrorType() ->
+            TcpSocket.IOException.Unknown("DNS: ${errorDescription()}")
+        isTlsStatus() ->
+            TcpSocket.IOException.Unknown("TLS: ${errorDescription()}")
+        else ->
+            TcpSocket.IOException.Unknown("???: ${errorDescription()}")
     }
