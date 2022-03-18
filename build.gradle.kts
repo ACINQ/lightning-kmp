@@ -44,10 +44,13 @@ kotlin {
     }
     val commonTest by sourceSets.getting {
         dependencies {
+            api(ktor("client-core"))
+            api(ktor("client-auth"))
+            api(ktor("client-json"))
+            api(ktor("client-serialization"))
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
             implementation("org.kodein.memory:kodein-memory-files:0.8.1")
-            implementation(project(":lightning-kmp-test-fixtures"))
         }
     }
 

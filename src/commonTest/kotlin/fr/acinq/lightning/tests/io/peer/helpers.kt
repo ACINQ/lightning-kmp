@@ -6,14 +6,18 @@ import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.wire.LightningMessage
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.flow.*
 
 suspend inline fun <reified LNMessage : LightningMessage> Flow<LightningMessage>.expect(): LightningMessage = first { it is LNMessage }
 
+@OptIn(ObsoleteCoroutinesApi::class)
 suspend inline fun Peer.forward(message: LightningMessage) = send((BytesReceived(LightningMessage.encode(message))))
 
+@OptIn(ObsoleteCoroutinesApi::class)
 suspend inline fun Peer.expectStatus(await: Connection) = connectionState.first { it == await }
 
+@OptIn(ObsoleteCoroutinesApi::class)
 suspend inline fun <reified Status : ChannelState> Peer.expectState(
     id: ByteVector32? = null,
     noinline waitCondition: (suspend Status.() -> Boolean)? = null,
