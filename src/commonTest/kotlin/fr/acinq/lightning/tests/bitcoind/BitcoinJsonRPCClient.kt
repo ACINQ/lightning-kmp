@@ -28,8 +28,7 @@ object BitcoinJsonRPCClient {
         }
         install(Auth) {
             basic {
-                username = user
-                password = pwd
+                credentials { BasicAuthCredentials(user, pwd) }
             }
         }
     }

@@ -179,4 +179,5 @@ public fun buildPeer(
     return peer
 }
 
+@OptIn(ObsoleteCoroutinesApi::class)
 data class PeerTuple(val alice: Peer, val bob: Peer, val alice2bob: Flow<LightningMessage>, val bob2alice: Flow<LightningMessage>)
