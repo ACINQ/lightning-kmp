@@ -17,6 +17,7 @@ import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
+import fr.acinq.lightning.message.Postman
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
@@ -168,7 +169,8 @@ public fun buildPeer(
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope)
     val watcher = ElectrumWatcher(electrum, scope)
-    val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
+    val postman = Postman(nodeParams.nodePrivateKey)
+    val peer = Peer(nodeParams, walletParams, watcher, databases, postman, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),

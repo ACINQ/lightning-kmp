@@ -15,6 +15,7 @@ import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.db.sqlite.SqliteChannelsDb
 import fr.acinq.lightning.io.*
+import fr.acinq.lightning.message.Postman
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.tests.TestConstants
@@ -208,6 +209,8 @@ object Node {
             override val payments = InMemoryPaymentsDb()
         }
 
+        val postman = Postman(nodeParams.nodePrivateKey)
+
         Class.forName("org.sqlite.JDBC")
 
         suspend fun connectLoop(peer: Peer) {
@@ -219,7 +222,7 @@ object Node {
         runBlocking {
             val electrum = ElectrumClient(TcpSocket.Builder(), this).apply { connect(electrumServerAddress) }
             val watcher = ElectrumWatcher(electrum, this)
-            val peer = Peer(nodeParams, walletParams, watcher, db, TcpSocket.Builder(), this)
+            val peer = Peer(nodeParams, walletParams, watcher, db, postman, TcpSocket.Builder(), this)
 
             launch { connectLoop(peer) }
 

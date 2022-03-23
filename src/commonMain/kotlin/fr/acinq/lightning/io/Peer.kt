@@ -2,6 +2,8 @@ package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.Lightning.randomKeyPath
 import fr.acinq.lightning.blockchain.GetTxWithMeta
 import fr.acinq.lightning.blockchain.WatchEvent
@@ -10,10 +12,12 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.OutgoingPayment
+import fr.acinq.lightning.message.Postman
 import fr.acinq.lightning.payment.IncomingPaymentHandler
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.payment.OutgoingPaymentHandler
@@ -80,6 +84,7 @@ class Peer(
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
+    val postman: Postman,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
     private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
@@ -678,7 +683,7 @@ class Peer(
                     }
                     msg is OnionMessage -> {
                         logger.info { "n:$remoteNodeId received ${msg::class}" }
-                        // TODO: process onion message
+                        postman.processOnionMessage(msg)
                     }
                     else -> logger.warning { "n:$remoteNodeId received unhandled message ${Hex.encode(event.data)}" }
                 }
@@ -771,5 +776,22 @@ class Peer(
                 }
             }
         }
+    }
+
+    fun sendOnionMessage(recipient: RouteBlinding.BlindedRoute, messageContent: OnionMessagePayloadTlv, processReply: ((MessageOnion, RecipientData) -> Unit)?, timeout: Duration) {
+        val route = if (recipient.introductionNodeId == remoteNodeId) recipient else {
+            val firstNode = RouteBlinding.create(randomKey(), listOf(remoteNodeId), listOf(RecipientData(TlvStream(listOf(RecipientDataTlv.OutgoingNodeId(recipient.introductionNodeId), RecipientDataTlv.NextBlinding(recipient.blindingKey)))).write().toByteVector()))
+            RouteBlinding.BlindedRoute(remoteNodeId, firstNode.blindingKey, firstNode.blindedNodes + recipient.blindedNodes)
+        }
+        val pathId = randomBytes32()
+        val replyPath = if(processReply == null) listOf() else {
+            val path = RouteBlinding.create(randomKey(),
+                listOf(remoteNodeId, nodeParams.nodeId),
+                listOf(
+                    RecipientData(TlvStream(listOf(RecipientDataTlv.OutgoingNodeId(nodeParams.nodeId)))).write().toByteVector(),
+                    RecipientData(TlvStream(listOf(RecipientDataTlv.PathId(pathId)))).write().toByteVector()))
+            listOf(OnionMessagePayloadTlv.ReplyPath(path))
+        }
+        val finalPayload = MessageOnion(TlvStream(listOf(messageContent, OnionMessagePayloadTlv.EncryptedData(recipient.encryptedPayloads.last())) + replyPath))
     }
 }
