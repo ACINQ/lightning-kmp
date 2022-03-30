@@ -59,10 +59,6 @@ function btc_remove {
 }
 
 function elx_create {
-    docker build \
-        -t electrumx \
-        $basedir/electrumx
-
     docker create \
         --name electrumx \
         --net eclair-net \
@@ -72,7 +68,7 @@ function elx_create {
         -e LOG_LEVEL=debug \
         -p 51001:50001 \
         -p 51002:50002 \
-        electrumx
+        lukechilds/electrumx:v1.15.0
 }
 
 function elx_start {
