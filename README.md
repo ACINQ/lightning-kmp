@@ -10,7 +10,7 @@ It shares a lot of architecture choices with eclair though, which comes from yea
 But it optimizes completely different scenarios, as wallets will not relay payments but rather send and receive them.
 Read [this article](https://medium.com/@ACINQ/when-ios-cdf798d5f8ef) for more details.
 
-**lightning-kmp** is used in [Phoenix](https://phoenix.acinq.co/), the best non-custodial Ligthnig Wallet !
+**lightning-kmp** is used in [Phoenix](https://phoenix.acinq.co/), the best non-custodial Lightning Wallet!
 
 ## Installation
 
