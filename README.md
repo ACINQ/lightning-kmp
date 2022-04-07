@@ -3,7 +3,7 @@
 ![Github Actions](https://github.com/ACINQ/lightning-kmp/actions/workflows/test.yml/badge.svg)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**lightning-kmp** is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) implementation of the Lightning Network (see the [Lightning Network Specfications (BOLTs)](https://github.com/lightning/bolts)) optimized for mobile wallets. It can run on many different platforms, including mobile devices (iOS and Android).
+**lightning-kmp** is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) implementation of the Lightning Network (see the [Lightning Network Specifications (BOLTs)](https://github.com/lightning/bolts)) optimized for mobile wallets. It can run on many different platforms, including mobile devices (iOS and Android).
 
 It is different from [eclair](https://github.com/ACINQ/eclair) which is an implementation optimized for servers (routing nodes).
 It shares a lot of architecture choices with eclair though, which comes from years of experience developing one of the main lightning implementations.
