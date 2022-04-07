@@ -1,20 +1,16 @@
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.5.31-blue.svg?style=flat&logo=kotlin)](http://kotlinlang.org)
+[![Maven Central](https://img.shields.io/maven-central/v/fr.acinq.lightning/lightning-kmp)](https://search.maven.org/search?q=g:fr.acinq.lightning%20a:lightning-kmp*)
+![Github Actions](https://github.com/ACINQ/lightning-kmp/actions/workflows/test.yml/badge.svg)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**lightning-kmp** is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) implementation of the Lightning Network optimized for mobile wallets.
-It can run on many different platforms, including mobile devices (iOS and Android).
-
-This software implements the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc).
+**lightning-kmp** is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) implementation of the Lightning Network (see the [Lightning Network Specfications (BOLTs)](https://github.com/lightning/bolts)) optimized for mobile wallets. It can run on many different platforms, including mobile devices (iOS and Android).
 
 It is different from [eclair](https://github.com/ACINQ/eclair) which is an implementation optimized for servers (routing nodes).
 It shares a lot of architecture choices with eclair though, which comes from years of experience developing one of the main lightning implementations.
 But it optimizes completely different scenarios, as wallets will not relay payments but rather send and receive them.
 Read [this article](https://medium.com/@ACINQ/when-ios-cdf798d5f8ef) for more details.
 
----
-
-:construction: This library is still a work in progress. Expect things to break/change!
-
----
+**lightning-kmp** is used in [Phoenix](https://phoenix.acinq.co/), the best non-custodial Ligthnig Wallet !
 
 ## Installation
 
