@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
@@ -1876,11 +1877,21 @@ data class Normal(
                                     logger.info { "c:$channelId adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                     ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                                 }
+                                val lowFeerate = FeeratePerKw(FeeratePerByte(Satoshi(1)))
+                                val commitSig = when(val lowFeerateSig = commitments.signWithFee(keyManager, lowFeerate, logger)) {
+                                    is Either.Left -> result.value.second
+                                    is Either.Right -> {
+                                        val commitSig0 = result.value.second
+                                        val tlvs0 = commitSig0.tlvStream
+                                        val tlvs1 = tlvs0.copy(records = tlvs0.records + CommitSigTlv.LowFeerateCommitSig(lowFeerateSig.value))
+                                        commitSig0.copy(tlvStream = tlvs1)
+                                    }
+                                }
                                 val nextState = this.copy(commitments = commitments1)
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreHtlcInfos(htlcInfos),
                                     ChannelAction.Storage.StoreState(nextState),
-                                    ChannelAction.Message.Send(result.value.second)
+                                    ChannelAction.Message.Send(commitSig)
                                 )
                                 Pair(nextState, actions)
                             }

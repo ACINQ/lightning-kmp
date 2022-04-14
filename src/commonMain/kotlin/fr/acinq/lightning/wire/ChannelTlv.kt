@@ -2,6 +2,7 @@ package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
@@ -171,6 +172,16 @@ sealed class CommitSigTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+    @Serializable
+    data class LowFeerateCommitSig(@Contextual val sig: ByteVector64) : CommitSigTlv() {
+        override val tag: Long get() = LowFeerateCommitSig.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(sig, out)
+
+        companion object : TlvValueReader<LowFeerateCommitSig> {
+            const val tag: Long = 0x47010001
+            override fun read(input: Input): LowFeerateCommitSig = LowFeerateCommitSig(ByteVector64(LightningCodecs.bytes(input, input.availableBytes)))
         }
     }
 }

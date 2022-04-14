@@ -6,6 +6,7 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.crypto.Generators
@@ -487,6 +488,15 @@ data class Commitments(
             remoteChanges = remoteChanges.copy(acked = emptyList(), signed = remoteChanges.acked)
         )
         return Either.Right(Pair(commitments1, commitSig))
+    }
+
+    fun signWithFee(keyManager: KeyManager, feerate: FeeratePerKw, log: Logger): Either<ChannelException, ByteVector64> {
+        log.info { "c:$channelId signing additional commitment with feerate=$feerate" }
+        return sendFee(CMD_UPDATE_FEE(feerate)).flatMap { resultFee ->
+            resultFee.first.sendCommit(keyManager, log).map { resultSig ->
+                resultSig.second.signature
+            }
+        }
     }
 
     fun receiveCommit(commit: CommitSig, keyManager: KeyManager, log: Logger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
