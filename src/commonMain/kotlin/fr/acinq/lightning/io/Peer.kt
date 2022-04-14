@@ -425,7 +425,7 @@ class Peer(
                             closingAddress = action.closingAddress,
                             isSentToDefaultAddress = action.isSentToDefaultAddress
                         ),
-                        parts = listOf<OutgoingPayment.Part>(),
+                        parts = emptyList(),
                         status = OutgoingPayment.Status.Pending
                     )
                     db.payments.addOutgoingPayment(payment)
@@ -433,8 +433,8 @@ class Peer(
                 }
                 action is ChannelAction.Storage.StoreChannelClosed -> {
                     val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                    val completed = OutgoingPayment.Status.Completed.Succeeded.OnChain(action.txids, action.claimed, action.closingType)
-                    db.payments.completeOutgoingPayment(dbId, completed)
+                    db.payments.addOutgoingClosingTxParts(parentId = dbId, parts = action.closingTxs)
+                    db.payments.completeOutgoingPaymentOnchain(id = dbId, completedAt = currentTimestampMillis())
                     listenerEventChannel.send(ChannelClosing(channelId))
                 }
                 action is ChannelAction.ChannelId.IdSwitch -> {

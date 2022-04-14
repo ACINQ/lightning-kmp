@@ -7,7 +7,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.db.ChannelClosingType
+import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.transactions.outgoings
@@ -80,7 +80,7 @@ sealed class ChannelAction {
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
-        data class StoreChannelClosed(val txids: List<ByteVector32>, val claimed: Satoshi, val closingType: ChannelClosingType) : Storage()
+        data class StoreChannelClosed(val closingTxs: List<OutgoingPayment.ClosingTxPart>) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()

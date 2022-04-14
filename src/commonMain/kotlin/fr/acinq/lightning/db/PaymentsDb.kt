@@ -11,7 +11,6 @@ import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
-import kotlinx.serialization.Serializable
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
     /** List sent and received payments (with most recent payments first). */
@@ -64,23 +63,26 @@ interface OutgoingPaymentsDb {
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
 
-    /** Mark an outgoing payment as completed (failed, succeeded, mined). */
-    suspend fun completeOutgoingPayment(id: UUID, completed: OutgoingPayment.Status.Completed)
+    /** Mark an outgoing payment as completed on-chain. */
+    suspend fun completeOutgoingPaymentOnchain(id: UUID, completedAt: Long = currentTimestampMillis())
 
-    suspend fun completeOutgoingPayment(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis()) =
-        completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Failed(finalFailure, completedAt))
+    /** Mark an outgoing payment as completed over Lightning. */
+    suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
-    suspend fun completeOutgoingPayment(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis()) =
-        completeOutgoingPayment(id, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage, completedAt))
+    /** Mark an outgoing payment as failed. */
+    suspend fun completeOutgoingPaymentFailed(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
-    suspend fun addOutgoingParts(parentId: UUID, parts: List<OutgoingPayment.Part>)
+    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<OutgoingPayment.LightningPart>)
+
+    /** Add parts of closing transaction. */
+    suspend fun addOutgoingClosingTxParts(parentId: UUID, parts: List<OutgoingPayment.ClosingTxPart>)
 
     /** Mark an outgoing payment part as failed. */
-    suspend fun updateOutgoingPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment part as succeeded. This should not update the parent payment, since some parts may still be pending. */
-    suspend fun updateOutgoingPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Get information about an outgoing payment from the id of one of its parts. */
     suspend fun getOutgoingPart(partId: UUID): OutgoingPayment?
@@ -156,6 +158,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
         /** Total amount received after applying the fees. */
         val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+
         /** Fees applied to receive this payment. */
         val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
     }
@@ -163,6 +166,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     sealed class ReceivedWith {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
         abstract val amount: MilliSatoshi
+
         /** Fees applied to receive this part. Is zero for Lightning payments. */
         abstract val fees: MilliSatoshi
 
@@ -193,10 +197,20 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
  * @param recipientAmount total amount that will be received by the final recipient (NB: it doesn't contain the fees paid).
  * @param recipient final recipient nodeId.
  * @param details details that depend on the payment type (normal payments, swaps, etc).
- * @param parts partial child payments that have actually been sent.
+ * @param parts list of partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
-data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val recipient: PublicKey, val details: Details, val parts: List<Part>, val status: Status, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
+data class OutgoingPayment(
+    val id: UUID,
+    val recipientAmount: MilliSatoshi,
+    val recipient: PublicKey,
+    val details: Details,
+    val parts: List<Part>,
+    val status: Status,
+    val createdAt: Long = currentTimestampMillis()
+) : WalletPayment() {
+
+    /** Create an outgoing payment in a pending status, without any parts yet. */
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
@@ -205,10 +219,14 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         is Status.Pending -> 0.msat
         is Status.Completed.Failed -> 0.msat
         is Status.Completed.Succeeded.OffChain -> {
-            parts.filter { it.status is Part.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+            parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
         }
         is Status.Completed.Succeeded.OnChain -> {
-            recipientAmount - status.claimed.toMilliSatoshi()
+            if (details is Details.ChannelClosing) {
+                recipientAmount - parts.filterIsInstance<ClosingTxPart>().map { it.claimed.toMilliSatoshi() }.sum()
+            } else {
+                parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+            }
         }
     }
 
@@ -256,20 +274,15 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
         object Pending : Status()
         sealed class Completed : Status() {
             abstract val completedAt: Long
+
             data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
             sealed class Succeeded : Completed() {
                 data class OffChain(
                     val preimage: ByteVector32,
                     override val completedAt: Long = currentTimestampMillis()
                 ) : Succeeded()
+
                 data class OnChain(
-                    val txids: List<ByteVector32>,
-                    // The `claimed` field represents the sum total of bitcoin tx outputs claimed for the user.
-                    // A simplified fees can be calculated as: OutgoingPayment.recipientAmount - claimed
-                    // In the future, we plan on storing the closing btc transactions as parts.
-                    // Then we can use those parts to calculate the fees, and provide more details to the user.
-                    val claimed: Satoshi,
-                    val closingType: ChannelClosingType,
                     override val completedAt: Long = currentTimestampMillis()
                 ) : Succeeded()
             }
@@ -277,7 +290,16 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
     }
 
     /**
-     * An child payment sent by this node (partial payment of the total amount).
+     * An outgoing payment is an abstraction ; it is actually settled through one or several child payments that are
+     * done over Lightning, or through on-chain transactions.
+     */
+    sealed class Part {
+        abstract val id: UUID
+        abstract val createdAt: Long
+    }
+
+    /**
+     * A child payment sent by this node (partial payment of the total amount). This payment has a status and can fail.
      *
      * @param id internal payment identifier.
      * @param amount amount sent, including fees.
@@ -285,7 +307,13 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
      * @param status current status of the payment.
      * @param createdAt absolute time in milliseconds since UNIX epoch when the payment was created.
      */
-    data class Part(val id: UUID, val amount: MilliSatoshi, val route: List<HopDesc>, val status: Status, val createdAt: Long = currentTimestampMillis()) {
+    data class LightningPart(
+        override val id: UUID,
+        val amount: MilliSatoshi,
+        val route: List<HopDesc>,
+        val status: Status,
+        override val createdAt: Long = currentTimestampMillis()
+    ) : Part() {
         sealed class Status {
             object Pending : Status()
             data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
@@ -299,6 +327,22 @@ data class OutgoingPayment(val id: UUID, val recipientAmount: MilliSatoshi, val 
             }
         }
     }
+
+    /**
+     * A child payment for closing a channel through an on-chain transaction.
+     *
+     * @param claimed represents the sum total of bitcoin tx outputs claimed for the user. A simplified fees can be
+     *      calculated as: OutgoingPayment.recipientAmount - claimed.
+     * @param closingType the type of the closing : it can be mutually decided by both end of the channel, or unilaterally
+     *      initiated by the remote or the local peer.
+     */
+    data class ClosingTxPart(
+        override val id: UUID,
+        val txId: ByteVector32,
+        val claimed: Satoshi,
+        val closingType: ChannelClosingType,
+        override val createdAt: Long,
+    ) : Part()
 }
 
 enum class ChannelClosingType {

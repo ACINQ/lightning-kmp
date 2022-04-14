@@ -94,8 +94,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(bob5 is Closed)
         val storeChannelClosed = bobActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertEquals(storeChannelClosed.closingType, ChannelClosingType.Mutual)
-        assertEquals(storeChannelClosed.txids, listOf(mutualCloseTx.tx.txid))
+        assertTrue(storeChannelClosed.closingTxs.all { it.closingType == ChannelClosingType.Mutual })
+        assertEquals(listOf(mutualCloseTx.tx.txid), storeChannelClosed.closingTxs.map { it.txId })
     }
 
     @Test
@@ -108,8 +108,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(alice1 is Closed)
         val storeChannelClosed = actions1.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertEquals(storeChannelClosed.closingType, ChannelClosingType.Mutual)
-        assertEquals(storeChannelClosed.txids, listOf(mutualCloseTx.tx.txid))
+        assertTrue(storeChannelClosed.closingTxs.all { it.closingType == ChannelClosingType.Mutual })
+        assertEquals(listOf(mutualCloseTx.tx.txid), storeChannelClosed.closingTxs.map { it.txId })
     }
 
     @Test
@@ -198,14 +198,14 @@ class ClosingTestsCommon : LightningTestSuite() {
         )
         val storeChannelClosed = actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Local }
-        assertTrue {
-            storeChannelClosed.txids.toSet() ==
-                    listOfNotNull(
-                        localCommitPublished.claimMainDelayedOutputTx,
-                        localCommitPublished.claimHtlcDelayedTxs.firstOrNull()
-                    ).map { it.tx.txid }.toSet()
-        }
+        assertTrue(storeChannelClosed.closingTxs.all { it.closingType == ChannelClosingType.Local })
+        assertEquals(
+            expected = listOfNotNull(
+                localCommitPublished.claimMainDelayedOutputTx,
+                localCommitPublished.claimHtlcDelayedTxs.firstOrNull()
+            ).map { it.tx.txid }.toSet(),
+            actual = storeChannelClosed.closingTxs.map { it.txId }.toSet()
+        )
     }
 
     @Test
@@ -540,14 +540,11 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed)))
         val storeChannelClosed = actions.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Remote }
-        assertTrue {
-            storeChannelClosed.txids.toSet() ==
-                    listOfNotNull(
-                        remoteCommitPublished.claimMainOutputTx,
-                        remoteCommitPublished.claimHtlcTimeoutTxs().firstOrNull()
-                    ).map { it.tx.txid }.toSet()
-        }
+        assertTrue(storeChannelClosed.closingTxs.all { it.closingType == ChannelClosingType.Remote })
+        assertEquals(
+            expected = listOfNotNull(remoteCommitPublished.claimMainOutputTx, remoteCommitPublished.claimHtlcTimeoutTxs().firstOrNull()).map { it.tx.txid }.toSet(),
+            actual = storeChannelClosed.closingTxs.map { it.txId }.toSet()
+        )
         // We notify the payment handler that the non-dust htlc has been failed.
         val htlcFail = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().first()
         assertEquals(htlcs[0], htlcFail.htlc)
@@ -1119,8 +1116,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         )
         val storeChannelClosed = aliceActions5.filterIsInstance<ChannelAction.Storage.StoreChannelClosed>().firstOrNull()
         assertNotNull(storeChannelClosed)
-        assertTrue { storeChannelClosed.closingType == ChannelClosingType.Remote }
-        assertTrue { storeChannelClosed.txids.toSet() == aliceTxs.map { it.txid }.toSet() }
+        assertTrue(storeChannelClosed.closingTxs.all { it.closingType == ChannelClosingType.Remote })
+        assertEquals(aliceTxs.map { it.txid }.toSet(), storeChannelClosed.closingTxs.map { it.txId }.toSet())
     }
 
     @Test

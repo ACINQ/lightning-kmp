@@ -8,12 +8,10 @@ import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.lightning.db.ChannelClosingType
+import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
-import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.utils.getValue
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.sum
+import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
 
@@ -406,60 +404,60 @@ data class Closing(
         }
     }
 
-    private fun storeChannelClosed(additionalConfirmedTx: Transaction?): ChannelAction.Storage.StoreChannelClosed {
-        // We want to give the user the list of btc transactions for their outputs
-        val txids = mutableListOf<ByteVector32>()
-        var claimed = 0.sat
-        val type = when {
-            mutualClosePublished.isNotEmpty() -> ChannelClosingType.Mutual
-            localCommitPublished != null -> ChannelClosingType.Local
-            remoteCommitPublished != null -> ChannelClosingType.Remote
-            nextRemoteCommitPublished != null -> ChannelClosingType.Remote
-            futureRemoteCommitPublished != null -> ChannelClosingType.Remote
-            revokedCommitPublished.isNotEmpty() -> ChannelClosingType.Revoked
-            else -> ChannelClosingType.Other
-        }
-        additionalConfirmedTx?.let { confirmedTx ->
-            mutualClosePublished.firstOrNull { it.tx == confirmedTx }?.let {
-                txids += it.tx.txid
-                claimed += it.toLocalOutput?.amount ?: 0.sat
+    /**
+     * This method returns the closing transactions that should be persisted in a database. It should be
+     * called when the channel has been actually closed, so that we know those transactions are confirmed.
+     *
+     * @param additionalConfirmedTx additional confirmed transaction for mutual close; we need this for the
+     *      mutual close scenario because we don't store the closing tx in the channel state.
+     */
+    private fun storeChannelClosed(additionalConfirmedTx: Transaction): ChannelAction.Storage.StoreChannelClosed {
+
+        /** Helper method to extract a [OutgoingPayment.ClosingTxPart] from a list of transactions, given a set of confirmed tx ids. */
+        fun extractClosingTx(
+            confirmedTxids: Set<ByteVector32>,
+            txs: List<Transaction>,
+            closingType: ChannelClosingType
+        ): List<OutgoingPayment.ClosingTxPart> {
+            return txs.filter { confirmedTxids.contains(it.txid) }.map {
+                OutgoingPayment.ClosingTxPart(
+                    id = UUID.randomUUID(),
+                    txId = it.txid,
+                    claimed = it.txOut.first().amount,
+                    closingType = closingType,
+                    createdAt = currentTimestampMillis()
+                )
             }
         }
-        localCommitPublished?.let {
-            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
-            val allTxs = listOfNotNull(it.claimMainDelayedOutputTx?.tx) +
-                    it.claimHtlcDelayedTxs.map { it.tx }
-            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            if (confirmedTxs.isNotEmpty()) {
-                txids += confirmedTxs.map { it.txid }
-                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
-            }
+
+        val txs = listOfNotNull(localCommitPublished).flatMap { local ->
+            extractClosingTx(
+                confirmedTxids = local.irrevocablySpent.values.map { it.txid }.toSet(),
+                txs = (local.claimHtlcDelayedTxs.map { it.tx } + local.claimMainDelayedOutputTx?.tx).filterNotNull(),
+                closingType = ChannelClosingType.Local
+            )
+        } + listOfNotNull(remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished).flatMap { remote ->
+            extractClosingTx(
+                confirmedTxids = remote.irrevocablySpent.values.map { it.txid }.toSet(),
+                txs = (remote.claimHtlcTxs.map { it.value?.tx } + remote.claimMainOutputTx?.tx).filterNotNull(),
+                closingType = ChannelClosingType.Remote
+            )
+        } + revokedCommitPublished.flatMap { revoked ->
+            extractClosingTx(
+                confirmedTxids = revoked.irrevocablySpent.values.map { it.txid }.toSet(),
+                txs = (revoked.claimHtlcDelayedPenaltyTxs.map { it.tx } + revoked.htlcPenaltyTxs.map { it.tx }
+                        + revoked.claimMainOutputTx?.tx + revoked.mainPenaltyTx?.tx).filterNotNull(),
+                closingType = ChannelClosingType.Revoked
+            )
+        } + mutualClosePublished.firstOrNull { it.tx == additionalConfirmedTx }?.let {
+            OutgoingPayment.ClosingTxPart(
+                id = UUID.randomUUID(),
+                txId = it.tx.txid,
+                claimed = it.toLocalOutput?.amount ?: 0.sat,
+                closingType = ChannelClosingType.Mutual,
+                createdAt = currentTimestampMillis()
+            )
         }
-        listOfNotNull(
-            remoteCommitPublished,
-            nextRemoteCommitPublished,
-            futureRemoteCommitPublished
-        ).forEach {
-            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
-            val allTxs = listOfNotNull(it.claimMainOutputTx?.tx) +
-                    it.claimHtlcTxs.mapNotNull { it.value?.tx }
-            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            if (confirmedTxs.isNotEmpty()) {
-                txids += confirmedTxs.map { it.txid }
-                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
-            }
-        }
-        revokedCommitPublished.forEach {
-            val confirmedTxids = it.irrevocablySpent.values.map { it.txid }.toSet()
-            val allTxs = listOfNotNull(it.claimMainOutputTx?.tx, it.mainPenaltyTx?.tx) +
-                    it.htlcPenaltyTxs.map { it.tx } +
-                    it.claimHtlcDelayedPenaltyTxs.map { it.tx }
-            val confirmedTxs = allTxs.filter { confirmedTxids.contains(it.txid) }
-            if (confirmedTxs.isNotEmpty()) {
-                txids += confirmedTxs.map { it.txid }
-                claimed += confirmedTxs.map { it.txOut.first().amount }.sum()
-            }
-        }
-        return ChannelAction.Storage.StoreChannelClosed(txids, claimed, type)
+        return ChannelAction.Storage.StoreChannelClosed(txs.filterNotNull())
     }
 }
