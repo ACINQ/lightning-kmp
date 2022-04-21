@@ -141,17 +141,32 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     }
 }
 
-private fun NativeSocketError.toIOException(): TcpSocket.IOException =
-    when {
-        isPosixErrorCode() -> when (posixErrorCode()) {
-            ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused()
-            ECONNRESET -> TcpSocket.IOException.ConnectionClosed()
-            else -> TcpSocket.IOException.Unknown(errorDescription())
+sealed class NativeSocketException: Exception() {
+    data class POSIX(val errorCode: Int): NativeSocketException()
+    data class DNS(val errorType: Int): NativeSocketException()
+    data class TLS(val status: Int): NativeSocketException()
+}
+
+private fun NativeSocketError.toIOException(): TcpSocket.IOException {
+    return when {
+        isPosixErrorCode() -> {
+            val cause = NativeSocketException.POSIX(posixErrorCode())
+            when (posixErrorCode()) {
+                ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused(cause)
+                ECONNRESET -> TcpSocket.IOException.ConnectionClosed(cause)
+                else -> TcpSocket.IOException.Unknown("POSIX: ${errorDescription()}", cause)
+            }
         }
-        isDnsServiceErrorType() ->
-            TcpSocket.IOException.Unknown("DNS: ${errorDescription()}")
-        isTlsStatus() ->
-            TcpSocket.IOException.Unknown("TLS: ${errorDescription()}")
-        else ->
+        isDnsServiceErrorType() -> {
+            val cause = NativeSocketException.DNS(dnsServiceErrorType())
+            TcpSocket.IOException.Unknown("DNS: ${errorDescription()}", cause)
+        }
+        isTlsStatus() -> {
+            val cause = NativeSocketException.TLS(tlsStatus())
+            TcpSocket.IOException.Unknown("TLS: ${errorDescription()}", cause)
+        }
+        else -> {
             TcpSocket.IOException.Unknown("???: ${errorDescription()}")
+        }
     }
+}

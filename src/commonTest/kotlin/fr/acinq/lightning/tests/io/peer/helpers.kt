@@ -15,7 +15,13 @@ suspend inline fun <reified LNMessage : LightningMessage> Flow<LightningMessage>
 suspend inline fun Peer.forward(message: LightningMessage) = send((BytesReceived(LightningMessage.encode(message))))
 
 @OptIn(ObsoleteCoroutinesApi::class)
-suspend inline fun Peer.expectStatus(await: Connection) = connectionState.first { it == await }
+suspend inline fun Peer.expectStatus(await: Connection) = connectionState.first {
+    when (await) {
+        is Connection.ESTABLISHED -> it is Connection.ESTABLISHED
+        is Connection.ESTABLISHING -> it is Connection.ESTABLISHING
+        is Connection.CLOSED -> it is Connection.CLOSED
+    }
+}
 
 @OptIn(ObsoleteCoroutinesApi::class)
 suspend inline fun <reified Status : ChannelState> Peer.expectState(
