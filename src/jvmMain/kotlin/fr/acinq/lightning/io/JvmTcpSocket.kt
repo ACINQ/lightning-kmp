@@ -65,13 +65,13 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)
     private val logger by lightningLogger<JvmTcpSocket>()
 
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS?): TcpSocket =
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket =
         withContext(Dispatchers.IO) {
             try {
                 JvmTcpSocket(aSocket(selectorManager).tcp().connect(host, port).let { socket ->
                     when (tls) {
-                        null -> socket
-                        TcpSocket.TLS.SAFE -> socket.tls(Dispatchers.IO)
+                        TcpSocket.TLS.DISABLED -> socket
+                        TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
                         TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
                             logger.warning { "Using unsafe TLS!" }
                             trustManager = object : X509TrustManager {
@@ -79,6 +79,10 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                                 override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
                                 override fun getAcceptedIssuers(): Array<X509Certificate>? = null
                             }
+                        }
+                        is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
+                            logger.warning { "JvmTcpSocket: TLS.PINNED_PUBLIC_KEY: Not implemented!" }
+                            throw TcpSocket.IOException.Unknown("Not implemented")
                         }
                     }
                 })

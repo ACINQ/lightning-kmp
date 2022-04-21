@@ -243,7 +243,11 @@ class Peer(
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
         socket = try {
-            socketBuilder?.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port) ?: error("socket builder is null.")
+            socketBuilder?.connect(
+                host = walletParams.trampolineNode.host,
+                port = walletParams.trampolineNode.port,
+                tls = TcpSocket.TLS.DISABLED
+            ) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
             _connectionState.value = Connection.CLOSED

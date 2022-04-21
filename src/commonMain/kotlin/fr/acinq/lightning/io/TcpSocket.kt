@@ -23,12 +23,19 @@ interface TcpSocket {
 
     fun close()
 
-    enum class TLS {
-        SAFE, UNSAFE_CERTIFICATES
+    sealed class TLS {
+        object DISABLED: TLS()
+        object TRUSTED_CERTIFICATES: TLS()
+        object UNSAFE_CERTIFICATES: TLS()
+        data class PINNED_PUBLIC_KEY(
+            // DER-encoded publicKey as base64 string.
+            // (I.e. same as PEM format, without BEGIN/END header/footer)
+            val pubKey: String
+        ): TLS()
     }
 
     interface Builder {
-        suspend fun connect(host: String, port: Int, tls: TLS? = null): TcpSocket
+        suspend fun connect(host: String, port: Int, tls: TLS): TcpSocket
 
         companion object {
             operator fun invoke(): Builder = PlatformSocketBuilder
@@ -49,5 +56,5 @@ fun TcpSocket.linesFlow(): Flow<String> =
             emit(buffer.subArray(size))
         }
     }
-        .decodeToString()
-        .splitByLines()
+    .decodeToString()
+    .splitByLines()

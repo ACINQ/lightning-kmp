@@ -14,7 +14,6 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sat
 import fr.acinq.secp256k1.Hex
-import io.ktor.util.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.consume
@@ -27,8 +26,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
-import kotlin.time.minutes
-import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
 class ElectrumWatcherIntegrationTest : LightningTestSuite() {
@@ -47,7 +44,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for confirmed transactions`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, _) = bitcoincli.getNewAddress()
@@ -74,7 +71,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for confirmed transactions created while being offline`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, _) = bitcoincli.getNewAddress()
@@ -102,7 +99,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for spent transactions`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -207,7 +204,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        client.connect(ServerAddress("localhost", 51001, null))
+        client.connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED))
 
         val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
@@ -218,7 +215,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for spent transactions while being offline`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -277,7 +274,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runSuspendTest(timeout = Duration.seconds(50)) {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -322,7 +319,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -355,7 +352,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = Duration.minutes(2)) {
-        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, null)) }
+        val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
         val watcherNotifications = watcher.openWatchNotificationsFlow()
 

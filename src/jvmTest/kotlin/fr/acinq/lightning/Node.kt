@@ -80,7 +80,7 @@ object Node {
         require(a.size == 3) { "invalid server address: $address" }
         val tls = when (a[2]) {
             "tls" -> TcpSocket.TLS.UNSAFE_CERTIFICATES
-            else -> null
+            else -> TcpSocket.TLS.DISABLED
         }
         return ServerAddress(a[0], a[1].toInt(), tls)
     }
