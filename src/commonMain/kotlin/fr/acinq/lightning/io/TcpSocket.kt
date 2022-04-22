@@ -23,12 +23,31 @@ interface TcpSocket {
 
     fun close()
 
-    enum class TLS {
-        SAFE, UNSAFE_CERTIFICATES
+    sealed class TLS {
+        /** Used for Lightning connections */
+        object DISABLED : TLS()
+
+        /** Used for Electrum servers when expecting a valid certificate */
+        object TRUSTED_CERTIFICATES : TLS()
+
+        /** Only used in unit tests */
+        object UNSAFE_CERTIFICATES : TLS()
+
+        /**
+         * Used for Electrum servers when expecting a specific public key
+         * (for example self-signed certificates)
+         */
+        data class PINNED_PUBLIC_KEY(
+            /**
+             * DER-encoded publicKey as base64 string.
+             * (I.e. same as PEM format, without BEGIN/END header/footer)
+             */
+            val pubKey: String
+        ) : TLS()
     }
 
     interface Builder {
-        suspend fun connect(host: String, port: Int, tls: TLS? = null): TcpSocket
+        suspend fun connect(host: String, port: Int, tls: TLS): TcpSocket
 
         companion object {
             operator fun invoke(): Builder = PlatformSocketBuilder

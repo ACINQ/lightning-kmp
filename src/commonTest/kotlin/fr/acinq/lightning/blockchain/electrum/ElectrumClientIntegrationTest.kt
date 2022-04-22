@@ -49,9 +49,9 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
         val client =
             ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
 
-        client.connectionState.first { it == Connection.CLOSED }
-        client.connectionState.first { it == Connection.ESTABLISHING }
-        client.connectionState.first { it == Connection.ESTABLISHED }
+        client.connectionState.first { it is Connection.CLOSED }
+        client.connectionState.first { it is Connection.ESTABLISHING }
+        client.connectionState.first { it is Connection.ESTABLISHED }
 
         return client
     }

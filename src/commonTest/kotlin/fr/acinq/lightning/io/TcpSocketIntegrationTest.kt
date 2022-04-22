@@ -7,7 +7,6 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
-import kotlin.time.seconds
 
 @OptIn(ExperimentalTime::class)
 class TcpSocketIntegrationTest : LightningTestSuite() {
@@ -19,7 +18,7 @@ class TcpSocketIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = Duration.seconds(250)) {
-        val socket = TcpSocket.Builder().connect("localhost", 51001)
+        val socket = TcpSocket.Builder().connect("localhost", 51001, TcpSocket.TLS.DISABLED)
         socket.send(serverVersionRpc)
         val ba = ByteArray(8192)
         val size = socket.receiveAvailable(ba)

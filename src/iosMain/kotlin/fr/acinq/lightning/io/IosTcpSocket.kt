@@ -1,7 +1,6 @@
 package fr.acinq.lightning.io
 
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.utils.lightningLogger
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSData
@@ -29,7 +28,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         //   completion: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
         // ): kotlin.Unit { /* compiled code */ }
 
-        val data = bytes?.let { it.toNSData() } ?: NSData()
+        val data = bytes?.toNSData() ?: NSData()
         socket.sendWithData(
             data = data,
             completion = { error ->
@@ -88,7 +87,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         )
     }
 
-    override fun close(): Unit {
+    override fun close() {
 
         // @kotlinx.cinterop.ObjCMethod
         // public open external fun close(): kotlin.Unit { /* compiled code */ }
@@ -99,13 +98,13 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
 
 @ThreadLocal
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    private val logger by lightningLogger<IosTcpSocket>()
+//  private val logger by lightningLogger<IosTcpSocket>()
 
     @OptIn(ExperimentalUnsignedTypes::class)
     override suspend fun connect(
         host: String,
         port: Int,
-        tls: TcpSocket.TLS?
+        tls: TcpSocket.TLS
     ): TcpSocket = suspendCancellableCoroutine { continuation ->
 
         // @kotlinx.cinterop.ObjCMethod
@@ -118,12 +117,14 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
         // ): kotlin.Unit { /* compiled code */ }
 
         val tlsOptions = when (tls) {
-            TcpSocket.TLS.SAFE ->
-                NativeSocketTLS(disabled = false, allowUntrustedCerts = false)
+            TcpSocket.TLS.DISABLED ->
+                NativeSocketTLS.disabled()
+            TcpSocket.TLS.TRUSTED_CERTIFICATES ->
+                NativeSocketTLS.trustedCertificates()
             TcpSocket.TLS.UNSAFE_CERTIFICATES ->
-                NativeSocketTLS(disabled = false, allowUntrustedCerts = true)
-            else ->
-                NativeSocketTLS(disabled = true, allowUntrustedCerts = false)
+                NativeSocketTLS.allowUnsafeCertificates()
+            is TcpSocket.TLS.PINNED_PUBLIC_KEY ->
+                NativeSocketTLS.pinnedPublicKey(tls.pubKey)
         }
 
         NativeSocket.connectWithHost(
@@ -140,17 +141,32 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     }
 }
 
-private fun NativeSocketError.toIOException(): TcpSocket.IOException =
-    when {
-        isPosixErrorCode() -> when (posixErrorCode()) {
-            ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused()
-            ECONNRESET -> TcpSocket.IOException.ConnectionClosed()
-            else -> TcpSocket.IOException.Unknown(errorDescription())
+sealed class NativeSocketException: Exception() {
+    data class POSIX(val errorCode: Int): NativeSocketException()
+    data class DNS(val errorType: Int): NativeSocketException()
+    data class TLS(val status: Int): NativeSocketException()
+}
+
+private fun NativeSocketError.toIOException(): TcpSocket.IOException {
+    return when {
+        isPosixErrorCode() -> {
+            val cause = NativeSocketException.POSIX(posixErrorCode())
+            when (posixErrorCode()) {
+                ECONNREFUSED -> TcpSocket.IOException.ConnectionRefused(cause)
+                ECONNRESET -> TcpSocket.IOException.ConnectionClosed(cause)
+                else -> TcpSocket.IOException.Unknown("POSIX: ${errorDescription()}", cause)
+            }
         }
-        isDnsServiceErrorType() ->
-            TcpSocket.IOException.Unknown("DNS: ${errorDescription()}")
-        isTlsStatus() ->
-            TcpSocket.IOException.Unknown("TLS: ${errorDescription()}")
-        else ->
+        isDnsServiceErrorType() -> {
+            val cause = NativeSocketException.DNS(dnsServiceErrorType())
+            TcpSocket.IOException.Unknown("DNS: ${errorDescription()}", cause)
+        }
+        isTlsStatus() -> {
+            val cause = NativeSocketException.TLS(tlsStatus())
+            TcpSocket.IOException.Unknown("TLS: ${errorDescription()}", cause)
+        }
+        else -> {
             TcpSocket.IOException.Unknown("???: ${errorDescription()}")
+        }
     }
+}

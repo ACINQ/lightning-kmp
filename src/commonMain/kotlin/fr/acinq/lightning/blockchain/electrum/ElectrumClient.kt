@@ -70,7 +70,7 @@ internal object WaitingForVersion : ClientState() {
                 }
                 is ServerError -> newState {
                     state = ClientClosed
-                    actions = listOf(BroadcastStatus(Connection.CLOSED))
+                    actions = listOf(BroadcastStatus(Connection.CLOSED(null)))
                 }
                 else -> returnState() // TODO handle error?
             }
@@ -201,7 +201,7 @@ class ElectrumClient(
     private val eventChannel: Channel<ClientEvent> = Channel(BUFFERED)
     private var output: Channel<ByteArray> = Channel(BUFFERED)
 
-    private val _connectionState = MutableStateFlow(Connection.CLOSED)
+    private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
     private val notificationsChannel = BroadcastChannel<ElectrumMessage>(BUFFERED)
@@ -218,7 +218,7 @@ class ElectrumClient(
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
                 logger.info { "connection state changed: $it" }
-                if (it == Connection.CLOSED) eventChannel.send(Disconnected)
+                if (it is Connection.CLOSED) eventChannel.send(Disconnected)
                 previousState = it
             }
         }
@@ -244,7 +244,7 @@ class ElectrumClient(
     }
 
     fun connect(serverAddress: ServerAddress) {
-        if (_connectionState.value == Connection.CLOSED) establishConnection(serverAddress)
+        if (_connectionState.value is Connection.CLOSED) establishConnection(serverAddress)
         else logger.warning { "electrum client is already running" }
     }
 
@@ -266,18 +266,22 @@ class ElectrumClient(
             socketBuilder?.connect(host, port, tls) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "TCP connect: ${ex.message}" }
-            _connectionState.value = Connection.CLOSED
+            val ioException = when (ex) {
+                is TcpSocket.IOException -> ex
+                else -> TcpSocket.IOException.ConnectionRefused(ex)
+            }
+            _connectionState.value = Connection.CLOSED(ioException)
             return@launch
         }
 
         logger.info { "connected to electrumx instance" }
         eventChannel.send(Connected)
 
-        fun closeSocket() {
-            if (_connectionState.value == Connection.CLOSED) return
+        fun closeSocket(ex: TcpSocket.IOException?) {
+            if (_connectionState.value is Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
             socket.close()
-            _connectionState.value = Connection.CLOSED
+            _connectionState.value = Connection.CLOSED(ex)
             cancel()
         }
 
@@ -286,7 +290,7 @@ class ElectrumClient(
                 socket.send(message)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
-                closeSocket()
+                closeSocket(ex)
             }
         }
 
@@ -309,10 +313,10 @@ class ElectrumClient(
                     val electrumResponse = json.decodeFromString(ElectrumResponseDeserializer, it)
                     eventChannel.send(ReceivedResponse(electrumResponse))
                 }
+                closeSocket(null)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP receive: ${ex.message}" }
-            } finally {
-                closeSocket()
+                closeSocket(ex)
             }
         }
 

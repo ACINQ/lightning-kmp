@@ -344,7 +344,7 @@ private data class WatcherRunning(
                 else -> unhandled(event)
             }
             is ClientStateUpdate -> {
-                if (event.connection == Connection.CLOSED) newState(
+                if (event.connection is Connection.CLOSED) newState(
                     WatcherDisconnected(
                         watches = watches,
                         publishQueue = sent.map { PublishAsap(it) }.toSet(),

@@ -117,7 +117,7 @@ class Peer(
     private var _channels by _channelsFlow
     val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
 
-    private val _connectionState = MutableStateFlow(Connection.CLOSED)
+    private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
     private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
@@ -198,7 +198,7 @@ class Peer(
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
                 logger.info { "n:$remoteNodeId connection state changed: $it" }
-                if (it == Connection.CLOSED) input.send(Disconnected)
+                if (it is Connection.CLOSED) input.send(Disconnected)
                 previousState = it
             }
         }
@@ -225,7 +225,7 @@ class Peer(
     }
 
     fun connect() {
-        if (connectionState.value == Connection.CLOSED) establishConnection()
+        if (connectionState.value is Connection.CLOSED) establishConnection()
         else logger.warning { "Peer is already connecting / connected" }
     }
 
@@ -243,18 +243,26 @@ class Peer(
         logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
         socket = try {
-            socketBuilder?.connect(walletParams.trampolineNode.host, walletParams.trampolineNode.port) ?: error("socket builder is null.")
+            socketBuilder?.connect(
+                host = walletParams.trampolineNode.host,
+                port = walletParams.trampolineNode.port,
+                tls = TcpSocket.TLS.DISABLED
+            ) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
-            _connectionState.value = Connection.CLOSED
+            val ioException = when (ex) {
+                is TcpSocket.IOException -> ex
+                else -> TcpSocket.IOException.ConnectionRefused(ex)
+            }
+            _connectionState.value = Connection.CLOSED(ioException)
             return@launch
         }
 
-        fun closeSocket() {
-            if (_connectionState.value == Connection.CLOSED) return
+        fun closeSocket(ex: TcpSocket.IOException?) {
+            if (_connectionState.value is Connection.CLOSED) return
             logger.warning { "closing TCP socket." }
             socket.close()
-            _connectionState.value = Connection.CLOSED
+            _connectionState.value = Connection.CLOSED(ex)
             cancel()
         }
 
@@ -270,7 +278,7 @@ class Peer(
             )
         } catch (ex: TcpSocket.IOException) {
             logger.warning { "n:$remoteNodeId TCP handshake: ${ex.message}" }
-            closeSocket()
+            closeSocket(ex)
             return@launch
         }
         val session = LightningSession(enc, dec, ck)
@@ -280,7 +288,7 @@ class Peer(
                 session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "n:$remoteNodeId TCP send: ${ex.message}" }
-                closeSocket()
+                closeSocket(ex)
             }
         }
 
@@ -308,10 +316,10 @@ class Peer(
                     val received = session.receive { size -> socket.receiveFully(size) }
                     input.send(BytesReceived(received))
                 }
+                closeSocket(null)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "n:$remoteNodeId TCP receive: ${ex.message}" }
-            } finally {
-                closeSocket()
+                closeSocket(ex)
             }
         }
 
