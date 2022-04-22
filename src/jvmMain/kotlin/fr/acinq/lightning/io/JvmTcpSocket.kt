@@ -64,12 +64,11 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
         socket.close()
     }
 
-
     companion object {
         private val logger by lightningLogger<JvmTcpSocket>()
         fun buildPublicKey(encodedKey: ByteArray): java.security.PublicKey {
             val spec = X509EncodedKeySpec(encodedKey)
-            val algorithms = listOf("RSA", "EC")
+            val algorithms = listOf("RSA", "EC", "DiffieHellman", "DSA", "RSASSA-PSS", "XDH", "X25519", "X448")
             algorithms.map {
                 try {
                     return KeyFactory.getInstance(it).generatePublic(spec)
