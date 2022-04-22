@@ -13,6 +13,7 @@ import java.net.ConnectException
 import java.net.SocketException
 import java.security.KeyFactory
 import java.security.KeyStore
+import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.security.spec.X509EncodedKeySpec
 import java.util.*
@@ -138,7 +139,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                                         logger.info { "successfully checked server's certificate against pinned pubkey" }
                                     } else {
                                         logger.warning { "server's certificate does not match pinned pubkey, fallback to default check" }
-                                        defaultX509TrustManager.checkServerTrusted(chain, authType)
+                                        throw TcpSocket.IOException.ConnectionClosed(CertificateException("certificate does not match pinned key"))
                                     }
                                 }
 
