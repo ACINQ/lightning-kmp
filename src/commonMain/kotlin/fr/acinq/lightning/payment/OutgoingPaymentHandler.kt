@@ -315,7 +315,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.details.paymentRequest.paymentSecret, request.details.paymentRequest.paymentMetadata)
 
         val invoiceFeatures = Features(request.details.paymentRequest.features)
-        val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment)) {
+        val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment) || invoiceFeatures.hasFeature(Feature.ExperimentalTrampolinePayment)) {
             OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, OnionRoutingPacket.TrampolinePacketLength)
         } else {
             OutgoingPaymentPacket.buildTrampolineToLegacyPacket(request.details.paymentRequest, trampolineRoute, finalPayload)

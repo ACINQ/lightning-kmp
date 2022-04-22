@@ -128,9 +128,13 @@ sealed class Feature {
 
     // The following features have not been standardised, hence the high feature bits to avoid conflicts.
 
+    // We historically used the following feature bit in our invoices.
+    // However, the spec assigned the same feature bit to `option_scid_alias` (https://github.com/lightning/bolts/pull/910).
+    // We're moving this feature bit to 148, but we have to keep supporting it until enough wallet users have migrated, then we can remove it.
+    // We cannot rename that object otherwise we will not be able to read old serialized data.
     @Serializable
     object TrampolinePayment : Feature() {
-        override val rfcName get() = "trampoline_payment"
+        override val rfcName get() = "trampoline_payment_backwards_compat"
         override val mandatory get() = 50
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
@@ -214,6 +218,16 @@ sealed class Feature {
         override val mandatory get() = 146
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
+
+    // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
+    // we will introduce a new version of trampoline that will work in parallel to this one, until we can safely deprecate it.
+    @Serializable
+    object ExperimentalTrampolinePayment : Feature() {
+        override val rfcName get() = "trampoline_payment_experimental"
+        override val mandatory get() = 148
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
+    }
+
 }
 
 @Serializable
@@ -279,6 +293,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelType,
             Feature.PaymentMetadata,
             Feature.TrampolinePayment,
+            Feature.ExperimentalTrampolinePayment,
             Feature.ZeroReserveChannels,
             Feature.ZeroConfChannels,
             Feature.WakeUpNotificationClient,
@@ -319,7 +334,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.PaymentSecret to listOf(Feature.VariableLengthOnion),
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
-            Feature.TrampolinePayment to listOf(Feature.PaymentSecret)
+            Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
+            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret)
         )
 
         class FeatureException(message: String) : IllegalArgumentException(message)
