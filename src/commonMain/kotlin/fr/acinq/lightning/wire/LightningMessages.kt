@@ -80,6 +80,7 @@ interface LightningMessage {
                 SwapInConfirmed.type -> SwapInConfirmed.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PhoenixAndroidLegacyMigrate.type -> PhoenixAndroidLegacyMigrate.read(stream)
+                OnionMessage.type -> OnionMessage.read(stream)
                 else -> {
                     logger.warning { "unhandled code=${code}, cannot decode input=${Hex.encode(input)}" }
                     null
@@ -1332,6 +1333,31 @@ data class PhoenixAndroidLegacyMigrate(
 
         override fun read(input: Input): PhoenixAndroidLegacyMigrate {
             return PhoenixAndroidLegacyMigrate(PublicKey(LightningCodecs.bytes(input, 33)))
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+@Serializable
+data class OnionMessage(
+    @Contextual val blindingKey: PublicKey,
+    val onionRoutingPacket: OnionRoutingPacket
+) : LightningMessage {
+    override val type: Long get() = OnionMessage.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(blindingKey.value, out)
+        LightningCodecs.writeU16(onionRoutingPacket.payload.size(), out)
+        OnionRoutingPacketSerializer(onionRoutingPacket.payload.size()).write(onionRoutingPacket, out)
+    }
+
+    companion object : LightningMessageReader<OnionMessage> {
+        const val type: Long = 513
+
+        override fun read(input: Input): OnionMessage {
+            val blindingKey = PublicKey(LightningCodecs.bytes(input, 33))
+            val onion = OnionRoutingPacketSerializer(LightningCodecs.u16(input) - 66).read(input)
+            return OnionMessage(blindingKey, onion)
         }
     }
 }
