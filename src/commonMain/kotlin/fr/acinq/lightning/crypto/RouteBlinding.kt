@@ -63,14 +63,18 @@ object RouteBlinding {
     fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteVector>): BlindedRoute {
         require(publicKeys.size == payloads.size) { "a payload must be provided for each node in the blinded path" }
         var e = sessionKey
-        val (blindedHops, blindingKeys) = publicKeys.zip(payloads).map {
-            pair ->
+        val (blindedHops, blindingKeys) = publicKeys.zip(payloads).map { pair ->
             val (publicKey, payload) = pair
             val blindingKey = e.publicKey()
             val sharedSecret = Sphinx.computeSharedSecret(publicKey, e)
             val blindedPublicKey = Sphinx.blind(publicKey, Sphinx.generateKey("blinded_node_id", sharedSecret))
             val rho = Sphinx.generateKey("rho", sharedSecret)
-            val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(rho.toByteArray(), Sphinx.zeroes(12), payload.toByteArray(), byteArrayOf())
+            val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(
+                rho.toByteArray(),
+                Sphinx.zeroes(12),
+                payload.toByteArray(),
+                byteArrayOf()
+            )
             e *= PrivateKey(Crypto.sha256(blindingKey.value.toByteArray() + sharedSecret.toByteArray()))
             Pair(BlindedNode(blindedPublicKey, ByteVector(encryptedPayload + mac)), blindingKey)
         }.unzip()
