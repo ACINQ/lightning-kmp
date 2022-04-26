@@ -165,7 +165,11 @@ object Sphinx {
      */
     fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket, packetLength: Int): Either<FailureMessage, DecryptedPacket> = when (packet.version) {
         0 -> {
-            when (val result = runTrying { PublicKey(packet.publicKey) }) {
+            when (val result = runTrying {
+                val pub = PublicKey(packet.publicKey)
+                require(pub.isValid())
+                pub
+            }) {
                 is Try.Success -> {
                     val packetEphKey = result.result
                     val sharedSecret = computeSharedSecret(packetEphKey, privateKey)
