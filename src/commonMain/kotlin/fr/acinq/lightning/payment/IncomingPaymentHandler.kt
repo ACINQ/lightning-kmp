@@ -96,7 +96,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             timestampSeconds
         )
         logger.info { "h:$paymentHash generated payment request ${pr.write()}" }
-        db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr))
+        db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr), timestampSeconds)
         return pr
     }
 

@@ -1154,9 +1154,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `purge expired incoming payments`() = runSuspendTest {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
 
-        // create incoming payment that has expired and not been paid
-        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600,
-            timestampSeconds = 1)
+        // create unexpired payment
+        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "unexpired", listOf(), expirySeconds = 3600)
 
         // create incoming payment that has expired and been paid
         val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600,
@@ -1164,8 +1163,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, fees = 1_000_000.msat, null)),
             receivedAt = 101) // simulate incoming payment being paid before it expired
 
-        // create unexpired payment
-        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "unexpired", listOf(), expirySeconds = 3600)
+        // create incoming payment that has expired and not been paid
+        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600,
+            timestampSeconds = 1)
 
         val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
         val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
