@@ -433,8 +433,7 @@ class Peer(
                 }
                 action is ChannelAction.Storage.StoreChannelClosed -> {
                     val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                    db.payments.addOutgoingClosingTxParts(parentId = dbId, parts = action.closingTxs)
-                    db.payments.completeOutgoingPaymentOnchain(id = dbId, completedAt = currentTimestampMillis())
+                    db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
                     listenerEventChannel.send(ChannelClosing(channelId))
                 }
                 action is ChannelAction.ChannelId.IdSwitch -> {

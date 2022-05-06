@@ -332,8 +332,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
             closingType = ChannelClosingType.Mutual,
             createdAt = currentTimestampMillis()
         )
-        db.addOutgoingClosingTxParts(parentId = paymentId, parts = listOf(closingTx))
-        db.completeOutgoingPaymentOnchain(id = paymentId, completedAt = currentTimestampMillis())
+        db.completeOutgoingPaymentForClosing(id = paymentId, parts = listOf(closingTx), completedAt = currentTimestampMillis())
 
         val completedPayment = db.getOutgoingPayment(paymentId)
         assertNotNull(completedPayment)

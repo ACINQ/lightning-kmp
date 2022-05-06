@@ -112,9 +112,13 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun completeOutgoingPaymentOnchain(id: UUID, completedAt: Long) {
+    override suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<OutgoingPayment.ClosingTxPart>, completedAt: Long) {
         require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
         val payment = outgoing[id]!!
+        parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
+        parts.forEach { outgoingParts[it.id] = Pair(id, it) }
+
+
         outgoing[id] = payment.copy(status = OutgoingPayment.Status.Completed.Succeeded.OnChain(completedAt))
     }
 
@@ -131,12 +135,6 @@ class InMemoryPaymentsDb : PaymentsDb {
     }
 
     override suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<OutgoingPayment.LightningPart>) {
-        require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
-        parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
-        parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }
-    }
-
-    override suspend fun addOutgoingClosingTxParts(parentId: UUID, parts: List<OutgoingPayment.ClosingTxPart>) {
         require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
         parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
         parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }

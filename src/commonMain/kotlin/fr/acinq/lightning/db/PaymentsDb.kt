@@ -63,8 +63,8 @@ interface OutgoingPaymentsDb {
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
 
-    /** Mark an outgoing payment as completed on-chain. */
-    suspend fun completeOutgoingPaymentOnchain(id: UUID, completedAt: Long = currentTimestampMillis())
+    /** Mark an outgoing payment as completed for closing a Lightning channel on-chain with a list of on-chain txs. */
+    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<OutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -74,9 +74,6 @@ interface OutgoingPaymentsDb {
 
     /** Add new partial payments to a pending outgoing payment. */
     suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<OutgoingPayment.LightningPart>)
-
-    /** Add parts of closing transaction. */
-    suspend fun addOutgoingClosingTxParts(parentId: UUID, parts: List<OutgoingPayment.ClosingTxPart>)
 
     /** Mark an outgoing payment part as failed. */
     suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
