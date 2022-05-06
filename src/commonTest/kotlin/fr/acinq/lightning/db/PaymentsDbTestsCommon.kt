@@ -237,8 +237,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         assertEquals(initialPayment, db.getOutgoingPayment(initialPayment.id))
         assertNull(db.getOutgoingPayment(UUID.randomUUID()))
-        initialPayment.parts.forEach { assertEquals(initialPayment, db.getOutgoingPart(it.id)) }
-        assertNull(db.getOutgoingPart(UUID.randomUUID()))
+        initialPayment.parts.forEach { assertEquals(initialPayment, db.getOutgoingPaymentFromPartId(it.id)) }
+        assertNull(db.getOutgoingPaymentFromPartId(UUID.randomUUID()))
 
         // One of the parts fails.
         val onePartFailed = initialPayment.copy(
@@ -249,7 +249,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         )
         db.completeOutgoingLightningPart(initialPayment.parts[0].id, Either.Right(TemporaryNodeFailure), 110)
         assertEquals(onePartFailed, db.getOutgoingPayment(initialPayment.id))
-        initialPayment.parts.forEach { assertEquals(onePartFailed, db.getOutgoingPart(it.id)) }
+        initialPayment.parts.forEach { assertEquals(onePartFailed, db.getOutgoingPaymentFromPartId(it.id)) }
 
         // We should never update non-existing parts.
         assertFails { db.completeOutgoingLightningPart(UUID.randomUUID(), Either.Right(TemporaryNodeFailure)) }
@@ -265,7 +265,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val withMoreParts = onePartFailed.copy(parts = onePartFailed.parts + newParts)
         db.addOutgoingLightningParts(onePartFailed.id, newParts)
         assertEquals(withMoreParts, db.getOutgoingPayment(initialPayment.id))
-        withMoreParts.parts.forEach { assertEquals(withMoreParts, db.getOutgoingPart(it.id)) }
+        withMoreParts.parts.forEach { assertEquals(withMoreParts, db.getOutgoingPaymentFromPartId(it.id)) }
 
         // Payment parts succeed.
         val preimage = randomBytes32()
@@ -282,7 +282,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.completeOutgoingLightningPart(withMoreParts.parts[2].id, preimage, 126)
         db.completeOutgoingLightningPart(withMoreParts.parts[3].id, preimage, 127)
         assertEquals(partsSettled, db.getOutgoingPayment(initialPayment.id))
-        partsSettled.parts.forEach { assertEquals(partsSettled, db.getOutgoingPart(it.id)) }
+        partsSettled.parts.forEach { assertEquals(partsSettled, db.getOutgoingPaymentFromPartId(it.id)) }
 
         // Payment succeeds: failed parts will be ignored.
         val paymentSucceeded = partsSettled.copy(
@@ -292,7 +292,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.completeOutgoingPaymentOffchain(initialPayment.id, preimage, 130)
         assertFails { db.completeOutgoingPaymentOffchain(UUID.randomUUID(), preimage, 130) }
         assertEquals(paymentSucceeded, db.getOutgoingPayment(initialPayment.id))
-        partsSettled.parts.forEach { assertEquals(paymentSucceeded, db.getOutgoingPart(it.id)) }
+        partsSettled.parts.forEach { assertEquals(paymentSucceeded, db.getOutgoingPaymentFromPartId(it.id)) }
     }
 
     @Test
@@ -373,13 +373,13 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.completeOutgoingLightningPart(initialPayment.parts[0].id, Either.Right(TemporaryNodeFailure), 110)
         db.completeOutgoingLightningPart(initialPayment.parts[1].id, Either.Left(TooManyAcceptedHtlcs(channelId, 10)), 111)
         assertEquals(partsFailed, db.getOutgoingPayment(initialPayment.id))
-        initialPayment.parts.forEach { assertEquals(partsFailed, db.getOutgoingPart(it.id)) }
+        initialPayment.parts.forEach { assertEquals(partsFailed, db.getOutgoingPaymentFromPartId(it.id)) }
 
         val paymentFailed = partsFailed.copy(status = OutgoingPayment.Status.Completed.Failed(FinalFailure.NoRouteToRecipient, 120))
         db.completeOutgoingPaymentFailed(initialPayment.id, FinalFailure.NoRouteToRecipient, 120)
         assertFails { db.completeOutgoingPaymentFailed(UUID.randomUUID(), FinalFailure.NoRouteToRecipient, 120) }
         assertEquals(paymentFailed, db.getOutgoingPayment(initialPayment.id))
-        initialPayment.parts.forEach { assertEquals(paymentFailed, db.getOutgoingPart(it.id)) }
+        initialPayment.parts.forEach { assertEquals(paymentFailed, db.getOutgoingPaymentFromPartId(it.id)) }
     }
 
     @Test

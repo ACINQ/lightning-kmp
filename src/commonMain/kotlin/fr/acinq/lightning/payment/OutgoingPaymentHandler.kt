@@ -198,7 +198,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
     }
 
     private suspend fun processPostRestartFailure(partId: UUID, failure: Either<ChannelException, FailureMessage>): ProcessFailureResult? {
-        when (val payment = db.getOutgoingPart(partId)) {
+        when (val payment = db.getOutgoingPaymentFromPartId(partId)) {
             null -> {
                 logger.error { "i:$partId paymentId doesn't match any known payment attempt" }
                 return null
@@ -257,7 +257,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
     }
 
     private suspend fun processPostRestartFulfill(partId: UUID, preimage: ByteVector32): ProcessFulfillResult? {
-        when (val payment = db.getOutgoingPart(partId)) {
+        when (val payment = db.getOutgoingPaymentFromPartId(partId)) {
             null -> {
                 logger.error { "i:$partId paymentId doesn't match any known payment attempt" }
                 return null

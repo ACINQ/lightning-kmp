@@ -152,7 +152,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         outgoingParts[partId] = Pair(parentId, (part as OutgoingPayment.LightningPart).copy(status = OutgoingPayment.LightningPart.Status.Succeeded(preimage, completedAt)))
     }
 
-    override suspend fun getOutgoingPart(partId: UUID): OutgoingPayment? {
+    override suspend fun getOutgoingPaymentFromPartId(partId: UUID): OutgoingPayment? {
         return outgoingParts[partId]?.let { (parentId, _) ->
             require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
             getOutgoingPayment(parentId)

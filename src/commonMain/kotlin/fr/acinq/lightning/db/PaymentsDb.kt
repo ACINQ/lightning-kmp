@@ -82,7 +82,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Get information about an outgoing payment from the id of one of its parts. */
-    suspend fun getOutgoingPart(partId: UUID): OutgoingPayment?
+    suspend fun getOutgoingPaymentFromPartId(partId: UUID): OutgoingPayment?
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
     suspend fun listOutgoingPayments(paymentHash: ByteVector32): List<OutgoingPayment>
