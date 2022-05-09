@@ -376,8 +376,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         initialPayment.parts.forEach { assertEquals(partsFailed, db.getOutgoingPaymentFromPartId(it.id)) }
 
         val paymentFailed = partsFailed.copy(status = OutgoingPayment.Status.Completed.Failed(FinalFailure.NoRouteToRecipient, 120))
-        db.completeOutgoingPaymentFailed(initialPayment.id, FinalFailure.NoRouteToRecipient, 120)
-        assertFails { db.completeOutgoingPaymentFailed(UUID.randomUUID(), FinalFailure.NoRouteToRecipient, 120) }
+        db.completeOutgoingPaymentOffchain(initialPayment.id, FinalFailure.NoRouteToRecipient, 120)
+        assertFails { db.completeOutgoingPaymentOffchain(UUID.randomUUID(), FinalFailure.NoRouteToRecipient, 120) }
         assertEquals(paymentFailed, db.getOutgoingPayment(initialPayment.id))
         initialPayment.parts.forEach { assertEquals(paymentFailed, db.getOutgoingPaymentFromPartId(it.id)) }
     }
@@ -419,10 +419,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         db.completeOutgoingPaymentOffchain(pending1.id, randomBytes32(), completedAt = 100)
         val payment1 = db.getOutgoingPayment(pending1.id)!!
-        db.completeOutgoingPaymentFailed(pending2.id, FinalFailure.NoRouteToRecipient, completedAt = 101)
+        db.completeOutgoingPaymentOffchain(pending2.id, FinalFailure.NoRouteToRecipient, completedAt = 101)
         val payment2 = db.getOutgoingPayment(pending2.id)!!
         // payment3 is still pending
-        db.completeOutgoingPaymentFailed(pending4.id, FinalFailure.InsufficientBalance, completedAt = 102)
+        db.completeOutgoingPaymentOffchain(pending4.id, FinalFailure.InsufficientBalance, completedAt = 102)
         val payment4 = db.getOutgoingPayment(pending4.id)!!
         db.completeOutgoingPaymentOffchain(pending5.id, randomBytes32(), completedAt = 103)
         val payment5 = db.getOutgoingPayment(pending5.id)!!
@@ -465,7 +465,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val inFinal1 = incoming1.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 20_000.msat, channelId = channelId1, 1)), 100))
         db.completeOutgoingPaymentOffchain(outgoing1.id, randomBytes32(), completedAt = 102)
         val outFinal1 = db.getOutgoingPayment(outgoing1.id)!!
-        db.completeOutgoingPaymentFailed(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
+        db.completeOutgoingPaymentOffchain(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
         db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 25_000.msat, 2_500.msat, channelId = null)), receivedAt = 105)
         val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 25_000.msat, 2_500.msat, channelId = null)), 105))

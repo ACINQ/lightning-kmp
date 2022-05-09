@@ -128,7 +128,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         outgoing[id] = payment.copy(status = OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage = preimage, completedAt = completedAt))
     }
 
-    override suspend fun completeOutgoingPaymentFailed(id: UUID, finalFailure: FinalFailure, completedAt: Long) {
+    override suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long) {
         require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
         val payment = outgoing[id]!!
         outgoing[id] = payment.copy(status = OutgoingPayment.Status.Completed.Failed(reason = finalFailure, completedAt = completedAt))

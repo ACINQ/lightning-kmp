@@ -70,7 +70,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment as failed. */
-    suspend fun completeOutgoingPaymentFailed(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
     suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<OutgoingPayment.LightningPart>)

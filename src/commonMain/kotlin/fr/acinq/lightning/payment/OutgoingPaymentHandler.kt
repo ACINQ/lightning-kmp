@@ -65,7 +65,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
                 val finalFailure = result.value
-                db.completeOutgoingPaymentFailed(request.paymentId, finalFailure)
+                db.completeOutgoingPaymentOffchain(request.paymentId, finalFailure)
                 Failure(request, finalFailure.toPaymentFailure())
             }
             is Either.Right -> {
@@ -164,7 +164,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                                 logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
                                 val result = Failure(payment.request, OutgoingPaymentFailure(aborted.reason, aborted.failures))
-                                db.completeOutgoingPaymentFailed(payment.request.paymentId, result.failure.reason)
+                                db.completeOutgoingPaymentOffchain(payment.request.paymentId, result.failure.reason)
                                 Pair(aborted, result)
                             }
                             is Either.Right -> {
@@ -210,7 +210,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val hasMorePendingParts = parts.any { it.status == OutgoingPayment.LightningPart.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
                     logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted}" }
-                    db.completeOutgoingPaymentFailed(payment.id, FinalFailure.WalletRestarted)
+                    db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
                     Failure(
                         request = SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
                         failure = OutgoingPaymentFailure(
@@ -387,7 +387,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 val updated = copy(pending = pending - childId, failures = failures + failure)
                 val result = if (updated.isComplete()) {
                     logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${updated.reason}" }
-                    db.completeOutgoingPaymentFailed(request.paymentId, updated.reason)
+                    db.completeOutgoingPaymentOffchain(request.paymentId, updated.reason)
                     Failure(request, OutgoingPaymentFailure(updated.reason, updated.failures))
                 } else {
                     null
