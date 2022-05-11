@@ -156,7 +156,6 @@ interface HasEncryptedChannelData : LightningMessage {
 
 interface ChannelMessage
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class Init(@Contextual val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     @Transient
@@ -226,7 +225,6 @@ data class Warning(override val channelId: ByteVector32, val data: ByteVector) :
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class Error(override val channelId: ByteVector32, val data: ByteVector) : SetupMessage, HasChannelId {
     constructor(channelId: ByteVector32, message: String?) : this(channelId, ByteVector(message?.encodeToByteArray() ?: ByteArray(0)))
 
@@ -252,7 +250,6 @@ data class Error(override val channelId: ByteVector32, val data: ByteVector) : S
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class Ping(val pongLength: Int, val data: ByteVector) : SetupMessage {
     override val type: Long get() = Ping.type
 
@@ -271,7 +268,6 @@ data class Ping(val pongLength: Int, val data: ByteVector) : SetupMessage {
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class Pong(val data: ByteVector) : SetupMessage {
     override val type: Long get() = Pong.type
 
@@ -289,7 +285,6 @@ data class Pong(val data: ByteVector) : SetupMessage {
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class OpenChannel(
     @Contextual override val chainHash: ByteVector32,
@@ -381,7 +376,6 @@ data class OpenChannel(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class AcceptChannel(
     @Contextual override val temporaryChannelId: ByteVector32,
@@ -459,7 +453,6 @@ data class AcceptChannel(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingCreated(
     @Contextual override val temporaryChannelId: ByteVector32,
@@ -490,7 +483,6 @@ data class FundingCreated(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingSigned(
     @Contextual override val channelId: ByteVector32,
@@ -524,7 +516,6 @@ data class FundingSigned(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class FundingLocked(
     @Contextual override val channelId: ByteVector32,
@@ -549,7 +540,6 @@ data class FundingLocked(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateAddHtlc(
     @Contextual override val channelId: ByteVector32,
@@ -585,7 +575,6 @@ data class UpdateAddHtlc(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFulfillHtlc(
     @Contextual override val channelId: ByteVector32,
@@ -613,7 +602,6 @@ data class UpdateFulfillHtlc(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFailHtlc(
     @Contextual override val channelId: ByteVector32,
@@ -642,7 +630,6 @@ data class UpdateFailHtlc(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFailMalformedHtlc(
     @Contextual override val channelId: ByteVector32,
@@ -673,7 +660,6 @@ data class UpdateFailMalformedHtlc(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class CommitSig(
     @Contextual override val channelId: ByteVector32,
@@ -713,7 +699,6 @@ data class CommitSig(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class RevokeAndAck(
     override val channelId: ByteVector32,
     val perCommitmentSecret: PrivateKey,
@@ -749,7 +734,6 @@ data class RevokeAndAck(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class UpdateFee(
     @Contextual override val channelId: ByteVector32,
@@ -774,7 +758,6 @@ data class UpdateFee(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelReestablish(
     @Contextual override val channelId: ByteVector32,
@@ -817,7 +800,6 @@ data class ChannelReestablish(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class AnnouncementSignatures(
     override val channelId: ByteVector32,
     val shortChannelId: ShortChannelId,
@@ -847,7 +829,6 @@ data class AnnouncementSignatures(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelAnnouncement(
     @Contextual val nodeSignature1: ByteVector64,
@@ -916,7 +897,6 @@ data class ChannelAnnouncement(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ChannelUpdate(
     @Contextual val signature: ByteVector64,
@@ -997,7 +977,6 @@ data class ChannelUpdate(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class Shutdown(
     @Contextual override val channelId: ByteVector32,
@@ -1032,7 +1011,6 @@ data class Shutdown(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class ClosingSigned(
     @Contextual override val channelId: ByteVector32,
@@ -1086,7 +1064,6 @@ data class ClosingSigned(
  * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
  * @param finalPacket onion packet that we would have received if there had been a channel to forward the payment to.
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 data class PayToOpenRequest(
     override val chainHash: ByteVector32,
     val fundingSatoshis: Satoshi,
@@ -1129,7 +1106,6 @@ data class PayToOpenRequest(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHash: ByteVector32, val result: Result) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenResponse.type
 
@@ -1201,7 +1177,6 @@ object UnsetFCMToken : LightningMessage {
     override fun write(out: Output) {}
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class SwapInRequest(
     override val chainHash: ByteVector32
 ) : LightningMessage, HasChainHash {
@@ -1220,7 +1195,6 @@ data class SwapInRequest(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class SwapInResponse(
     override val chainHash: ByteVector32,
     val bitcoinAddress: String
@@ -1246,7 +1220,6 @@ data class SwapInResponse(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class SwapInPending(
     val bitcoinAddress: String,
     val amount: Satoshi
@@ -1272,7 +1245,6 @@ data class SwapInPending(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class SwapInConfirmed(
     val bitcoinAddress: String,
     val amount: MilliSatoshi
@@ -1298,7 +1270,6 @@ data class SwapInConfirmed(
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class PhoenixAndroidLegacyInfo(
     val hasChannels: Boolean
 ) : LightningMessage {
