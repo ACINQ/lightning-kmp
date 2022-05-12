@@ -59,6 +59,8 @@ object SendSwapInRequest : PeerEvent()
 data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListenerEvent()
 data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
+data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerEvent()
+data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerListenerEvent()
 
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerListenerEvent()
 data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent()
@@ -672,6 +674,10 @@ class Peer(
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
                         listenerEventChannel.send(SwapInConfirmedEvent(msg))
                     }
+                    msg is SwapOutResponse -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
+                        listenerEventChannel.send(SwapOutResponseEvent(msg))
+                    }
                     msg is PhoenixAndroidLegacyInfo -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
                         listenerEventChannel.send(PhoenixAndroidLegacyInfoEvent(msg))
@@ -739,6 +745,11 @@ class Peer(
             }
             event is SendSwapInRequest -> {
                 val msg = SwapInRequest(nodeParams.chainHash)
+                logger.info { "n:$remoteNodeId sending ${msg::class}" }
+                sendToPeer(msg)
+            }
+            event is SendSwapOutRequest -> {
+                val msg = SwapOutRequest(nodeParams.chainHash, event.amount, event.bitcoinAddress, event.feePerKw)
                 logger.info { "n:$remoteNodeId sending ${msg::class}" }
                 sendToPeer(msg)
             }
