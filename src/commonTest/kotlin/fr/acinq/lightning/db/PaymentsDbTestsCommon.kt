@@ -342,7 +342,33 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         // If we failed to claim any amount of the channel balance,
         // we can consider these as fees (in a generic sense).
         // The UI is expected to provide a more detailed explanation.
-        assertEquals(completedPayment.fees, fundsLost.toMilliSatoshi())
+        assertEquals(fundsLost.toMilliSatoshi(), completedPayment.fees)
+        assertEquals(channelBalance, completedPayment.amount)
+    }
+
+    @Test
+    fun `outgoing payment from closed channel without parts`() = runSuspendTest {
+        val (db, _, pr) = createFixture()
+        val paymentId = UUID.randomUUID()
+        val channelBalance = 100_000_000.msat
+        val pendingPayment = OutgoingPayment(
+            id = paymentId,
+            recipientAmount = channelBalance,
+            recipient = pr.nodeId,
+            details = OutgoingPayment.Details.ChannelClosing(
+                channelId = randomBytes32(),
+                closingAddress = "",
+                isSentToDefaultAddress = true
+            ),
+            parts = listOf(),
+            status = OutgoingPayment.Status.Pending
+        )
+        db.addOutgoingPayment(pendingPayment)
+        db.completeOutgoingPaymentForClosing(id = paymentId, parts = listOf(), completedAt = currentTimestampMillis())
+
+        val completedPayment = db.getOutgoingPayment(paymentId)
+        assertNotNull(completedPayment)
+        assertEquals(channelBalance, completedPayment.amount)
     }
 
     @Test

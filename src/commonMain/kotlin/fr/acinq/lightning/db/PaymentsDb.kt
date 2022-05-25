@@ -220,6 +220,8 @@ data class OutgoingPayment(
         }
         is Status.Completed.Succeeded.OnChain -> {
             if (details is Details.ChannelClosing) {
+                // For a channel closing, recipient is the balance of the channel that is being closed.
+                // It DOES include the future mining fees. Fees are found by subtracting the aggregated claims to the recipient amount.
                 recipientAmount - parts.filterIsInstance<ClosingTxPart>().map { it.claimed.toMilliSatoshi() }.sum()
             } else {
                 parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
@@ -228,7 +230,12 @@ data class OutgoingPayment(
     }
 
     /** Amount actually sent for this payment. It does include the fees. */
-    override val amount: MilliSatoshi = recipientAmount + fees
+    override val amount: MilliSatoshi = if (details is Details.ChannelClosing) {
+        // For a channel closing, recipient is the balance of the channel that is being closed.
+        recipientAmount
+    } else {
+        recipientAmount + fees
+    }
 
     sealed class Details {
         abstract val paymentHash: ByteVector32
