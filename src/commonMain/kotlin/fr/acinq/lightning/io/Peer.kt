@@ -42,8 +42,24 @@ sealed class PaymentEvent : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val expirySeconds: Long? = null, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
 object CheckPaymentsTimeout : PaymentEvent()
 data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
-data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val details: OutgoingPayment.Details.Normal, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent() {
-    val paymentHash: ByteVector32 = details.paymentHash
+
+interface SendPayment {
+    val paymentId: UUID
+    val amount: MilliSatoshi
+    val recipient: PublicKey
+    val details: OutgoingPayment.Details
+    val trampolineFeesOverride: List<TrampolineFees>?
+    val paymentRequest: PaymentRequest
+
+    val paymentHash: ByteVector32
+        get() = details.paymentHash
+
+}
+data class SendPaymentNormal(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.Normal, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+    override val paymentRequest = details.paymentRequest
+}
+data class SendPaymentSwapOut(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.SwapOut, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+    override val paymentRequest = details.paymentRequest
 }
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentEvent()
 

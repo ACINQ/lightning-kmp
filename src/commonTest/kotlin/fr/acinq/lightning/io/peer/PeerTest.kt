@@ -14,6 +14,7 @@ import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.ReceivePayment
 import fr.acinq.lightning.io.SendPayment
+import fr.acinq.lightning.io.SendPaymentNormal
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.tests.TestConstants
@@ -238,7 +239,7 @@ class PeerTest : LightningTestSuite() {
         bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", null, deferredInvoice))
         val invoice = deferredInvoice.await()
 
-        alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
+        alice.send(SendPaymentNormal(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
 
         val updateHtlc = alice2bob.expect<UpdateAddHtlc>()
         val aliceCommitSig = alice2bob.expect<CommitSig>()
@@ -284,7 +285,7 @@ class PeerTest : LightningTestSuite() {
         bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", null, deferredInvoice))
         val invoice = deferredInvoice.await()
 
-        alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
+        alice.send(SendPaymentNormal(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
 
         alice.expectState<Normal> { commitments.availableBalanceForReceive() > alice0.commitments.availableBalanceForReceive() }
     }

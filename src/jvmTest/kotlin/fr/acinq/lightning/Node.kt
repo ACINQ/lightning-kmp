@@ -33,7 +33,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.lang.IllegalArgumentException
 import java.nio.file.Files
 import java.sql.DriverManager
 
@@ -252,7 +251,7 @@ object Node {
                         val request = call.receive<PayInvoiceRequest>()
                         val pr = PaymentRequest.read(request.invoice)
                         val amount = pr.amount ?: request.amount?.let { MilliSatoshi(it) } ?: MilliSatoshi(50000)
-                        peer.send(SendPayment(UUID.randomUUID(), amount, pr.nodeId, OutgoingPayment.Details.Normal(pr)))
+                        peer.send(SendPaymentNormal(UUID.randomUUID(), amount, pr.nodeId, OutgoingPayment.Details.Normal(pr)))
                         call.respond(PayInvoiceResponse("pending"))
                     }
                     post("/invoice/decode") {

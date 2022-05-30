@@ -10,6 +10,8 @@ import fr.acinq.lightning.db.HopDesc
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.SendPayment
+import fr.acinq.lightning.io.SendPaymentNormal
+import fr.acinq.lightning.io.SendPaymentSwapOut
 import fr.acinq.lightning.io.WrappedChannelEvent
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
@@ -211,8 +213,16 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                 return if (!hasMorePendingParts) {
                     logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted}" }
                     db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
+                    val request = when (payment.details) {
+                        is OutgoingPayment.Details.Normal -> SendPaymentNormal(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                        is OutgoingPayment.Details.SwapOut -> SendPaymentSwapOut(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                        else -> {
+                            logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId cannot recreate send-payment-request failure from db data with details=${payment.details}" }
+                            return null
+                        }
+                    }
                     Failure(
-                        request = SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal),
+                        request = request,
                         failure = OutgoingPaymentFailure(
                             reason = FinalFailure.WalletRestarted,
                             failures = parts.map { it.status }.filterIsInstance<OutgoingPayment.LightningPart.Status.Failed>() + OutgoingPaymentFailure.convertFailure(failure)
@@ -265,8 +275,15 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             else -> {
                 logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId HTLC succeeded (wallet restart): $preimage" }
                 db.completeOutgoingLightningPart(partId, preimage)
-                // We can re-create the request from what we have in the DB.
-                val request = SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details as OutgoingPayment.Details.Normal)
+                // We try to re-create the request from what we have in the DB.
+                val request = when (payment.details) {
+                    is OutgoingPayment.Details.Normal -> SendPaymentNormal(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                    is OutgoingPayment.Details.SwapOut -> SendPaymentSwapOut(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                    else -> {
+                        logger.warning { "h:${payment.paymentHash} p:${payment.id} i:$partId cannot recreate send-payment-request fulfill from db data with details=${payment.details}" }
+                        return null
+                    }
+                }
                 val hasMorePendingParts = payment.parts.filterIsInstance<OutgoingPayment.LightningPart>().any { it.status == OutgoingPayment.LightningPart.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
                     logger.info { "h:${payment.paymentHash} p:${payment.id} payment successfully sent (wallet restart)" }
@@ -314,15 +331,15 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
             )
         }
 
-        val finalExpiryDelta = request.details.paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
+        val finalExpiryDelta = request.paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
         val finalExpiry = finalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-        val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.details.paymentRequest.paymentSecret, request.details.paymentRequest.paymentMetadata)
+        val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.paymentRequest.paymentSecret, request.paymentRequest.paymentMetadata)
 
-        val invoiceFeatures = Features(request.details.paymentRequest.features)
+        val invoiceFeatures = Features(request.paymentRequest.features)
         val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment) || invoiceFeatures.hasFeature(Feature.ExperimentalTrampolinePayment)) {
             OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, OnionRoutingPacket.TrampolinePacketLength)
         } else {
-            OutgoingPaymentPacket.buildTrampolineToLegacyPacket(request.details.paymentRequest, trampolineRoute, finalPayload)
+            OutgoingPaymentPacket.buildTrampolineToLegacyPacket(request.paymentRequest, trampolineRoute, finalPayload)
         }
         return Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
     }
