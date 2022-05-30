@@ -434,7 +434,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val pending1 = OutgoingPayment(UUID.randomUUID(), 50_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val pending2 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
         val pending3 = OutgoingPayment(UUID.randomUUID(), 30_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
-        val pending4 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", randomBytes32()))
+        val pending4 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", createInvoice(randomBytes32())))
         val pending5 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
         val pending6 = OutgoingPayment(UUID.randomUUID(), 45_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val pending7 = OutgoingPayment(UUID.randomUUID(), 35_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
@@ -478,7 +478,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         val outgoing1 = OutgoingPayment(UUID.randomUUID(), 50_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val outgoing2 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
-        val outgoing3 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", randomBytes32()))
+        val outgoing3 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", createInvoice(randomBytes32())))
         val outgoing4 = OutgoingPayment(UUID.randomUUID(), 45_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val outgoing5 = OutgoingPayment(UUID.randomUUID(), 35_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         listOf(outgoing1, outgoing2, outgoing3, outgoing4, outgoing5).forEach { db.addOutgoingPayment(it) }

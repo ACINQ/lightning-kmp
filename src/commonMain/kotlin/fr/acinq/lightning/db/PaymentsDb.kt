@@ -250,8 +250,10 @@ data class OutgoingPayment(
             override val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
         }
 
-        /** Swaps out send a lightning payment to a swap server, which will send an on-chain transaction to a given address. */
-        data class SwapOut(val address: String, override val paymentHash: ByteVector32) : Details()
+        /** Swap-outs send a lightning payment to a swap server, which will send an on-chain transaction to a given address. */
+        data class SwapOut(val address: String, val paymentRequest: PaymentRequest) : Details() {
+            override val paymentHash: ByteVector32 = paymentRequest.paymentHash
+        }
 
         /** Corresponds to the on-chain payments made when closing a channel. */
         data class ChannelClosing(
