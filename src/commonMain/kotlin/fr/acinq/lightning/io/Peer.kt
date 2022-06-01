@@ -61,6 +61,7 @@ data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEv
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
 
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerListenerEvent()
+data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent()
 
 /**
  * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
@@ -765,6 +766,11 @@ class Peer(
                     processActions(key, actions)
                     _channels = _channels + (key to state1)
                 }
+            }
+            event is SendPhoenixAndroidLegacyMigrate -> {
+                val msg = PhoenixAndroidLegacyMigrate(newNodeId = event.newNodeId)
+                logger.info { "n:$remoteNodeId sending migration signal ${msg::class}" }
+                sendToPeer(msg)
             }
         }
     }

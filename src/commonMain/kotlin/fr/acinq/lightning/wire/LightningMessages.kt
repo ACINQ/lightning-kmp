@@ -79,6 +79,7 @@ interface LightningMessage {
                 SwapInPending.type -> SwapInPending.read(stream)
                 SwapInConfirmed.type -> SwapInConfirmed.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
+                PhoenixAndroidLegacyMigrate.type -> PhoenixAndroidLegacyMigrate.read(stream)
                 else -> {
                     logger.warning { "unhandled code=${code}, cannot decode input=${Hex.encode(input)}" }
                     null
@@ -1304,14 +1305,33 @@ data class PhoenixAndroidLegacyInfo(
     override val type: Long get() = PhoenixAndroidLegacyInfo.type
 
     override fun write(out: Output) {
-       LightningCodecs.writeByte(if (hasChannels) 1 else 0, out)
+        LightningCodecs.writeByte(if (hasChannels) 0xff else 0, out)
     }
 
     companion object : LightningMessageReader<PhoenixAndroidLegacyInfo> {
         const val type: Long = 35023
 
         override fun read(input: Input): PhoenixAndroidLegacyInfo {
-            return PhoenixAndroidLegacyInfo(LightningCodecs.byte(input) == 1)
+            return PhoenixAndroidLegacyInfo(LightningCodecs.byte(input) != 0)
+        }
+    }
+}
+
+@OptIn(ExperimentalUnsignedTypes::class)
+data class PhoenixAndroidLegacyMigrate(
+    val newNodeId: PublicKey
+) : LightningMessage {
+    override val type: Long get() = PhoenixAndroidLegacyMigrate.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(newNodeId.value, out)
+    }
+
+    companion object : LightningMessageReader<PhoenixAndroidLegacyMigrate> {
+        const val type: Long = 35025
+
+        override fun read(input: Input): PhoenixAndroidLegacyMigrate {
+            return PhoenixAndroidLegacyMigrate(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 }
