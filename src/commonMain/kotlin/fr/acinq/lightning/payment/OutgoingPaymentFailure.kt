@@ -10,7 +10,7 @@ import fr.acinq.lightning.wire.*
 sealed class FinalFailure {
 
     /** Use this function when no payment attempts have been made (e.g. when a precondition failed). */
-    fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<OutgoingPayment.Part.Status.Failed>())
+    fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<OutgoingPayment.LightningPart.Status.Failed>())
 
     // @formatter:off
     object AlreadyPaid : FinalFailure() { override fun toString(): String = "this invoice has already been paid" }
@@ -26,22 +26,22 @@ sealed class FinalFailure {
     // @formatter:on
 }
 
-data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<OutgoingPayment.Part.Status.Failed>) {
+data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<OutgoingPayment.LightningPart.Status.Failed>) {
     constructor(reason: FinalFailure, failures: List<Either<ChannelException, FailureMessage>>, completedAt: Long = currentTimestampMillis()) : this(reason, failures.map { convertFailure(it, completedAt) })
 
     /**
      * A detailed summary of the all internal errors.
      * This is targeted at users with technical knowledge of the lightning protocol.
      */
-    fun details(): String = failures.foldIndexed("", { index, msg, problem -> msg + "${index + 1}: ${problem.details}\n" })
+    fun details(): String = failures.foldIndexed("") { index, msg, problem -> msg + "${index + 1}: ${problem.details}\n" }
 
     companion object {
-        fun convertFailure(failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis()): OutgoingPayment.Part.Status.Failed = when (failure) {
-            is Either.Left -> OutgoingPayment.Part.Status.Failed(null, failure.value.details(), completedAt)
-            is Either.Right -> OutgoingPayment.Part.Status.Failed(failure.value.code, failure.value.message, completedAt)
+        fun convertFailure(failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis()): OutgoingPayment.LightningPart.Status.Failed = when (failure) {
+            is Either.Left -> OutgoingPayment.LightningPart.Status.Failed(null, failure.value.details(), completedAt)
+            is Either.Right -> OutgoingPayment.LightningPart.Status.Failed(failure.value.code, failure.value.message, completedAt)
         }
 
-        fun isRouteError(failure: OutgoingPayment.Part.Status.Failed) = when (failure.remoteFailureCode) {
+        fun isRouteError(failure: OutgoingPayment.LightningPart.Status.Failed) = when (failure.remoteFailureCode) {
             UnknownNextPeer.code -> true
             ChannelDisabled.code -> true
             TemporaryChannelFailure.code -> true
@@ -51,7 +51,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<O
             else -> false
         }
 
-        fun isRejectedByRecipient(failure: OutgoingPayment.Part.Status.Failed) = when (failure.remoteFailureCode) {
+        fun isRejectedByRecipient(failure: OutgoingPayment.LightningPart.Status.Failed) = when (failure.remoteFailureCode) {
             IncorrectOrUnknownPaymentDetails.code -> true
             else -> false
         }
