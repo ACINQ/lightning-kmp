@@ -191,7 +191,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
  * The payment may be split in multiple parts, which may fail, be retried, and then either succeed or fail.
  *
  * @param id internal payment identifier.
- * @param recipientAmount total amount that will be received by the final recipient (NB: it doesn't contain the fees paid).
+ * @param recipientAmount total amount that will be received by the final recipient.
+ *          Note that, depending on the type of the payment, it may or may not contain the fees. See the `amount` and `fees` fields for details.
  * @param recipient final recipient nodeId.
  * @param details details that depend on the payment type (normal payments, swaps, etc).
  * @param parts list of partial child payments that have actually been sent.
@@ -212,29 +213,40 @@ data class OutgoingPayment(
 
     val paymentHash: ByteVector32 = details.paymentHash
 
+    @Suppress("MemberVisibilityCanBePrivate")
+    val routingFee = parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+
+    /** This is the total fees that have been paid to make the payment work. It includes the LN routing fees, the fee for the swap-out service, the mining fees for closing a channel. */
     override val fees: MilliSatoshi = when (status) {
         is Status.Pending -> 0.msat
         is Status.Completed.Failed -> 0.msat
         is Status.Completed.Succeeded.OffChain -> {
-            parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+            if (details is Details.SwapOut) {
+                // The swap-out service takes a fee to cover the miner fee. It's the difference between what we paid the service (recipientAmount) and what goes to the address.
+                // We also include the routing fee, in case the swap-service is NOT the trampoline node.
+                details.swapOutFee.toMilliSatoshi() + routingFee
+            } else {
+                routingFee
+            }
         }
         is Status.Completed.Succeeded.OnChain -> {
             if (details is Details.ChannelClosing) {
-                // For a channel closing, recipient is the balance of the channel that is being closed.
-                // It DOES include the future mining fees. Fees are found by subtracting the aggregated claims to the recipient amount.
+                // For a channel closing, recipientAmount is the balance of the channel that is being closed.
+                // It DOES include the future mining fees. Fees are found by subtracting the aggregated claims from the recipient amount.
                 recipientAmount - parts.filterIsInstance<ClosingTxPart>().map { it.claimed.toMilliSatoshi() }.sum()
             } else {
-                parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+                routingFee
             }
         }
     }
 
-    /** Amount actually sent for this payment. It does include the fees. */
-    override val amount: MilliSatoshi = if (details is Details.ChannelClosing) {
-        // For a channel closing, recipient is the balance of the channel that is being closed.
-        recipientAmount
-    } else {
-        recipientAmount + fees
+    /** Amount that actually left the wallet. It does include the fees. */
+    override val amount: MilliSatoshi = when (details) {
+        // For a channel closing, recipientAmount is the balance of the channel that is closed. It already contains the fees.
+        is Details.ChannelClosing -> recipientAmount
+        // For a swap-out, recipientAmount is the amount paid to the swap service. It contains the swap-out fee, but not the routing fee.
+        is Details.SwapOut -> recipientAmount + routingFee
+        else -> recipientAmount + fees
     }
 
     sealed class Details {
@@ -250,8 +262,8 @@ data class OutgoingPayment(
             override val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
         }
 
-        /** Swap-outs send a lightning payment to a swap server, which will send an on-chain transaction to a given address. */
-        data class SwapOut(val address: String, val paymentRequest: PaymentRequest) : Details() {
+        /** Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address. The swap-out fee is taken by the swap server to cover the miner fee. */
+        data class SwapOut(val address: String, val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
 

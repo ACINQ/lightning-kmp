@@ -835,7 +835,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (adds, attempt) = run {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.nodeId, defaultWalletParams, db)
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-            val payment = SendPaymentSwapOut(UUID.randomUUID(), 550_000.msat, invoice.nodeId, OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", invoice))
+            val payment = SendPaymentSwapOut(UUID.randomUUID(), 550_000.msat, invoice.nodeId, OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", invoice, 10.sat))
 
             val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
