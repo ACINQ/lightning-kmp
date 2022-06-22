@@ -571,7 +571,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     @Test
     fun `concatenate blinded routes (reference test vector)`() {
         // The recipient creates a blinded route to himself.
-        val (blindingOverride, blindedRouteEnd, payloadsEnd) = {
+        val (blindingOverride, blindedRouteEnd, payloadsEnd) = run {
             val sessionKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"))
             val payloads = listOf(
                 ByteVector("0421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"),
@@ -581,9 +581,9 @@ class SphinxTestsCommon : LightningTestSuite() {
             val blindedRoute = RouteBlinding.create(sessionKey, publicKeys.drop(2), payloads)
             assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
             Triple(blindedRoute.blindingKey, blindedRoute, payloads)
-        }()
+        }
         // The sender also wants to use route blinding to reach the introduction point.
-        val (blindedRouteStart, payloadsStart) = {
+        val (blindedRouteStart, payloadsStart) = run {
             val sessionKey = PrivateKey(ByteVector32("0202020202020202020202020202020202020202020202020202020202020202"))
             val payloads = listOf(
                 ByteVector("0121000000000000000000000000000000000000000000000000000000000000000000 04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c"),
@@ -591,7 +591,7 @@ class SphinxTestsCommon : LightningTestSuite() {
                 ByteVector("0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")
             )
             Pair(RouteBlinding.create(sessionKey, publicKeys.take(2), payloads), payloads)
-        }()
+        }
         val blindedRoute = RouteBlinding.BlindedRoute(publicKeys[0], blindedRouteStart.blindingKey, blindedRouteStart.blindedNodes + blindedRouteEnd.blindedNodes)
         assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"))
         assertEquals(blindedRoute.blindedNodeIds, listOf(
