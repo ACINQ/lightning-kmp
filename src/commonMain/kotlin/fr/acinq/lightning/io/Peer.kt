@@ -42,8 +42,24 @@ sealed class PaymentEvent : PeerEvent()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val expirySeconds: Long? = null, val result: CompletableDeferred<PaymentRequest>) : PaymentEvent()
 object CheckPaymentsTimeout : PaymentEvent()
 data class PayToOpenResponseEvent(val payToOpenResponse: PayToOpenResponse) : PeerEvent()
-data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val details: OutgoingPayment.Details.Normal, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent() {
-    val paymentHash: ByteVector32 = details.paymentHash
+
+interface SendPayment {
+    val paymentId: UUID
+    val amount: MilliSatoshi
+    val recipient: PublicKey
+    val details: OutgoingPayment.Details
+    val trampolineFeesOverride: List<TrampolineFees>?
+    val paymentRequest: PaymentRequest
+
+    val paymentHash: ByteVector32
+        get() = details.paymentHash
+
+}
+data class SendPaymentNormal(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.Normal, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+    override val paymentRequest = details.paymentRequest
+}
+data class SendPaymentSwapOut(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.SwapOut, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+    override val paymentRequest = details.paymentRequest
 }
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentEvent()
 
@@ -59,6 +75,8 @@ object SendSwapInRequest : PeerEvent()
 data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListenerEvent()
 data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
 data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
+data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerEvent()
+data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerListenerEvent()
 
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerListenerEvent()
 data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent()
@@ -672,6 +690,10 @@ class Peer(
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
                         listenerEventChannel.send(SwapInConfirmedEvent(msg))
                     }
+                    msg is SwapOutResponse -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
+                        listenerEventChannel.send(SwapOutResponseEvent(msg))
+                    }
                     msg is PhoenixAndroidLegacyInfo -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
                         listenerEventChannel.send(PhoenixAndroidLegacyInfoEvent(msg))
@@ -743,6 +765,11 @@ class Peer(
             }
             event is SendSwapInRequest -> {
                 val msg = SwapInRequest(nodeParams.chainHash)
+                logger.info { "n:$remoteNodeId sending ${msg::class}" }
+                sendToPeer(msg)
+            }
+            event is SendSwapOutRequest -> {
+                val msg = SwapOutRequest(nodeParams.chainHash, event.amount, event.bitcoinAddress, event.feePerKw)
                 logger.info { "n:$remoteNodeId sending ${msg::class}" }
                 sendToPeer(msg)
             }

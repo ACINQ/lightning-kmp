@@ -372,6 +372,70 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `outgoing normal payment fee & amount computation`() = runSuspendTest {
+        val (db, preimage, pr) = createFixture()
+        val (a, b, c) = listOf(randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey())
+
+        // test normal payment fee computation
+        val hops1 = listOf(HopDesc(a, c, ShortChannelId(42)), HopDesc(b, c))
+        val hops2 = listOf(HopDesc(a, b))
+        val normalPayment = OutgoingPayment(
+            id = UUID.randomUUID(),
+            recipientAmount = 180_000.msat,
+            recipient = pr.nodeId,
+            details = OutgoingPayment.Details.Normal(pr),
+            parts = listOf(),
+            status = OutgoingPayment.Status.Pending
+        )
+        db.addOutgoingPayment(normalPayment)
+        val normalParts = listOf(
+            OutgoingPayment.LightningPart(UUID.randomUUID(), amount = 115_000.msat, route = hops1, status = OutgoingPayment.LightningPart.Status.Pending, createdAt = 100),
+            OutgoingPayment.LightningPart(UUID.randomUUID(), amount = 75_000.msat, route = hops2, status = OutgoingPayment.LightningPart.Status.Pending, createdAt = 105)
+        )
+        db.addOutgoingLightningParts(parentId = normalPayment.id, parts = normalParts)
+        db.completeOutgoingLightningPart(normalParts[0].id, preimage, 110)
+        db.completeOutgoingLightningPart(normalParts[1].id, preimage, 115)
+        db.completeOutgoingPaymentOffchain(normalPayment.id, preimage, 120)
+        val normalPaymentInDb = db.getOutgoingPayment(normalPayment.id)
+
+        assertNotNull(normalPaymentInDb)
+        assertEquals(10_000.msat, normalPaymentInDb.fees)
+        assertEquals(190_000.msat, normalPaymentInDb.amount)
+    }
+
+    @Test
+    fun `outgoing swap-out payment fee & amount computation`() = runSuspendTest {
+        val (db, preimage, pr) = createFixture()
+        val (a, b, c) = listOf(randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey())
+        val hops = listOf(HopDesc(a, c, ShortChannelId(42)), HopDesc(b, c))
+        // test swap-out payment fee computation
+        val swapOutPayment = OutgoingPayment(
+            id = UUID.randomUUID(),
+            recipientAmount = 150_000.msat,
+            recipient = pr.nodeId,
+            details = OutgoingPayment.Details.SwapOut("2NCnVWgTuCptq1y7Cie4KwSBADcBqXKTNCR", pr, 15.sat),
+            parts = listOf(),
+            status = OutgoingPayment.Status.Pending
+        )
+        db.addOutgoingPayment(swapOutPayment)
+        val swapOutParts = listOf(
+            OutgoingPayment.LightningPart(UUID.randomUUID(), amount = 157_000.msat, route = hops, status = OutgoingPayment.LightningPart.Status.Pending, createdAt = 100),
+        )
+        db.addOutgoingLightningParts(parentId = swapOutPayment.id, parts = swapOutParts)
+        db.completeOutgoingLightningPart(swapOutParts[0].id, preimage, 110)
+        db.completeOutgoingPaymentOffchain(swapOutPayment.id, preimage, 120)
+        val swapOutPaymentInDb = db.getOutgoingPayment(swapOutPayment.id)
+
+        assertNotNull(swapOutPaymentInDb)
+        // the service receives 150 000 msat
+        // the swap amount received by the on-chain address is 135 000 msat
+        // the mining fee are contained in the swap-out service fee
+        // total fees is 7 000 msat for routing with trampoline + 15 000 msat for the swap-out service
+        assertEquals(22_000.msat, swapOutPaymentInDb.fees)
+        assertEquals(157_000.msat, swapOutPaymentInDb.amount)
+    }
+
+    @Test
     fun `fail outgoing payment`() = runSuspendTest {
         val (db, _, pr) = createFixture()
         val initialParts = listOf(
@@ -434,7 +498,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val pending1 = OutgoingPayment(UUID.randomUUID(), 50_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val pending2 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
         val pending3 = OutgoingPayment(UUID.randomUUID(), 30_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
-        val pending4 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", randomBytes32()))
+        val pending4 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", createInvoice(randomBytes32()), 14.sat))
         val pending5 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
         val pending6 = OutgoingPayment(UUID.randomUUID(), 45_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val pending7 = OutgoingPayment(UUID.randomUUID(), 35_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
@@ -478,7 +542,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         val outgoing1 = OutgoingPayment(UUID.randomUUID(), 50_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val outgoing2 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
-        val outgoing3 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", randomBytes32()))
+        val outgoing3 = OutgoingPayment(UUID.randomUUID(), 60_000.msat, randomKey().publicKey(), OutgoingPayment.Details.SwapOut("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb", createInvoice(randomBytes32()), 14.sat))
         val outgoing4 = OutgoingPayment(UUID.randomUUID(), 45_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val outgoing5 = OutgoingPayment(UUID.randomUUID(), 35_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         listOf(outgoing1, outgoing2, outgoing3, outgoing4, outgoing5).forEach { db.addOutgoingPayment(it) }
