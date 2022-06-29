@@ -698,6 +698,10 @@ class Peer(
                         logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
                         listenerEventChannel.send(PhoenixAndroidLegacyInfoEvent(msg))
                     }
+                    msg is OnionMessage -> {
+                        logger.info { "n:$remoteNodeId received ${msg::class}" }
+                        // TODO: process onion message
+                    }
                     else -> logger.warning { "n:$remoteNodeId received unhandled message ${Hex.encode(event.data)}" }
                 }
             }
