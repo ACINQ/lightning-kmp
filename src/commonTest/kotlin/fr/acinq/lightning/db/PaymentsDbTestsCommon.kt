@@ -60,7 +60,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.receivePayment(pr.paymentHash, setOf(
             IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
             IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
-            IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, fees = 1_000.msat)
+            IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, fees = 1_000.msat, id = UUID.randomUUID())
         ), 110)
         val received = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(received)
@@ -119,6 +119,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val (db, preimage, pr) = createFixture()
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
         db.receivePayment(pr.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(
+            id = UUID.randomUUID(),
             amount = 500_000.msat,
             fees = 15_000.msat,
             channelId = randomBytes32()
@@ -135,7 +136,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val preimage = randomBytes32()
         val channelId = randomBytes32()
         val origin = IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb")
-        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, fees = MilliSatoshi(1234), channelId = channelId))
+        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, fees = MilliSatoshi(1234), channelId = channelId, id = UUID.randomUUID()))
         assertNull(db.getIncomingPayment(randomBytes32()))
 
         db.addAndReceivePayment(preimage = preimage, origin = origin, receivedWith = receivedWith)
@@ -188,7 +189,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val preimage2 = randomBytes32()
         val received2 = createInvoice(preimage2)
         db.addIncomingPayment(preimage2, IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"))
-        db.receivePayment(received2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(180_000.msat, 10_000.msat, channelId = null, )), 60)
+        db.receivePayment(received2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(UUID.randomUUID(), 180_000.msat, 10_000.msat, channelId = null, )), 60)
         val payment2 = db.getIncomingPayment(received2.paymentHash)!!
 
         val preimage3 = randomBytes32()
@@ -557,8 +558,9 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val outFinal1 = db.getOutgoingPayment(outgoing1.id)!!
         db.completeOutgoingPaymentOffchain(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
-        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 25_000.msat, 2_500.msat, channelId = null)), receivedAt = 105)
-        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 25_000.msat, 2_500.msat, channelId = null)), 105))
+        val newChannelUUID = UUID.randomUUID()
+        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), receivedAt = 105)
+        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), 105))
         db.completeOutgoingPaymentOffchain(outgoing3.id, randomBytes32(), completedAt = 106)
         val outFinal3 = db.getOutgoingPayment(outgoing3.id)!!
         val channelId4 = randomBytes32()
