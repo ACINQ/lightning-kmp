@@ -116,7 +116,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.SwapIn(address = ""),
-                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = action.amount, fees = 0.msat, channelId = channelId))
+                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, fees = 0.msat, channelId = channelId))
                 )
             }
             is ChannelOrigin.PayToOpenOrigin -> {
@@ -130,7 +130,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
-                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = action.amount, fees = action.origin.fee.toMilliSatoshi(), channelId = channelId))
+                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, fees = action.origin.fee.toMilliSatoshi(), channelId = channelId))
                 )
             }
         }
@@ -277,6 +277,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                         )
                                     ) to IncomingPayment.ReceivedWith.NewChannel(
                                         // The part's amount is the full amount, including the fee. The fee must be subtracted.
+                                        id = UUID.randomUUID(),
                                         amount = part.amount - part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         fees = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         // At that point we do not know the channel's id. It will be set later on.
