@@ -20,6 +20,11 @@ fun NSData.toByteArray(): ByteArray {
 }
 
 fun NSData.copyTo(buffer: ByteArray, offset: Int = 0) {
+    if (offset + length.toInt() > buffer.size) {
+        throw IllegalArgumentException(
+            "offset($offset) + length(${length.toInt()}) > buffer.size(${buffer.size})"
+        )
+    }
     buffer.usePinned { pinned ->
         autoreleasepool {
             val src = this.bytes
@@ -28,6 +33,21 @@ fun NSData.copyTo(buffer: ByteArray, offset: Int = 0) {
         }
         true
     }
+}
+
+fun ByteArray.toNSData(offset: Int, length: Int): NSData {
+    if (offset + length > size) {
+        throw IllegalArgumentException(
+            "offset($offset) + length($length) > size($size)"
+        )
+    }
+    if (length == 0) return NSData()
+    val pinned = pin()
+    return NSData.create(
+        bytesNoCopy = pinned.addressOf(offset),
+        length = length.toULong(),
+        deallocator = { _, _ -> pinned.unpin() }
+    )
 }
 
 fun ByteArray.toNSData(): NSData {

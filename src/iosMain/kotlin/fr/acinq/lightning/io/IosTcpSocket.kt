@@ -19,6 +19,8 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
 
     override suspend fun send(
         bytes: ByteArray?,
+        offset: Int,
+        length: Int,
         flush: Boolean
     ): Unit = suspendCancellableCoroutine { continuation ->
 
@@ -28,7 +30,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         //   completion: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
         // ): kotlin.Unit { /* compiled code */ }
 
-        val data = bytes?.toNSData() ?: NSData()
+        val data = bytes?.toNSData(offset = offset, length = length) ?: NSData()
         socket.sendWithData(
             data = data,
             completion = { error ->
@@ -42,7 +44,9 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
     }
 
     override suspend fun receiveAvailable(
-        buffer: ByteArray
+        buffer: ByteArray,
+        offset: Int,
+        length: Int
     ): Int = suspendCancellableCoroutine { continuation ->
 
         // @kotlinx.cinterop.ObjCMethod
@@ -53,9 +57,9 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         // ): kotlin.Unit { /* compiled code */ }
 
         socket.receiveAvailableWithMaximumLength(
-            maximumLength = buffer.size.convert(),
+            maximumLength = length.convert(),
             success = { data ->
-                data!!.copyTo(buffer)
+                data!!.copyTo(buffer, offset)
                 continuation.resume(data.length.convert())
             },
             failure = { error ->
@@ -65,7 +69,9 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
     }
 
     override suspend fun receiveFully(
-        buffer: ByteArray
+        buffer: ByteArray,
+        offset: Int,
+        length: Int
     ): Unit = suspendCancellableCoroutine { continuation ->
 
         // @kotlinx.cinterop.ObjCMethod
@@ -76,10 +82,32 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         // ): kotlin.Unit { /* compiled code */ }
 
         socket.receiveFullyWithLength(
-            length = buffer.size.convert(),
+            length = length.convert(),
             success = { data ->
-                data!!.copyTo(buffer)
+                data!!.copyTo(buffer, offset)
                 continuation.resume(Unit)
+            },
+            failure = { error ->
+                continuation.resumeWithException(error!!.toIOException())
+            }
+        )
+    }
+
+    override suspend fun startTls(
+        tls: TcpSocket.TLS
+    ): TcpSocket = suspendCancellableCoroutine { continuation ->
+
+        // @kotlinx.cinterop.ObjCMethod
+        // public open external fun startTLSWithTls(
+        //   tls: swift.phoenix_crypto.NativeSocketTLS,
+        //   success: (swift.phoenix_crypto.NativeSocket?) -> kotlin.Unit,
+        //   failure: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
+        // ): kotlin.Unit { /* compiled code */ }
+
+        socket.startTLSWithTls(
+            tls = tls.toNativeSocketTLS(),
+            success = { newSocket ->
+                continuation.resume(IosTcpSocket(newSocket!!))
             },
             failure = { error ->
                 continuation.resumeWithException(error!!.toIOException())
@@ -116,21 +144,10 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
         //   failure: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
         // ): kotlin.Unit { /* compiled code */ }
 
-        val tlsOptions = when (tls) {
-            TcpSocket.TLS.DISABLED ->
-                NativeSocketTLS.disabled()
-            TcpSocket.TLS.TRUSTED_CERTIFICATES ->
-                NativeSocketTLS.trustedCertificates()
-            TcpSocket.TLS.UNSAFE_CERTIFICATES ->
-                NativeSocketTLS.allowUnsafeCertificates()
-            is TcpSocket.TLS.PINNED_PUBLIC_KEY ->
-                NativeSocketTLS.pinnedPublicKey(tls.pubKey)
-        }
-
         NativeSocket.connectWithHost(
             host = host,
             port = port.toUShort(),
-            tls = tlsOptions,
+            tls = tls.toNativeSocketTLS(),
             success = { socket ->
                 continuation.resume(IosTcpSocket(socket!!))
             },
@@ -138,6 +155,19 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                 continuation.resumeWithException(error!!.toIOException())
             }
         )
+    }
+}
+
+fun TcpSocket.TLS.toNativeSocketTLS(): NativeSocketTLS {
+    return when (this) {
+        TcpSocket.TLS.DISABLED ->
+            NativeSocketTLS.disabled()
+        TcpSocket.TLS.TRUSTED_CERTIFICATES ->
+            NativeSocketTLS.trustedCertificates()
+        TcpSocket.TLS.UNSAFE_CERTIFICATES ->
+            NativeSocketTLS.allowUnsafeCertificates()
+        is TcpSocket.TLS.PINNED_PUBLIC_KEY ->
+            NativeSocketTLS.pinnedPublicKey(this.pubKey)
     }
 }
 
