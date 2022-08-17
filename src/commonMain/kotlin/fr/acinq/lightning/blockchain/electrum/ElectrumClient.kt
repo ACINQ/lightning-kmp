@@ -8,6 +8,7 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.linesFlow
+import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
