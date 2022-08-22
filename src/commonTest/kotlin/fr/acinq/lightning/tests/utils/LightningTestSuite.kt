@@ -1,7 +1,6 @@
 package fr.acinq.lightning.tests.utils
 
 import fr.acinq.lightning.utils.setLightningLoggerFactory
-import kotlin.native.concurrent.ThreadLocal
 
 
 abstract class LightningTestSuite {
@@ -10,7 +9,6 @@ abstract class LightningTestSuite {
         setLogger()
     }
 
-    @ThreadLocal
     companion object {
         private var loggerIsSet = false
         fun setLogger() {

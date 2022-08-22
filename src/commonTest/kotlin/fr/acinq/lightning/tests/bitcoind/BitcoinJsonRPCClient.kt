@@ -8,10 +8,8 @@ import io.ktor.client.features.auth.providers.*
 import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
-import kotlin.native.concurrent.ThreadLocal
 
 
-@ThreadLocal
 object BitcoinJsonRPCClient {
     private const val user: String = "foo"
     private const val pwd: String = "bar"
