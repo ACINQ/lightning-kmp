@@ -75,7 +75,6 @@ data class WalletParams(
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
  * @param enableTrampolinePayment enable trampoline payments.
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 data class NodeParams(
     val keyManager: KeyManager,
     val alias: String,

@@ -17,7 +17,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertTrue
 
-@OptIn(ExperimentalSerializationApi::class)
 class StateSerializationTestsCommon : LightningTestSuite() {
 
     @Test

@@ -36,7 +36,6 @@ object IncomingPaymentPacket {
         }
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, packetLength: Int, privateKey: PrivateKey): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when (val decrypted = Sphinx.peel(privateKey, paymentHash, packet, packetLength)) {
             is Either.Left -> Either.Left(decrypted.value)
@@ -62,7 +61,6 @@ object IncomingPaymentPacket {
         }
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     private fun validate(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.FinalPayload): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
             add.amountMsat != outerPayload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))

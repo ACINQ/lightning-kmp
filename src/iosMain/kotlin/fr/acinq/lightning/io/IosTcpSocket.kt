@@ -14,7 +14,6 @@ import swift.phoenix_crypto.NativeSocket
 import swift.phoenix_crypto.NativeSocketError
 import swift.phoenix_crypto.NativeSocketTLS
 
-@OptIn(ExperimentalUnsignedTypes::class)
 class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
 
     override suspend fun send(

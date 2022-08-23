@@ -469,7 +469,6 @@ class CommitmentsTestsCommon : LightningTestSuite() {
         claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     companion object {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments {
             val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())

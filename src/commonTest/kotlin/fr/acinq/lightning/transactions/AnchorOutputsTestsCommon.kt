@@ -222,6 +222,7 @@ class AnchorOutputsTestsCommon {
         }
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     companion object {
         @kotlinx.serialization.Serializable
         data class HtlcDesc(val RemoteSigHex: String, val ResolutionTxHex: String) {
@@ -239,7 +240,6 @@ class AnchorOutputsTestsCommon {
             val file = resourceDir.resolve("bolt3_anchor_outputs_test_vectors.json")
             file.openReadableFile().run { readString(sizeBytes = remaining) }
         }
-        @OptIn(ExperimentalSerializationApi::class)
         val testCases = format.decodeFromString<Array<TestCase>>(json)
     }
 }

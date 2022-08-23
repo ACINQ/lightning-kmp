@@ -15,7 +15,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertNull
 
-@OptIn(ExperimentalUnsignedTypes::class)
 class TlvTestsCommon : LightningTestSuite() {
 
     @Test

@@ -106,8 +106,7 @@ data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
-@ObsoleteCoroutinesApi
-@OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalStdlibApi::class, ExperimentalTime::class)
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
@@ -374,6 +373,7 @@ class Peer(
         input.send(event)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pings/pongs

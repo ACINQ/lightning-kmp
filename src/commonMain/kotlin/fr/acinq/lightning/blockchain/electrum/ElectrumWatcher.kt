@@ -75,7 +75,6 @@ private data class WatcherDisconnected(
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val getTxQueue: List<GetTxWithMeta> = listOf()
 ) : WatcherState() {
-    @OptIn(ObsoleteCoroutinesApi::class)
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
             is ClientStateUpdate -> {
@@ -358,7 +357,6 @@ internal data class WatcherRunning(
             }
         }
 
-    @OptIn(ObsoleteCoroutinesApi::class)
     private fun setupWatch(watch: Watch) = when (watch) {
         is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
@@ -608,7 +606,6 @@ class ElectrumWatcher(
     companion object {
         val logger by lightningLogger<ElectrumWatcher>()
 
-        @ObsoleteCoroutinesApi
         internal fun registerToScriptHash(watch: Watch): RegisterToScriptHashNotification? = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch

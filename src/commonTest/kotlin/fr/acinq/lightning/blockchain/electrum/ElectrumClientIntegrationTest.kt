@@ -1,5 +1,3 @@
-@file:OptIn(FlowPreview::class)
-
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto
@@ -14,7 +12,6 @@ import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
@@ -22,7 +19,7 @@ import kotlin.test.*
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(FlowPreview::class, ExperimentalTime::class)
 class ElectrumClientIntegrationTest : LightningTestSuite() {
     // this is tx #2690 of block #500000
     private val referenceTx =

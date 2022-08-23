@@ -13,7 +13,6 @@ import fr.acinq.lightning.utils.toByteVector
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */

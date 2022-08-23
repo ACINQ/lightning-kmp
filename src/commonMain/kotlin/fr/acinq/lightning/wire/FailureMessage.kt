@@ -10,7 +10,6 @@ import fr.acinq.lightning.utils.lightningLogger
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 
-@OptIn(ExperimentalUnsignedTypes::class)
 sealed class FailureMessage {
     abstract val message: String
     abstract val code: Int
@@ -239,7 +238,6 @@ object ExpiryTooFar : FailureMessage() {
     override val code get() = 21
     override val message get() = "payment expiry is too far in the future"
 }
-@OptIn(ExperimentalUnsignedTypes::class)
 data class InvalidOnionPayload(val tag: ULong, val offset: Int) : FailureMessage(), Perm {
     override val code get() = InvalidOnionPayload.code
     override val message get() = "onion per-hop payload is invalid"
