@@ -1,7 +1,8 @@
+@file:OptIn(FlowPreview::class)
+
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -14,12 +15,12 @@ import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
 import kotlin.test.*
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
-import kotlin.time.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClientIntegrationTest : LightningTestSuite() {
@@ -62,7 +63,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `estimate fees`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendElectrumRequest(EstimateFees(3))
 
@@ -76,7 +77,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get transaction id from position`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendMessage(SendElectrumRequest(GetTransactionIdFromPosition(height, position)))
 
@@ -90,7 +91,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get transaction id from position with merkle proof`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendMessage(SendElectrumRequest(GetTransactionIdFromPosition(height, position, true)))
 
@@ -104,7 +105,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get transaction`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendMessage(SendElectrumRequest(GetTransaction(referenceTx.txid)))
 
@@ -118,7 +119,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get header`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendMessage(SendElectrumRequest(GetHeader(100000)))
 
@@ -135,7 +136,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get headers`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         val start = (500000 / 2016) * 2016
         client.sendElectrumRequest(GetHeaders(start, 2016))
@@ -151,7 +152,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get merkle tree`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendElectrumRequest(GetMerkle(referenceTx.txid, 500000))
 
@@ -171,7 +172,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `header subscription`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendMessage(AskForHeaderSubscriptionUpdate)
 
@@ -183,7 +184,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `scripthash subscription`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
 
@@ -197,7 +198,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `get scripthash history`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendElectrumRequest(GetScriptHashHistory(scriptHash))
 
@@ -211,7 +212,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
     @Test
     fun `list script unspents`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
-        val notifications = client.openNotificationsSubscription()
+        val notifications = client.notifications.produceIn(this)
 
         client.sendElectrumRequest(ScriptHashListUnspent(scriptHash))
 

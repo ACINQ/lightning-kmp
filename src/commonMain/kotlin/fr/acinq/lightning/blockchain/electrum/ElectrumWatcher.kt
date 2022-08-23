@@ -15,7 +15,10 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.lightningLogger
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.flow.*
 import kotlin.math.absoluteValue
 import kotlin.math.max
@@ -30,9 +33,9 @@ class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
 class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
 sealed class NotifyEvent
-class NotifyWatchEvent(val watchEvent: WatchEvent): NotifyEvent()
-class NotifyTxEvent(val channelId: ByteVector32, val txWithMeta: GetTxWithMetaResponse): NotifyEvent()
-class NotifyUpToDateEvent(val millis: Long): NotifyEvent()
+class NotifyWatchEvent(val watchEvent: WatchEvent) : NotifyEvent()
+class NotifyTxEvent(val channelId: ByteVector32, val txWithMeta: GetTxWithMetaResponse) : NotifyEvent()
+class NotifyUpToDateEvent(val millis: Long) : NotifyEvent()
 
 internal sealed class WatcherAction
 private object AskForHeaderUpdate : WatcherAction()
@@ -436,8 +439,6 @@ class ElectrumWatcher(
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
 
-    private val clientNotificationsSubscription = client.openNotificationsSubscription()
-
     private val input = produce(capacity = Channel.BUFFERED) {
         launch {
             eventChannel.consumeEach { send(it) }
@@ -448,7 +449,7 @@ class ElectrumWatcher(
             }
         }
         launch {
-            clientNotificationsSubscription.consumeEach {
+            client.notifications.collect {
                 eventChannel.send(ReceivedMessage(it))
             }
         }
@@ -503,7 +504,7 @@ class ElectrumWatcher(
                             eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
                     is NotifyTxWithMeta -> {
-                       _notificationsFlow.emit(NotifyTxEvent(action.channelId, action.txWithMeta))
+                        _notificationsFlow.emit(NotifyTxEvent(action.channelId, action.txWithMeta))
                     }
                 }
             }
@@ -516,7 +517,7 @@ class ElectrumWatcher(
         val timeMillis: Long = 2L * 1_000 // fire timer every 2 seconds
         timerJob = launch {
             delay(timeMillis)
-            while(isActive) {
+            while (isActive) {
                 checkIsUpToDate()
                 delay(timeMillis)
             }
@@ -595,8 +596,6 @@ class ElectrumWatcher(
 
     fun stop() {
         logger.info { "electrum watcher stopping" }
-        // Cancel subscriptions
-        clientNotificationsSubscription.cancel()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel up-to-date timer

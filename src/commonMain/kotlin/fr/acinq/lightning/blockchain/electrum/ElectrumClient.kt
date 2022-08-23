@@ -11,19 +11,14 @@ import fr.acinq.lightning.io.linesFlow
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 import kotlin.native.concurrent.ThreadLocal
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
-import kotlin.time.seconds
 
 
 /*
@@ -60,7 +55,6 @@ internal sealed class ClientState {
     abstract fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>>
 }
 
-@ObsoleteCoroutinesApi
 internal object WaitingForVersion : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
         event is ReceivedResponse && event.response is Either.Right -> {
@@ -80,7 +74,6 @@ internal object WaitingForVersion : ClientState() {
     }
 }
 
-@ObsoleteCoroutinesApi
 internal object WaitingForTip : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
@@ -101,7 +94,6 @@ internal object WaitingForTip : ClientState() {
         }
 }
 
-@ObsoleteCoroutinesApi
 internal data class ClientRunning(
     val height: Int,
     val tip: BlockHeader,
@@ -143,7 +135,6 @@ internal data class ClientRunning(
     }
 }
 
-@ObsoleteCoroutinesApi
 internal object ClientClosed : ClientState() {
     override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
@@ -155,7 +146,6 @@ internal object ClientClosed : ClientState() {
         }
 }
 
-@ObsoleteCoroutinesApi
 private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
         Disconnected -> ClientClosed to emptyList()
@@ -166,14 +156,13 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
         }
     }
 
-@ObsoleteCoroutinesApi
+
 private class ClientStateBuilder {
     var state: ClientState = ClientClosed
     var actions = emptyList<ElectrumClientAction>()
     fun build() = state to actions
 }
 
-@ObsoleteCoroutinesApi
 private fun newState(init: ClientStateBuilder.() -> Unit) = ClientStateBuilder().apply(init).build()
 
 private fun ClientState.returnState(actions: List<ElectrumClientAction> = emptyList()): Pair<ClientState, List<ElectrumClientAction>> = this to actions
@@ -185,7 +174,7 @@ data class RequestResponseTimestamp(
     val lastResponseTimestamp: Long?
 )
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
@@ -199,15 +188,17 @@ class ElectrumClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // channel to send and receive request/responses with the server
     private val eventChannel: Channel<ClientEvent> = Channel(BUFFERED)
     private var output: Channel<ByteArray> = Channel(BUFFERED)
 
+    // connection status to the server
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
-    private val notificationsChannel = BroadcastChannel<ElectrumMessage>(BUFFERED)
-
-    fun openNotificationsSubscription() = notificationsChannel.openSubscription()
+    // subscriptions notifications (headers, script_hashes, etc.)
+    private val _notifications = MutableSharedFlow<ElectrumMessage>(replay = 0) // see migration Kotlin's migration doc from BroadcastChannel to SharedFlow
+    val notifications: SharedFlow<ElectrumMessage> get() = _notifications.asSharedFlow()
 
     private var state: ClientState = ClientClosed
 
@@ -235,9 +226,9 @@ class ElectrumClient(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is SendRequest -> if(!output.isClosedForSend) output.send(action.request.encodeToByteArray())
-                    is SendHeader -> notificationsChannel.send(HeaderSubscriptionResponse(action.height, action.blockHeader))
-                    is SendResponse -> notificationsChannel.send(action.response)
+                    is SendRequest -> if (!output.isClosedForSend) output.send(action.request.encodeToByteArray())
+                    is SendHeader -> _notifications.emit(HeaderSubscriptionResponse(action.height, action.blockHeader))
+                    is SendResponse -> _notifications.emit(action.response)
                     is BroadcastStatus -> if (_connectionState.value != action.connection) _connectionState.value = action.connection
                 }
             }
@@ -306,7 +297,9 @@ class ElectrumClient(
         suspend fun respond() {
             // Reset the output channel to avoid sending obsolete messages
             output = Channel(BUFFERED)
-            for (msg in output) { send(msg) }
+            for (msg in output) {
+                send(msg)
+            }
         }
 
         suspend fun listen() {
@@ -335,7 +328,7 @@ class ElectrumClient(
             when (message) {
                 is AskForHeaderSubscriptionUpdate -> eventChannel.send(AskForHeader)
                 is SendElectrumRequest -> eventChannel.send(SendElectrumApiCall(message.electrumRequest))
-                else -> logger.warning{ "sendMessage does not support message: ${message::class}" }
+                else -> logger.warning { "sendMessage does not support message: ${message::class}" }
             }
         }
     }
@@ -360,8 +353,6 @@ class ElectrumClient(
         disconnect()
         // Cancel event consumer
         runJob?.cancel()
-        // Cancel broadcast channels
-        notificationsChannel.cancel()
         // Cancel event channel
         eventChannel.cancel()
     }

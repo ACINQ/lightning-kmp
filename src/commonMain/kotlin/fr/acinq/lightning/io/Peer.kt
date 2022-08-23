@@ -171,9 +171,8 @@ class Peer(
     public val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
     init {
-        val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
-            electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
+            watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
                     currentTipFlow.value = msg.height to msg.header
                     input.send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
@@ -238,18 +237,19 @@ class Peer(
         }
     }
 
+    @OptIn(FlowPreview::class)
     private suspend fun updateEstimateFees() {
-        val electrumFeesChannel = watcher.client.openNotificationsSubscription()
-        val flow = electrumFeesChannel.consumeAsFlow().filterIsInstance<EstimateFeeResponse>()
-
+        val flow = watcher.client.notifications
+            .filterIsInstance<EstimateFeeResponse>()
+            .take(3) // we will send 3 requests, we expect 3 responses
+            .produceIn(this) // creates a ad-hoc receive channel to collect values
+            .consumeAsFlow() // once
         watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
         watcher.client.sendElectrumRequest(EstimateFees(2))
         watcher.client.sendElectrumRequest(EstimateFees(6))
         watcher.client.sendElectrumRequest(EstimateFees(10))
-        val fees = mutableListOf<EstimateFeeResponse>()
-        flow.take(3).toCollection(fees)
-        logger.info { "on-chain fees: $fees" }
-        val sortedFees = fees.sortedBy { it.confirmations }
+        val sortedFees = flow.toList().sortedBy { it.confirmations }
+        logger.info { "on-chain fees: $sortedFees" }
         // TODO: If some feerates are null, we may implement a retry
         onChainFeeratesFlow.value = OnChainFeerates(
             mutualCloseFeerate = sortedFees[2].feerate ?: FeeratePerKw(FeeratePerByte(20.sat)),
