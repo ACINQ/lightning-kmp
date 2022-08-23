@@ -125,8 +125,8 @@ kotlin {
     }
 
     sourceSets.all {
-        languageSettings.useExperimentalAnnotation("kotlin.RequiresOptIn")
-        languageSettings.useExperimentalAnnotation("kotlin.ExperimentalStdlibApi")
+        languageSettings.optIn("kotlin.RequiresOptIn")
+        languageSettings.optIn("kotlin.ExperimentalStdlibApi")
     }
 
     // Configure all compilations of all targets:
