@@ -156,7 +156,6 @@ private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<El
         }
     }
 
-
 private class ClientStateBuilder {
     var state: ClientState = ClientClosed
     var actions = emptyList<ElectrumClientAction>()
@@ -197,7 +196,7 @@ class ElectrumClient(
     val connectionState: StateFlow<Connection> get() = _connectionState
 
     // subscriptions notifications (headers, script_hashes, etc.)
-    private val _notifications = MutableSharedFlow<ElectrumMessage>(replay = 0) // see migration Kotlin's migration doc from BroadcastChannel to SharedFlow
+    private val _notifications = MutableSharedFlow<ElectrumMessage>(replay = 0) // see Kotlin's migration doc from BroadcastChannel to SharedFlow
     val notifications: SharedFlow<ElectrumMessage> get() = _notifications.asSharedFlow()
 
     private var state: ClientState = ClientClosed
