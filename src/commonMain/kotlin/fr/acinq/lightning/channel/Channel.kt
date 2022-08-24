@@ -552,6 +552,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 }
+
 object Channel {
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
     const val ANNOUNCEMENTS_MINCONF = 6

@@ -36,8 +36,9 @@ typealias TransactionsCommitmentOutputs = List<Transactions.CommitmentOutputLink
 /**
  * Created by PM on 15/12/2016.
  */
-@OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
 object Transactions {
+
+    const val MAX_STANDARD_TX_WEIGHT = 400_000
 
     @Serializable
     data class InputInfo constructor(
