@@ -1,8 +1,8 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.Bitcoin
-import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.lightningLogger
@@ -20,6 +20,7 @@ data class Balance(val utxos: List<UnspentItem>)
  */
 class ElectrumMiniWallet(
     val bitcoinAddress: String,
+    val chainHash: ByteVector32,
     private val client: ElectrumClient,
     private val scope: CoroutineScope
 ) : CoroutineScope by scope {
@@ -28,7 +29,7 @@ class ElectrumMiniWallet(
     private val _balanceFlow = MutableStateFlow<Balance?>(null)
     val balanceFlow get() = _balanceFlow.asStateFlow()
 
-    private val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(Block.TestnetGenesisBlock.hash, bitcoinAddress)))
+    private val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
     private val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
 
     init {
