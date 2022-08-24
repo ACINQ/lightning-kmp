@@ -148,22 +148,27 @@ internal data class WatcherRunning(
                         }
                     }
                     message is ScriptHashSubscriptionResponse -> {
-                        val (scriptHash, status) = message
+                        if (scriptHashSubscriptions.contains(message.scriptHash)) {
+                            val (scriptHash, status) = message
 
-                        val existingStatus = scriptHashStatus[scriptHash]
+                            val existingStatus = scriptHashStatus[scriptHash]
 
-                        newState {
+                            newState {
                             state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
-                            actions = buildList {
-                                when {
+                                actions = buildList {
+                                    when {
                                     existingStatus == status -> logger.debug { "already have status=$status for scriptHash=$scriptHash" }
-                                    status.isEmpty() -> logger.debug { "empty status for scriptHash=$scriptHash" }
-                                    else -> {
-                                        logger.debug { "scriptHash=$scriptHash at height=$height" }
-                                        add(AskForScriptHashHistory(scriptHash))
+                                        status.isEmpty() -> logger.debug { "empty status for scriptHash=$scriptHash" }
+                                        else -> {
+                                            logger.debug { "scriptHash=$scriptHash at height=$height" }
+                                            add(AskForScriptHashHistory(scriptHash))
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            // ignore responses for unknown script_hashes (electrum client doesn't maintain a list of subscribers so we receive all subscriptions)
+                            returnState()
                         }
                     }
                     message is GetScriptHashHistoryResponse -> {
