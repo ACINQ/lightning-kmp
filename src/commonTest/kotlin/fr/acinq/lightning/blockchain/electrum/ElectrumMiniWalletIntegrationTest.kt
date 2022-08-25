@@ -6,6 +6,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
+import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
@@ -36,8 +37,9 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz", Block.LivenetGenesisBlock.hash, client, this)
 
-        val balance = wallet.balanceFlow.filterIsInstance<Balance>().first()
-        assertEquals(0, balance.utxos.size)
+        val walletState = wallet.walletStateFlow.filterIsInstance<WalletState>().first()
+        assertEquals(0, walletState.utxos.size)
+        assertEquals(0.sat, walletState.balance)
 
         client.stop()
     }
@@ -47,8 +49,9 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", Block.LivenetGenesisBlock.hash, client, this)
 
-        val balance = wallet.balanceFlow.filterIsInstance<Balance>().first()
-        assertEquals(6, balance.utxos.size)
+        val walletState = wallet.walletStateFlow.filterIsInstance<WalletState>().first()
+        assertEquals(6, walletState.utxos.size)
+        assertEquals(30_000_000.sat, walletState.balance)
 
         client.stop()
     }

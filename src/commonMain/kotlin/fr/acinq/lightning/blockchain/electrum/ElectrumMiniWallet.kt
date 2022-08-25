@@ -1,11 +1,9 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.bitcoin.Bitcoin
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.lightningLogger
+import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,7 +11,9 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlin.native.concurrent.ThreadLocal
 
-data class Balance(val utxos: List<UnspentItem>)
+data class WalletState(val utxos: List<UnspentItem>) {
+    val balance: Satoshi = utxos.map { it.value }.sum().sat
+}
 
 /**
  * A very simple wallet that only watches one address and publishes its utxos.
@@ -26,8 +26,8 @@ class ElectrumMiniWallet(
 ) : CoroutineScope by scope {
 
     // state flow with the current balance
-    private val _balanceFlow = MutableStateFlow<Balance?>(null)
-    val balanceFlow get() = _balanceFlow.asStateFlow()
+    private val _walletStateFlow = MutableStateFlow<WalletState?>(null)
+    val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     private val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
     private val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
@@ -60,12 +60,11 @@ class ElectrumMiniWallet(
                     }
                     is ScriptHashListUnspentResponse -> {
                         if (it.scriptHash == scriptHash) {
-                            logger.info { "${it.unspents.size} utxo(s) for address=$bitcoinAddress" }
-                            it.unspents.forEach {
-                                logger.info { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" }
-                            }
+                            val walletState = WalletState(it.unspents)
+                            logger.info { "${it.unspents.size} utxo(s) for address=$bitcoinAddress, balance=${walletState.balance}" }
+                            it.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                             // publish the updated balance
-                            _balanceFlow.value = Balance(it.unspents)
+                            _walletStateFlow.value = walletState
                         }
                     }
                     else -> {}
