@@ -109,7 +109,6 @@ object Serialization {
         return cbor.encodeToByteArray(SerializedData.serializer(), versioned)
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     fun serialize(state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
         return serialize(ChannelStateWithCommitments.import(state))
     }
@@ -123,10 +122,8 @@ object Serialization {
         }
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     private fun deserialize(bin: ByteVector, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = deserialize(bin.toByteArray(), nodeParams)
 
-    @OptIn(ExperimentalSerializationApi::class)
     fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
         val bin = serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
@@ -136,7 +133,6 @@ object Serialization {
         return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     fun encrypt(key: ByteVector32, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData {
         val bin = serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
@@ -148,7 +144,6 @@ object Serialization {
 
     fun encrypt(key: PrivateKey, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, state)
 
-    @OptIn(ExperimentalSerializationApi::class)
     fun decrypt(key: ByteVector32, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)
