@@ -62,7 +62,7 @@ private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
  * +----------+         +-----+
  *
  */
-private sealed class WatcherState {
+internal sealed class WatcherState {
     abstract fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>>
 }
 
@@ -108,7 +108,7 @@ private data class WatcherDisconnected(
         }
 }
 
-private data class WatcherRunning(
+internal data class WatcherRunning(
     val height: Int,
     val tip: BlockHeader,
     val watches: Set<Watch> = setOf(),
@@ -454,6 +454,7 @@ class ElectrumWatcher(
     }
 
     private var state: WatcherState = WatcherDisconnected()
+    internal val pstate get() = state
 
     private var runJob: Job? = null
     private var timerJob: Job? = null

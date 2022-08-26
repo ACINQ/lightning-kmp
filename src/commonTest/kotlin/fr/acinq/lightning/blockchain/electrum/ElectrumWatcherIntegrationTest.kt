@@ -209,6 +209,9 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
 
+        val watcherState = watcher.pstate as WatcherRunning
+        assertTrue(watcherState.scriptHashSubscriptions.isNotEmpty())
+
         watcher.stop()
         client.stop()
     }
