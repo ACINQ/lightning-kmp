@@ -82,17 +82,18 @@ private data class WatcherDisconnected(
             is ReceivedMessage -> when (val message = event.message) {
                 is HeaderSubscriptionResponse -> {
                     newState {
-                        state = WatcherRunning(
-                            height = message.height,
-                            tip = message.header,
-                            block2tx = block2tx,
-                            watches = watches
-                        )
                         actions = buildList {
                             watches.mapNotNull { registerToScriptHash(it) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }
+                        state = WatcherRunning(
+                            height = message.height,
+                            tip = message.header,
+                            block2tx = block2tx,
+                            watches = watches,
+                            scriptHashSubscriptions = actions.filterIsInstance<RegisterToScriptHashNotification>().map { it.scriptHash }.toSet()
+                        )
                     }
                 }
                 else -> returnState()
