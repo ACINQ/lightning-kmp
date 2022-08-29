@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.sum
@@ -24,10 +25,88 @@ data class InteractiveTxParams(
     val targetFeerate: FeeratePerKw
 ) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
+
+    /** The initiator must use even values and the non-initiator odd values. */
+    fun generateSerialId(): Long {
+        val l = secureRandom.nextLong()
+        return if (isInitiator) (l / 2) * 2 else (l / 2) * 2 + 1
+    }
+}
+
+sealed class FundingContributionFailure {
+    // @formatter:off
+    data class InputOutOfBounds(val txId: ByteVector32, val outputIndex: Int) : FundingContributionFailure() { override fun toString(): String = "invalid input $txId:$outputIndex (out of bounds)" }
+    data class NonPay2wpkhInput(val txId: ByteVector32, val outputIndex: Int) : FundingContributionFailure() { override fun toString(): String = "invalid input $txId:$outputIndex (must use p2wpkh)" }
+    data class InputBelowDust(val txId: ByteVector32, val outputIndex: Int, val amount: Satoshi, val dustLimit: Satoshi) : FundingContributionFailure() { override fun toString(): String = "invalid input $txId:$outputIndex (below dust: amount=$amount, dust=$dustLimit)" }
+    data class InputTxTooLarge(val tx: Transaction) : FundingContributionFailure() { override fun toString(): String = "invalid input tx ${tx.txid} (too large)" }
+    data class NotEnoughFunding(val fundingAmount: Satoshi, val providedAmount: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds provided (expected at least $fundingAmount, got $providedAmount)" }
+    data class NotEnoughFees(val currentFees: Satoshi, val expectedFees: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds to pay fees (expected at least $expectedFees, got $currentFees)" }
+    // @formatter:on
 }
 
 /** Inputs and outputs we contribute to the funding transaction. */
-data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<TxAddOutput>)
+data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<TxAddOutput>) {
+    companion object {
+        /** Create funding contributions from p2wpkh inputs, with an optional p2wpkh change output. */
+        fun create(params: InteractiveTxParams, utxos: List<Pair<Transaction, Int>>, changePubKey: PublicKey?): Either<FundingContributionFailure, FundingContributions> {
+            utxos.forEach { (tx, txOutput) ->
+                if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
+                if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
+                if (!Script.isPay2wpkh(tx.txOut[txOutput].publicKeyScript.toByteArray())) return Either.Left(FundingContributionFailure.NonPay2wpkhInput(tx.txid, txOutput))
+                if (Transaction.write(tx).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
+            }
+            val totalAmountIn = utxos.map { (tx, txOutput) -> tx.txOut[txOutput].amount }.sum()
+            if (totalAmountIn < params.localAmount) {
+                return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localAmount, totalAmountIn))
+            }
+
+            // We compute the fees that we should pay in the shared transaction.
+            val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
+            val dummySignedTxIn = utxos.map { (tx, txOutput) -> TxIn(OutPoint(tx, txOutput.toLong()), ByteVector.empty, 0, dummyWitness) }
+            val dummyChangeTxOut = TxOut(params.localAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
+            val sharedTxOut = TxOut(params.fundingAmount, params.fundingPubkeyScript)
+            val (weightWithoutChange, weightWithChange) = when (params.isInitiator) {
+                true -> {
+                    // The initiator must add the shared output and pay for the fees of the common transaction fields.
+                    val w1 = Transaction(2, dummySignedTxIn, listOf(sharedTxOut), 0).weight()
+                    val w2 = Transaction(2, dummySignedTxIn, listOf(sharedTxOut, dummyChangeTxOut), 0).weight()
+                    Pair(w1, w2)
+                }
+                false -> {
+                    // The non-initiator only pays for the weights of their own inputs and outputs.
+                    val emptyTx = Transaction(2, listOf(), listOf(), 0)
+                    val w1 = Transaction(2, dummySignedTxIn, listOf(), 0).weight() - emptyTx.weight()
+                    val w2 = Transaction(2, dummySignedTxIn, listOf(dummyChangeTxOut), 0).weight() - emptyTx.weight()
+                    Pair(w1, w2)
+                }
+            }
+            val feesWithoutChange = totalAmountIn - params.localAmount
+            if (feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
+                return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
+            }
+
+            // We add a change output if necessary and finalize our funding contributions.
+            val inputs = utxos.map { (tx, txOutput) -> TxAddInput(params.channelId, params.generateSerialId(), tx, txOutput.toLong(), 0) }
+            val sharedOutput = TxAddOutput(params.channelId, params.generateSerialId(), params.fundingAmount, params.fundingPubkeyScript)
+            val changeOutput = when (changePubKey) {
+                null -> listOf()
+                else -> {
+                    val changeAmount = totalAmountIn - params.localAmount - Transactions.weight2fee(params.targetFeerate, weightWithChange)
+                    if (params.dustLimit <= changeAmount) {
+                        listOf(TxAddOutput(params.channelId, params.generateSerialId(), changeAmount, Script.write(Script.pay2wpkh(changePubKey)).byteVector()))
+                    } else {
+                        listOf()
+                    }
+                }
+            }
+            return if (params.isInitiator) {
+                Either.Right(FundingContributions(inputs, listOf(sharedOutput) + changeOutput))
+            } else {
+                Either.Right(FundingContributions(inputs, changeOutput))
+            }
+        }
+    }
+}
 
 /** A lighter version of our peer's TxAddInput that avoids storing potentially large messages in our DB. */
 data class RemoteTxAddInput(val serialId: Long, val outPoint: OutPoint, val txOut: TxOut, val sequence: Long) {
@@ -89,25 +168,27 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
 }
 
 sealed class InteractiveTxSessionAction {
+    // @formatter:off
     data class SendMessage(val msg: InteractiveTxConstructionMessage) : InteractiveTxSessionAction()
     data class SignSharedTx(val sharedTx: SharedTransaction, val sharedOutputIndex: Int, val txComplete: TxComplete?) : InteractiveTxSessionAction()
     sealed class RemoteFailure : InteractiveTxSessionAction()
-    data class InvalidSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure()
-    data class UnknownSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure()
-    data class TooManyInteractiveTxRounds(val channelId: ByteVector32) : RemoteFailure()
-    data class DuplicateSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure()
-    data class DuplicateInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure()
-    data class InputOutOfBounds(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure()
-    data class NonSegwitInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure()
-    data class NonSegwitOutput(val channelId: ByteVector32, val serialId: Long) : RemoteFailure()
-    data class OutputBelowDust(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val dustLimit: Satoshi) : RemoteFailure()
-    data class InvalidTxInputOutputCount(val channelId: ByteVector32, val txId: ByteVector32, val inputCount: Int, val outputCount: Int) : RemoteFailure()
-    data class InvalidTxSharedOutput(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure()
-    data class InvalidTxSharedAmount(val channelId: ByteVector32, val txId: ByteVector32, val amount: Satoshi, val expected: Satoshi) : RemoteFailure()
-    data class InvalidTxChangeAmount(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure()
-    data class InvalidTxWeight(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure()
-    data class InvalidTxFeerate(val channelId: ByteVector32, val txId: ByteVector32, val targetFeerate: FeeratePerKw, val actualFeerate: FeeratePerKw) : RemoteFailure()
-    data class InvalidTxDoesNotDoubleSpendPreviousTx(val channelId: ByteVector32, val txId: ByteVector32, val previousTxId: ByteVector32) : RemoteFailure()
+    data class InvalidSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "invalid serial_id=$serialId" }
+    data class UnknownSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "unknown serial_id=$serialId" }
+    data class TooManyInteractiveTxRounds(val channelId: ByteVector32) : RemoteFailure() { override fun toString(): String = "too many messages exchanged during interactive tx construction" }
+    data class DuplicateSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "duplicate serial_id=$serialId" }
+    data class DuplicateInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "duplicate input $previousTxId:$previousTxOutput (serial_id=$serialId)" }
+    data class InputOutOfBounds(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "invalid input $previousTxId:$previousTxOutput (serial_id=$serialId)" }
+    data class NonSegwitInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not a native segwit input (serial_id=$serialId)" }
+    data class NonSegwitOutput(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "output with serial_id=$serialId is not a native segwit output" }
+    data class OutputBelowDust(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val dustLimit: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid output amount=$amount below dust=$dustLimit (serial_id=$serialId)" }
+    data class InvalidTxInputOutputCount(val channelId: ByteVector32, val txId: ByteVector32, val inputCount: Int, val outputCount: Int) : RemoteFailure() { override fun toString(): String = "invalid number of inputs or outputs (txId=$txId, inputCount=$inputCount, outputCount=$outputCount)" }
+    data class InvalidTxSharedOutput(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure() { override fun toString(): String = "shared output is missing or duplicated (txId=$txId)" }
+    data class InvalidTxSharedAmount(val channelId: ByteVector32, val txId: ByteVector32, val amount: Satoshi, val expected: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid shared output amount (txId=$txId, amount=$amount, expected=$expected)" }
+    data class InvalidTxChangeAmount(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure() { override fun toString(): String = "change amount is too high (txId=$txId)" }
+    data class InvalidTxWeight(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure() { override fun toString(): String = "transaction weight is too big for standardness rules (txId=$txId)" }
+    data class InvalidTxFeerate(val channelId: ByteVector32, val txId: ByteVector32, val targetFeerate: FeeratePerKw, val actualFeerate: FeeratePerKw) : RemoteFailure() { override fun toString(): String = "transaction feerate too low (txId=$txId, targetFeerate=$targetFeerate, actualFeerate=$actualFeerate" }
+    data class InvalidTxDoesNotDoubleSpendPreviousTx(val channelId: ByteVector32, val txId: ByteVector32, val previousTxId: ByteVector32) : RemoteFailure() { override fun toString(): String = "transaction replacement with txId=$txId doesn't double-spend previous attempt (txId=$previousTxId)" }
+    // @formatter:on
 }
 
 data class InteractiveTxSession(
@@ -268,11 +349,5 @@ data class InteractiveTxSession(
     companion object {
         // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
         const val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
-
-        /** The initiator must use even values and the non-initiator odd values. */
-        fun generateSerialId(isInitiator: Boolean): Long {
-            val l = secureRandom.nextLong()
-            return if (isInitiator) (l / 2) * 2 else (l / 2) * 2 + 1
-        }
     }
 }
