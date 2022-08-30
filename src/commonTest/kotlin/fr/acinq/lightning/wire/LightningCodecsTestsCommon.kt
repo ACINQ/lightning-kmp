@@ -350,6 +350,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val testCases = listOf(
             defaultOpen to defaultEncoded,
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)))) to (defaultEncoded + ByteVector("0103101000")),
+            defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(25_000.msat)))) to (defaultEncoded + ByteVector("0103101000 fe470000070261a8")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("00143adb2d0445c4d491cc7568b10323bd6615a91283")), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)))) to (defaultEncoded + ByteVector("001600143adb2d0445c4d491cc7568b10323bd6615a91283 0103101000")),
         )
         // @formatter:on
