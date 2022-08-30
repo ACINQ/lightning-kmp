@@ -287,16 +287,6 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultEncoded + ByteVector("0002 1234 0303010203") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("1234"))), listOf(GenericTlv(3L, ByteVector("010203"))))),
             // channel type
             defaultEncoded + ByteVector("0000 0103101000") to defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)))),
-            // channel type + channel version
-            defaultEncoded + ByteVector("0000 0103101000 fe47000001040000000e") to defaultOpen.copy(
-                tlvStream = TlvStream(
-                    listOf(
-                        ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty),
-                        ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs),
-                        ChannelTlv.ChannelVersionTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
-                    )
-                )
-            ),
             // channel origin tlv records
             defaultEncoded + ByteVector("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2") to defaultOpen.copy(
                 tlvStream = TlvStream(
@@ -330,26 +320,6 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertEquals(expected, decoded)
             val reEncoded = decoded.write()
             assertEquals(it.key, ByteVector(reEncoded))
-        }
-    }
-
-    @Test
-    fun `open_channel channel type fallback to channel version`() {
-        val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1.sat, 1.msat, 1.sat, 1L, 1.sat, 1.msat, FeeratePerKw(1.sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte())
-        val testCases = listOf(
-            defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelVersionTlv(ChannelType.SupportedChannelType.StaticRemoteKey)))) to ChannelType.SupportedChannelType.StaticRemoteKey,
-            defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelVersionTlv(ChannelType.SupportedChannelType.AnchorOutputs)))) to ChannelType.SupportedChannelType.AnchorOutputs,
-            defaultOpen.copy(
-                tlvStream = TlvStream(
-                    listOf(
-                        ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs),
-                        ChannelTlv.ChannelVersionTlv(ChannelType.SupportedChannelType.StaticRemoteKey)
-                    )
-                )
-            ) to ChannelType.SupportedChannelType.AnchorOutputs,
-        )
-        testCases.forEach {
-            assertEquals(it.second, it.first.channelType)
         }
     }
 

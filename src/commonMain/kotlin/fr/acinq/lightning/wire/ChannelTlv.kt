@@ -8,7 +8,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.utils.BitField
 import fr.acinq.lightning.utils.toByteVector
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
@@ -56,47 +55,6 @@ sealed class ChannelTlv : Tlv {
                 val len = input.availableBytes
                 val features = LightningCodecs.bytes(input, len)
                 return ChannelTypeTlv(ChannelType.fromFeatures(Features(features)))
-            }
-        }
-    }
-
-    /** This legacy TLV was used before ChannelType was introduced: it should be removed whenever possible. */
-    @Serializable
-    data class ChannelVersionTlv(val channelType: ChannelType) : ChannelTlv() {
-        override val tag: Long get() = ChannelVersionTlv.tag
-
-        override fun write(out: Output) {
-            val bits = BitField(4)
-            when (channelType) {
-                ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve -> {
-                    bits.setRight(1)
-                    bits.setRight(2)
-                    bits.setRight(3)
-                }
-                ChannelType.SupportedChannelType.StaticRemoteKey -> {
-                    bits.setRight(1)
-                    bits.setRight(3)
-                }
-                ChannelType.SupportedChannelType.Standard -> {
-                    bits.setRight(3)
-                }
-                is ChannelType.UnsupportedChannelType -> throw IllegalArgumentException("unsupported channel type: ${channelType.name}")
-            }
-            LightningCodecs.writeBytes(bits.bytes, out)
-        }
-
-        companion object : TlvValueReader<ChannelVersionTlv> {
-            const val tag: Long = 0x47000001
-
-            override fun read(input: Input): ChannelVersionTlv {
-                val len = input.availableBytes
-                val bits = BitField.from(LightningCodecs.bytes(input, len))
-                val channelType = when {
-                    bits.getRight(2) -> ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve
-                    bits.getRight(1) -> ChannelType.SupportedChannelType.StaticRemoteKey
-                    else -> ChannelType.SupportedChannelType.Standard
-                }
-                return ChannelVersionTlv(channelType)
             }
         }
     }

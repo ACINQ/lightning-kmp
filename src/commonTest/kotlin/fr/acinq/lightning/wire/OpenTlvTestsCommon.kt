@@ -60,24 +60,6 @@ class OpenTlvTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `channel version TLV -- legacy`() {
-        val testCases = listOf(
-            Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, Hex.decode("fe47000001 04 00000007")),
-            Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, Hex.decode("fe47000001 04 0000000f"))
-        )
-
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>)
-        val tlvStreamSerializer = TlvStreamSerializer(false, readers)
-
-        testCases.forEach {
-            val decoded = tlvStreamSerializer.read(it.second)
-            val channelType = decoded.get<ChannelTlv.ChannelVersionTlv>()?.channelType
-            assertEquals(it.first, channelType)
-        }
-    }
-
-    @Test
     fun `channel origin TLV`() {
         val testCases = listOf(
             Pair(
