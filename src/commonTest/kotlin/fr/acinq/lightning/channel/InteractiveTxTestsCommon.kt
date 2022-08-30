@@ -16,9 +16,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `initiator contributes more than non-initiator`() {
         val targetFeerate = FeeratePerKw(5000.sat)
         val fundingA = 120_000.sat
-        val utxosA = listOf(50_000.sat, 35_000.sat, 60_000.sat).map { amount -> TxOut(amount, Script.pay2wpkh(randomKey().publicKey())) }
+        val privKeysA = listOf(randomKey(), randomKey(), randomKey())
+        val utxosA = listOf(50_000.sat, 35_000.sat, 60_000.sat).zip(privKeysA).map { (amount, priv) -> TxOut(amount, Script.pay2wpkh(priv.publicKey())) }
         val fundingB = 40_000.sat
-        val utxosB = listOf(100_000.sat).map { amount -> TxOut(amount, Script.pay2wpkh(randomKey().publicKey())) }
+        val privKeyB = randomKey()
+        val utxosB = listOf(TxOut(100_000.sat, Script.pay2wpkh(privKeyB.publicKey())))
         val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 42)
         assertEquals(f.fundingParamsA.fundingPubkeyScript, f.fundingParamsB.fundingPubkeyScript)
         assertEquals(f.fundingParamsA.fundingAmount, 160_000.sat)
@@ -62,17 +64,44 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 245_000.sat)
         assertEquals(sharedTxA.sharedTx.fees, 7760.sat)
-        assertEquals(sharedTxA.sharedTx.lockTime, 42)
         assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
+
+        // Bob sends signatures first as he contributed less than Alice.
+        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, listOf(randomKey(), privKeyB, randomKey()))
+        assertNotNull(signedTxB)
+        assertEquals(signedTxB.localSigs.witnesses.size, 1)
+        assertNull(sharedTxB.sharedTx.sign(f.channelId, listOf(randomKey())))
+
+        // Alice detects invalid signatures from Bob.
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(privKeyB.publicKey(), Transactions.PlaceHolderSig)))))
+
+        // The resulting transaction is valid and has the right feerate.
+        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, privKeysA.shuffled())?.addRemoteSigs(signedTxB.localSigs)
+        assertNotNull(signedTxA)
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA.drop(1)))
+        assertEquals(signedTxA.localSigs.witnesses.size, 3)
+        val signedTx = signedTxA.signedTx
+        assertEquals(signedTxA.localSigs.txId, signedTx.txid)
+        assertEquals(signedTxB.localSigs.txId, signedTx.txid)
+        assertEquals(signedTx.lockTime, 42)
+        assertEquals(signedTx.txIn.size, 4)
+        assertEquals(signedTx.txOut.size, 3)
+        Transaction.correctlySpends(signedTx, (sharedTxA.sharedTx.localInputs + sharedTxB.sharedTx.localInputs).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTx.weight())
+        assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test
     fun `initiator contributes less than non-initiator`() {
         val targetFeerate = FeeratePerKw(3000.sat)
         val fundingA = 10_000.sat
-        val utxosA = listOf(TxOut(50_000.sat, Script.pay2wpkh(randomKey().publicKey())))
+        val privKeyA = randomKey()
+        val utxosA = listOf(TxOut(50_000.sat, Script.pay2wpkh(privKeyA.publicKey())))
         val fundingB = 50_000.sat
-        val utxosB = listOf(TxOut(80_000.sat, Script.pay2wpkh(randomKey().publicKey())))
+        val privKeyB = randomKey()
+        val utxosB = listOf(TxOut(80_000.sat, Script.pay2wpkh(privKeyB.publicKey())))
         val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 60_000.sat)
 
@@ -105,15 +134,34 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 130_000.sat)
         assertEquals(sharedTxA.sharedTx.fees, 3024.sat)
-        assertEquals(sharedTxA.sharedTx.lockTime, 0)
         assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
+
+        // Alice sends signatures first as she contributed less than Bob.
+        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, listOf(privKeyA))
+        assertNotNull(signedTxA)
+        assertEquals(signedTxA.localSigs.witnesses.size, 1)
+
+        // The resulting transaction is valid and has the right feerate.
+        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, listOf(privKeyB))?.addRemoteSigs(signedTxA.localSigs)
+        assertNotNull(signedTxB)
+        assertEquals(signedTxB.localSigs.witnesses.size, 1)
+        val signedTx = signedTxB.signedTx
+        assertEquals(signedTxA.localSigs.txId, signedTx.txid)
+        assertEquals(signedTxB.localSigs.txId, signedTx.txid)
+        assertEquals(signedTx.lockTime, 0)
+        assertEquals(signedTx.txIn.size, 2)
+        assertEquals(signedTx.txOut.size, 3)
+        Transaction.correctlySpends(signedTx, (sharedTxA.sharedTx.localInputs + sharedTxB.sharedTx.localInputs).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val feerate = Transactions.fee2rate(signedTxB.tx.fees, signedTx.weight())
+        assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test
     fun `non-initiator does not contribute`() {
         val targetFeerate = FeeratePerKw(2500.sat)
         val fundingA = 150_000.sat
-        val utxosA = listOf(80_000.sat, 120_000.sat).map { amount -> TxOut(amount, Script.pay2wpkh(randomKey().publicKey())) }
+        val privKeyA = randomKey()
+        val utxosA = listOf(80_000.sat, 120_000.sat).map { amount -> TxOut(amount, Script.pay2wpkh(privKeyA.publicKey())) }
         val f = createFixture(fundingA, utxosA, 0.sat, listOf(), targetFeerate, 330.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 150_000.sat)
 
@@ -149,9 +197,27 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 200_000.sat)
         assertEquals(sharedTxA.sharedTx.fees, 2205.sat)
-        assertEquals(sharedTxA.sharedTx.lockTime, 0)
         assertEquals(sharedTxA.sharedTx.localFees(f.fundingParamsA), 2205.sat)
         assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 0.sat)
+
+        // Bob sends signatures first as he did not contribute at all.
+        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, listOf())
+        assertNotNull(signedTxB)
+        assertEquals(signedTxB.localSigs.witnesses.size, 0)
+
+        // The resulting transaction is valid and has the right feerate.
+        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, listOf(privKeyA))?.addRemoteSigs(signedTxB.localSigs)
+        assertNotNull(signedTxA)
+        assertEquals(signedTxA.localSigs.witnesses.size, 2)
+        val signedTx = signedTxA.signedTx
+        assertEquals(signedTxA.localSigs.txId, signedTx.txid)
+        assertEquals(signedTxB.localSigs.txId, signedTx.txid)
+        assertEquals(signedTx.lockTime, 0)
+        assertEquals(signedTx.txIn.size, 2)
+        assertEquals(signedTx.txOut.size, 2)
+        Transaction.correctlySpends(signedTx, sharedTxA.sharedTx.localInputs.map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTx.weight())
+        assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test

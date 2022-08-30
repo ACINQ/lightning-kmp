@@ -7,6 +7,8 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.Try
+import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.*
 
@@ -139,6 +141,31 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
         val outputs = (localTxOut + remoteTxOut).sortedBy { (serialId, _) -> serialId }.map { (_, txOut) -> txOut }
         return Transaction(2, inputs, outputs, lockTime)
     }
+
+    fun sign(channelId: ByteVector32, privKeys: List<PrivateKey>): PartiallySignedSharedTransaction? {
+        val unsignedTx = buildUnsignedTx()
+        val localSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
+            when (val input = localInputs.find { txIn.outPoint == OutPoint(it.previousTx, it.previousTxOutput) }) {
+                null -> null
+                else -> {
+                    // This input belongs to us, let's see if we have the corresponding private key.
+                    val txOut = input.previousTx.txOut[input.previousTxOutput.toInt()]
+                    when (val priv = privKeys.find { txOut.publicKeyScript == Script.write(Script.pay2wpkh(it.publicKey())).byteVector() }) {
+                        null -> null
+                        else -> {
+                            // We have the private key, let's sign this input.
+                            val sig = Transaction.signInput(unsignedTx, i, Script.pay2pkh(priv.publicKey()), SigHash.SIGHASH_ALL, txOut.amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+                            Script.witnessPay2wpkh(priv.publicKey(), sig.byteVector())
+                        }
+                    }
+                }
+            }
+        }.filterNotNull()
+        return when (localSigs.size) {
+            localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx.txid, localSigs))
+            else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of private keys.
+        }
+    }
 }
 
 /** Signed transaction created collaboratively. */
@@ -150,6 +177,23 @@ sealed class SignedSharedTransaction {
 
 data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, override val localSigs: TxSignatures) : SignedSharedTransaction() {
     override val signedTx = null
+
+    fun addRemoteSigs(remoteSigs: TxSignatures): FullySignedSharedTransaction? {
+        if (remoteSigs.witnesses.size != tx.remoteInputs.size) {
+            return null
+        }
+        val fullySignedTx = FullySignedSharedTransaction(tx, localSigs, remoteSigs)
+        if (remoteSigs.txId != fullySignedTx.signedTx.txid) {
+            return null
+        }
+        val localOutputs = tx.localInputs.associate { i -> OutPoint(i.previousTx, i.previousTxOutput) to i.previousTx.txOut[i.previousTxOutput.toInt()] }
+        val remoteOutputs = tx.remoteInputs.associate { i -> i.outPoint to i.txOut }
+        val previousOutputs = localOutputs + remoteOutputs
+        return when (runTrying { Transaction.correctlySpends(fullySignedTx.signedTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
+            is Try.Success -> fullySignedTx
+            is Try.Failure -> null
+        }
+    }
 }
 
 data class FullySignedSharedTransaction(override val tx: SharedTransaction, override val localSigs: TxSignatures, val remoteSigs: TxSignatures) : SignedSharedTransaction() {
