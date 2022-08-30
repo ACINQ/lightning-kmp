@@ -4,6 +4,7 @@ import fr.acinq.lightning.Feature.*
 import fr.acinq.lightning.Features.Companion.validateFeatureGraph
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.BitField
+import fr.acinq.secp256k1.Hex
 import kotlin.test.*
 
 class FeaturesTestsCommon : LightningTestSuite() {
@@ -225,9 +226,9 @@ class FeaturesTestsCommon : LightningTestSuite() {
     @Test
     fun `features to bytes`() {
         val testCases = mapOf(
-            byteArrayOf() to Features.empty,
-            byteArrayOf(0x01, 0x00) to Features(VariableLengthOnion to FeatureSupport.Mandatory),
-            byteArrayOf(0x02, 0x8a.toByte(), 0x8a.toByte()) to Features(
+            Hex.decode("") to Features.empty,
+            Hex.decode("0100") to Features(VariableLengthOnion to FeatureSupport.Mandatory),
+            Hex.decode("028a8a") to Features(
                 OptionDataLossProtect to FeatureSupport.Optional,
                 InitialRoutingSync to FeatureSupport.Optional,
                 ChannelRangeQueries to FeatureSupport.Optional,
@@ -236,7 +237,7 @@ class FeaturesTestsCommon : LightningTestSuite() {
                 PaymentSecret to FeatureSupport.Optional,
                 BasicMultiPartPayment to FeatureSupport.Optional
             ),
-            byteArrayOf(0x09, 0x00, 0x42, 0x00) to Features(
+            Hex.decode("09004200") to Features(
                 mapOf(
                     VariableLengthOnion to FeatureSupport.Optional,
                     PaymentSecret to FeatureSupport.Mandatory,
@@ -244,9 +245,9 @@ class FeaturesTestsCommon : LightningTestSuite() {
                 ),
                 setOf(UnknownFeature(24))
             ),
-            byteArrayOf(0x52, 0x00, 0x00, 0x00) to Features(
-                mapOf(),
-                setOf(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30))
+            Hex.decode("52000000") to Features(
+                mapOf(DualFunding to FeatureSupport.Mandatory),
+                setOf(UnknownFeature(25), UnknownFeature(30))
             )
         )
 

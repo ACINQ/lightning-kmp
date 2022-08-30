@@ -152,6 +152,7 @@ object Node {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Optional,
                 Feature.AnchorOutputs to FeatureSupport.Optional,
+                Feature.DualFunding to FeatureSupport.Mandatory,
                 Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.PaymentMetadata to FeatureSupport.Optional,
                 Feature.TrampolinePayment to FeatureSupport.Optional,
