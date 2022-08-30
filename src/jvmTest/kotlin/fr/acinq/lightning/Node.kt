@@ -34,6 +34,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import java.io.File
 import java.nio.file.Files
 import java.sql.DriverManager
@@ -42,7 +44,7 @@ import java.sql.DriverManager
  * this is a very simple Phoenix node that can be used to "test" Phoenix without the actual apps
  */
 object Node {
-    private val logger by lightningLogger()
+    private val logger = LoggerFactory.default.newLogger(this::class)
 
     @Serializable
     data class Ping(val payload: String)
@@ -139,6 +141,7 @@ object Node {
         // However we're currently only connecting to the Acinq node, which will reject mandatory anchors but will always use anchor_outputs when opening channels to us.
         // We will change that and set this feature to mandatory once the Acinq node is ready to publicly activate anchor_outputs.
         val nodeParams = NodeParams(
+            loggerFactory = LoggerFactory.default,
             keyManager = keyManager,
             alias = "phoenix",
             features = Features(

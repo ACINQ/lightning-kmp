@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.utils.lightningLogger
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
 
@@ -19,8 +18,6 @@ sealed class FailureMessage {
         const val PERM = 0x4000
         const val NODE = 0x2000
         const val UPDATE = 0x1000
-
-        val logger = lightningLogger()
 
         private fun readChannelUpdate(stream: ByteArrayInput): ChannelUpdate {
             val len = LightningCodecs.u16(stream)

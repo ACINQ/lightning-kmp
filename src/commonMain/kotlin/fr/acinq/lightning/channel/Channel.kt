@@ -11,9 +11,13 @@ import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.transactions.outgoings
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.btc
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import org.kodein.log.Logger
+import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -139,8 +143,7 @@ sealed class ChannelState {
     val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
-
-    val logger by lightningLogger()
+    val logger: Logger get() = staticParams.nodeParams.loggerFactory.newLogger(this::class)
 
     /**
      * @param event input event (for example, a message was received, a command was sent by the GUI/API, etc)

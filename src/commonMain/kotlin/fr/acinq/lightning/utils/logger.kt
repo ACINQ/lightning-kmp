@@ -32,3 +32,4 @@ fun lightningLogger(of: KClass<*>) = LightningLoggerDelegateProvider(of)
 inline fun <reified T> T.lightningLogger() = lightningLogger(T::class)
 
 inline fun <reified T> lightningLogger() = lightningLogger(T::class)
+
