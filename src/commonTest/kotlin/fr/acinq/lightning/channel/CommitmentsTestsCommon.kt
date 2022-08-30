@@ -361,10 +361,10 @@ class CommitmentsTestsCommon : LightningTestSuite() {
 
     // See https://github.com/lightningnetwork/lightning-rfc/issues/728
     @Test
-    fun `funder keeps additional reserve to avoid channel being stuck`() {
-        val isFunder = true
+    fun `initiator keeps additional reserve to avoid channel being stuck`() {
+        val isInitiator = true
         val currentBlockHeight = 144L
-        val c = makeCommitments(100000000.msat, 50000000.msat, FeeratePerKw(2500.sat), 546.sat, isFunder)
+        val c = makeCommitments(100000000.msat, 50000000.msat, FeeratePerKw(2500.sat), 546.sat, isInitiator)
         val (_, cmdAdd) = TestsHelper.makeCmdAdd(c.availableBalanceForSend(), randomKey().publicKey(), currentBlockHeight)
         val (c1, _) = c.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).right!!
         assertEquals(c1.availableBalanceForSend(), 0.msat)
@@ -471,10 +471,10 @@ class CommitmentsTestsCommon : LightningTestSuite() {
 
     @OptIn(ExperimentalUnsignedTypes::class)
     companion object {
-        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments {
+        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments {
             val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())
             val localParams = LocalParams(
-                randomKey().publicKey(), channelKeys, dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, Features.empty
+                randomKey().publicKey(), channelKeys, dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
                 randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50,
@@ -509,7 +509,7 @@ class CommitmentsTestsCommon : LightningTestSuite() {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments {
             val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())
             val localParams = LocalParams(
-                localNodeId, channelKeys, 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, Features.empty
+                localNodeId, channelKeys, 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
                 remoteNodeId, 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty

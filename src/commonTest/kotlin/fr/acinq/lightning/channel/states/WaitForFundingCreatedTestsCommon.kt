@@ -44,7 +44,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv FundingCreated (funder can't pay fees)`() {
+    fun `recv FundingCreated (initiator can't pay fees)`() {
         val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, 1_000_100.sat, 1_000_000.sat.toMilliSatoshi())
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         actions1.hasOutgoingMessage<Error>()

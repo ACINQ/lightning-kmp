@@ -24,7 +24,7 @@ data class WaitForAcceptChannel(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived && event.message is AcceptChannel -> {
-                when (val res = Helpers.validateParamsFunder(staticParams.nodeParams, initFunder, lastSent, event.message)) {
+                when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, initFunder, lastSent, event.message)) {
                     is Either.Right -> {
                         val channelFeatures = res.value
                         val remoteParams = RemoteParams(

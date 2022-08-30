@@ -45,12 +45,12 @@ interface KeyManager {
 
     /**
      *
-     * @param isFunder true if we're funding this channel
+     * @param isInitiator true if we are the channel initiator
      * @return a partial key path for a new funding public key. This key path will be extended:
      *         - with a specific "chain" prefix
      *         - with a specific "funding pubkey" suffix
      */
-    fun newFundingKeyPath(isFunder: Boolean): KeyPath
+    fun newFundingKeyPath(isInitiator: Boolean): KeyPath
 
     /**
      * generate channel-specific keys and secrets

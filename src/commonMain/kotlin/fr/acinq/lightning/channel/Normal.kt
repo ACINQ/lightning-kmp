@@ -157,7 +157,7 @@ data class Normal(
                                     ShuttingDown(staticParams, currentTip, currentOnChainFeerates, commitments1, localShutdown, remoteShutdown, closingFeerates)
                                 } else {
                                     logger.warning { "c:$channelId we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
-                                    val closingTxProposed = if (isFunder) {
+                                    val closingTxProposed = if (isInitiator) {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                             keyManager,
                                             commitments1,
@@ -230,7 +230,7 @@ data class Normal(
                                 if (this.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))
                                 val commitments1 = commitments.copy(remoteChannelData = event.message.channelData)
                                 when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isFunder -> {
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isInitiator -> {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                             keyManager,
                                             commitments1,

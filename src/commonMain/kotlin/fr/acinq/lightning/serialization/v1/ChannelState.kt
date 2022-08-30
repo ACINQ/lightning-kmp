@@ -189,7 +189,7 @@ data class LocalParams constructor(
         from.htlcMinimum,
         from.toSelfDelay,
         from.maxAcceptedHtlcs,
-        from.isFunder,
+        from.isInitiator,
         from.defaultFinalScriptPubKey,
         from.features
     )
@@ -778,7 +778,7 @@ data class Negotiating(
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
-        require(!commitments.localParams.isFunder || !closingTxProposed.any { it.isEmpty() }) { "funder must have at least one closing signature for every negotiation attempt because it initiates the closing" }
+        require(!commitments.localParams.isFunder || !closingTxProposed.any { it.isEmpty() }) { "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing" }
     }
 
     constructor(from: fr.acinq.lightning.channel.Negotiating) : this(

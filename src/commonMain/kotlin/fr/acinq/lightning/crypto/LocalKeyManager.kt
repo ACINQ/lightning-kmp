@@ -57,8 +57,8 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
         return Pair(pub, Script.write(script))
     }
 
-    override fun newFundingKeyPath(isFunder: Boolean): KeyPath {
-        val last = hardened(if (isFunder) 1 else 0)
+    override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
+        val last = hardened(if (isInitiator) 1 else 0)
         fun next() = secureRandom.nextInt().toLong() and 0xFFFFFFFF
         return KeyPath(listOf(next(), next(), next(), next(), next(), next(), next(), next(), last))
     }

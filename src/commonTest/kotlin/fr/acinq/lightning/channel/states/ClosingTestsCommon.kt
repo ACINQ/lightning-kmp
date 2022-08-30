@@ -1599,7 +1599,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (funder, tx found)`() {
+    fun `recv GetTxResponse (initiator, tx found)`() {
         val (alice, _) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1611,7 +1611,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (funder, tx not found)`() {
+    fun `recv GetTxResponse (initiator, tx not found)`() {
         val (alice, _) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1624,7 +1624,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (fundee, tx found)`() {
+    fun `recv GetTxResponse (non-initiator, tx found)`() {
         val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1636,7 +1636,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (fundee, tx not found)`() {
+    fun `recv GetTxResponse (non-initiator, tx not found)`() {
         val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1648,13 +1648,13 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (fundee, tx not found, timeout)`() {
+    fun `recv GetTxResponse (non-initiator, tx not found, timeout)`() {
         val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
 
         // test starts here
-        val (bob1, _) = bob.process(ChannelEvent.NewBlock(bob.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob1, _) = bob.process(ChannelEvent.NewBlock(bob.currentBlockHeight + Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         val (bob2, actions2) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(fundingTx.txid, null, currentTimestampMillis())))
         assertTrue { bob2 is Aborted }
         assertEquals(1, actions2.size)
@@ -1688,7 +1688,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val (bob2, _) = bob1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertEquals(bob1, bob2)
         // Fast forward after the funding timeout.
-        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob3, _) = bob2.process(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         // We give up, Channel is aborted
         val (bob4, actions4) = bob3.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertTrue { bob4 is Aborted }
@@ -1852,7 +1852,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         fun initForceClose(): Pair<Closing, Closing> {
             val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-            // funder
+            // initiator
             val alice1 = run {
                 val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(alice1 is Closing)
@@ -1889,7 +1889,7 @@ class ClosingTestsCommon : LightningTestSuite() {
                 alice1
             }
 
-            // fundee
+            // non-initiator
             val bob1 = run {
                 val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
                 assertTrue(bob1 is Closing)

@@ -8,13 +8,13 @@ import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.LocalParams
 
 object PeerChannels {
-    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams {
-        // we make sure that funder and fundee key path end differently
-        val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)
-        return makeChannelParams(nodeParams, defaultFinalScriptPubkey, isFunder, fundingAmount, fundingKeyPath)
+    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, fundingAmount: Satoshi): LocalParams {
+        // we make sure that initiator and non-initiator key path end differently
+        val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator)
+        return makeChannelParams(nodeParams, defaultFinalScriptPubkey, isInitiator, fundingAmount, fundingKeyPath)
     }
 
-    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: KeyPath): LocalParams {
+    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, fundingAmount: Satoshi, fundingKeyPath: KeyPath): LocalParams {
         return LocalParams(
             nodeParams.nodeId,
             nodeParams.keyManager.channelKeys(fundingKeyPath),
@@ -24,7 +24,7 @@ object PeerChannels {
             htlcMinimum = nodeParams.htlcMinimum,
             toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
             maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-            isFunder = isFunder,
+            isInitiator = isInitiator,
             defaultFinalScriptPubKey = defaultFinalScriptPubkey,
             features = nodeParams.features
         )

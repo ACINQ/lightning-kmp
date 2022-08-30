@@ -388,7 +388,7 @@ data class LocalParams(
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val isFunder: Boolean,
+    val isInitiator: Boolean,
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 )

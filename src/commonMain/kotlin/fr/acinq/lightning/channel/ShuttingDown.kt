@@ -47,7 +47,7 @@ data class ShuttingDown(
                         is Either.Right -> {
                             val (commitments1, revocation) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isFunder -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isInitiator -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                         keyManager,
                                         commitments1,
@@ -96,7 +96,7 @@ data class ShuttingDown(
                             val (commitments1, actions) = result.value
                             val actions1 = actions.toMutableList()
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isFunder -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isInitiator -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                         keyManager,
                                         commitments1,

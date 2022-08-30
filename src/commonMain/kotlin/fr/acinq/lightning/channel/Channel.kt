@@ -5,7 +5,7 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.channel.Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK
+import fr.acinq.lightning.channel.Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Serialization
@@ -233,19 +233,19 @@ sealed class ChannelState {
     internal fun handleGetFundingTx(getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): Pair<ChannelState, List<ChannelAction>> = when {
         getTxResponse.tx_opt != null -> Pair(this, emptyList()) // the funding tx exists, nothing to do
         fundingTx_opt != null -> {
-            // if we are funder, we never give up
+            // if we are the initiator, we never give up
             logger.info { "republishing the funding tx..." }
             // TODO we should also check if the funding tx has been double-spent
             // see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
             this to listOf(ChannelAction.Blockchain.PublishTx(fundingTx_opt))
         }
-        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE_BLOCK -> {
-            // if we are fundee, we give up after some time
+        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_NON_INITIATOR_BLOCK -> {
+            // if we are not the initiator, we give up after some time
             handleFundingTimeout()
         }
         else -> {
             // let's wait a little longer
-            logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_FUNDEE_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
+            logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_NON_INITIATOR_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
             Pair(this, emptyList())
         }
     }
@@ -307,7 +307,7 @@ sealed class ChannelState {
 sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
-    val isFunder: Boolean get() = commitments.localParams.isFunder
+    val isInitiator: Boolean get() = commitments.localParams.isInitiator
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
@@ -546,7 +546,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE_BLOCK blocks" }
+        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_NON_INITIATOR_BLOCK blocks" }
         val exc = FundingTxTimedout(channelId)
         val error = Error(channelId, exc.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
@@ -578,8 +578,8 @@ object Channel {
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
-    // as a fundee, we will wait that block count for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-    const val FUNDING_TIMEOUT_FUNDEE_BLOCK = 2016
+    // as a non-initiator, we will wait that block count for the funding tx to confirm (the initiator will rely on the funding tx being double-spent)
+    const val FUNDING_TIMEOUT_NON_INITIATOR_BLOCK = 2016
 
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()

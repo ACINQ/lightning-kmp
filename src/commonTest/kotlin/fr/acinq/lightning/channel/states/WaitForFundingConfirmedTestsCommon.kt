@@ -282,7 +282,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (bob3, _) = bob2.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertEquals(bob2, bob3)
         // Fast forward after the funding timeout
-        val (bob4, _) = bob3.processEx(ChannelEvent.NewBlock(bob3.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob4, _) = bob3.processEx(ChannelEvent.NewBlock(bob3.currentBlockHeight + Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         // We give up, Channel is aborted
         val (bob5, actions5) = bob4.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertTrue { bob5 is Aborted }
@@ -302,7 +302,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (bob2, _) = bob1.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertEquals(bob1, bob2)
         // Fast forward after the funding timeout
-        val (bob3, _) = bob2.processEx(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_FUNDEE_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
+        val (bob3, _) = bob2.processEx(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
         // We give up, Channel is aborted
         val (bob4, actions4) = bob3.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
         assertTrue { bob4 is Aborted }

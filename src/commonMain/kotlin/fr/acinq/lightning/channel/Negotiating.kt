@@ -30,7 +30,7 @@ data class Negotiating(
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
-        require(!commitments.localParams.isFunder || !closingTxProposed.any { it.isEmpty() }) { "funder must have at least one closing signature for every negotiation attempt because it initiates the closing" }
+        require(!commitments.localParams.isInitiator || !closingTxProposed.any { it.isEmpty() }) { "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing" }
     }
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -67,8 +67,8 @@ data class Negotiating(
                                 val theirFeeRange = event.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
                                 val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
                                 when {
-                                    theirFeeRange != null && !commitments.localParams.isFunder -> {
-                                        // if we are fundee and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
+                                    theirFeeRange != null && !commitments.localParams.isInitiator -> {
+                                        // if we are not the initiator and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                                         // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
                                         val closingFees = Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
                                         val closingFee = when {
@@ -104,7 +104,7 @@ data class Negotiating(
                                     }
                                     else -> {
                                         val (closingTx, closingSigned) = run {
-                                            // if we are fundee and we were waiting for them to send their first closing_signed, we compute our firstClosingFee, otherwise we use the last one we sent
+                                            // if we are not the initiator and we were waiting for them to send their first closing_signed, we compute our firstClosingFee, otherwise we use the last one we sent
                                             val localClosingFees = Helpers.Closing.firstClosingFee(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
                                             val nextPreferredFee = Helpers.Closing.nextClosingFee(lastLocalClosingSigned?.feeSatoshis ?: localClosingFees.preferred, remoteClosingFee)
                                             Helpers.Closing.makeClosingTx(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), localClosingFees.copy(preferred = nextPreferredFee))
