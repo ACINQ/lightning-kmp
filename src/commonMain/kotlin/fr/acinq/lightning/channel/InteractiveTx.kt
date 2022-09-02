@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
-import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
@@ -27,12 +26,6 @@ data class InteractiveTxParams(
     val targetFeerate: FeeratePerKw
 ) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
-
-    /** The initiator must use even values and the non-initiator odd values. */
-    fun generateSerialId(): Long {
-        val l = secureRandom.nextLong()
-        return if (isInitiator) (l / 2) * 2 else (l / 2) * 2 + 1
-    }
 }
 
 sealed class FundingContributionFailure {
@@ -87,15 +80,18 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
                 return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
             }
 
+            // The initiator's serial IDs must use even values and the non-initiator odd values.
+            val serialIdParity = if (params.isInitiator) 0 else 1
+
             // We add a change output if necessary and finalize our funding contributions.
-            val inputs = utxos.map { (tx, txOutput) -> TxAddInput(params.channelId, params.generateSerialId(), tx, txOutput.toLong(), 0) }
-            val sharedOutput = TxAddOutput(params.channelId, params.generateSerialId(), params.fundingAmount, params.fundingPubkeyScript)
+            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
+            val sharedOutput = TxAddOutput(params.channelId, 2 * utxos.size.toLong() + serialIdParity, params.fundingAmount, params.fundingPubkeyScript)
             val changeOutput = when (changePubKey) {
                 null -> listOf()
                 else -> {
                     val changeAmount = totalAmountIn - params.localAmount - Transactions.weight2fee(params.targetFeerate, weightWithChange)
                     if (params.dustLimit <= changeAmount) {
-                        listOf(TxAddOutput(params.channelId, params.generateSerialId(), changeAmount, Script.write(Script.pay2wpkh(changePubKey)).byteVector()))
+                        listOf(TxAddOutput(params.channelId, 2 * (utxos.size + 1).toLong() + serialIdParity, changeAmount, Script.write(Script.pay2wpkh(changePubKey)).byteVector()))
                     } else {
                         listOf()
                     }
