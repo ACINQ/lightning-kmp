@@ -6,9 +6,7 @@ import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.JsonElement
-import kotlin.native.concurrent.ThreadLocal
 
-@ThreadLocal
 object BitcoindService {
     private val client = BitcoinJsonRPCClient
 
