@@ -76,6 +76,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Ignore
+    @Test
     fun `recv Disconnected`() {
         val (alice, _, _) = init()
         val (alice1, actions1) = alice.process(ChannelEvent.Disconnected)
