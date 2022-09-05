@@ -19,6 +19,7 @@ import kotlin.test.assertTrue
 
 class CompatibilityTestsCommon {
     @Ignore
+    @Test
     fun `generate data`() {
         // generate test data
         val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
