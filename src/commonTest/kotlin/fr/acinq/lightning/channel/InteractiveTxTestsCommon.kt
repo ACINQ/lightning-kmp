@@ -4,8 +4,8 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.InteractiveTxSession.Companion.generateSerialId
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
@@ -16,12 +16,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `initiator contributes more than non-initiator`() {
         val targetFeerate = FeeratePerKw(5000.sat)
         val fundingA = 120_000.sat
-        val utxosA = listOf(50_000.sat, 35_000.sat, 60_000.sat)
-        val changeA = listOf(15_000.sat)
+        val privKeysA = listOf(randomKey(), randomKey(), randomKey())
+        val utxosA = listOf(50_000.sat, 35_000.sat, 60_000.sat).zip(privKeysA).map { (amount, priv) -> TxOut(amount, Script.pay2wpkh(priv.publicKey())) }
         val fundingB = 40_000.sat
-        val utxosB = listOf(100_000.sat)
-        val changeB = listOf(55_000.sat)
-        val f = createFixture(fundingA, utxosA, changeA, fundingB, utxosB, changeB, targetFeerate, 660.sat, 42)
+        val privKeyB = randomKey()
+        val utxosB = listOf(TxOut(100_000.sat, Script.pay2wpkh(privKeyB.publicKey())))
+        val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 42)
         assertEquals(f.fundingParamsA.fundingPubkeyScript, f.fundingParamsB.fundingPubkeyScript)
         assertEquals(f.fundingParamsA.fundingAmount, 160_000.sat)
         assertEquals(f.fundingParamsA.fundingAmount, f.fundingParamsB.fundingAmount)
@@ -63,22 +63,46 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 245_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 15_000.sat)
-        assertEquals(sharedTxA.sharedTx.lockTime, 42)
-        assertEquals(sharedTxA.sharedTx.localFees(f.fundingParamsA), 10_000.sat)
-        assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 5_000.sat)
+        assertEquals(sharedTxA.sharedTx.fees, 7760.sat)
+        assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
+
+        // Bob sends signatures first as he contributed less than Alice.
+        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, listOf(randomKey(), privKeyB, randomKey()))
+        assertNotNull(signedTxB)
+        assertEquals(signedTxB.localSigs.witnesses.size, 1)
+        assertNull(sharedTxB.sharedTx.sign(f.channelId, listOf(randomKey())))
+
+        // Alice detects invalid signatures from Bob.
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(privKeyB.publicKey(), Transactions.PlaceHolderSig)))))
+
+        // The resulting transaction is valid and has the right feerate.
+        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, privKeysA.shuffled())?.addRemoteSigs(signedTxB.localSigs)
+        assertNotNull(signedTxA)
+        assertNull(sharedTxA.sharedTx.sign(f.channelId, privKeysA.drop(1)))
+        assertEquals(signedTxA.localSigs.witnesses.size, 3)
+        val signedTx = signedTxA.signedTx
+        assertEquals(signedTxA.localSigs.txId, signedTx.txid)
+        assertEquals(signedTxB.localSigs.txId, signedTx.txid)
+        assertEquals(signedTx.lockTime, 42)
+        assertEquals(signedTx.txIn.size, 4)
+        assertEquals(signedTx.txOut.size, 3)
+        Transaction.correctlySpends(signedTx, (sharedTxA.sharedTx.localInputs + sharedTxB.sharedTx.localInputs).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTx.weight())
+        assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test
     fun `initiator contributes less than non-initiator`() {
         val targetFeerate = FeeratePerKw(3000.sat)
         val fundingA = 10_000.sat
-        val utxosA = listOf(50_000.sat)
-        val changeA = listOf(35_000.sat)
+        val privKeyA = randomKey()
+        val utxosA = listOf(TxOut(50_000.sat, Script.pay2wpkh(privKeyA.publicKey())))
         val fundingB = 50_000.sat
-        val utxosB = listOf(80_000.sat)
-        val changeB = listOf(28_000.sat)
-        val f = createFixture(fundingA, utxosA, changeA, fundingB, utxosB, changeB, targetFeerate, 660.sat, 0)
+        val privKeyB = randomKey()
+        val utxosB = listOf(TxOut(80_000.sat, Script.pay2wpkh(privKeyB.publicKey())))
+        val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 60_000.sat)
 
         val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
@@ -109,19 +133,36 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 130_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 7_000.sat)
-        assertEquals(sharedTxA.sharedTx.lockTime, 0)
-        assertEquals(sharedTxA.sharedTx.localFees(f.fundingParamsA), 5_000.sat)
-        assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 2_000.sat)
+        assertEquals(sharedTxA.sharedTx.fees, 3024.sat)
+        assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
+
+        // Alice sends signatures first as she contributed less than Bob.
+        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, listOf(privKeyA))
+        assertNotNull(signedTxA)
+        assertEquals(signedTxA.localSigs.witnesses.size, 1)
+
+        // The resulting transaction is valid and has the right feerate.
+        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, listOf(privKeyB))?.addRemoteSigs(signedTxA.localSigs)
+        assertNotNull(signedTxB)
+        assertEquals(signedTxB.localSigs.witnesses.size, 1)
+        val signedTx = signedTxB.signedTx
+        assertEquals(signedTxA.localSigs.txId, signedTx.txid)
+        assertEquals(signedTxB.localSigs.txId, signedTx.txid)
+        assertEquals(signedTx.lockTime, 0)
+        assertEquals(signedTx.txIn.size, 2)
+        assertEquals(signedTx.txOut.size, 3)
+        Transaction.correctlySpends(signedTx, (sharedTxA.sharedTx.localInputs + sharedTxB.sharedTx.localInputs).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val feerate = Transactions.fee2rate(signedTxB.tx.fees, signedTx.weight())
+        assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test
     fun `non-initiator does not contribute`() {
         val targetFeerate = FeeratePerKw(2500.sat)
         val fundingA = 150_000.sat
-        val utxosA = listOf(80_000.sat, 120_000.sat)
-        val changeA = listOf(45_000.sat)
-        val f = createFixture(fundingA, utxosA, changeA, 0.sat, listOf(), listOf(), targetFeerate, 330.sat, 0)
+        val privKeyA = randomKey()
+        val utxosA = listOf(80_000.sat, 120_000.sat).map { amount -> TxOut(amount, Script.pay2wpkh(privKeyA.publicKey())) }
+        val f = createFixture(fundingA, utxosA, 0.sat, listOf(), targetFeerate, 330.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 150_000.sat)
 
         val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
@@ -155,15 +196,33 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 200_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 5_000.sat)
-        assertEquals(sharedTxA.sharedTx.lockTime, 0)
-        assertEquals(sharedTxA.sharedTx.localFees(f.fundingParamsA), 5_000.sat)
+        assertEquals(sharedTxA.sharedTx.fees, 2205.sat)
+        assertEquals(sharedTxA.sharedTx.localFees(f.fundingParamsA), 2205.sat)
         assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 0.sat)
+
+        // Bob sends signatures first as he did not contribute at all.
+        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, listOf())
+        assertNotNull(signedTxB)
+        assertEquals(signedTxB.localSigs.witnesses.size, 0)
+
+        // The resulting transaction is valid and has the right feerate.
+        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, listOf(privKeyA))?.addRemoteSigs(signedTxB.localSigs)
+        assertNotNull(signedTxA)
+        assertEquals(signedTxA.localSigs.witnesses.size, 2)
+        val signedTx = signedTxA.signedTx
+        assertEquals(signedTxA.localSigs.txId, signedTx.txid)
+        assertEquals(signedTxB.localSigs.txId, signedTx.txid)
+        assertEquals(signedTx.lockTime, 0)
+        assertEquals(signedTx.txIn.size, 2)
+        assertEquals(signedTx.txOut.size, 2)
+        Transaction.correctlySpends(signedTx, sharedTxA.sharedTx.localInputs.map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTx.weight())
+        assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test
     fun `remove input - output`() {
-        val f = createFixture(100_000.sat, listOf(150_000.sat), listOf(40_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(2500.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(150_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(2500.sat), 330.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 100_000.sat)
 
         // In this flow we introduce dummy inputs/outputs from Bob to Alice that are then removed.
@@ -200,6 +259,51 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `cannot contribute unusable or invalid inputs`() {
+        val pubKey = randomKey().publicKey()
+        val fundingScript = Script.write(Script.pay2wsh(Script.write(Script.createMultiSigMofN(2, listOf(randomKey().publicKey(), randomKey().publicKey()))))).byteVector()
+        val fundingParams = InteractiveTxParams(randomBytes32(), true, 150_000.sat, 50_000.sat, fundingScript, 0, 660.sat, FeeratePerKw(2500.sat))
+        run {
+            val previousTx = Transaction(2, listOf(), listOf(TxOut(25_000.sat, Script.pay2wpkh(pubKey))), 0)
+            val result = FundingContributions.create(fundingParams, listOf(Pair(previousTx, 1)), null).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.InputOutOfBounds>(result)
+        }
+        run {
+            val previousTx = Transaction(2, listOf(), listOf(TxOut(650.sat, Script.pay2wpkh(pubKey))), 0)
+            val result = FundingContributions.create(fundingParams, listOf(Pair(previousTx, 0)), null).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.InputBelowDust>(result)
+        }
+        run {
+            val previousTx = Transaction(2, listOf(), listOf(TxOut(10_000.sat, Script.pay2wpkh(pubKey)), TxOut(10_000.sat, Script.pay2pkh(randomKey().publicKey()))), 0)
+            val result = FundingContributions.create(fundingParams, listOf(Pair(previousTx, 1)), null).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.NonPay2wpkhInput>(result)
+        }
+        run {
+            val txIn = (1..400).map { TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(pubKey, Transactions.PlaceHolderSig)) }
+            val txOut = (1..400).map { i -> TxOut(1000.sat * i, Script.pay2wpkh(pubKey)) }
+            val previousTx = Transaction(2, txIn, txOut, 0)
+            val result = FundingContributions.create(fundingParams, listOf(Pair(previousTx, 53)), null).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.InputTxTooLarge>(result)
+        }
+        run {
+            val previousTx = Transaction(2, listOf(), listOf(TxOut(80_000.sat, Script.pay2wpkh(pubKey)), TxOut(60_000.sat, Script.pay2wpkh(pubKey))), 0)
+            val result = FundingContributions.create(fundingParams, listOf(Pair(previousTx, 0), Pair(previousTx, 1)), null).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.NotEnoughFunding>(result)
+        }
+        run {
+            val previousTx = Transaction(2, listOf(), listOf(TxOut(80_000.sat, Script.pay2wpkh(pubKey)), TxOut(70_001.sat, Script.pay2wpkh(pubKey))), 0)
+            val result = FundingContributions.create(fundingParams, listOf(Pair(previousTx, 0), Pair(previousTx, 1)), null).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.NotEnoughFees>(result)
+        }
+    }
+
+    @Test
     fun `invalid input`() {
         // Create a transaction with a mix of segwit and non-segwit inputs.
         val previousOutputs = listOf(
@@ -207,7 +311,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             TxOut(2500.sat, Script.pay2pkh(randomKey().publicKey())),
         )
         val previousTx = Transaction(2, listOf(), previousOutputs, 0)
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
             TxAddInput(f.channelId, 0, previousTx, 0, 0) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
             TxAddInput(f.channelId, 1, previousTx, 0, 0) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
@@ -229,7 +333,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invalid output`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val testCases = mapOf(
             TxAddOutput(f.channelId, 0, 25_000.sat, validScript) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
@@ -251,7 +355,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `remove unknown input - output`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
             TxRemoveOutput(f.channelId, 52) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 52),
             TxRemoveOutput(f.channelId, 53) to InteractiveTxSessionAction.UnknownSerialId(f.channelId, 53),
@@ -270,7 +374,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `too many protocol rounds`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         var (alice, _) = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA).send()
         (1..InteractiveTxSession.MAX_INPUTS_OUTPUTS_RECEIVED).forEach { i ->
@@ -284,11 +388,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `too many inputs`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         var (alice, _) = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA).send()
-        (1..252).forEach { _ ->
+        (1..252).forEach { i ->
             // Alice --- tx_message --> Bob
-            val (alice1, _) = alice.receive(createTxAddInput(f.channelId, 5000.sat, false))
+            val (alice1, _) = alice.receive(createTxAddInput(f.channelId, 2 * i.toLong() + 1, 5000.sat))
             alice = alice1
         }
         // Alice <-- tx_complete --- Bob
@@ -300,7 +404,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `too many outputs`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         var (alice, _) = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA).send()
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         (1..252).forEach { i ->
@@ -318,11 +422,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `missing funding output`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
-        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 150_000.sat, true))
+        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
         // Alice --- tx_add_output --> Bob
         val (bob2, _) = receiveMessage<TxComplete>(bob1, TxAddOutput(f.channelId, 2, 125_000.sat, validScript))
         // Alice --- tx_complete --> Bob
@@ -332,10 +436,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `multiple funding outputs`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
-        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 150_000.sat, true))
+        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
         // Alice --- tx_add_output --> Bob
         val (bob2, _) = receiveMessage<TxComplete>(bob1, TxAddOutput(f.channelId, 2, 100_000.sat, f.fundingParamsB.fundingPubkeyScript))
         // Alice --- tx_add_output --> Bob
@@ -347,10 +451,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invalid funding amount`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
-        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 150_000.sat, true))
+        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
         // Alice --- tx_add_output --> Bob
         val (bob2, _) = receiveMessage<TxComplete>(bob1, TxAddOutput(f.channelId, 2, 100_001.sat, f.fundingParamsB.fundingPubkeyScript))
         // Alice --- tx_complete --> Bob
@@ -362,11 +466,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `total input amount too low`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         // Alice --- tx_add_input --> Bob
-        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 150_000.sat, true))
+        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
         // Alice --- tx_add_output --> Bob
         val (bob2, _) = receiveMessage<TxComplete>(bob1, TxAddOutput(f.channelId, 2, 100_000.sat, f.fundingParamsB.fundingPubkeyScript))
         // Alice --- tx_add_output --> Bob
@@ -378,11 +482,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `minimum fee not met`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         // Alice --- tx_add_input --> Bob
-        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 150_000.sat, true))
+        val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
         // Alice --- tx_add_output --> Bob
         val (bob2, _) = receiveMessage<TxComplete>(bob1, TxAddOutput(f.channelId, 2, 100_000.sat, f.fundingParamsB.fundingPubkeyScript))
         // Alice --- tx_add_output --> Bob
@@ -395,7 +499,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `previous attempts not double-spent`() {
-        val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(15_000.sat), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, listOf(TxOut(120_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val previousTx1 = Transaction(2, listOf(), listOf(TxOut(150_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val previousTx2 = Transaction(2, listOf(), listOf(TxOut(160_000.sat, Script.pay2wpkh(randomKey().publicKey())), TxOut(175_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
@@ -475,28 +579,22 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         private fun createFixture(
             fundingAmountA: Satoshi,
-            utxosA: List<Satoshi>,
-            changeOutputsA: List<Satoshi>,
+            utxosA: List<TxOut>,
             fundingAmountB: Satoshi,
-            utxosB: List<Satoshi>,
-            changeOutputsB: List<Satoshi>,
+            utxosB: List<TxOut>,
             targetFeerate: FeeratePerKw,
             dustLimit: Satoshi,
             lockTime: Long
         ): Fixture {
             val channelId = randomBytes32()
             val fundingScript = Script.write(Script.pay2wsh(Script.write(Script.createMultiSigMofN(2, listOf(randomKey().publicKey(), randomKey().publicKey()))))).byteVector()
-            val contributionsA = FundingContributions(
-                utxosA.map { amount -> createTxAddInput(channelId, amount, true) },
-                listOf(createTxAddOutput(channelId, fundingAmountA + fundingAmountB, true, fundingScript)) + changeOutputsA.map { amount -> createTxAddOutput(channelId, amount, true) },
-            )
-            val contributionsB = FundingContributions(
-                utxosB.map { amount -> createTxAddInput(channelId, amount, false) },
-                changeOutputsB.map { amount -> createTxAddOutput(channelId, amount, false) },
-            )
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingAmountA, fundingAmountB, fundingScript, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingAmountB, fundingAmountA, fundingScript, lockTime, dustLimit, targetFeerate)
-            return Fixture(channelId, fundingParamsA, contributionsA, fundingParamsB, contributionsB)
+            val contributionsA = FundingContributions.create(fundingParamsA, utxosA.map { txOut -> createPreviousTx(txOut) }, randomKey().publicKey())
+            assertNotNull(contributionsA.right)
+            val contributionsB = FundingContributions.create(fundingParamsB, utxosB.map { txOut -> createPreviousTx(txOut) }, randomKey().publicKey())
+            assertNotNull(contributionsB.right)
+            return Fixture(channelId, fundingParamsA, contributionsA.right!!, fundingParamsB, contributionsB.right!!)
         }
 
         private inline fun <reified M : InteractiveTxConstructionMessage> sendMessage(sender: InteractiveTxSession): Pair<InteractiveTxSession, M> {
@@ -526,13 +624,15 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createTxAddInput(channelId: ByteVector32, amount: Satoshi, isInitiator: Boolean): TxAddInput {
-            val previousTx = Transaction(2, listOf(), listOf(TxOut(amount, Script.pay2wpkh(randomKey().publicKey()))), 0)
-            return TxAddInput(channelId, generateSerialId(isInitiator), previousTx, 0, 0)
+        private fun createPreviousTx(txOut: TxOut): Pair<Transaction, Int> {
+            val inputs = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
+            val outputs = listOf(TxOut(50.sat, Script.pay2wpkh(randomKey().publicKey())), txOut, TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
+            return Pair(Transaction(2, inputs, outputs, 0), 1)
         }
 
-        private fun createTxAddOutput(channelId: ByteVector32, amount: Satoshi, isInitiator: Boolean, pubkeyScript: ByteVector? = null): TxAddOutput {
-            return TxAddOutput(channelId, generateSerialId(isInitiator), amount, pubkeyScript ?: Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector())
+        private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {
+            val previousTx = Transaction(2, listOf(), listOf(TxOut(amount, Script.pay2wpkh(randomKey().publicKey()))), 0)
+            return TxAddInput(channelId, serialId, previousTx, 0, 0)
         }
     }
 }
