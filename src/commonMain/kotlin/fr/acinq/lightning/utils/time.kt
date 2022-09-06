@@ -1,5 +1,7 @@
 package fr.acinq.lightning.utils
 
-expect fun currentTimestampMillis(): Long
+import kotlinx.datetime.Clock
+
+fun currentTimestampMillis(): Long = Clock.System.now().toEpochMilliseconds()
 
 fun currentTimestampSeconds(): Long = currentTimestampMillis() / 1000
