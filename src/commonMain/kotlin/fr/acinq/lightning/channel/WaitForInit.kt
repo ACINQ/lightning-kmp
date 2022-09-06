@@ -14,11 +14,11 @@ import fr.acinq.lightning.wire.TlvStream
 data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.InitFundee -> {
+            event is ChannelEvent.InitNonInitiator -> {
                 val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.localParams, event.channelConfig, event.remoteInit)
                 Pair(nextState, listOf())
             }
-            event is ChannelEvent.InitFunder && isValidChannelType(event.channelType) -> {
+            event is ChannelEvent.InitInitiator && isValidChannelType(event.channelType) -> {
                 val fundingPubKey = event.localParams.channelKeys.fundingPubKey
                 val paymentBasepoint = event.localParams.channelKeys.paymentBasepoint
                 val open = OpenChannel(
@@ -53,7 +53,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnChainFeerates, event, open)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
-            event is ChannelEvent.InitFunder -> {
+            event is ChannelEvent.InitInitiator -> {
                 logger.warning { "c:${event.temporaryChannelId} cannot open channel with invalid channel_type=${event.channelType.name}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }

@@ -69,10 +69,10 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         Pair(nextState1, actions + actions1)
                     }
                     state is WaitForFundingConfirmed -> {
-                        val minDepth = if (state.commitments.localParams.isFunder) {
+                        val minDepth = if (state.commitments.localParams.isInitiator) {
                             staticParams.nodeParams.minDepthBlocks
                         } else {
-                            // when we're fundee we scale the min_depth confirmations depending on the funding amount
+                            // when we're not the initiator we scale the min_depth confirmations depending on the funding amount
                             if (state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.commitInput.txOut.amount)
                         }
                         // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
@@ -181,9 +181,9 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         }
                     }
                     // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-                    // negotiation restarts from the beginning, and is initialized by the funder
+                    // negotiation restarts from the beginning, and is initialized by the initiator
                     // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
-                    state is Negotiating && state.commitments.localParams.isFunder -> {
+                    state is Negotiating && state.commitments.localParams.isInitiator -> {
                         // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                             keyManager,

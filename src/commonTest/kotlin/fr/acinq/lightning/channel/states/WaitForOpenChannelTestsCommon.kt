@@ -33,7 +33,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val unsupportedChannelTypes = listOf(ChannelType.SupportedChannelType.Standard, ChannelType.SupportedChannelType.StaticRemoteKey)
         unsupportedChannelTypes.forEach { channelType ->
             val (alice1, actions1) = alice.process(
-                ChannelEvent.InitFunder(
+                ChannelEvent.InitInitiator(
                     ByteVector32.Zeroes,
                     TestConstants.fundingAmount,
                     0.msat,

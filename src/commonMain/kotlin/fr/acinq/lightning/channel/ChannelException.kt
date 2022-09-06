@@ -16,7 +16,6 @@ open class ChannelException(open val channelId: ByteVector32, override val messa
 }
 
 // @formatter:off
-data class DebugTriggeredException                 (override val channelId: ByteVector32) : ChannelException(channelId, "debug-mode triggered failure")
 data class InvalidChainHash                        (override val channelId: ByteVector32, val local: ByteVector32, val remote: ByteVector32) : ChannelException(channelId, "invalid chainHash (local=$local remote=$remote)")
 data class InvalidFundingAmount                    (override val channelId: ByteVector32, val fundingAmount: Satoshi, val min: Satoshi, val max: Satoshi) : ChannelException(channelId, "invalid funding_satoshis=$fundingAmount (min=$min max=$max)")
 data class InvalidPushAmount                       (override val channelId: ByteVector32, val pushAmount: MilliSatoshi, val max: MilliSatoshi) : ChannelException(channelId, "invalid pushAmount=$pushAmount (max=$max)")
@@ -66,7 +65,7 @@ data class RemoteCannotAffordFeesForNewHtlc        (override val channelId: Byte
 data class InvalidHtlcPreimage                     (override val channelId: ByteVector32, val id: Long) : ChannelException(channelId, "invalid htlc preimage for htlc id=$id")
 data class UnknownHtlcId                           (override val channelId: ByteVector32, val id: Long) : ChannelException(channelId, "unknown htlc id=$id")
 data class CannotExtractSharedSecret               (override val channelId: ByteVector32, val htlc: UpdateAddHtlc) : ChannelException(channelId, "can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}")
-data class FundeeCannotSendUpdateFee               (override val channelId: ByteVector32) : ChannelException(channelId, "only the funder should send update_fee message")
+data class NonInitiatorCannotSendUpdateFee         (override val channelId: ByteVector32) : ChannelException(channelId, "only the initiator should send update_fee message")
 data class CannotAffordFees                        (override val channelId: ByteVector32, val missing: Satoshi, val reserve: Satoshi, val fees: Satoshi) : ChannelException(channelId, "can't pay the fee: missing=$missing reserve=$reserve fees=$fees")
 data class CannotSignWithoutChanges                (override val channelId: ByteVector32) : ChannelException(channelId, "cannot sign when there are no change")
 data class CannotSignBeforeRevocation              (override val channelId: ByteVector32) : ChannelException(channelId, "cannot sign until next revocation hash is received")

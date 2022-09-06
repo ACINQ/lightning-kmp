@@ -23,7 +23,7 @@ data class WaitForOpenChannel(
             event is ChannelEvent.MessageReceived ->
                 when (event.message) {
                     is OpenChannel -> {
-                        when (val res = Helpers.validateParamsFundee(staticParams.nodeParams, event.message, localParams, Features(remoteInit.features))) {
+                        when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, event.message, localParams, Features(remoteInit.features))) {
                             is Either.Right -> {
                                 val channelFeatures = res.value
                                 val channelOrigin = event.message.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin

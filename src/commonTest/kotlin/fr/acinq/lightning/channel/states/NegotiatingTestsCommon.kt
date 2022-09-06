@@ -38,7 +38,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val bob1 = bob.updateFeerate(FeeratePerKw(7_500.sat))
         val (alice2, bob2, aliceCloseSig1) = if (bobInitiates) mutualCloseBob(alice1, bob1) else mutualCloseAlice(alice1, bob1)
 
-        // alice is funder so she initiates the negotiation
+        // alice is initiator so she initiates the negotiation
         assertEquals(aliceCloseSig1.feeSatoshis, 3370.sat) // matches a feerate of 5000 sat/kw
         val aliceFeeRange = aliceCloseSig1.tlvStream.get<ClosingSignedTlv.FeeRange>()
         assertNotNull(aliceFeeRange)
@@ -116,7 +116,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val bob1 = bob.updateFeerate(FeeratePerKw(5_000.sat))
         val (alice2, bob2, aliceCloseSig1) = if (bobInitiates) mutualCloseBob(alice1, bob1) else mutualCloseAlice(alice1, bob1)
 
-        // alice is funder so she initiates the negotiation
+        // alice is initiator so she initiates the negotiation
         assertEquals(aliceCloseSig1.feeSatoshis, 3370.sat) // matches a feerate of 5000 sat/kw
         val aliceFeeRange = aliceCloseSig1.tlvStream.get<ClosingSignedTlv.FeeRange>()
         assertNotNull(aliceFeeRange)
@@ -148,7 +148,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `override on-chain fee estimator (funder)`() {
+    fun `override on-chain fee estimator (initiator)`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
@@ -176,12 +176,12 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `override on-chain fee estimator (fundee)`() {
+    fun `override on-chain fee estimator (non-initiator)`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
 
-        // alice is funder, so bob's override will simply be ignored
+        // alice is initiator, so bob's override will simply be ignored
         val (alice2, bob2, aliceCloseSig) = mutualCloseBob(alice1, bob1, feerates = ClosingFeerates(FeeratePerKw(2_500.sat), FeeratePerKw(2_000.sat), FeeratePerKw(3_000.sat)))
         assertEquals(aliceCloseSig.feeSatoshis, 6740.sat) // matches a feerate of 10 000 sat/kw
 
@@ -214,7 +214,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (other side ignores our fee range, funder)`() {
+    fun `recv ClosingSigned (other side ignores our fee range, initiator)`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(1_000.sat))
         val (alice2, bob2, aliceCloseSig1) = mutualCloseAlice(alice1, bob)
@@ -262,7 +262,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (other side ignores our fee range, fundee)`() {
+    fun `recv ClosingSigned (other side ignores our fee range, non-initiator)`() {
         val (alice, bob) = reachNormal()
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
         val (alice2, bob2, _) = mutualCloseBob(alice, bob1)
@@ -353,7 +353,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)`() {
-        // NB: we're fundee here, not funder
+        // NB: we're not the initiator here
         val (bob, alice) = reachNormal()
         val priv = randomKey()
 

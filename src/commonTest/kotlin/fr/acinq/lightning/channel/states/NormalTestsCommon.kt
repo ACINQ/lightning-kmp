@@ -168,7 +168,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)`() {
+    fun `recv CMD_ADD_HTLC (HTLC dips into remote initiator fee reserve)`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(764_660_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
@@ -645,7 +645,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (channel backup, fundee)`() {
+    fun `recv CMD_SIGN (channel backup, non-initiator)`() {
         val (alice, bob) = reachNormal()
         assertTrue(alice.commitments.localParams.features.hasFeature(Feature.ChannelBackupProvider))
         assertTrue(bob.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
@@ -881,7 +881,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (channel backup, fundee)`() {
+    fun `recv RevokeAndAck (channel backup, non-initiator)`() {
         val (alice, bob) = reachNormal()
         assertTrue(alice.commitments.localParams.features.hasFeature(Feature.ChannelBackupProvider))
         assertTrue(bob.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))

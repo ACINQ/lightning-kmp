@@ -55,12 +55,27 @@ interface SendPayment {
         get() = details.paymentHash
 
 }
-data class SendPaymentNormal(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.Normal, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+
+data class SendPaymentNormal(
+    override val paymentId: UUID,
+    override val amount: MilliSatoshi,
+    override val recipient: PublicKey,
+    override val details: OutgoingPayment.Details.Normal,
+    override val trampolineFeesOverride: List<TrampolineFees>? = null
+) : PaymentEvent(), SendPayment {
     override val paymentRequest = details.paymentRequest
 }
-data class SendPaymentSwapOut(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.SwapOut, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+
+data class SendPaymentSwapOut(
+    override val paymentId: UUID,
+    override val amount: MilliSatoshi,
+    override val recipient: PublicKey,
+    override val details: OutgoingPayment.Details.SwapOut,
+    override val trampolineFeesOverride: List<TrampolineFees>? = null
+) : PaymentEvent(), SendPayment {
     override val paymentRequest = details.paymentRequest
 }
+
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentEvent()
 
 sealed class PeerListenerEvent
@@ -600,7 +615,7 @@ class Peer(
                             onChainFeeratesFlow.filterNotNull().first()
                         )
                         val channelConfig = ChannelConfig.standard
-                        val (state1, actions1) = state.process(ChannelEvent.InitFundee(msg.temporaryChannelId, localParams, channelConfig, theirInit!!))
+                        val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, localParams, channelConfig, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
                         processActions(msg.temporaryChannelId, actions1 + actions2)
                         _channels = _channels + (msg.temporaryChannelId to state2)

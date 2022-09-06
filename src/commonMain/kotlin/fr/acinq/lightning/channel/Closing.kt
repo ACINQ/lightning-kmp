@@ -35,7 +35,7 @@ data class Closing(
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    val fundingTx: Transaction?, // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
+    val fundingTx: Transaction?, // this will be non-empty if we are the initiator and we got in closing while waiting for our own tx to be published
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val mutualCloseProposed: List<ClosingTx> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
     val mutualClosePublished: List<ClosingTx> = emptyList(),
@@ -343,9 +343,9 @@ data class Closing(
     private fun networkFeePaid(tx: Transaction): Pair<Satoshi, String>? {
         // we can compute the fees only for transactions with a single parent for which we know the output amount
         if (tx.txIn.size != 1) return null
-        // only the funder pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
+        // only the initiator pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
         val isCommitTx = tx.txIn.any { it.outPoint == commitments.commitInput.outPoint }
-        if (isCommitTx && !commitments.localParams.isFunder) return null
+        if (isCommitTx && !commitments.localParams.isInitiator) return null
 
         // we build a map with all known txs (that's not particularly efficient, but it doesn't really matter)
         val txs = buildList {

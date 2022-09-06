@@ -104,7 +104,7 @@ object TestConstants {
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
-            isFunder = true,
+            isInitiator = true,
             fundingAmount
         ).copy(channelReserve = 10_000.sat) // Bob will need to keep that much satoshis as direct payment
     }
@@ -180,7 +180,7 @@ object TestConstants {
         val channelParams: LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
-            isFunder = false,
+            isInitiator = false,
             fundingAmount
         ).copy(channelReserve = 20_000.sat) // Alice will need to keep that much satoshis as direct payment
     }

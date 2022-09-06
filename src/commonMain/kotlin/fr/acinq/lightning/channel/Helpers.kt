@@ -56,8 +56,8 @@ object Helpers {
             max(nodeParams.minDepthBlocks, blocksToReachFunding)
         }
 
-    /** Called by the fundee. */
-    fun validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, localParams: LocalParams, remoteFeatures: Features): Either<ChannelException, ChannelFeatures> {
+    /** Called by the non-initiator. */
+    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenChannel, localParams: LocalParams, remoteFeatures: Features): Either<ChannelException, ChannelFeatures> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
         if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve).contains(channelType)) {
@@ -104,7 +104,7 @@ object Helpers {
         }
 
         if (open.channelReserveSatoshis == 0.sat && localParams.features.hasFeature(Feature.ZeroReserveChannels)) {
-            // NB: if the funder doesn't require us to have a reserve, we can't ensure that dust_limit_satoshis is greater than our reserve.
+            // NB: if the initiator doesn't require us to have a reserve, we can't ensure that dust_limit_satoshis is greater than our reserve.
         } else {
             // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
             if (open.dustLimitSatoshis > open.channelReserveSatoshis) {
@@ -128,7 +128,7 @@ object Helpers {
             return Either.Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUST_LIMIT))
         }
 
-        // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
+        // we don't check that the initiator's amount for the initial commitment transaction is sufficient for full fee payment
         // now, but it will be done later when we receive `funding_created`
         val reserveToFundingRatio = open.channelReserveSatoshis.toLong().toDouble() / max(open.fundingSatoshis.toLong(), 1)
         if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
@@ -146,8 +146,8 @@ object Helpers {
         return Either.Right(channelFeatures)
     }
 
-    /** Called by the funder. */
-    fun validateParamsFunder(nodeParams: NodeParams, init: ChannelEvent.InitFunder, open: OpenChannel, accept: AcceptChannel): Either<ChannelException, ChannelFeatures> {
+    /** Called by the initiator. */
+    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelEvent.InitInitiator, open: OpenChannel, accept: AcceptChannel): Either<ChannelException, ChannelFeatures> {
         require(open.channelType != null) { "we should have sent a channel type in open_channel" }
         if (accept.channelType == null) {
             // We only open channels to peers who support explicit channel type negotiation.
@@ -354,14 +354,14 @@ object Helpers {
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
         ): Either<ChannelException, FirstCommitTx> {
-            val toLocalMsat = if (localParams.isFunder) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
-            val toRemoteMsat = if (localParams.isFunder) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
+            val toLocalMsat = if (localParams.isInitiator) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
+            val toRemoteMsat = if (localParams.isInitiator) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
 
             val localSpec = CommitmentSpec(setOf(), feerate = initialFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
             val remoteSpec = CommitmentSpec(setOf(), feerate = initialFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
-            if (!localParams.isFunder) {
-                // they are funder, therefore they pay the fee: we need to make sure they can afford it!
+            if (!localParams.isInitiator) {
+                // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!
                 val localToRemoteMsat = remoteSpec.toLocal
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
                 val missing = localToRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
@@ -445,7 +445,7 @@ object Helpers {
 
         fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
-            val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
+            val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isInitiator, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
             return requestedFeerate.computeFees(closingWeight)
         }
@@ -477,7 +477,7 @@ object Helpers {
             require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit)) { "invalid localScriptPubkey" }
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitments.localParams.dustLimit.max(commitments.remoteParams.dustLimit)
-            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimit, closingFees.preferred, commitments.localCommit.spec)
+            val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isInitiator, dustLimit, closingFees.preferred, commitments.localCommit.spec)
             val localClosingSig = keyManager.sign(closingTx, commitments.localParams.channelKeys.fundingPrivateKey)
             val closingSigned = ClosingSigned(commitments.channelId, closingFees.preferred, localClosingSig, TlvStream(listOf(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max))))
             return Pair(closingTx, closingSigned)
@@ -628,7 +628,7 @@ object Helpers {
             val outputs = makeCommitTxOutputs(
                 commitments.remoteParams.fundingPubKey,
                 commitments.localParams.channelKeys.fundingPubKey,
-                !localParams.isFunder,
+                !localParams.isInitiator,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,
                 localParams.toSelfDelay,
@@ -737,7 +737,7 @@ object Helpers {
             val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
             val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
             // this tx has been published by remote, so we need to invert local/remote params
-            val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isFunder, commitments.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
+            val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isInitiator, commitments.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
             require(txNumber <= 0xffffffffffffL) { "txNumber must be lesser than 48 bits long" }
             logger.warning { "c:${commitments.channelId} a revoked commit has been published with txNumber=$txNumber" }
             return txNumber
