@@ -527,7 +527,7 @@ data class InitFunder(
     val channelFlags: Byte,
     val channelVersion: ChannelVersion
 ) {
-    constructor(from: fr.acinq.lightning.channel.ChannelEvent.InitFunder) : this(
+    constructor(from: fr.acinq.lightning.channel.ChannelEvent.InitInitiator) : this(
         from.temporaryChannelId,
         from.fundingAmount,
         from.pushAmount,
@@ -552,7 +552,7 @@ data class WaitForAcceptChannel(
         StaticParams(from.staticParams),
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
-        InitFunder(from.initFunder),
+        InitFunder(from.init),
         from.lastSent
     )
 }

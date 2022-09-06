@@ -16,7 +16,7 @@ data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    val initFunder: ChannelEvent.InitFunder,
+    val init: ChannelEvent.InitInitiator,
     val lastSent: OpenChannel
 ) : ChannelState() {
     private val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
@@ -24,7 +24,7 @@ data class WaitForAcceptChannel(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MessageReceived && event.message is AcceptChannel -> {
-                when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, initFunder, lastSent, event.message)) {
+                when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, event.message)) {
                     is Either.Right -> {
                         val channelFeatures = res.value
                         val remoteParams = RemoteParams(
@@ -40,23 +40,23 @@ data class WaitForAcceptChannel(
                             paymentBasepoint = event.message.paymentBasepoint,
                             delayedPaymentBasepoint = event.message.delayedPaymentBasepoint,
                             htlcBasepoint = event.message.htlcBasepoint,
-                            features = Features(initFunder.remoteInit.features)
+                            features = Features(init.remoteInit.features)
                         )
-                        val localFundingPubkey = initFunder.localParams.channelKeys.fundingPubKey
+                        val localFundingPubkey = init.localParams.channelKeys.fundingPubKey
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
-                        val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, initFunder.fundingAmount, initFunder.fundingTxFeerate)
+                        val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate)
                         val nextState = WaitForFundingInternal(
                             staticParams,
                             currentTip,
                             currentOnChainFeerates,
-                            initFunder.temporaryChannelId,
-                            initFunder.localParams,
+                            init.temporaryChannelId,
+                            init.localParams,
                             remoteParams,
-                            initFunder.fundingAmount,
-                            initFunder.pushAmount,
-                            initFunder.initialFeerate,
+                            init.fundingAmount,
+                            init.pushAmount,
+                            init.initialFeerate,
                             event.message.firstPerCommitmentPoint,
-                            initFunder.channelConfig,
+                            init.channelConfig,
                             channelFeatures,
                             lastSent
                         )
@@ -64,7 +64,7 @@ data class WaitForAcceptChannel(
                     }
                     is Either.Left -> {
                         logger.error(res.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
-                        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(initFunder.temporaryChannelId, res.value.message))))
+                        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId, res.value.message))))
                     }
                 }
             }
@@ -82,7 +82,7 @@ data class WaitForAcceptChannel(
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
-        val error = Error(initFunder.temporaryChannelId, t.message)
+        val error = Error(init.temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }
 }

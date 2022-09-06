@@ -99,7 +99,7 @@ object TestsHelper {
         val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
         val ra = alice.process(
-            ChannelEvent.InitFunder(
+            ChannelEvent.InitInitiator(
                 ByteVector32.Zeroes,
                 fundingAmount,
                 pushMsat,
@@ -115,7 +115,7 @@ object TestsHelper {
         )
         alice = ra.first
         assertTrue(alice is WaitForAcceptChannel)
-        val rb = bob.process(ChannelEvent.InitFundee(ByteVector32.Zeroes, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val rb = bob.process(ChannelEvent.InitNonInitiator(ByteVector32.Zeroes, bobChannelParams, ChannelConfig.standard, aliceInit))
         bob = rb.first
         assertTrue(bob is WaitForOpenChannel)
         val open = ra.second.findOutgoingMessage<OpenChannel>()

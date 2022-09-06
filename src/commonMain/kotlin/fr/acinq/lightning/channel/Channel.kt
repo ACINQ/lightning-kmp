@@ -22,7 +22,7 @@ import org.kodein.log.Logger
 
 /** Channel Events (inputs to be fed to the state machine). */
 sealed class ChannelEvent {
-    data class InitFunder(
+    data class InitInitiator(
         val temporaryChannelId: ByteVector32,
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
@@ -36,7 +36,13 @@ sealed class ChannelEvent {
         val channelOrigin: ChannelOrigin? = null
     ) : ChannelEvent()
 
-    data class InitFundee(val temporaryChannelId: ByteVector32, val localParams: LocalParams, val channelConfig: ChannelConfig, val remoteInit: Init) : ChannelEvent()
+    data class InitNonInitiator(
+        val temporaryChannelId: ByteVector32,
+        val localParams: LocalParams,
+        val channelConfig: ChannelConfig,
+        val remoteInit: Init
+    ) : ChannelEvent()
+
     data class Restore(val state: ChannelState) : ChannelEvent()
     object CheckHtlcTimeout : ChannelEvent()
     data class MessageReceived(val message: LightningMessage) : ChannelEvent()
