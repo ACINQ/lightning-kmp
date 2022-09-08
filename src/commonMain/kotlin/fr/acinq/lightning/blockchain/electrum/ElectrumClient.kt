@@ -251,6 +251,7 @@ class ElectrumClient(
 
     fun disconnect() {
         if (this::socket.isInitialized) socket.close()
+        _connectionState.value = Connection.CLOSED(null)
         output.close()
     }
 
