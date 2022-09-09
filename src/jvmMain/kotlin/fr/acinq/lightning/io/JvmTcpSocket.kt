@@ -66,7 +66,7 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
             TcpSocket.TLS.TRUSTED_CERTIFICATES -> connection.tls(Dispatchers.IO)
             TcpSocket.TLS.UNSAFE_CERTIFICATES -> connection.tls(Dispatchers.IO) {
                 logger.warning { "using unsafe TLS!" }
-                trustManager = unsafeX509TrustManager
+                trustManager = unsafeX509TrustManager()
             }
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                 connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey))
@@ -88,7 +88,7 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
     companion object {
         private val logger by lightningLogger<JvmTcpSocket>()
 
-        val unsafeX509TrustManager = object : X509TrustManager {
+        fun unsafeX509TrustManager() = object : X509TrustManager {
             override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
             override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
             override fun getAcceptedIssuers(): Array<X509Certificate>? = null
@@ -153,27 +153,31 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)
     private val logger by lightningLogger<JvmTcpSocket>()
 
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket =
-        withContext(Dispatchers.IO  + CoroutineExceptionHandler { _, e ->
-            throw when (e) {
-                is ConnectException -> TcpSocket.IOException.ConnectionRefused()
-                is SocketException -> TcpSocket.IOException.Unknown(e.message)
-                else -> e
-            }
-        }) {
-            JvmTcpSocket(aSocket(selectorManager).tcp().connect(host, port).let { socket ->
-                when (tls) {
-                    TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
-                    TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
-                        logger.warning { "using unsafe TLS!" }
-                        trustManager = JvmTcpSocket.unsafeX509TrustManager
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket {
+        return withContext(Dispatchers.IO) {
+            try {
+                val socket = aSocket(selectorManager).tcp().connect(host, port).let { socket ->
+                    when (tls) {
+                        TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
+                            logger.warning { "using unsafe TLS!" }
+                            trustManager = JvmTcpSocket.unsafeX509TrustManager()
+                        }
+                        is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
+                            logger.info { "using certificate pinning for connections with $host" }
+                            socket.tls(Dispatchers.IO, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey))
+                        }
+                        else -> socket
                     }
-                    is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                        logger.info { "using certificate pinning for connections with $host" }
-                        socket.tls(coroutineContext, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey))
-                    }
-                    else -> socket
                 }
-            })
+                JvmTcpSocket(socket)
+            } catch (e: Exception) {
+                throw when (e) {
+                    is ConnectException -> TcpSocket.IOException.ConnectionRefused()
+                    is SocketException -> TcpSocket.IOException.Unknown(e.message)
+                    else -> e
+                }
+            }
         }
+    }
 }
