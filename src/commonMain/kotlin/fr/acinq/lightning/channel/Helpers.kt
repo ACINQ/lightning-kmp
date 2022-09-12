@@ -236,7 +236,7 @@ object Helpers {
         }
         val toRemote = remoteCommit.spec.toRemote.truncateToSatoshi()
         // NB: this is an approximation (we don't take network fees into account)
-        return toRemote > commitments.remoteParams.channelReserve
+        return toRemote > commitments.localChannelReserve
     }
 
     /**
@@ -371,9 +371,9 @@ object Helpers {
 
             if (!localParams.isInitiator) {
                 // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!
-                val localToRemoteMsat = remoteSpec.toLocal
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-                val missing = localToRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
+                val reserve = localParams.channelReserve
+                val missing = remoteSpec.toLocal.truncateToSatoshi() - reserve - fees
                 if (missing < Satoshi(0)) {
                     return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
                 }
