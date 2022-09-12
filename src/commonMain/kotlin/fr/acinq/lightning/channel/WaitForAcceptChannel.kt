@@ -54,7 +54,7 @@ data class WaitForAcceptChannel(
                             remoteParams,
                             init.fundingAmount,
                             init.pushAmount,
-                            init.initialFeerate,
+                            init.commitTxFeerate,
                             event.message.firstPerCommitmentPoint,
                             init.channelConfig,
                             channelFeatures,

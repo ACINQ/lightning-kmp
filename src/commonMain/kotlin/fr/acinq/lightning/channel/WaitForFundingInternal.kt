@@ -22,7 +22,7 @@ data class WaitForFundingInternal(
     val remoteParams: RemoteParams,
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val initialFeerate: FeeratePerKw,
+    val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
@@ -39,7 +39,7 @@ data class WaitForFundingInternal(
                     remoteParams,
                     fundingAmount,
                     pushAmount,
-                    initialFeerate,
+                    commitTxFeerate,
                     event.fundingTx.hash,
                     event.fundingTxOutputIndex,
                     remoteFirstPerCommitmentPoint

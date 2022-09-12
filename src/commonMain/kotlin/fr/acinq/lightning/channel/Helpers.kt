@@ -349,7 +349,7 @@ object Helpers {
             remoteParams: RemoteParams,
             fundingAmount: Satoshi,
             pushMsat: MilliSatoshi,
-            initialFeerate: FeeratePerKw,
+            commitTxFeerate: FeeratePerKw,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
@@ -357,8 +357,8 @@ object Helpers {
             val toLocalMsat = if (localParams.isInitiator) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
             val toRemoteMsat = if (localParams.isInitiator) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
 
-            val localSpec = CommitmentSpec(setOf(), feerate = initialFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
-            val remoteSpec = CommitmentSpec(setOf(), feerate = initialFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+            val localSpec = CommitmentSpec(setOf(), feerate = commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
+            val remoteSpec = CommitmentSpec(setOf(), feerate = commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
             if (!localParams.isInitiator) {
                 // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!

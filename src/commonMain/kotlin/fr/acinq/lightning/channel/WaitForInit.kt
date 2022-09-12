@@ -30,7 +30,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     maxHtlcValueInFlightMsat = event.localParams.maxHtlcValueInFlightMsat,
                     channelReserveSatoshis = event.localParams.channelReserve,
                     htlcMinimumMsat = event.localParams.htlcMinimum,
-                    feeratePerKw = event.initialFeerate,
+                    feeratePerKw = event.commitTxFeerate,
                     toSelfDelay = event.localParams.toSelfDelay,
                     maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
                     fundingPubkey = fundingPubKey,

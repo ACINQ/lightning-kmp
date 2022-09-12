@@ -26,7 +26,7 @@ sealed class ChannelEvent {
         val temporaryChannelId: ByteVector32,
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
-        val initialFeerate: FeeratePerKw,
+        val commitTxFeerate: FeeratePerKw,
         val fundingTxFeerate: FeeratePerKw,
         val localParams: LocalParams,
         val remoteInit: Init,
