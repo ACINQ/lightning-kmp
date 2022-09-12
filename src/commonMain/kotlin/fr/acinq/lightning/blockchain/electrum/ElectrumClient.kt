@@ -11,6 +11,7 @@ import fr.acinq.lightning.io.linesFlow
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
@@ -196,7 +197,7 @@ class ElectrumClient(
     val connectionState: StateFlow<Connection> get() = _connectionState
 
     // subscriptions notifications (headers, script_hashes, etc.)
-    private val _notifications = MutableSharedFlow<ElectrumMessage>(replay = 0) // see Kotlin's migration doc from BroadcastChannel to SharedFlow
+    private val _notifications = MutableSharedFlow<ElectrumMessage>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     val notifications: SharedFlow<ElectrumMessage> get() = _notifications.asSharedFlow()
 
     private var state: ClientState = ClientClosed

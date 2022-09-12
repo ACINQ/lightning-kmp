@@ -405,11 +405,7 @@ class ElectrumWatcher(
     val scope: CoroutineScope
 ) : CoroutineScope by scope {
 
-    private val _notificationsFlow = MutableSharedFlow<NotifyEvent>(
-        replay = 0,
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.SUSPEND
-    )
+    private val _notificationsFlow = MutableSharedFlow<NotifyEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     val notificationsFlow: SharedFlow<NotifyEvent> = _notificationsFlow
 
     fun openWatchNotificationsFlow(): Flow<WatchEvent> =

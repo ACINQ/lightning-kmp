@@ -24,6 +24,7 @@ import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -152,7 +153,7 @@ class Peer(
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
-    private val _eventsFlow = MutableSharedFlow<PeerListenerEvent>()
+    private val _eventsFlow = MutableSharedFlow<PeerListenerEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     val eventsFlow: SharedFlow<PeerListenerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
