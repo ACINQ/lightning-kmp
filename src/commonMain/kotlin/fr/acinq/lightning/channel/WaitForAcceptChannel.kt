@@ -49,7 +49,6 @@ data class WaitForAcceptChannel(
                             staticParams,
                             currentTip,
                             currentOnChainFeerates,
-                            init.temporaryChannelId,
                             init.localParams,
                             remoteParams,
                             init.fundingAmount,

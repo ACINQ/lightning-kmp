@@ -17,7 +17,6 @@ data class WaitForFundingInternal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
     val fundingAmount: Satoshi,
@@ -28,6 +27,8 @@ data class WaitForFundingInternal(
     val channelFeatures: ChannelFeatures,
     val lastSent: OpenChannel
 ) : ChannelState() {
+    val temporaryChannelId: ByteVector32 = localParams.channelKeys.temporaryChannelId
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MakeFundingTxResponse -> {

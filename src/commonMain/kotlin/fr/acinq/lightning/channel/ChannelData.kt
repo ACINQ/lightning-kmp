@@ -376,6 +376,7 @@ data class ChannelKeys(
     val paymentBasepoint: PublicKey = paymentKey.publicKey()
     val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
     val revocationBasepoint: PublicKey = revocationKey.publicKey()
+    val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
