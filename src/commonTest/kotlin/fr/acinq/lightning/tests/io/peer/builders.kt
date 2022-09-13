@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.kodein.log.LoggerFactory
 
 public suspend fun newPeers(
     scope: CoroutineScope,
@@ -165,7 +166,7 @@ public fun buildPeer(
     walletParams: WalletParams,
     databases: InMemoryDatabases = InMemoryDatabases()
 ): Peer {
-    val electrum = ElectrumClient(TcpSocket.Builder(), scope)
+    val electrum = ElectrumClient(TcpSocket.Builder(), scope, LoggerFactory.default)
     val watcher = ElectrumWatcher(electrum, scope)
     val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header

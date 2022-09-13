@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
+import org.kodein.log.LoggerFactory
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
@@ -45,7 +46,7 @@ class ElectrumClientIntegrationTest : LightningTestSuite() {
 
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
         val client =
-            ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
+            ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
 
         client.connectionState.first { it is Connection.CLOSED }
         client.connectionState.first { it is Connection.ESTABLISHING }
