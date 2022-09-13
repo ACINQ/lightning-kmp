@@ -236,7 +236,7 @@ object Helpers {
         }
         val toRemote = remoteCommit.spec.toRemote.truncateToSatoshi()
         // NB: this is an approximation (we don't take network fees into account)
-        return toRemote > commitments.remoteParams.channelReserve
+        return toRemote > commitments.localChannelReserve
     }
 
     /**
@@ -319,6 +319,15 @@ object Helpers {
 
     object Funding {
 
+        /** Compute the channelId of a dual-funded channel. */
+        fun computeChannelId(open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): ByteVector32 {
+            return if (LexicographicalOrdering.isLessThan(open.revocationBasepoint.value, accept.revocationBasepoint.value)) {
+                (open.revocationBasepoint.value + accept.revocationBasepoint.value).sha256()
+            } else {
+                (accept.revocationBasepoint.value + open.revocationBasepoint.value).sha256()
+            }
+        }
+
         fun makeFundingInputInfo(
             fundingTxId: ByteVector32,
             fundingTxOutputIndex: Int,
@@ -349,7 +358,7 @@ object Helpers {
             remoteParams: RemoteParams,
             fundingAmount: Satoshi,
             pushMsat: MilliSatoshi,
-            initialFeerate: FeeratePerKw,
+            commitTxFeerate: FeeratePerKw,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
@@ -357,14 +366,14 @@ object Helpers {
             val toLocalMsat = if (localParams.isInitiator) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
             val toRemoteMsat = if (localParams.isInitiator) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
 
-            val localSpec = CommitmentSpec(setOf(), feerate = initialFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
-            val remoteSpec = CommitmentSpec(setOf(), feerate = initialFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+            val localSpec = CommitmentSpec(setOf(), feerate = commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
+            val remoteSpec = CommitmentSpec(setOf(), feerate = commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
             if (!localParams.isInitiator) {
                 // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!
-                val localToRemoteMsat = remoteSpec.toLocal
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-                val missing = localToRemoteMsat.truncateToSatoshi() - localParams.channelReserve - fees
+                val reserve = localParams.channelReserve
+                val missing = remoteSpec.toLocal.truncateToSatoshi() - reserve - fees
                 if (missing < Satoshi(0)) {
                     return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
                 }
@@ -443,7 +452,7 @@ object Helpers {
             }.getOrElse { null }
         }
 
-        fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
+        private fun firstClosingFee(commitments: Commitments, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isInitiator, Satoshi(0), Satoshi(0), commitments.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitments.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
@@ -555,7 +564,7 @@ object Helpers {
             // those are the preimages to existing received htlcs
             val preimages = commitments.localChanges.all.filterIsInstance<UpdateFulfillHtlc>().map { it.paymentPreimage }
 
-            val htlcTxs = localCommit.publishableTxs.htlcTxsAndSigs.map { (txInfo, localSig, remoteSig) ->
+            val htlcTxs = localCommit.publishableTxs.htlcTxsAndSigs.associate { (txInfo, localSig, remoteSig) ->
                 when (txInfo) {
                     is HtlcSuccessTx -> when (val preimage = preimages.firstOrNull { r -> r.sha256() == txInfo.paymentHash }) {
                         // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
@@ -567,7 +576,7 @@ object Helpers {
                     // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
                     is HtlcTimeoutTx -> Pair(txInfo.input.outPoint, Transactions.addSigs(txInfo, localSig, remoteSig))
                 }
-            }.toMap()
+            }
 
             // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
             val htlcDelayedTxs = htlcTxs.values.filterNotNull().mapNotNull { txInfo ->
@@ -824,7 +833,7 @@ object Helpers {
                 val htlcReceived = Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash), htlcInfo.cltvExpiry)
                 val htlcOffered = Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash))
                 listOf(htlcReceived, htlcOffered)
-            }.map { redeemScript -> write(pay2wsh(redeemScript)).toByteVector() to write(redeemScript).toByteVector() }.toMap()
+            }.associate { redeemScript -> write(pay2wsh(redeemScript)).toByteVector() to write(redeemScript).toByteVector() }
 
             // and finally we steal the htlc outputs
             val htlcPenaltyTxs = revokedCommitPublished.commitTx.txOut.mapIndexedNotNull { outputIndex, txOut ->
@@ -951,7 +960,7 @@ object Helpers {
             return when {
                 tx.txid == publishableTxs.commitTx.tx.txid -> {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-                    (spec.htlcs.outgoings() - untrimmedHtlcs).toSet()
+                    (spec.htlcs.outgoings() - untrimmedHtlcs.toSet()).toSet()
                 }
                 localCommitPublished.isHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
@@ -987,7 +996,7 @@ object Helpers {
             return when {
                 tx.txid == txid -> {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-                    (spec.htlcs.incomings() - untrimmedHtlcs).toSet()
+                    (spec.htlcs.incomings() - untrimmedHtlcs.toSet()).toSet()
                 }
                 remoteCommitPublished.isClaimHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc

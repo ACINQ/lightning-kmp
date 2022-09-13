@@ -17,17 +17,18 @@ data class WaitForFundingInternal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    val temporaryChannelId: ByteVector32,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val initialFeerate: FeeratePerKw,
+    val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
     val lastSent: OpenChannel
 ) : ChannelState() {
+    val temporaryChannelId: ByteVector32 = localParams.channelKeys.temporaryChannelId
+
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.MakeFundingTxResponse -> {
@@ -39,7 +40,7 @@ data class WaitForFundingInternal(
                     remoteParams,
                     fundingAmount,
                     pushAmount,
-                    initialFeerate,
+                    commitTxFeerate,
                     event.fundingTx.hash,
                     event.fundingTxOutputIndex,
                     remoteFirstPerCommitmentPoint

@@ -220,7 +220,6 @@ object Transactions {
     fun commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = commitTxFeeMsat(dustLimit, spec).truncateToSatoshi()
 
     /**
-     *
      * @param commitTxNumber commit tx number
      * @param isInitiator true if we are the channel initiator
      * @param localPaymentBasePoint local payment base point
@@ -229,17 +228,16 @@ object Transactions {
      */
     fun obscuredCommitTxNumber(commitTxNumber: Long, isInitiator: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long {
         // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
-        val h = if (isInitiator)
+        val h = if (isInitiator) {
             Crypto.sha256(localPaymentBasePoint.value + remotePaymentBasePoint.value)
-        else
+        } else {
             Crypto.sha256(remotePaymentBasePoint.value + localPaymentBasePoint.value)
-
+        }
         val blind = Pack.int64LE(h.takeLast(6).reversed().toByteArray() + ByteArray(4) { 0 })
         return commitTxNumber xor blind
     }
 
     /**
-     *
      * @param commitTx commit tx
      * @param isInitiator true if we are the channel initiator
      * @param localPaymentBasePoint local payment base point

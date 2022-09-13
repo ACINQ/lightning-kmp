@@ -31,7 +31,7 @@ data class WaitForFundingCreated(
     val remoteParams: RemoteParams,
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val initialFeerate: FeeratePerKw,
+    val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelConfig: ChannelConfig,
@@ -52,7 +52,7 @@ data class WaitForFundingCreated(
                             remoteParams,
                             fundingAmount,
                             pushAmount,
-                            initialFeerate,
+                            commitTxFeerate,
                             event.message.fundingTxid,
                             event.message.fundingOutputIndex,
                             remoteFirstPerCommitmentPoint

@@ -73,6 +73,10 @@ data class Commitments(
         require(channelFeatures.hasFeature(Feature.AnchorOutputs)) { "invalid channel type: ${channelFeatures.channelType.name}" }
     }
 
+    val fundingAmount: Satoshi = commitInput.txOut.amount
+    val localChannelReserve: Satoshi = remoteParams.channelReserve
+    val remoteChannelReserve: Satoshi = localParams.channelReserve
+
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
         localParams = localParams.copy(features = Features(localInit.features)),
         remoteParams = remoteParams.copy(features = Features(remoteInit.features))
@@ -152,7 +156,7 @@ data class Commitments(
             is Either.Right -> remoteCommit
         }
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
-        val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
+        val balanceNoFees = (reduced.toRemote - localChannelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
         return if (localParams.isInitiator) {
             // The initiator always pays the on-chain fees, so we must subtract that from the amount we can send.
             val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
@@ -178,7 +182,7 @@ data class Commitments(
 
     fun availableBalanceForReceive(): MilliSatoshi {
         val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-        val balanceNoFees = (reduced.toRemote - localParams.channelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
+        val balanceNoFees = (reduced.toRemote - remoteChannelReserve.toMilliSatoshi()).coerceAtLeast(0.msat)
         return if (localParams.isInitiator) {
             // The non-initiator doesn't pay on-chain fees so we don't take those into account when receiving.
             balanceNoFees
@@ -248,16 +252,16 @@ data class Commitments(
         val initiatorFeeBuffer = commitTxFeeMsat(commitments1.remoteParams.dustLimit, reduced.copy(feerate = reduced.feerate * 2)) + htlcOutputFee(reduced.feerate * 2)
         // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
         // which may result in a lower commit tx fee; this is why we take the max of the two.
-        val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) fees.toMilliSatoshi().coerceAtLeast(initiatorFeeBuffer) else 0.msat)
-        val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) 0.msat else fees.toMilliSatoshi())
+        val missingForSender = reduced.toRemote - commitments1.localChannelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) fees.toMilliSatoshi().coerceAtLeast(initiatorFeeBuffer) else 0.msat)
+        val missingForReceiver = reduced.toLocal - commitments1.remoteChannelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) 0.msat else fees.toMilliSatoshi())
         if (missingForSender < 0.msat) {
             val actualFees = if (commitments1.localParams.isInitiator) fees else 0.sat
-            return Either.Left(InsufficientFunds(channelId, cmd.amount, -missingForSender.truncateToSatoshi(), commitments1.remoteParams.channelReserve, actualFees))
+            return Either.Left(InsufficientFunds(channelId, cmd.amount, -missingForSender.truncateToSatoshi(), commitments1.localChannelReserve, actualFees))
         } else if (missingForReceiver < 0.msat) {
             if (localParams.isInitiator) {
                 // receiver is not the initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
             } else {
-                return Either.Left(RemoteCannotAffordFeesForNewHtlc(channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi(), reserve = commitments1.remoteParams.channelReserve, fees = fees))
+                return Either.Left(RemoteCannotAffordFeesForNewHtlc(channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi(), reserve = commitments1.localChannelReserve, fees = fees))
             }
         }
 
@@ -301,15 +305,15 @@ data class Commitments(
         val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
         // NB: we don't enforce the initiatorFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
         // We could enforce it once we're confident a large portion of the network implements it.
-        val missingForSender = reduced.toRemote - commitments1.localParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) 0.sat else fees).toMilliSatoshi()
-        val missingForReceiver = reduced.toLocal - commitments1.remoteParams.channelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) fees else 0.sat).toMilliSatoshi()
+        val missingForSender = reduced.toRemote - commitments1.remoteChannelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) 0.sat else fees).toMilliSatoshi()
+        val missingForReceiver = reduced.toLocal - commitments1.localChannelReserve.toMilliSatoshi() - (if (commitments1.localParams.isInitiator) fees else 0.sat).toMilliSatoshi()
         if (missingForSender < 0.sat) {
             val actualFees = if (commitments1.localParams.isInitiator) 0.sat else fees
-            return Either.Left(InsufficientFunds(channelId, add.amountMsat, -missingForSender.truncateToSatoshi(), commitments1.localParams.channelReserve, actualFees))
+            return Either.Left(InsufficientFunds(channelId, add.amountMsat, -missingForSender.truncateToSatoshi(), commitments1.remoteChannelReserve, actualFees))
         } else if (missingForReceiver < 0.sat) {
             @Suppress("ControlFlowWithEmptyBody")
             if (localParams.isInitiator) {
-                return Either.Left(CannotAffordFees(channelId, missing = -missingForReceiver.truncateToSatoshi(), reserve = commitments1.remoteParams.channelReserve, fees = fees))
+                return Either.Left(CannotAffordFees(channelId, missing = -missingForReceiver.truncateToSatoshi(), reserve = commitments1.localChannelReserve, fees = fees))
             } else {
                 // receiver is not the initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
             }
@@ -422,8 +426,8 @@ data class Commitments(
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
         // we look from remote's point of view, so if local is initiator remote doesn't pay the fees
         val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-        val missing = reduced.toRemote.truncateToSatoshi() - commitments1.remoteParams.channelReserve - fees
-        if (missing < 0.sat) return Either.Left(CannotAffordFees(channelId, -missing, commitments1.localParams.channelReserve, fees))
+        val missing = reduced.toRemote.truncateToSatoshi() - commitments1.localChannelReserve - fees
+        if (missing < 0.sat) return Either.Left(CannotAffordFees(channelId, -missing, commitments1.localChannelReserve, fees))
         return Either.Right(Pair(commitments1, fee))
     }
 
@@ -443,8 +447,8 @@ data class Commitments(
 
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
         val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-        val missing = reduced.toRemote.truncateToSatoshi() - commitments1.localParams.channelReserve - fees
-        if (missing < 0.sat) return Either.Left(CannotAffordFees(channelId, -missing, commitments1.localParams.channelReserve, fees))
+        val missing = reduced.toRemote.truncateToSatoshi() - commitments1.remoteChannelReserve - fees
+        if (missing < 0.sat) return Either.Left(CannotAffordFees(channelId, -missing, commitments1.remoteChannelReserve, fees))
         return Either.Right(commitments1)
     }
 
@@ -527,6 +531,7 @@ data class Commitments(
                 log.error(check.error) { "c:$channelId remote signature $commit is invalid" }
                 return Either.Left(InvalidCommitmentSignature(channelId, signedCommitTx.tx))
             }
+            else -> {}
         }
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
@@ -576,9 +581,9 @@ data class Commitments(
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
         // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
-        val completedOutgoingHtlcs = remoteCommit.spec.htlcs.incomings().map { it.id } - theirNextCommit.spec.htlcs.incomings().map { it.id }
+        val completedOutgoingHtlcs = remoteCommit.spec.htlcs.incomings().map { it.id } - theirNextCommit.spec.htlcs.incomings().map { it.id }.toSet()
         // we remove the newly completed htlcs from the payments map
-        val payments1 = payments - completedOutgoingHtlcs
+        val payments1 = payments - completedOutgoingHtlcs.toSet()
         val actions = mutableListOf<ChannelAction>()
         remoteChanges.signed.forEach {
             when (it) {

@@ -34,7 +34,6 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         unsupportedChannelTypes.forEach { channelType ->
             val (alice1, actions1) = alice.process(
                 ChannelEvent.InitInitiator(
-                    ByteVector32.Zeroes,
                     TestConstants.fundingAmount,
                     0.msat,
                     FeeratePerKw.CommitmentFeerate,
