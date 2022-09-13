@@ -938,7 +938,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     private fun makeChannels(): Map<ByteVector32, Normal> {
         val (alice, _) = TestsHelper.reachNormal()
-        val reserve = alice.commitments.remoteParams.channelReserve
+        val reserve = alice.commitments.localChannelReserve
         val channelDetails = listOf(
             Pair(ShortChannelId(1), 250_000.msat),
             Pair(ShortChannelId(2), 150_000.msat),

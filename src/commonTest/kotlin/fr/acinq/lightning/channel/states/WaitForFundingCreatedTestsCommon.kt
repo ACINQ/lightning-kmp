@@ -11,7 +11,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
-import fr.acinq.lightning.wire.AcceptChannel
+import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingCreated
 import fr.acinq.lightning.wire.FundingSigned
@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv FundingCreated`() {
-        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, TestConstants.pushAmount)
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         assertTrue { bob1 is WaitForFundingConfirmed }
         actions1.findOutgoingMessage<FundingSigned>()
@@ -33,7 +33,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv FundingCreated -- with channel origin`() {
-        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat, channelOrigin = ChannelOrigin.PayToOpenOrigin(ByteVector32.One, 42.sat))
+        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, TestConstants.pushAmount, channelOrigin = ChannelOrigin.PayToOpenOrigin(ByteVector32.One, 42.sat))
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         assertTrue { bob1 is WaitForFundingConfirmed }
         actions1.findOutgoingMessage<FundingSigned>()
@@ -41,12 +41,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actions1.hasWatch<WatchConfirmed>()
         actions1.has<ChannelAction.ChannelId.IdSwitch>()
         actions1.has<ChannelAction.Storage.StoreState>()
-        actions1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushMsat, ChannelOrigin.PayToOpenOrigin(ByteVector32.One, 42.sat)))
+        actions1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushAmount, ChannelOrigin.PayToOpenOrigin(ByteVector32.One, 42.sat)))
     }
 
     @Test
     fun `recv FundingCreated -- initiator can't pay fees`() {
-        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, 1_000_100.sat, 1_000_000.sat.toMilliSatoshi())
+        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, 1_000_100.sat, 0.sat, 1_000_000.sat.toMilliSatoshi())
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         actions1.hasOutgoingMessage<Error>()
         assertTrue { bob1 is Aborted }
@@ -54,7 +54,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Error`() {
-        val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, TestConstants.pushAmount)
         val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertTrue { bob1 is Aborted }
         assertTrue { actions1.isEmpty() }
@@ -62,7 +62,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_CLOSE`() {
-        val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, TestConstants.pushAmount)
         val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
         assertTrue { bob1 is Aborted }
         assertTrue { actions1.isEmpty() }
@@ -70,7 +70,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Disconnected`() {
-        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (_, bob, fundingCreated) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, TestConstants.pushAmount)
         val (bob1, _) = bob.process(ChannelEvent.MessageReceived(fundingCreated))
         assertTrue { bob1 is WaitForFundingConfirmed }
         val (bob2, actions2) = bob1.process(ChannelEvent.Disconnected)
@@ -81,15 +81,16 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     companion object {
         fun init(
             channelType: ChannelType.SupportedChannelType,
-            fundingAmount: Satoshi,
+            aliceFundingAmount: Satoshi,
+            bobFundingAmount: Satoshi,
             pushAmount: MilliSatoshi,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             channelOrigin: ChannelOrigin? = null
         ): Triple<WaitForFundingSigned, WaitForFundingCreated, FundingCreated> {
-            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, 0, fundingAmount, pushAmount, channelOrigin)
+            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, 0, aliceFundingAmount, bobFundingAmount, pushAmount, channelOrigin)
             val (b1, actions) = b.process(ChannelEvent.MessageReceived(open))
-            val accept = actions.findOutgoingMessage<AcceptChannel>()
+            val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
             val (a1, actions2) = a.process(ChannelEvent.MessageReceived(accept))
             val fundingCreated = actions2.findOutgoingMessage<FundingCreated>()
             return Triple(a1 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)

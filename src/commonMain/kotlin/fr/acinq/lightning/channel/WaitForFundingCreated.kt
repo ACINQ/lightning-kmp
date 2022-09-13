@@ -17,7 +17,8 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Try
-import fr.acinq.lightning.wire.AcceptChannel
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingCreated
 import fr.acinq.lightning.wire.FundingSigned
@@ -37,7 +38,7 @@ data class WaitForFundingCreated(
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
     val channelOrigin: ChannelOrigin?,
-    val lastSent: AcceptChannel
+    val lastSent: AcceptDualFundedChannel
 ) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -50,6 +51,7 @@ data class WaitForFundingCreated(
                             temporaryChannelId,
                             localParams,
                             remoteParams,
+                            0.sat,
                             fundingAmount,
                             pushAmount,
                             commitTxFeerate,
@@ -81,10 +83,9 @@ data class WaitForFundingCreated(
                                     }
                                     is Try.Success -> {
                                         val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, localParams.channelKeys.fundingPrivateKey)
-                                        val channelId = Lightning.toLongId(event.message.fundingTxid, event.message.fundingOutputIndex)
                                         // watch the funding tx transaction
                                         val commitInput = firstCommitTx.localCommitTx.input
-                                        val fundingSigned = FundingSigned(channelId, localSigOfRemoteTx)
+                                        val fundingSigned = FundingSigned(temporaryChannelId, localSigOfRemoteTx)
                                         val commitments = Commitments(
                                             channelConfig,
                                             channelFeatures,
@@ -101,14 +102,14 @@ data class WaitForFundingCreated(
                                             remoteNextCommitInfo = Either.Right(Lightning.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                                             commitInput,
                                             ShaChain.init,
-                                            channelId = channelId
+                                            temporaryChannelId
                                         )
                                         // NB: we don't send a ChannelSignatureSent for the first commit
-                                        logger.info { "c:$channelId waiting for them to publish the funding tx with fundingTxid=${commitInput.outPoint.txid}" }
+                                        logger.info { "c:$temporaryChannelId waiting for them to publish the funding tx with fundingTxid=${commitInput.outPoint.txid}" }
                                         val fundingMinDepth = if (commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, fundingAmount)
-                                        logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
-                                        val watchSpent = WatchSpent(channelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-                                        val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                                        logger.info { "c:$temporaryChannelId will wait for $fundingMinDepth confirmations" }
+                                        val watchSpent = WatchSpent(temporaryChannelId, commitInput.outPoint.txid, commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                                        val watchConfirmed = WatchConfirmed(temporaryChannelId, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                                         val nextState = WaitForFundingConfirmed(
                                             staticParams,
                                             currentTip,
@@ -123,7 +124,7 @@ data class WaitForFundingCreated(
                                             ChannelAction.Blockchain.SendWatch(watchSpent),
                                             ChannelAction.Blockchain.SendWatch(watchConfirmed),
                                             ChannelAction.Message.Send(fundingSigned),
-                                            ChannelAction.ChannelId.IdSwitch(temporaryChannelId, channelId),
+                                            ChannelAction.ChannelId.IdSwitch(temporaryChannelId, temporaryChannelId),
                                             ChannelAction.Storage.StoreState(nextState)
                                         )
                                         Pair(nextState, actions)

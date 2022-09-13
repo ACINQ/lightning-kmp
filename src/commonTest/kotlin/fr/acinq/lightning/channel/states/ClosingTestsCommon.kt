@@ -1851,7 +1851,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         fun initForceClose(): Pair<Closing, Closing> {
-            val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+            val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
             // initiator
             val alice1 = run {
                 val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))

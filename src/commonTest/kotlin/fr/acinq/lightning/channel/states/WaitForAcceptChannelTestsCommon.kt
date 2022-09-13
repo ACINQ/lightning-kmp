@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
-import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
@@ -14,6 +13,7 @@ import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
@@ -25,17 +25,26 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertTrue(alice1 is WaitForFundingSigned)
         assertEquals(2, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        val fundingCreated = actions1.findOutgoingMessage<FundingCreated>()
+        assertNotEquals(fundingCreated.temporaryChannelId, accept.temporaryChannelId)
+        assertEquals(alice1.channelId, fundingCreated.temporaryChannelId)
+        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+    }
+
+    @Test
+    fun `recv AcceptChannel -- without non-initiator contribution`() {
+        val (alice, _, accept) = init(bobFundingAmount = 0.sat)
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
+        assertTrue(alice1 is WaitForFundingSigned)
+        assertEquals(2, actions1.size)
+        actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<FundingCreated>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
     }
 
     @Test
     fun `recv AcceptChannel -- zero conf`() {
-        val (alice, _, accept) = init(
-            channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve,
-            aliceFeatures = TestConstants.Alice.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Optional),
-            bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Optional),
-        )
+        val (alice, _, accept) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         assertEquals(0, accept.minimumDepth)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertTrue(alice1 is WaitForFundingSigned)
@@ -43,20 +52,6 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<FundingCreated>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
-    }
-
-    @Test
-    fun `recv AcceptChannel -- zero reserve`() {
-        val (alice, _, accept) = init(
-            bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional),
-        )
-        assertTrue(accept.minimumDepth > 0)
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
-        assertTrue(alice1 is WaitForFundingSigned)
-        assertEquals(2, actions1.size)
-        actions1.find<ChannelAction.ChannelId.IdAssigned>()
-        actions1.findOutgoingMessage<FundingCreated>()
-        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroReserveChannels)))
     }
 
     @Test
@@ -95,7 +90,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val lowDustLimitSatoshis = 353.sat
         // but we only enforce it on mainnet
         val aliceMainnet = alice.copy(staticParams = alice.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash)))
-        val (alice1, actions1) = aliceMainnet.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)))
+        val (alice1, actions1) = aliceMainnet.process(ChannelEvent.MessageReceived(accept.copy(dustLimit = lowDustLimitSatoshis)))
         assertTrue(alice1 is Aborted)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUST_LIMIT).message))
@@ -106,7 +101,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init()
         // we don't want their dust limit to be too high
         val highDustLimitSatoshis = 2000.sat
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = highDustLimitSatoshis)))
+        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(dustLimit = highDustLimitSatoshis)))
         assertTrue(alice1 is Aborted)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, highDustLimitSatoshis, alice.staticParams.nodeParams.maxRemoteDustLimit).message))
@@ -120,50 +115,6 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertTrue(alice1 is Aborted)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, alice.staticParams.nodeParams.maxToLocalDelayBlocks).message))
-    }
-
-    @Test
-    fun `recv AcceptChannel -- reserve too high`() {
-        val (alice, _, accept) = init()
-        // 30% is huge, recommended ratio is 1%
-        val reserveTooHigh = TestConstants.fundingAmount * 0.3
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(channelReserveSatoshis = reserveTooHigh)))
-        assertTrue(alice1 is Aborted)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3, 0.05).message))
-    }
-
-    @Test
-    fun `recv AcceptChannel -- reserve below dust limit`() {
-        val (alice, _, accept) = init()
-        val reserveTooSmall = accept.dustLimitSatoshis - 1.sat
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(channelReserveSatoshis = reserveTooSmall)))
-        assertTrue(alice1 is Aborted)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).message))
-    }
-
-    @Test
-    fun `recv AcceptChannel -- reserve below our dust limit`() {
-        val (alice, _, accept) = init()
-        val open = alice.lastSent
-        val reserveTooSmall = open.dustLimitSatoshis - 1.sat
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(channelReserveSatoshis = reserveTooSmall)))
-        assertTrue(alice1 is Aborted)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).message))
-    }
-
-    @Test
-    fun `recv AcceptChannel -- dust limit above our reserve`() {
-        val (alice, _, accept) = init()
-        val open = alice.lastSent
-        val dustTooBig = open.channelReserveSatoshis + 1.sat
-        val aliceDustLimitTolerance = alice.copy(staticParams = alice.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(maxRemoteDustLimit = 15_000.sat)))
-        val (alice1, actions1) = aliceDustLimitTolerance.process(ChannelEvent.MessageReceived(accept.copy(dustLimitSatoshis = dustTooBig)))
-        assertTrue(alice1 is Aborted)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).message))
     }
 
     @Test
@@ -186,15 +137,20 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             currentHeight: Int = TestConstants.defaultBlockHeight,
-            fundingAmount: Satoshi = TestConstants.fundingAmount,
+            aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+            bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
-        ): Triple<WaitForAcceptChannel, WaitForFundingCreated, AcceptChannel> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, fundingAmount)
+        ): Triple<WaitForAcceptChannel, WaitForFundingCreated, AcceptDualFundedChannel> {
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount)
+            assertEquals(open.fundingAmount, aliceFundingAmount)
+            assertEquals(open.pushAmount, TestConstants.pushAmount)
             assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
             val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
             assertTrue(bob1 is WaitForFundingCreated)
-            val accept = actions.hasOutgoingMessage<AcceptChannel>()
+            val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
+            assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
+            assertEquals(accept.fundingAmount, bobFundingAmount)
             assertEquals(accept.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
             if (bob1.channelFeatures.hasFeature(Feature.ZeroConfChannels)) {
                 assertEquals(0, accept.minimumDepth)

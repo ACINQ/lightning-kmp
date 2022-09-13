@@ -53,7 +53,7 @@ object Helpers {
         }
 
     /** Called by the non-initiator. */
-    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenChannel, localParams: LocalParams, remoteFeatures: Features): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel, localFeatures: Features, remoteFeatures: Features): Either<ChannelException, ChannelFeatures> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
         if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve).contains(channelType)) {
@@ -66,18 +66,18 @@ object Helpers {
             return Either.Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
         }
 
-        if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) {
-            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
+        if (open.fundingAmount < nodeParams.minFundingSatoshis || open.fundingAmount > nodeParams.maxFundingSatoshis) {
+            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
         }
 
         // BOLT #2: Channel funding limits
-        if (open.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Feature.Wumbo)) {
-            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
+        if (open.fundingAmount >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Feature.Wumbo)) {
+            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
         }
 
         // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-        if (open.pushMsat > open.fundingSatoshis) {
-            return Either.Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi()))
+        if (open.pushAmount > open.fundingAmount) {
+            return Either.Left(InvalidPushAmount(open.temporaryChannelId, open.pushAmount, open.fundingAmount.toMilliSatoshi()))
         }
 
         // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
@@ -90,52 +90,27 @@ object Helpers {
             return Either.Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
         }
 
-        // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-        if (isFeeTooSmall(open.feeratePerKw)) {
-            return Either.Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
+        // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
+        if (isFeeTooSmall(open.commitmentFeerate)) {
+            return Either.Left(FeerateTooSmall(open.temporaryChannelId, open.commitmentFeerate))
         }
 
-        if (open.dustLimitSatoshis > nodeParams.maxRemoteDustLimit) {
-            return Either.Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.maxRemoteDustLimit))
+        if (open.dustLimit > nodeParams.maxRemoteDustLimit) {
+            return Either.Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.maxRemoteDustLimit))
         }
 
-        if (open.channelReserveSatoshis == 0.sat && localParams.features.hasFeature(Feature.ZeroReserveChannels)) {
-            // NB: if the initiator doesn't require us to have a reserve, we can't ensure that dust_limit_satoshis is greater than our reserve.
-        } else {
-            // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-            if (open.dustLimitSatoshis > open.channelReserveSatoshis) {
-                return Either.Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis))
-            }
+        if (open.dustLimit < Channel.MIN_DUST_LIMIT) {
+            return Either.Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
         }
 
-        // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
-        // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
-        val (toLocalMsat, toRemoteMsat) = Pair(open.pushMsat, open.fundingSatoshis.toMilliSatoshi() - open.pushMsat)
-        if (toLocalMsat < open.channelReserveSatoshis && toRemoteMsat < open.channelReserveSatoshis) {
-            return Either.Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
-        }
-
-        if (isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, open.feeratePerKw, nodeParams.onChainFeeConf.feerateTolerance)) {
-            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.feeratePerKw))
-        }
-
-        // only enforce dust limit check on mainnet
-        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash && open.dustLimitSatoshis < Channel.MIN_DUST_LIMIT) {
-            return Either.Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUST_LIMIT))
-        }
-
-        // we don't check that the initiator's amount for the initial commitment transaction is sufficient for full fee payment
-        // now, but it will be done later when we receive `funding_created`
-        val reserveToFundingRatio = open.channelReserveSatoshis.toLong().toDouble() / max(open.fundingSatoshis.toLong(), 1)
-        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
-            return Either.Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
+        if (isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, open.commitmentFeerate, nodeParams.onChainFeeConf.feerateTolerance)) {
+            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.commitmentFeerate))
         }
 
         val channelFeatures = ChannelFeatures(
             buildSet {
                 addAll(channelType.features)
-                if (Features.canUseFeature(localParams.features, remoteFeatures, Feature.Wumbo)) add(Feature.Wumbo)
-                if (open.channelReserveSatoshis == 0.sat) add(Feature.ZeroReserveChannels)
+                if (Features.canUseFeature(localFeatures, remoteFeatures, Feature.Wumbo)) add(Feature.Wumbo)
             }
         )
 
@@ -143,7 +118,7 @@ object Helpers {
     }
 
     /** Called by the initiator. */
-    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelEvent.InitInitiator, open: OpenChannel, accept: AcceptChannel): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelEvent.InitInitiator, open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): Either<ChannelException, ChannelFeatures> {
         require(open.channelType != null) { "we should have sent a channel type in open_channel" }
         if (accept.channelType == null) {
             // We only open channels to peers who support explicit channel type negotiation.
@@ -156,18 +131,13 @@ object Helpers {
         if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) {
             return Either.Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
         }
-        // only enforce dust limit check on mainnet
-        if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash && accept.dustLimitSatoshis < Channel.MIN_DUST_LIMIT) {
-            return Either.Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUST_LIMIT))
+
+        if (accept.dustLimit < Channel.MIN_DUST_LIMIT) {
+            return Either.Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimit, Channel.MIN_DUST_LIMIT))
         }
 
-        if (accept.dustLimitSatoshis > nodeParams.maxRemoteDustLimit) {
-            return Either.Left(DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, nodeParams.maxRemoteDustLimit))
-        }
-
-        // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-        if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) {
-            return Either.Left(DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis))
+        if (accept.dustLimit > nodeParams.maxRemoteDustLimit) {
+            return Either.Left(DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimit, nodeParams.maxRemoteDustLimit))
         }
 
         // if minimum_depth is unreasonably large: MAY reject the channel.
@@ -175,31 +145,10 @@ object Helpers {
             return Either.Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
         }
 
-        if (open.channelReserveSatoshis == 0.sat) {
-            // if we proposed a zero-reserve channel to our peer, we don't make any additional requirement on dust limit.
-        } else {
-            // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
-            // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
-            if (open.channelReserveSatoshis < accept.dustLimitSatoshis) {
-                return Either.Left(DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis))
-            }
-        }
-
-        // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message: MUST reject the channel.
-        if (accept.channelReserveSatoshis < open.dustLimitSatoshis) {
-            return Either.Left(ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis))
-        }
-
-        val reserveToFundingRatio = accept.channelReserveSatoshis.toLong().toDouble() / max(open.fundingSatoshis.toLong(), 1)
-        if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
-            return Either.Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
-        }
-
         val channelFeatures = ChannelFeatures(
             buildSet {
                 addAll(init.channelType.features)
                 if (Features.canUseFeature(init.localParams.features, Features(init.remoteInit.features), Feature.Wumbo)) add(Feature.Wumbo)
-                if (open.channelReserveSatoshis == 0.sat || accept.channelReserveSatoshis == 0.sat) add(Feature.ZeroReserveChannels)
             }
         )
 
@@ -352,26 +301,27 @@ object Helpers {
             temporaryChannelId: ByteVector32,
             localParams: LocalParams,
             remoteParams: RemoteParams,
-            fundingAmount: Satoshi,
-            pushMsat: MilliSatoshi,
+            localFundingAmount: Satoshi,
+            remoteFundingAmount: Satoshi, pushMsat: MilliSatoshi,
             commitTxFeerate: FeeratePerKw,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
         ): Either<ChannelException, FirstCommitTx> {
-            val toLocalMsat = if (localParams.isInitiator) MilliSatoshi(fundingAmount) - pushMsat else pushMsat
-            val toRemoteMsat = if (localParams.isInitiator) pushMsat else MilliSatoshi(fundingAmount) - pushMsat
+            val toLocalMsat = if (localParams.isInitiator) localFundingAmount.toMilliSatoshi() - pushMsat else localFundingAmount.toMilliSatoshi() + pushMsat
+            val toRemoteMsat = if (localParams.isInitiator) remoteFundingAmount.toMilliSatoshi() + pushMsat else remoteFundingAmount.toMilliSatoshi() - pushMsat
 
-            val localSpec = CommitmentSpec(setOf(), feerate = commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
-            val remoteSpec = CommitmentSpec(setOf(), feerate = commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+            val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
+            val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+            val fundingAmount = localFundingAmount + remoteFundingAmount
 
             if (!localParams.isInitiator) {
                 // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-                val reserve = localParams.channelReserve
+                val reserve = (fundingAmount / 100).max(localParams.dustLimit)
                 val missing = remoteSpec.toLocal.truncateToSatoshi() - reserve - fees
-                if (missing < Satoshi(0)) {
-                    return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
+                if (missing < 0.sat) {
+                    return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = reserve, fees = fees))
                 }
             }
 

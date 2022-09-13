@@ -186,8 +186,6 @@ object Node {
             maxToLocalDelayBlocks = CltvExpiryDelta(2016),
             feeBase = 1000.msat,
             feeProportionalMillionth = 100,
-            reserveToFundingRatio = 0.01, // note: not used (overridden below)
-            maxReserveToFundingRatio = 0.05,
             revocationTimeoutSeconds = 20,
             authTimeoutSeconds = 10,
             initTimeoutSeconds = 10,
@@ -246,7 +244,7 @@ object Node {
                     }
                     post("/invoice/create") {
                         val request = call.receive<CreateInvoiceRequest>()
-                        val paymentPreimage = Lightning.randomBytes32()
+                        val paymentPreimage = randomBytes32()
                         val amount = MilliSatoshi(request.amount ?: 50000L)
                         val result = CompletableDeferred<PaymentRequest>()
                         peer.send(ReceivePayment(paymentPreimage, amount, request.description.orEmpty(), null, result))

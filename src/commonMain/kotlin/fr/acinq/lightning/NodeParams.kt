@@ -56,8 +56,6 @@ data class WalletParams(
  * @param minDepthBlocks minimum depth of a transaction before we consider it safely confirmed.
  * @param feeBase base fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
  * @param feeProportionalMillionth proportional fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
- * @param reserveToFundingRatio size of the channel reserve we required from our peer.
- * @param maxReserveToFundingRatio maximum size of the channel reserve our peer can require from us.
  * @param revocationTimeoutSeconds delay after which we disconnect from our peer if they don't send us a revocation after a new commitment is signed.
  * @param authTimeoutSeconds timeout for the connection authentication phase.
  * @param initTimeoutSeconds timeout for the connection initialization phase.
@@ -95,8 +93,6 @@ data class NodeParams(
     val minDepthBlocks: Int,
     val feeBase: MilliSatoshi,
     val feeProportionalMillionth: Int,
-    val reserveToFundingRatio: Double,
-    val maxReserveToFundingRatio: Double,
     val revocationTimeoutSeconds: Long,
     val authTimeoutSeconds: Long,
     val initTimeoutSeconds: Long,

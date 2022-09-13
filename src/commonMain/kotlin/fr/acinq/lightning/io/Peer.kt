@@ -588,13 +588,13 @@ class Peer(
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
                         logger.error { "n:$remoteNodeId connection error: ${msg.toAscii()}" }
                     }
-                    msg is OpenChannel && theirInit == null -> {
+                    msg is OpenDualFundedChannel && theirInit == null -> {
                         logger.error { "n:$remoteNodeId they sent open_channel before init" }
                     }
-                    msg is OpenChannel && _channels.containsKey(msg.temporaryChannelId) -> {
+                    msg is OpenDualFundedChannel && _channels.containsKey(msg.temporaryChannelId) -> {
                         logger.warning { "n:$remoteNodeId ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
                     }
-                    msg is OpenChannel -> {
+                    msg is OpenDualFundedChannel -> {
                         val fundingKeyPath = randomKeyPath(4)
                         val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
                         val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
@@ -603,7 +603,6 @@ class Peer(
                             nodeParams.keyManager.channelKeys(fundingKeyPath),
                             nodeParams.dustLimit,
                             nodeParams.maxHtlcValueInFlightMsat,
-                            Satoshi(600),
                             nodeParams.htlcMinimum,
                             nodeParams.toRemoteDelayBlocks,
                             nodeParams.maxAcceptedHtlcs,
@@ -617,7 +616,7 @@ class Peer(
                             onChainFeeratesFlow.filterNotNull().first()
                         )
                         val channelConfig = ChannelConfig.standard
-                        // Note that we don't contribute yet to the channel funding (we need dual funding for that).
+                        // We currently don't add any inputs to the funding transaction.
                         val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, FundingInputs.empty, localParams, channelConfig, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
                         processActions(msg.temporaryChannelId, actions1 + actions2)

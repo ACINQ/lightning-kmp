@@ -12,7 +12,8 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.wire.AcceptChannel
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingCreated
 import fr.acinq.lightning.wire.FundingSigned
@@ -88,13 +89,13 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             currentHeight: Int = TestConstants.defaultBlockHeight,
-            fundingAmount: Satoshi = TestConstants.fundingAmount,
+            fundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         ): Triple<WaitForFundingSigned, WaitForFundingConfirmed, FundingSigned> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight = currentHeight, fundingAmount = fundingAmount)
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, fundingAmount, 0.sat)
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(open))
-            val accept = actionsBob1.findOutgoingMessage<AcceptChannel>()
+            val accept = actionsBob1.findOutgoingMessage<AcceptDualFundedChannel>()
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(accept))
             assertTrue(alice1 is WaitForFundingSigned)
             val fundingCreated = actionsAlice1.findOutgoingMessage<FundingCreated>()

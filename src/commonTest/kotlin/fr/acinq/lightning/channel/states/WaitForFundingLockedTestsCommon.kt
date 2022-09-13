@@ -9,6 +9,7 @@ import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
@@ -104,7 +105,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE -- nothing at stake`() {
-        val (_, bob, _) = init(pushMsat = 0.msat)
+        val (_, bob, _) = init(pushAmount = 0.msat)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
         assertTrue(bob1 is Aborted)
         assertEquals(1, actions1.size)
@@ -116,12 +117,12 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             currentHeight: Int = TestConstants.defaultBlockHeight,
-            fundingAmount: Satoshi = TestConstants.fundingAmount,
-            pushMsat: MilliSatoshi = TestConstants.pushMsat
+            fundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+            pushAmount: MilliSatoshi = TestConstants.pushAmount
         ): Triple<WaitForFundingLocked, WaitForFundingLocked, Pair<FundingLocked, FundingLocked>> {
-            val (alice, bob, open) = TestsHelper.init(channelType, currentHeight = currentHeight, fundingAmount = fundingAmount, pushMsat = pushMsat)
+            val (alice, bob, open) = TestsHelper.init(channelType, currentHeight = currentHeight, aliceFundingAmount = fundingAmount, bobFundingAmount = 0.sat, pushAmount = pushAmount)
             val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(open))
-            val accept = actionsBob1.findOutgoingMessage<AcceptChannel>()
+            val accept = actionsBob1.findOutgoingMessage<AcceptDualFundedChannel>()
             val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(accept))
             assertTrue(alice1 is WaitForFundingSigned)
             val fundingTx = alice1.fundingTx

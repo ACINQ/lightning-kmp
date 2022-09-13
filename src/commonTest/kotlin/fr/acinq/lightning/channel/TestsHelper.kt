@@ -74,10 +74,11 @@ object TestsHelper {
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         currentHeight: Int = TestConstants.defaultBlockHeight,
-        fundingAmount: Satoshi = TestConstants.fundingAmount,
-        pushMsat: MilliSatoshi = TestConstants.pushMsat,
+        aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+        bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
+        pushAmount: MilliSatoshi = TestConstants.pushAmount,
         channelOrigin: ChannelOrigin? = null
-    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenDualFundedChannel> {
         val aliceNodeParams = TestConstants.Alice.nodeParams.copy(features = aliceFeatures)
         val bobNodeParams = TestConstants.Bob.nodeParams.copy(features = bobFeatures)
         var alice: ChannelState = WaitForInit(
@@ -91,18 +92,14 @@ object TestsHelper {
             currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
         )
         val channelFlags = 0.toByte()
-        var aliceChannelParams = TestConstants.Alice.channelParams.copy(features = aliceFeatures)
-        val bobChannelParams = TestConstants.Bob.channelParams.copy(features = bobFeatures)
-        // If Bob accepts zero-reserve channels, Alice is nice and doesn't require a reserve from Bob.
-        if (bobFeatures.hasFeature(Feature.ZeroReserveChannels)) {
-            aliceChannelParams = aliceChannelParams.copy(channelReserve = 0.sat)
-        }
+        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures)
+        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
         val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
         val ra = alice.process(
             ChannelEvent.InitInitiator(
-                createFunding(fundingAmount, 100.sat),
-                pushMsat,
+                createFunding(aliceFundingAmount, 100.sat),
+                pushAmount,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -115,10 +112,11 @@ object TestsHelper {
         )
         alice = ra.first
         assertTrue(alice is WaitForAcceptChannel)
-        val rb = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, FundingInputs.empty, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val bobFunding = if (bobFundingAmount > 0.sat) createFunding(bobFundingAmount, 50.sat) else FundingInputs.empty
+        val rb = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFunding, bobChannelParams, ChannelConfig.standard, aliceInit))
         bob = rb.first
         assertTrue(bob is WaitForOpenChannel)
-        val open = ra.second.findOutgoingMessage<OpenChannel>()
+        val open = ra.second.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice, bob, open)
     }
 
@@ -127,15 +125,16 @@ object TestsHelper {
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         currentHeight: Int = TestConstants.defaultBlockHeight,
-        fundingAmount: Satoshi = TestConstants.fundingAmount,
-        pushMsat: MilliSatoshi = TestConstants.pushMsat
+        aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+        bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
+        pushAmount: MilliSatoshi = TestConstants.pushAmount,
     ): Triple<Normal, Normal, Transaction> {
-        val (a, b, open) = init(channelType, aliceFeatures, bobFeatures, currentHeight, fundingAmount, pushMsat)
+        val (a, b, open) = init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
         var alice = a as ChannelState
         var bob = b as ChannelState
         var rb = bob.process(ChannelEvent.MessageReceived(open))
         bob = rb.first
-        val accept = rb.second.findOutgoingMessage<AcceptChannel>()
+        val accept = rb.second.findOutgoingMessage<AcceptDualFundedChannel>()
         var ra = alice.process(ChannelEvent.MessageReceived(accept))
         alice = ra.first
         assertIs<WaitForFundingSigned>(alice)

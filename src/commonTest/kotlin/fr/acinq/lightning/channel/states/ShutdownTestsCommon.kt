@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.Feature
-import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -44,12 +43,12 @@ class ShutdownTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_ADD_HTLC -- zero-reserve`() {
-        val (_, bob) = init(bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional))
+        val (_, bob) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(add))
         assertTrue(bob1 is ShuttingDown)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
-        assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroReserveChannels)))
+        assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
     }
 
     @Test

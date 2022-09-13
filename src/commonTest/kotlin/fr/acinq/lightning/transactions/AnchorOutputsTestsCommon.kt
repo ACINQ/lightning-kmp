@@ -90,7 +90,7 @@ class AnchorOutputsTestsCommon {
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32()),
-            546.sat, 1000000000L, 0.sat, 0.msat, CltvExpiryDelta(144), 1000, true,
+            546.sat, 1000000000L, 0.msat, CltvExpiryDelta(144), 1000, true,
             Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector(),
             TestConstants.Alice.nodeParams.features,
         )
@@ -98,7 +98,6 @@ class AnchorOutputsTestsCommon {
             TestConstants.Bob.nodeParams.nodeId,
             546.sat,
             1000000000L,
-            0.sat,
             0.msat,
             CltvExpiryDelta(144),
             1000,

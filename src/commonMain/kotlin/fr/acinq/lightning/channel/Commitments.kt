@@ -74,8 +74,8 @@ data class Commitments(
     }
 
     val fundingAmount: Satoshi = commitInput.txOut.amount
-    val localChannelReserve: Satoshi = remoteParams.channelReserve
-    val remoteChannelReserve: Satoshi = localParams.channelReserve
+    val localChannelReserve: Satoshi = if (channelFeatures.hasFeature(Feature.ZeroReserveChannels) && !localParams.isInitiator) 0.sat else (fundingAmount / 100).max(remoteParams.dustLimit)
+    val remoteChannelReserve: Satoshi = if (channelFeatures.hasFeature(Feature.ZeroReserveChannels) && localParams.isInitiator) 0.sat else (fundingAmount / 100).max(localParams.dustLimit)
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
         localParams = localParams.copy(features = Features(localInit.features)),

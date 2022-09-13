@@ -31,18 +31,18 @@ import kotlin.test.assertTrue
 
 class PeerTest : LightningTestSuite() {
 
-    fun buildOpenChannel(): OpenChannel = OpenChannel(
+    fun buildOpenChannel() = OpenDualFundedChannel(
         Block.RegtestGenesisBlock.hash,
         randomBytes32(),
+        TestConstants.feeratePerKw,
+        TestConstants.feeratePerKw,
         100_000.sat,
-        0.msat,
         483.sat,
         10_000,
-        1_000.sat,
         1.msat,
-        TestConstants.feeratePerKw,
         CltvExpiryDelta(144),
         100,
+        0,
         randomKey().publicKey(),
         randomKey().publicKey(),
         randomKey().publicKey(),
@@ -80,7 +80,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, _, alice2bob, _) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
         val open = buildOpenChannel()
         alice.forward(open)
-        alice2bob.expect<AcceptChannel>()
+        alice2bob.expect<AcceptDualFundedChannel>()
         // bob tries to open another channel with the same temporaryChannelId
         alice.forward(open.copy(firstPerCommitmentPoint = randomKey().publicKey()))
         assertEquals(1, alice.channels.size)
@@ -93,15 +93,15 @@ class PeerTest : LightningTestSuite() {
         val (alice, _, alice2bob, _) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
         val open1 = buildOpenChannel()
         alice.forward(open1)
-        alice2bob.expect<AcceptChannel>()
+        alice2bob.expect<AcceptDualFundedChannel>()
 
         val open2 = buildOpenChannel()
         alice.forward(open2)
-        alice2bob.expect<AcceptChannel>()
+        alice2bob.expect<AcceptDualFundedChannel>()
 
         val open3 = buildOpenChannel()
         alice.forward(open3)
-        alice2bob.expect<AcceptChannel>()
+        alice2bob.expect<AcceptDualFundedChannel>()
 
         assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.channelKeys.fundingKeyPath }.toSet().size)
     }

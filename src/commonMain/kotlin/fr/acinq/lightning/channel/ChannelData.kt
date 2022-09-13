@@ -387,7 +387,6 @@ data class LocalParams(
     val channelKeys: ChannelKeys,
     val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
@@ -400,7 +399,6 @@ data class RemoteParams(
     val nodeId: PublicKey,
     val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,

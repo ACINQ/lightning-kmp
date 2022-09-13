@@ -7,6 +7,7 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
@@ -184,7 +185,7 @@ data class LocalParams constructor(
         from.channelKeys.fundingKeyPath,
         from.dustLimit,
         from.maxHtlcValueInFlightMsat,
-        from.channelReserve,
+        0.sat, // ignored
         from.htlcMinimum,
         from.toSelfDelay,
         from.maxAcceptedHtlcs,
@@ -198,7 +199,6 @@ data class LocalParams constructor(
         nodeParams.keyManager.channelKeys(fundingKeyPath),
         dustLimit,
         maxHtlcValueInFlightMsat,
-        channelReserve,
         htlcMinimum,
         toSelfDelay,
         maxAcceptedHtlcs,
@@ -228,7 +228,7 @@ data class RemoteParams(
         from.nodeId,
         from.dustLimit,
         from.maxHtlcValueInFlightMsat,
-        from.channelReserve,
+        0.sat, // ignored
         from.htlcMinimum,
         from.toSelfDelay,
         from.maxAcceptedHtlcs,
@@ -244,7 +244,6 @@ data class RemoteParams(
         nodeId,
         dustLimit,
         maxHtlcValueInFlightMsat,
-        channelReserve,
         htlcMinimum,
         toSelfDelay,
         maxAcceptedHtlcs,
@@ -500,7 +499,7 @@ data class WaitForFundingCreated(
     @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelVersion: ChannelVersion,
-    val lastSent: AcceptChannel
+    val lastSent: AcceptDualFundedChannel
 ) : ChannelState() {
     constructor(from: fr.acinq.lightning.channel.WaitForFundingCreated) : this(
         StaticParams(from.staticParams),
@@ -562,7 +561,7 @@ data class WaitForAcceptChannel(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     val init: InitInitiator,
-    val lastSent: OpenChannel
+    val lastSent: OpenDualFundedChannel
 ) : ChannelState() {
     constructor(from: fr.acinq.lightning.channel.WaitForAcceptChannel) : this(
         StaticParams(from.staticParams),

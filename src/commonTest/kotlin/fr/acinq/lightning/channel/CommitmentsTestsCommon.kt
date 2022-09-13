@@ -46,7 +46,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- success case`() {
         val (alice, bob) = reachNormal()
 
-        val a = 764_660_000.msat // initial balance alice
+        val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
@@ -132,7 +132,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
         val (alice, bob) = reachNormal()
 
-        val a = 764_660_000.msat // initial balance alice
+        val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
@@ -218,7 +218,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
         val (alice, bob) = reachNormal()
 
-        val a = 764_660_000.msat // initial balance alice
+        val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
         val p1 = 18_000_000.msat // a->b payment
         val p2 = 20_000_000.msat // a->b payment
@@ -477,10 +477,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments {
             val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())
             val localParams = LocalParams(
-                randomKey().publicKey(), channelKeys, dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, Features.empty
+                randomKey().publicKey(), channelKeys, dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
-                randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50,
+                randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50,
                 randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(),
                 Features.empty
             )
@@ -512,10 +512,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments {
             val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())
             val localParams = LocalParams(
-                localNodeId, channelKeys, 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
+                localNodeId, channelKeys, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
-                remoteNodeId, 0.sat, Long.MAX_VALUE, 0.sat, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
+                remoteNodeId, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
             )
             val commitmentInput = Helpers.Funding.makeFundingInputInfo(
                 randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey

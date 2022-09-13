@@ -18,8 +18,9 @@ import org.kodein.log.LoggerFactory
 
 object TestConstants {
     const val defaultBlockHeight = 400_000
-    val fundingAmount = 1_000_000.sat
-    val pushMsat = 200_000_000.msat
+    val aliceFundingAmount = 850_000.sat
+    val bobFundingAmount = 150_000.sat
+    val pushAmount = 50_000_000.msat
     val feeratePerKw = FeeratePerKw(10_000.sat)
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
@@ -81,8 +82,6 @@ object TestConstants {
             maxToLocalDelayBlocks = CltvExpiryDelta(2048),
             feeBase = 100.msat,
             feeProportionalMillionth = 10,
-            reserveToFundingRatio = 0.01, // note: not used (overridden below)
-            maxReserveToFundingRatio = 0.05,
             revocationTimeoutSeconds = 20,
             authTimeoutSeconds = 10,
             initTimeoutSeconds = 10,
@@ -103,12 +102,13 @@ object TestConstants {
         )
 
         private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
-        val channelParams: LocalParams = PeerChannels.makeChannelParams(
+
+        fun channelParams(finalScriptPubKey: ByteVector = ByteVector(closingPubKeyInfo.second)): LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
+            finalScriptPubKey,
             isInitiator = true,
-            fundingAmount
-        ).copy(channelReserve = 10_000.sat) // Bob will need to keep that much satoshis as direct payment
+            nodeParams.maxHtlcValueInFlightMsat.msat,
+        )
     }
 
     object Bob {
@@ -159,8 +159,6 @@ object TestConstants {
             maxToLocalDelayBlocks = CltvExpiryDelta(1024),
             feeBase = 10.msat,
             feeProportionalMillionth = 10,
-            reserveToFundingRatio = 0.01, // note: not used (overridden below)
-            maxReserveToFundingRatio = 0.05,
             revocationTimeoutSeconds = 20,
             authTimeoutSeconds = 10,
             initTimeoutSeconds = 10,
@@ -181,12 +179,13 @@ object TestConstants {
         )
 
         private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
-        val channelParams: LocalParams = PeerChannels.makeChannelParams(
+
+        fun channelParams(finalScriptPubKey: ByteVector = ByteVector(closingPubKeyInfo.second)): LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
-            defaultFinalScriptPubkey = ByteVector(closingPubKeyInfo.second),
+            finalScriptPubKey,
             isInitiator = false,
-            fundingAmount
-        ).copy(channelReserve = 20_000.sat) // Alice will need to keep that much satoshis as direct payment
+            nodeParams.maxHtlcValueInFlightMsat.msat,
+        )
     }
 
 }

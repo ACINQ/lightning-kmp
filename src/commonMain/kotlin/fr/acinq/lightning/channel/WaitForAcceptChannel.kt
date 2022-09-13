@@ -4,34 +4,36 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.wire.AcceptChannel
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.sum
+import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingCreated
-import fr.acinq.lightning.wire.OpenChannel
+import fr.acinq.lightning.wire.OpenDualFundedChannel
 
 data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     val init: ChannelEvent.InitInitiator,
-    val lastSent: OpenChannel
+    val lastSent: OpenDualFundedChannel
 ) : ChannelState() {
     private val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is AcceptChannel -> {
+            event is ChannelEvent.MessageReceived && event.message is AcceptDualFundedChannel -> {
                 when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, event.message)) {
                     is Either.Right -> {
                         val channelFeatures = res.value
                         val remoteParams = RemoteParams(
                             nodeId = staticParams.remoteNodeId,
-                            dustLimit = event.message.dustLimitSatoshis,
+                            dustLimit = event.message.dustLimit,
                             maxHtlcValueInFlightMsat = event.message.maxHtlcValueInFlightMsat,
-                            channelReserve = event.message.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
-                            htlcMinimum = event.message.htlcMinimumMsat,
+                            htlcMinimum = event.message.htlcMinimum,
                             toSelfDelay = event.message.toSelfDelay,
                             maxAcceptedHtlcs = event.message.maxAcceptedHtlcs,
                             fundingPubKey = event.message.fundingPubkey,
@@ -51,6 +53,7 @@ data class WaitForAcceptChannel(
                             init.localParams,
                             remoteParams,
                             init.fundingAmount,
+                            event.message.fundingAmount,
                             init.pushAmount,
                             init.commitTxFeerate,
                             fundingTx.hash,
@@ -65,16 +68,17 @@ data class WaitForAcceptChannel(
                             is Either.Right -> {
                                 val firstCommitTx = firstCommitTxRes.value
                                 require(fundingTx.txOut[0].publicKeyScript == firstCommitTx.localCommitTx.input.txOut.publicKeyScript) { "pubkey script mismatch!" }
+                                val channelId = computeChannelId(lastSent, event.message)
+                                val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId)
                                 val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, init.localParams.channelKeys.fundingPrivateKey)
                                 // signature of their initial commitment tx that pays remote pushMsat
                                 val fundingCreated = FundingCreated(
-                                    temporaryChannelId = temporaryChannelId,
+                                    temporaryChannelId = channelId,
                                     fundingTxid = fundingTx.hash,
                                     fundingOutputIndex = 0,
                                     signature = localSigOfRemoteTx
                                 )
-                                val channelId = Lightning.toLongId(fundingTx.hash, 0)
-                                val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+                                // TODO: start interactive-tx flow
                                 val nextState = WaitForFundingSigned(
                                     staticParams,
                                     currentTip,
