@@ -33,3 +33,6 @@ inline fun <reified T> T.lightningLogger() = lightningLogger(T::class)
 
 inline fun <reified T> lightningLogger() = lightningLogger(T::class)
 
+interface LoggingContext {
+    val logger: Logger
+}

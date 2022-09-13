@@ -30,8 +30,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-class CommitmentsTestsCommon : LightningTestSuite() {
-    private val logger by lightningLogger()
+class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
+    override val logger by lightningLogger()
 
     @Test
     fun `reach normal state`() {
@@ -448,25 +448,25 @@ class CommitmentsTestsCommon : LightningTestSuite() {
         val claimHtlcSuccessTxs = rcp.claimHtlcSuccessTxs()
 
         val aliceTimedOutHtlcs = htlcTimeoutTxs.map { htlcTimeout ->
-            val htlcs = localCommit.timedOutHtlcs(lcp, dustLimit, htlcTimeout.tx)
+            val htlcs = timedOutHtlcs(localCommit, lcp, dustLimit, htlcTimeout.tx)
             assertEquals(1, htlcs.size)
             htlcs.first()
         }
         assertEquals(timedOutHtlcs.take(3).toSet(), aliceTimedOutHtlcs.toSet())
 
         val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map { claimHtlcTimeout ->
-            val htlcs = remoteCommit.timedOutHtlcs(rcp, dustLimit, claimHtlcTimeout.tx)
+            val htlcs = timedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcTimeout.tx)
             assertEquals(1, htlcs.size)
             htlcs.first()
         }
         assertEquals(timedOutHtlcs.drop(3).toSet(), bobTimedOutHtlcs.toSet())
 
-        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, htlcSuccess.tx).isEmpty()) }
-        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(remoteCommit.timedOutHtlcs(rcp, dustLimit, htlcSuccess.tx).isEmpty()) }
-        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
-        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(remoteCommit.timedOutHtlcs(rcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
-        htlcTimeoutTxs.forEach { htlcTimeout -> assertTrue(remoteCommit.timedOutHtlcs(rcp, dustLimit, htlcTimeout.tx).isEmpty()) }
-        claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(localCommit.timedOutHtlcs(lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
+        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(timedOutHtlcs(localCommit, lcp, dustLimit, htlcSuccess.tx).isEmpty()) }
+        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(timedOutHtlcs(remoteCommit, rcp, dustLimit, htlcSuccess.tx).isEmpty()) }
+        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(timedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
+        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(timedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
+        htlcTimeoutTxs.forEach { htlcTimeout -> assertTrue(timedOutHtlcs(remoteCommit, rcp, dustLimit, htlcTimeout.tx).isEmpty()) }
+        claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(timedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
     }
 
     companion object {
