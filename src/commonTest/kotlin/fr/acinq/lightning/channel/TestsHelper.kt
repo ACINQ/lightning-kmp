@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
@@ -100,7 +101,7 @@ object TestsHelper {
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
         val ra = alice.process(
             ChannelEvent.InitInitiator(
-                fundingAmount,
+                createFunding(fundingAmount, 100.sat),
                 pushMsat,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
@@ -114,7 +115,7 @@ object TestsHelper {
         )
         alice = ra.first
         assertTrue(alice is WaitForAcceptChannel)
-        val rb = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val rb = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, FundingInputs.empty, bobChannelParams, ChannelConfig.standard, aliceInit))
         bob = rb.first
         assertTrue(bob is WaitForOpenChannel)
         val open = ra.second.findOutgoingMessage<OpenChannel>()
@@ -128,7 +129,7 @@ object TestsHelper {
         currentHeight: Int = TestConstants.defaultBlockHeight,
         fundingAmount: Satoshi = TestConstants.fundingAmount,
         pushMsat: MilliSatoshi = TestConstants.pushMsat
-    ): Pair<Normal, Normal> {
+    ): Triple<Normal, Normal, Transaction> {
         val (a, b, open) = init(channelType, aliceFeatures, bobFeatures, currentHeight, fundingAmount, pushMsat)
         var alice = a as ChannelState
         var bob = b as ChannelState
@@ -137,19 +138,8 @@ object TestsHelper {
         val accept = rb.second.findOutgoingMessage<AcceptChannel>()
         var ra = alice.process(ChannelEvent.MessageReceived(accept))
         alice = ra.first
-        val makeFundingTx = run {
-            val candidates = ra.second.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>()
-            assertTrue(candidates.isNotEmpty(), "cannot find funding tx")
-            candidates.first()
-        }
-        val fundingTx = Transaction(
-            version = 2,
-            txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)),
-            txOut = listOf(TxOut(makeFundingTx.amount, makeFundingTx.pubkeyScript)),
-            lockTime = 0
-        )
-        ra = alice.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, 100.sat))
-        alice = ra.first
+        assertIs<WaitForFundingSigned>(alice)
+        val fundingTx = alice.fundingTx
         val created = ra.second.findOutgoingMessage<FundingCreated>()
         rb = bob.process(ChannelEvent.MessageReceived(created))
         bob = rb.first
@@ -176,7 +166,7 @@ object TestsHelper {
         rb = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
         bob = rb.first
 
-        return Pair(alice as Normal, bob as Normal)
+        return Triple(alice as Normal, bob as Normal, fundingTx)
     }
 
     fun mutualCloseAlice(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
@@ -319,8 +309,19 @@ object TestsHelper {
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
         val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
-        val cmd = OutgoingPaymentPacket.buildCommand(paymentId, paymentHash, listOf(ChannelHop(dummyKey, destination, dummyUpdate)), PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, randomBytes32(), null)).first.copy(commit = false)
+        val cmd = OutgoingPaymentPacket.buildCommand(
+            paymentId,
+            paymentHash,
+            listOf(ChannelHop(dummyKey, destination, dummyUpdate)),
+            PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, randomBytes32(), null)
+        ).first.copy(commit = false)
         return Pair(paymentPreimage, cmd)
+    }
+
+    fun createFunding(fundingAmount: Satoshi, fees: Satoshi): FundingInputs {
+        val privKey = randomKey()
+        val previousTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(fundingAmount + fees, Script.pay2wpkh(privKey.publicKey()))), 0)
+        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0, privKey)), null)
     }
 
     fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {

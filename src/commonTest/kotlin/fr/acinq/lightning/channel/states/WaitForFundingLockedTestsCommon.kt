@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
@@ -8,7 +9,6 @@ import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
@@ -123,23 +123,22 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
             val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(open))
             val accept = actionsBob1.findOutgoingMessage<AcceptChannel>()
             val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(accept))
-            val fundingRequest = actionsAlice1.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>().first()
-            val fundingTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
-            val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, 100.sat))
-            val fundingCreated = actionsAlice2.findOutgoingMessage<FundingCreated>()
+            assertTrue(alice1 is WaitForFundingSigned)
+            val fundingTx = alice1.fundingTx
+            val fundingCreated = actionsAlice1.findOutgoingMessage<FundingCreated>()
             val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.MessageReceived(fundingCreated))
             val fundingSigned = actionsBob2.findOutgoingMessage<FundingSigned>()
             val channelId = fundingSigned.channelId
-            val (alice3, _) = alice2.processEx(ChannelEvent.MessageReceived(fundingSigned))
-            val (alice4, actionsAlice4) = alice3.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight, 42, fundingTx)))
-            assertTrue(alice4 is WaitForFundingLocked)
-            actionsAlice4.hasWatch<WatchLost>()
-            val fundingLockedAlice = actionsAlice4.findOutgoingMessage<FundingLocked>()
+            val (alice2, _) = alice1.processEx(ChannelEvent.MessageReceived(fundingSigned))
+            val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight, 42, fundingTx)))
+            assertTrue(alice3 is WaitForFundingLocked)
+            actionsAlice3.hasWatch<WatchLost>()
+            val fundingLockedAlice = actionsAlice3.findOutgoingMessage<FundingLocked>()
             val (bob3, actionsBob3) = bob2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight, 42, fundingTx)))
             assertTrue(bob3 is WaitForFundingLocked)
             actionsBob3.hasWatch<WatchLost>()
             val fundingLockedBob = actionsBob3.findOutgoingMessage<FundingLocked>()
-            return Triple(alice4, bob3, Pair(fundingLockedAlice, fundingLockedBob))
+            return Triple(alice3, bob3, Pair(fundingLockedAlice, fundingLockedBob))
         }
     }
 

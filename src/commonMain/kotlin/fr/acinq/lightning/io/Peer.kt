@@ -615,7 +615,8 @@ class Peer(
                             onChainFeeratesFlow.filterNotNull().first()
                         )
                         val channelConfig = ChannelConfig.standard
-                        val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, localParams, channelConfig, theirInit!!))
+                        // Note that we don't contribute yet to the channel funding (we need dual funding for that).
+                        val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, FundingInputs.empty, localParams, channelConfig, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
                         processActions(msg.temporaryChannelId, actions1 + actions2)
                         _channels = _channels + (msg.temporaryChannelId to state2)

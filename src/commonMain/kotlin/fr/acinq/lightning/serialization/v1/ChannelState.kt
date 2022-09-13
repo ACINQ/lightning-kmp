@@ -380,7 +380,6 @@ sealed class ChannelState {
             is fr.acinq.lightning.channel.Aborted -> Aborted(from)
             is fr.acinq.lightning.channel.WaitForOpenChannel -> WaitForOpenChannel(from)
             is fr.acinq.lightning.channel.WaitForAcceptChannel -> WaitForAcceptChannel(from)
-            is fr.acinq.lightning.channel.WaitForFundingInternal -> WaitForFundingInternal(from)
             is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked(from)
             is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed(from)
             is fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
@@ -523,11 +522,28 @@ data class WaitForFundingCreated(
 }
 
 @Serializable
-data class InitFunder(
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
+data class FundingInput(
+    @Serializable(with = TransactionKSerializer::class) val previousTx: Transaction,
+    val outputIndex: Int,
+    @Serializable(with = PrivateKeyKSerializer::class) val privateKey: PrivateKey
+) {
+    constructor(from: fr.acinq.lightning.channel.FundingInput) : this(from.previousTx, from.outputIndex, from.privateKey)
+}
+
+@Serializable
+data class FundingInputs(
     @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val inputs: List<FundingInput>,
+    @Serializable(with = PublicKeyKSerializer::class) val changePubKey: PublicKey?,
+) {
+    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) }, from.changePubKey)
+}
+
+@Serializable
+data class InitInitiator(
+    val fundingInputs: FundingInputs,
     val pushAmount: MilliSatoshi,
-    val initialFeerate: FeeratePerKw,
+    val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
     val localParams: LocalParams,
     val remoteInit: Init,
@@ -535,8 +551,7 @@ data class InitFunder(
     val channelVersion: ChannelVersion
 ) {
     constructor(from: fr.acinq.lightning.channel.ChannelEvent.InitInitiator) : this(
-        from.temporaryChannelId,
-        from.fundingAmount,
+        FundingInputs(from.fundingInputs),
         from.pushAmount,
         from.commitTxFeerate,
         from.fundingTxFeerate,
@@ -552,45 +567,14 @@ data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    val initFunder: InitFunder,
+    val init: InitInitiator,
     val lastSent: OpenChannel
 ) : ChannelState() {
     constructor(from: fr.acinq.lightning.channel.WaitForAcceptChannel) : this(
         StaticParams(from.staticParams),
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
-        InitFunder(from.init),
-        from.lastSent
-    )
-}
-
-@Serializable
-data class WaitForFundingInternal(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
-    @Serializable(with = ByteVector32KSerializer::class) val temporaryChannelId: ByteVector32,
-    val localParams: LocalParams,
-    val remoteParams: RemoteParams,
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
-    val pushAmount: MilliSatoshi,
-    val initialFeerate: FeeratePerKw,
-    @Serializable(with = PublicKeyKSerializer::class) val remoteFirstPerCommitmentPoint: PublicKey,
-    val channelVersion: ChannelVersion,
-    val lastSent: OpenChannel
-) : ChannelState() {
-    constructor(from: fr.acinq.lightning.channel.WaitForFundingInternal) : this(
-        StaticParams(from.staticParams),
-        from.currentTip,
-        OnChainFeerates(from.currentOnChainFeerates),
-        from.temporaryChannelId,
-        LocalParams(from.localParams),
-        RemoteParams(from.remoteParams),
-        from.fundingAmount,
-        from.pushAmount,
-        from.commitTxFeerate,
-        from.remoteFirstPerCommitmentPoint,
-        ChannelVersion.standard,
+        InitInitiator(from.init),
         from.lastSent
     )
 }
