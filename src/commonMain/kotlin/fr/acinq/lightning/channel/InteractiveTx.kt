@@ -43,21 +43,21 @@ sealed class FundingContributionFailure {
 data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<TxAddOutput>) {
     companion object {
         /** Create funding contributions from p2wpkh inputs, with an optional p2wpkh change output. */
-        fun create(params: InteractiveTxParams, utxos: List<Pair<Transaction, Int>>, changePubKey: PublicKey?): Either<FundingContributionFailure, FundingContributions> {
-            utxos.forEach { (tx, txOutput) ->
+        fun create(params: InteractiveTxParams, utxos: List<FundingInput>, changePubKey: PublicKey?): Either<FundingContributionFailure, FundingContributions> {
+            utxos.forEach { (tx, txOutput, _) ->
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
                 if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
                 if (!Script.isPay2wpkh(tx.txOut[txOutput].publicKeyScript.toByteArray())) return Either.Left(FundingContributionFailure.NonPay2wpkhInput(tx.txid, txOutput))
                 if (Transaction.write(tx).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
             }
-            val totalAmountIn = utxos.map { (tx, txOutput) -> tx.txOut[txOutput].amount }.sum()
+            val totalAmountIn = utxos.map { it.amount }.sum()
             if (totalAmountIn < params.localAmount) {
                 return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localAmount, totalAmountIn))
             }
 
             // We compute the fees that we should pay in the shared transaction.
             val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
-            val dummySignedTxIn = utxos.map { (tx, txOutput) -> TxIn(OutPoint(tx, txOutput.toLong()), ByteVector.empty, 0, dummyWitness) }
+            val dummySignedTxIn = utxos.map { TxIn(it.outpoint, ByteVector.empty, 0, dummyWitness) }
             val dummyChangeTxOut = TxOut(params.localAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
             val sharedTxOut = TxOut(params.fundingAmount, params.fundingPubkeyScript)
             val (weightWithoutChange, weightWithChange) = when (params.isInitiator) {
@@ -84,7 +84,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
             val serialIdParity = if (params.isInitiator) 0 else 1
 
             // We add a change output if necessary and finalize our funding contributions.
-            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
+            val inputs = utxos.mapIndexed { i, (tx, txOutput, _) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
             val sharedOutput = TxAddOutput(params.channelId, 2 * utxos.size.toLong() + serialIdParity, params.fundingAmount, params.fundingPubkeyScript)
             val changeOutput = when (changePubKey) {
                 null -> listOf()
