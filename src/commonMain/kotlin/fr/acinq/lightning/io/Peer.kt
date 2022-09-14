@@ -24,7 +24,7 @@ import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BroadcastChannel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -92,8 +92,7 @@ data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
-@ObsoleteCoroutinesApi
-@OptIn(ExperimentalStdlibApi::class, ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalStdlibApi::class, ExperimentalTime::class)
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
@@ -139,7 +138,8 @@ class Peer(
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
-    private val listenerEventChannel = BroadcastChannel<PeerListenerEvent>(BUFFERED)
+    private val _eventsFlow = MutableSharedFlow<PeerListenerEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    val eventsFlow: SharedFlow<PeerListenerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, walletParams, db.payments)
@@ -156,9 +156,8 @@ class Peer(
     public val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
     init {
-        val electrumNotificationsChannel = watcher.client.openNotificationsSubscription()
         launch {
-            electrumNotificationsChannel.consumeAsFlow().filterIsInstance<HeaderSubscriptionResponse>()
+            watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
                     currentTipFlow.value = msg.height to msg.header
                     input.send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
@@ -223,18 +222,19 @@ class Peer(
         }
     }
 
+    @OptIn(FlowPreview::class)
     private suspend fun updateEstimateFees() {
-        val electrumFeesChannel = watcher.client.openNotificationsSubscription()
-        val flow = electrumFeesChannel.consumeAsFlow().filterIsInstance<EstimateFeeResponse>()
-
+        val flow = watcher.client.notifications
+            .filterIsInstance<EstimateFeeResponse>()
+            .take(3) // we will send 3 requests, we expect 3 responses
+            .produceIn(this) // creates a ad-hoc receive channel to collect values
+            .consumeAsFlow() // once
         watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
         watcher.client.sendElectrumRequest(EstimateFees(2))
         watcher.client.sendElectrumRequest(EstimateFees(6))
         watcher.client.sendElectrumRequest(EstimateFees(10))
-        val fees = mutableListOf<EstimateFeeResponse>()
-        flow.take(3).toCollection(fees)
-        logger.info { "on-chain fees: $fees" }
-        val sortedFees = fees.sortedBy { it.confirmations }
+        val sortedFees = flow.toList().sortedBy { it.confirmations }
+        logger.info { "on-chain fees: $sortedFees" }
         // TODO: If some feerates are null, we may implement a retry
         onChainFeeratesFlow.value = OnChainFeerates(
             mutualCloseFeerate = sortedFees[2].feerate ?: FeeratePerKw(FeeratePerByte(20.sat)),
@@ -360,8 +360,7 @@ class Peer(
         input.send(event)
     }
 
-    fun openListenerEventSubscription() = listenerEventChannel.openSubscription()
-
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pings/pongs
@@ -392,10 +391,10 @@ class Peer(
                 action is ChannelAction.ProcessCmdRes.AddFailed -> {
                     when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
                         is OutgoingPaymentHandler.Progress -> {
-                            listenerEventChannel.send(PaymentProgress(result.request, result.fees))
+                            _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                             result.actions.forEach { input.send(it) }
                         }
-                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
+                        is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                         null -> logger.debug { "n:$remoteNodeId c:$actualChannelId non-final error, more partial payments are still pending: ${action.error.message}" }
                     }
                 }
@@ -403,17 +402,17 @@ class Peer(
                     val currentTip = currentTipFlow.filterNotNull().first()
                     when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
                         is OutgoingPaymentHandler.Progress -> {
-                            listenerEventChannel.send(PaymentProgress(result.request, result.fees))
+                            _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                             result.actions.forEach { input.send(it) }
                         }
-                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.request, result.payment))
-                        is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
+                        is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
+                        is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                         null -> logger.debug { "n:$remoteNodeId c:$actualChannelId non-final error, more partial payments are still pending: ${action.result}" }
                     }
                 }
                 action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                     when (val result = outgoingPaymentHandler.processAddSettled(action)) {
-                        is OutgoingPaymentHandler.Success -> listenerEventChannel.send(PaymentSent(result.request, result.payment))
+                        is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
                         is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "n:$remoteNodeId c:$actualChannelId p:${result.request.paymentId} payment preimage received: ${result.preimage}" }
                         null -> logger.debug { "n:$remoteNodeId c:$actualChannelId unknown payment" }
                     }
@@ -449,12 +448,12 @@ class Peer(
                         status = OutgoingPayment.Status.Pending
                     )
                     db.payments.addOutgoingPayment(payment)
-                    listenerEventChannel.send(ChannelClosing(channelId))
+                    _eventsFlow.emit(ChannelClosing(channelId))
                 }
                 action is ChannelAction.Storage.StoreChannelClosed -> {
                     val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
                     db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
-                    listenerEventChannel.send(ChannelClosing(channelId))
+                    _eventsFlow.emit(ChannelClosing(channelId))
                 }
                 action is ChannelAction.ChannelId.IdSwitch -> {
                     logger.info { "n:$remoteNodeId c:$actualChannelId switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
@@ -474,7 +473,7 @@ class Peer(
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
         }
         when (result) {
-            is IncomingPaymentHandler.ProcessAddResult.Accepted -> listenerEventChannel.send(PaymentReceived(result.incomingPayment, result.received))
+            is IncomingPaymentHandler.ProcessAddResult.Accepted -> _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
             else -> Unit
         }
         result.actions.forEach { input.send(it) }
@@ -681,23 +680,23 @@ class Peer(
                     }
                     msg is SwapInResponse -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress}" }
-                        listenerEventChannel.send(SwapInResponseEvent(msg))
+                        _eventsFlow.emit(SwapInResponseEvent(msg))
                     }
                     msg is SwapInPending -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
-                        listenerEventChannel.send(SwapInPendingEvent(msg))
+                        _eventsFlow.emit(SwapInPendingEvent(msg))
                     }
                     msg is SwapInConfirmed -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
-                        listenerEventChannel.send(SwapInConfirmedEvent(msg))
+                        _eventsFlow.emit(SwapInConfirmedEvent(msg))
                     }
                     msg is SwapOutResponse -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
-                        listenerEventChannel.send(SwapOutResponseEvent(msg))
+                        _eventsFlow.emit(SwapOutResponseEvent(msg))
                     }
                     msg is PhoenixAndroidLegacyInfo -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
-                        listenerEventChannel.send(PhoenixAndroidLegacyInfoEvent(msg))
+                        _eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
                     }
                     msg is OnionMessage -> {
                         logger.info { "n:$remoteNodeId received ${msg::class}" }
@@ -740,7 +739,7 @@ class Peer(
                     )
                 )
                 val pr = incomingPaymentHandler.createInvoice(event.paymentPreimage, event.amount, event.description, extraHops, event.expirySeconds)
-                listenerEventChannel.send(PaymentRequestGenerated(event, pr.write()))
+                _eventsFlow.emit(PaymentRequestGenerated(event, pr.write()))
                 event.result.complete(pr)
             }
             event is PayToOpenResponseEvent -> {
@@ -751,10 +750,10 @@ class Peer(
                 val currentTip = currentTipFlow.filterNotNull().first()
                 when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
-                        listenerEventChannel.send(PaymentProgress(result.request, result.fees))
+                        _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                         result.actions.forEach { input.send(it) }
                     }
-                    is OutgoingPaymentHandler.Failure -> listenerEventChannel.send(PaymentNotSent(result.request, result.failure))
+                    is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                 }
             }
             event is PurgeExpiredPayments -> {

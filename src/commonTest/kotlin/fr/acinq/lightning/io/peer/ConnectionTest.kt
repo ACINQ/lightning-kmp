@@ -8,14 +8,12 @@ import fr.acinq.lightning.tests.io.peer.newPeer
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.Connection
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
+@OptIn(ExperimentalTime::class)
 class ConnectionTest : LightningTestSuite() {
 
     @Test

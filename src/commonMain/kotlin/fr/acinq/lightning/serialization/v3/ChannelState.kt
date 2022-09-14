@@ -159,7 +159,6 @@ data class RevokedCommitPublished(
  * if these backups were compromised channel private keys would not be leaked unless the main seed was also compromised.
  * This means that they will be recomputed once when we convert serialized data to their "live" counterparts.
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class LocalParams constructor(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
@@ -203,7 +202,6 @@ data class LocalParams constructor(
     )
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class RemoteParams(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,

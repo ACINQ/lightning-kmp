@@ -39,7 +39,6 @@ import java.sql.DriverManager
 /**
  * this is a very simple Phoenix node that can be used to "test" Phoenix without the actual apps
  */
-@OptIn(ExperimentalUnsignedTypes::class, ExperimentalCoroutinesApi::class, ObsoleteCoroutinesApi::class)
 object Node {
     private val logger by lightningLogger()
 

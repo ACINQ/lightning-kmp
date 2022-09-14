@@ -10,7 +10,6 @@ import fr.acinq.lightning.crypto.RouteBlinding
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 sealed class OnionMessagePayloadTlv : Tlv {
     /**

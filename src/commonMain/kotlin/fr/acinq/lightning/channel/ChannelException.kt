@@ -57,7 +57,6 @@ data class UnexpectedHtlcId                        (override val channelId: Byte
 data class ExpiryTooSmall                          (override val channelId: ByteVector32, val minimum: CltvExpiry, val actual: CltvExpiry, val blockCount: Long) : ChannelException(channelId, "expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")
 data class ExpiryTooBig                            (override val channelId: ByteVector32, val maximum: CltvExpiry, val actual: CltvExpiry, val blockCount: Long) : ChannelException(channelId, "expiry too big: maximum=$maximum actual=$actual blockCount=$blockCount")
 data class HtlcValueTooSmall                       (override val channelId: ByteVector32, val minimum: MilliSatoshi, val actual: MilliSatoshi) : ChannelException(channelId, "htlc value too small: minimum=$minimum actual=$actual")
-@OptIn(ExperimentalUnsignedTypes::class)
 data class HtlcValueTooHighInFlight                (override val channelId: ByteVector32, val maximum: ULong, val actual: MilliSatoshi) : ChannelException(channelId, "in-flight htlcs hold too much value: maximum=$maximum actual=$actual")
 data class TooManyAcceptedHtlcs                    (override val channelId: ByteVector32, val maximum: Long) : ChannelException(channelId, "too many accepted htlcs: maximum=$maximum")
 data class TooManyOfferedHtlcs                     (override val channelId: ByteVector32, val maximum: Long) : ChannelException(channelId, "too many offered htlcs: maximum=$maximum")

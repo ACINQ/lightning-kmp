@@ -15,7 +15,6 @@ import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.secp256k1.Hex
 
-@OptIn(ExperimentalUnsignedTypes::class)
 object TestConstants {
     const val defaultBlockHeight = 400_000
     val fundingAmount = 1_000_000.sat

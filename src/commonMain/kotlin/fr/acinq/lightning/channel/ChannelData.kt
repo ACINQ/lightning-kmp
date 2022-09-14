@@ -378,7 +378,6 @@ data class ChannelKeys(
     val revocationBasepoint: PublicKey = revocationKey.publicKey()
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class LocalParams(
     val nodeId: PublicKey,
     val channelKeys: ChannelKeys,
@@ -393,7 +392,6 @@ data class LocalParams(
     val features: Features
 )
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class RemoteParams(
     val nodeId: PublicKey,
     val dustLimit: Satoshi,

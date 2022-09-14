@@ -105,7 +105,6 @@ interface KeyManager {
          * @param fundingPubKey funding public key
          * @return a BIP32 path
          */
-        @OptIn(ExperimentalUnsignedTypes::class)
         fun channelKeyPath(fundingPubKey: PublicKey): KeyPath {
             val buffer = sha256(fundingPubKey.value)
 

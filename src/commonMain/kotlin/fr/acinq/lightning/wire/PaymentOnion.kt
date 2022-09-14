@@ -16,7 +16,6 @@ import fr.acinq.lightning.utils.msat
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 sealed class OnionPaymentPayloadTlv : Tlv {
     /** Amount to forward to the next node. */
