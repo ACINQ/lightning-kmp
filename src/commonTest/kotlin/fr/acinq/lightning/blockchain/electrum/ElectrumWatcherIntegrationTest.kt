@@ -14,12 +14,10 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sat
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consume
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.produceIn
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -27,7 +25,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
+@OptIn(ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     private val bitcoincli = BitcoindService
@@ -275,6 +273,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         client.stop()
     }
 
+    @OptIn(FlowPreview::class)
     @Test
     fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runSuspendTest(timeout = Duration.seconds(50)) {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
@@ -290,7 +289,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         assertEquals(tx2, sentTx2)
 
         // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
-        val getHistoryListener = client.openNotificationsSubscription()
+        val getHistoryListener = client.notifications.produceIn(this)
 
         client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript))))
         getHistoryListener.consume {

@@ -13,7 +13,6 @@ import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.ReceivePayment
-import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.io.SendPaymentNormal
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
@@ -24,15 +23,14 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ObsoleteCoroutinesApi::class)
+
+@OptIn(ExperimentalTime::class)
 class PeerTest : LightningTestSuite() {
 
     fun buildOpenChannel(): OpenChannel = OpenChannel(

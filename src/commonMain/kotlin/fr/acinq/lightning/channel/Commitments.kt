@@ -218,7 +218,6 @@ data class Commitments(
      * @param blockHeight current block height
      * @return either Failure(failureMessage) with a BOLT #4 failure or Success(new commitments, updateAddHtlc)
      */
-    @OptIn(ExperimentalUnsignedTypes::class)
     fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Either<ChannelException, Pair<Commitments, UpdateAddHtlc>> {
         val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
         // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
@@ -284,7 +283,6 @@ data class Commitments(
         return Either.Right(Pair(commitments1, add))
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     fun receiveAdd(add: UpdateAddHtlc): Either<ChannelException, Commitments> {
         if (add.id != remoteNextHtlcId) {
             return Either.Left(UnexpectedHtlcId(channelId, expected = remoteNextHtlcId, actual = add.id))

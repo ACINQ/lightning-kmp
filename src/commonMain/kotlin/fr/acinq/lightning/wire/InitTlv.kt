@@ -9,7 +9,6 @@ import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 /** Tlv types used inside Init messages. */
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 sealed class InitTlv : Tlv {
     @Serializable

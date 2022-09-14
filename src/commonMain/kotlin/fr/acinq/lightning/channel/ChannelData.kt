@@ -379,7 +379,6 @@ data class ChannelKeys(
     val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class LocalParams(
     val nodeId: PublicKey,
     val channelKeys: ChannelKeys,
@@ -394,7 +393,6 @@ data class LocalParams(
     val features: Features
 )
 
-@OptIn(ExperimentalUnsignedTypes::class)
 data class RemoteParams(
     val nodeId: PublicKey,
     val dustLimit: Satoshi,

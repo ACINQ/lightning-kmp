@@ -9,7 +9,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.utils.leftPaddedCopyOf
 import kotlin.jvm.JvmStatic
 
-@OptIn(ExperimentalUnsignedTypes::class)
 @ExperimentalStdlibApi
 object LightningCodecs {
 

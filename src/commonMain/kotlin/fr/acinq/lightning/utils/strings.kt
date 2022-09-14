@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun utf8ByteCount(firstCodePoint: Byte) =
     when (firstCodePoint.toUByte().toInt()) {
         in 0..0x7F -> 1

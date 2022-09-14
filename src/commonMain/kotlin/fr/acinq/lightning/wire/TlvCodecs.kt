@@ -9,7 +9,6 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
-@OptIn(ExperimentalUnsignedTypes::class)
 interface Tlv {
     /**
      * TLV fields start with a tag that uniquely identifies the type of field within a specific namespace (usually a lightning message).
@@ -38,7 +37,6 @@ interface TlvValueReader<T : Tlv> {
  * @param tag tlv tag.
  * @param value tlv value (length is implicit, and encoded as a varint).
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 @Serializable
 data class GenericTlv(override val tag: Long, @Contextual val value: ByteVector) : Tlv {
     init {
@@ -52,7 +50,6 @@ data class GenericTlv(override val tag: Long, @Contextual val value: ByteVector)
  * @param lengthPrefixed if true, the first bytes contain the total length of the serialized stream.
  * @param readers custom readers that will be used to read tlv values.
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 class TlvStreamSerializer<T : Tlv>(private val lengthPrefixed: Boolean, private val readers: Map<Long, TlvValueReader<T>>) {
     /**
      * @param input input stream

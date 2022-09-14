@@ -27,7 +27,6 @@ data class OnionRoutingPacket(
 /**
  * @param payloadLength length of the onion-encrypted payload.
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 class OnionRoutingPacketSerializer(private val payloadLength: Int) {
     fun read(input: Input): OnionRoutingPacket {
         return OnionRoutingPacket(

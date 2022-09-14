@@ -15,7 +15,10 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.lightningLogger
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.flow.*
 import kotlin.math.absoluteValue
 import kotlin.math.max
@@ -30,9 +33,9 @@ class ReceivedMessage(val message: ElectrumMessage) : WatcherEvent()
 class ClientStateUpdate(val connection: Connection) : WatcherEvent()
 
 sealed class NotifyEvent
-class NotifyWatchEvent(val watchEvent: WatchEvent): NotifyEvent()
-class NotifyTxEvent(val channelId: ByteVector32, val txWithMeta: GetTxWithMetaResponse): NotifyEvent()
-class NotifyUpToDateEvent(val millis: Long): NotifyEvent()
+class NotifyWatchEvent(val watchEvent: WatchEvent) : NotifyEvent()
+class NotifyTxEvent(val channelId: ByteVector32, val txWithMeta: GetTxWithMetaResponse) : NotifyEvent()
+class NotifyUpToDateEvent(val millis: Long) : NotifyEvent()
 
 internal sealed class WatcherAction
 private object AskForHeaderUpdate : WatcherAction()
@@ -72,7 +75,6 @@ private data class WatcherDisconnected(
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val getTxQueue: List<GetTxWithMeta> = listOf()
 ) : WatcherState() {
-    @OptIn(ObsoleteCoroutinesApi::class)
     override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
             is ClientStateUpdate -> {
@@ -355,7 +357,6 @@ internal data class WatcherRunning(
             }
         }
 
-    @OptIn(ObsoleteCoroutinesApi::class)
     private fun setupWatch(watch: Watch) = when (watch) {
         is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
@@ -404,11 +405,7 @@ class ElectrumWatcher(
     val scope: CoroutineScope
 ) : CoroutineScope by scope {
 
-    private val _notificationsFlow = MutableSharedFlow<NotifyEvent>(
-        replay = 0,
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.SUSPEND
-    )
+    private val _notificationsFlow = MutableSharedFlow<NotifyEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     val notificationsFlow: SharedFlow<NotifyEvent> = _notificationsFlow
 
     fun openWatchNotificationsFlow(): Flow<WatchEvent> =
@@ -436,8 +433,6 @@ class ElectrumWatcher(
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
 
-    private val clientNotificationsSubscription = client.openNotificationsSubscription()
-
     private val input = produce(capacity = Channel.BUFFERED) {
         launch {
             eventChannel.consumeEach { send(it) }
@@ -448,7 +443,7 @@ class ElectrumWatcher(
             }
         }
         launch {
-            clientNotificationsSubscription.consumeEach {
+            client.notifications.collect {
                 eventChannel.send(ReceivedMessage(it))
             }
         }
@@ -503,7 +498,7 @@ class ElectrumWatcher(
                             eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
                     is NotifyTxWithMeta -> {
-                       _notificationsFlow.emit(NotifyTxEvent(action.channelId, action.txWithMeta))
+                        _notificationsFlow.emit(NotifyTxEvent(action.channelId, action.txWithMeta))
                     }
                 }
             }
@@ -516,7 +511,7 @@ class ElectrumWatcher(
         val timeMillis: Long = 2L * 1_000 // fire timer every 2 seconds
         timerJob = launch {
             delay(timeMillis)
-            while(isActive) {
+            while (isActive) {
                 checkIsUpToDate()
                 delay(timeMillis)
             }
@@ -595,8 +590,6 @@ class ElectrumWatcher(
 
     fun stop() {
         logger.info { "electrum watcher stopping" }
-        // Cancel subscriptions
-        clientNotificationsSubscription.cancel()
         // Cancel event consumer
         runJob?.cancel()
         // Cancel up-to-date timer
@@ -609,7 +602,6 @@ class ElectrumWatcher(
     companion object {
         val logger by lightningLogger<ElectrumWatcher>()
 
-        @ObsoleteCoroutinesApi
         internal fun registerToScriptHash(watch: Watch): RegisterToScriptHashNotification? = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch
