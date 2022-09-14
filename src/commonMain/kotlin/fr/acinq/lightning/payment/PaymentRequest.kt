@@ -161,8 +161,8 @@ data class PaymentRequest(
                 TaggedField.Description(description),
                 TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),
                 TaggedField.PaymentSecret(paymentSecret),
-                // We remove unknown features which could make the invoice too big.
-                TaggedField.Features(features.invoiceFeatures().copy(unknown = setOf()).toByteArray().toByteVector())
+                // TODO: remove unknown features which could make the invoice too big once we don't need to inject feature bit 47 anymore.
+                TaggedField.Features(features.invoiceFeatures().toByteArray().toByteVector())
             )
             paymentMetadata?.let { tags.add(TaggedField.PaymentMetadata(it)) }
             expirySeconds?.let { tags.add(TaggedField.Expiry(it)) }

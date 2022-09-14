@@ -4,11 +4,8 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -80,6 +77,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     ): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         logger.debug { "h:$paymentHash using routing hints $extraHops" }
+        val features = nodeParams.features.invoiceFeatures()
+        // This is a work-around for a compatibility issue between lnd and our legacy trampoline feature bit, which was
+        // using feature bits 50/51 that have been assigned to zero-conf. We need our invoices to still contain this
+        // legacy trampoline feature bit to allow old Phoenix wallets to pay new Phoenix wallets using trampoline.
+        // But lnd interprets that as zero-conf (even though it's not marked as an invoice feature in Bolt 9) and thus
+        // requires the scid-alias feature bit (47) to also be set.
+        // We manually inject this as an unknown feature to unblock paying Phoenix from lnd nodes.
+        // Once we don't need to add the legacy trampoline feature bit to invoices, we should remove this workaround
+        // and re-enable unknown features filtering in `PaymentRequest.create`.
+        val tweakedFeatures = features.copy(unknown = features.unknown + UnknownFeature(47))
         val pr = PaymentRequest.create(
             nodeParams.chainHash,
             amount,
@@ -87,7 +94,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             nodeParams.nodePrivateKey,
             description,
             PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            nodeParams.features.invoiceFeatures(),
+            tweakedFeatures,
             randomBytes32(),
             // We always include a payment metadata in our invoices, which lets us test whether senders support it
             ByteVector("2a"),

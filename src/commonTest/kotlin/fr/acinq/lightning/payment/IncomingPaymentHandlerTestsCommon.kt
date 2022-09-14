@@ -1,11 +1,8 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Lightning
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
@@ -1218,15 +1215,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
 
         // create incoming payment that has expired and not been paid
-        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600,
-            timestampSeconds = 1)
+        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600, timestampSeconds = 1)
 
         // create incoming payment that has expired and been paid
         delay(100)
-        val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600,
-            timestampSeconds = 100)
-        paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, fees = 1_000_000.msat, null)),
-            receivedAt = 101) // simulate incoming payment being paid before it expired
+        val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600, timestampSeconds = 100)
+        paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, fees = 1_000_000.msat, null)), receivedAt = 101) // simulate incoming payment being paid before it expired
 
         // create unexpired payment
         delay(100)
@@ -1241,6 +1235,14 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(paymentHandler.purgeExpiredPayments(), 1)
         assertEquals(paymentHandler.db.listExpiredPayments(), emptyList())
         assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment))
+    }
+
+    @Test
+    fun `add dummy feature bit for lnd`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        val invoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "lnd invoice", listOf())
+        val features = Features(invoice.features)
+        assertTrue(features.unknown.contains(UnknownFeature(47)))
     }
 
     companion object {

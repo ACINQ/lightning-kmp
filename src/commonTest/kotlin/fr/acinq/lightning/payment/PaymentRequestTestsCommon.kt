@@ -427,6 +427,7 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
         assertEquals(21, unknownTag!!.tag)
     }
 
+    @Ignore
     @Test
     fun `filter non-invoice features`() {
         val nodeFeatures = Features(
