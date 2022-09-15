@@ -5,10 +5,7 @@ import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.transactions.Scripts
-import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.AcceptChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingCreated
@@ -119,28 +116,12 @@ data class WaitForAcceptChannel(
 
     private fun createFundingTx(fundingPubkeyScript: ByteVector): Pair<Transaction, Satoshi> {
         val inputs = init.fundingInputs.inputs.map { i -> TxIn(i.outpoint, 0) }
-        val unsignedTx = when (val changePubKey = init.fundingInputs.changePubKey) {
-            null -> Transaction(2, inputs, listOf(TxOut(init.fundingAmount, fundingPubkeyScript)), currentBlockHeight.toLong())
-            else -> {
-                val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
-                val dummySignedInputs = init.fundingInputs.inputs.map { i -> TxIn(i.outpoint, ByteVector.empty, 0, dummyWitness) }
-                val dummyOutputs = listOf(TxOut(init.fundingAmount, fundingPubkeyScript), TxOut(0.sat, Script.pay2wpkh(changePubKey)))
-                val dummyFundingTx = Transaction(2, dummySignedInputs, dummyOutputs, currentBlockHeight.toLong())
-                val targetFees = Transactions.weight2fee(init.fundingTxFeerate, dummyFundingTx.weight())
-                val changeAmount = init.fundingInputs.totalAmount - init.fundingAmount - targetFees
-                val outputs = if (changeAmount > init.localParams.dustLimit) {
-                    listOf(TxOut(init.fundingAmount, fundingPubkeyScript), TxOut(changeAmount, Script.pay2wpkh(changePubKey)))
-                } else {
-                    listOf(TxOut(init.fundingAmount, fundingPubkeyScript))
-                }
-                Transaction(2, inputs, outputs, currentBlockHeight.toLong())
-            }
-        }
+        val unsignedTx = Transaction(2, inputs, listOf(TxOut(init.fundingAmount, fundingPubkeyScript)), currentBlockHeight.toLong())
         val witnesses = init.fundingInputs.inputs.mapIndexed { i, input ->
             val sig = Transaction.signInput(unsignedTx, i, Script.pay2pkh(input.privateKey.publicKey()), SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_WITNESS_V0, input.privateKey)
             Script.witnessPay2wpkh(input.privateKey.publicKey(), sig.byteVector())
         }
-        val fees = init.fundingInputs.totalAmount - unsignedTx.txOut.map { it.amount }.sum()
+        val fees = init.fundingInputs.totalAmount - init.fundingAmount
         return Pair(unsignedTx.updateWitnesses(witnesses), fees)
     }
 

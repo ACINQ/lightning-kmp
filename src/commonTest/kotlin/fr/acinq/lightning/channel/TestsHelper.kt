@@ -321,7 +321,7 @@ object TestsHelper {
     fun createFunding(fundingAmount: Satoshi, fees: Satoshi): FundingInputs {
         val privKey = randomKey()
         val previousTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(fundingAmount + fees, Script.pay2wpkh(privKey.publicKey()))), 0)
-        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0, privKey)), null)
+        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0, privKey)))
     }
 
     fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {

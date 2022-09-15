@@ -436,10 +436,10 @@ data class FundingInput(val previousTx: Transaction, val outputIndex: Int, val p
 }
 
 /** A set of utxos that should be used for channel funding. */
-data class FundingInputs(val fundingAmount: Satoshi, val inputs: List<FundingInput>, val changePubKey: PublicKey?) {
+data class FundingInputs(val fundingAmount: Satoshi, val inputs: List<FundingInput>) {
     val totalAmount: Satoshi = inputs.map { it.amount }.sum()
 
     companion object {
-        val empty: FundingInputs = FundingInputs(0.sat, listOf(), null)
+        val empty: FundingInputs = FundingInputs(0.sat, listOf())
     }
 }

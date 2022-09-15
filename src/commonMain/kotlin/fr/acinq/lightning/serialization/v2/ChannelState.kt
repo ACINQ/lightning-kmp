@@ -524,12 +524,8 @@ data class FundingInput(
 }
 
 @Serializable
-data class FundingInputs(
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
-    val inputs: List<FundingInput>,
-    @Serializable(with = PublicKeyKSerializer::class) val changePubKey: PublicKey?,
-) {
-    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) }, from.changePubKey)
+data class FundingInputs(@Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi, val inputs: List<FundingInput>) {
+    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) })
 }
 
 @Serializable
