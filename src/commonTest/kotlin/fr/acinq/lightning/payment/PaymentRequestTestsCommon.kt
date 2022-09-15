@@ -428,13 +428,26 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `filter non-invoice features`() {
+    fun `filter non-invoice features when creating invoices`() {
         val nodeFeatures = Features(
             mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.ShutdownAnySegwit to FeatureSupport.Optional),
             setOf(UnknownFeature(103), UnknownFeature(256))
         )
         val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 500.msat, randomBytes32(), randomKey(), "non-invoice features", CltvExpiryDelta(6), nodeFeatures)
         assertEquals(Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), Features(pr.features))
+    }
+
+    @Test
+    fun `filter non-invoice features when parsing invoices`() {
+        // The following invoice has feature bit 20 activated (option_anchor_outputs) without feature bit 12 (option_static_remotekey).
+        // This doesn't satisfy the feature dependency graph, but since those aren't invoice features, we should ignore it.
+        val invoice = "lntb250u1p3jxdmwpp5mnjuf5zwkndq4e29lmvqen8cnwc57aqr0658jlfl3q42667q3lgsdpqdehkuttfdemx76trv5sxvetpw36hyetncqpxsp5a0epznfadhwjrtsrqykjpxu97800grzzjv3kuq3xnlsdgaytqn3s9pqzqqqqqqzqqqqqqqqqqqqqqqqqqqqqsgqk243r3nnm92d8qaam7hgwc5yhupq4wvmnufyyt6kk6hww98a4vtrzxy0pqrpj7dyffykdfx326k0ggcw4l2d08xkknes4unt6vu3ptgqk9zn8r"
+        val features = Features(
+            mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory),
+            setOf(UnknownFeature(121), UnknownFeature(156))
+        )
+        val pr = PaymentRequest.read(invoice)
+        assertEquals(features, Features(pr.features))
     }
 
     @Test

@@ -53,7 +53,7 @@ data class PaymentRequest(
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
     init {
-        val f = Features(features)
+        val f = Features(features).invoiceFeatures()
         require(f.hasFeature(Feature.VariableLengthOnion)) { "${Feature.VariableLengthOnion.rfcName} must be supported" }
         require(f.hasFeature(Feature.PaymentSecret)) { "${Feature.PaymentSecret.rfcName} must be supported" }
         require(Features.validateFeatureGraph(f) == null)
