@@ -50,10 +50,7 @@ interface SendPayment {
     val details: OutgoingPayment.Details
     val trampolineFeesOverride: List<TrampolineFees>?
     val paymentRequest: PaymentRequest
-
-    val paymentHash: ByteVector32
-        get() = details.paymentHash
-
+    val paymentHash: ByteVector32 get() = details.paymentHash
 }
 
 data class SendPaymentNormal(
@@ -763,7 +760,7 @@ class Peer(
             }
             event is SendPayment -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
-                when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
+                when (val result = outgoingPaymentHandler.sendPayment(event, _channels, features, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
                         _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                         result.actions.forEach { input.send(it) }
