@@ -118,9 +118,9 @@ data class WaitForAcceptChannel(
     }
 
     private fun createFundingTx(fundingPubkeyScript: ByteVector): Pair<Transaction, Satoshi> {
-        val txIn = init.fundingInputs.inputs.map { i -> TxIn(i.outpoint, 0) }
+        val inputs = init.fundingInputs.inputs.map { i -> TxIn(i.outpoint, 0) }
         val unsignedTx = when (val changePubKey = init.fundingInputs.changePubKey) {
-            null -> Transaction(2, txIn, listOf(TxOut(init.fundingAmount, fundingPubkeyScript)), currentBlockHeight.toLong())
+            null -> Transaction(2, inputs, listOf(TxOut(init.fundingAmount, fundingPubkeyScript)), currentBlockHeight.toLong())
             else -> {
                 val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
                 val dummySignedInputs = init.fundingInputs.inputs.map { i -> TxIn(i.outpoint, ByteVector.empty, 0, dummyWitness) }
@@ -128,12 +128,12 @@ data class WaitForAcceptChannel(
                 val dummyFundingTx = Transaction(2, dummySignedInputs, dummyOutputs, currentBlockHeight.toLong())
                 val targetFees = Transactions.weight2fee(init.fundingTxFeerate, dummyFundingTx.weight())
                 val changeAmount = init.fundingInputs.totalAmount - init.fundingAmount - targetFees
-                val txOut = if (changeAmount > init.localParams.dustLimit) {
+                val outputs = if (changeAmount > init.localParams.dustLimit) {
                     listOf(TxOut(init.fundingAmount, fundingPubkeyScript), TxOut(changeAmount, Script.pay2wpkh(changePubKey)))
                 } else {
                     listOf(TxOut(init.fundingAmount, fundingPubkeyScript))
                 }
-                Transaction(2, txIn, txOut, currentBlockHeight.toLong())
+                Transaction(2, inputs, outputs, currentBlockHeight.toLong())
             }
         }
         val witnesses = init.fundingInputs.inputs.mapIndexed { i, input ->
