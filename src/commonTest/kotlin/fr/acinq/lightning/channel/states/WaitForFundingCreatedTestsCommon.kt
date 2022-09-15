@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -90,11 +91,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             val (b1, actions) = b.process(ChannelEvent.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptChannel>()
             val (a1, actions2) = a.process(ChannelEvent.MessageReceived(accept))
-            val fundingRequest = actions2.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>().first()
-            val fundingTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
-            val (a2, actions3) = a1.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, Satoshi(0)))
-            val fundingCreated = actions3.findOutgoingMessage<FundingCreated>()
-            return Triple(a2 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)
+            val fundingCreated = actions2.findOutgoingMessage<FundingCreated>()
+            return Triple(a1 as WaitForFundingSigned, b1 as WaitForFundingCreated, fundingCreated)
         }
     }
 }

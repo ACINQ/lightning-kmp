@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
@@ -11,7 +12,6 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.AcceptChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingCreated
@@ -96,15 +96,12 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(open))
             val accept = actionsBob1.findOutgoingMessage<AcceptChannel>()
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(accept))
-            val fundingRequest = actionsAlice1.filterIsInstance<ChannelAction.Blockchain.MakeFundingTx>().first()
-            val fundingTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(fundingRequest.amount, fundingRequest.pubkeyScript)), lockTime = 0)
-            val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MakeFundingTxResponse(fundingTx, 0, 100.sat))
-            assertTrue(alice2 is WaitForFundingSigned)
-            val fundingCreated = actionsAlice2.findOutgoingMessage<FundingCreated>()
+            assertTrue(alice1 is WaitForFundingSigned)
+            val fundingCreated = actionsAlice1.findOutgoingMessage<FundingCreated>()
             val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(fundingCreated))
             val fundingSigned = actionsBob2.findOutgoingMessage<FundingSigned>()
             assertTrue(bob2 is WaitForFundingConfirmed)
-            return Triple(alice2, bob2, fundingSigned)
+            return Triple(alice1, bob2, fundingSigned)
         }
     }
 

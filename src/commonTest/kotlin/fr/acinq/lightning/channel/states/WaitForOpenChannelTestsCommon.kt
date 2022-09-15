@@ -9,6 +9,7 @@ import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.TestsHelper.createFunding
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -34,7 +35,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         unsupportedChannelTypes.forEach { channelType ->
             val (alice1, actions1) = alice.process(
                 ChannelEvent.InitInitiator(
-                    TestConstants.fundingAmount,
+                    createFunding(TestConstants.fundingAmount, 50.sat),
                     0.msat,
                     FeeratePerKw.CommitmentFeerate,
                     TestConstants.feeratePerKw,

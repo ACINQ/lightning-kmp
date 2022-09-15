@@ -23,7 +23,7 @@ import org.kodein.log.Logger
 /** Channel Events (inputs to be fed to the state machine). */
 sealed class ChannelEvent {
     data class InitInitiator(
-        val fundingAmount: Satoshi,
+        val fundingInputs: FundingInputs,
         val pushAmount: MilliSatoshi,
         val commitTxFeerate: FeeratePerKw,
         val fundingTxFeerate: FeeratePerKw,
@@ -35,21 +35,24 @@ sealed class ChannelEvent {
         val channelOrigin: ChannelOrigin? = null
     ) : ChannelEvent() {
         val temporaryChannelId: ByteVector32 = localParams.channelKeys.temporaryChannelId
+        val fundingAmount: Satoshi = fundingInputs.fundingAmount
     }
 
     data class InitNonInitiator(
         val temporaryChannelId: ByteVector32,
+        val fundingInputs: FundingInputs,
         val localParams: LocalParams,
         val channelConfig: ChannelConfig,
         val remoteInit: Init
-    ) : ChannelEvent()
+    ) : ChannelEvent() {
+        val fundingAmount: Satoshi = fundingInputs.fundingAmount
+    }
 
     data class Restore(val state: ChannelState) : ChannelEvent()
     object CheckHtlcTimeout : ChannelEvent()
     data class MessageReceived(val message: LightningMessage) : ChannelEvent()
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
-    data class MakeFundingTxResponse(val fundingTx: Transaction, val fundingTxOutputIndex: Int, val fee: Satoshi) : ChannelEvent()
     data class GetFundingTxResponse(val getTxResponse: GetTxWithMetaResponse) : ChannelEvent()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
@@ -74,7 +77,6 @@ sealed class ChannelAction {
     }
 
     sealed class Blockchain : ChannelAction() {
-        data class MakeFundingTx(val pubkeyScript: ByteVector, val amount: Satoshi, val feerate: FeeratePerKw) : Blockchain()
         data class SendWatch(val watch: Watch) : Blockchain()
         data class PublishTx(val tx: Transaction) : Blockchain()
         data class GetFundingTx(val txid: ByteVector32) : Blockchain()

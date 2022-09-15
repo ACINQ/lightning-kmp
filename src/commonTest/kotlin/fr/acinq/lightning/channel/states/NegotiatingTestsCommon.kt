@@ -156,7 +156,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         // alice initiates the negotiation with a very low feerate
         val (alice2, bob2, aliceCloseSig) = mutualCloseAlice(alice1, bob1, feerates = ClosingFeerates(FeeratePerKw(2_500.sat), FeeratePerKw(2_000.sat), FeeratePerKw(3_000.sat)))
         assertEquals(aliceCloseSig.feeSatoshis, 1685.sat)
-        assertEquals(aliceCloseSig.tlvStream.get<ClosingSignedTlv.FeeRange>(), ClosingSignedTlv.FeeRange(1348.sat, 2022.sat))
+        assertEquals(aliceCloseSig.tlvStream.get(), ClosingSignedTlv.FeeRange(1348.sat, 2022.sat))
 
         // bob chooses alice's highest fee
         val (bob3, bobActions3) = bob2.processEx(ChannelEvent.MessageReceived(aliceCloseSig))
@@ -354,7 +354,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)`() {
         // NB: we're not the initiator here
-        val (bob, alice) = reachNormal()
+        val (bob, alice, fundingTx) = reachNormal()
         val priv = randomKey()
 
         // Alice initiates a mutual close with a custom final script
@@ -376,12 +376,6 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val watch = actions4.findWatch<WatchConfirmed>()
         assertEquals(watch.txId, closingTxA.txid)
 
-        val fundingTx = Transaction(
-            version = 2,
-            txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)),
-            txOut = listOf(bob.commitments.commitInput.txOut),
-            lockTime = 0
-        )
         assertEquals(fundingTx.txid, closingTxA.txIn[0].outPoint.txid)
         // check that our closing tx is correctly signed
         Transaction.correctlySpends(closingTxA, fundingTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

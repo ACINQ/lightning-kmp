@@ -11,10 +11,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.wire.AcceptChannel
-import fr.acinq.lightning.wire.ChannelTlv
-import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.TlvStream
+import fr.acinq.lightning.wire.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,11 +22,10 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     fun `recv AcceptChannel`() {
         val (alice, _, accept) = init()
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
-        assertTrue(alice1 is WaitForFundingInternal)
-        assertEquals(1, actions1.size)
-        val funding = actions1.find<ChannelAction.Blockchain.MakeFundingTx>()
-        assertEquals(TestConstants.fundingAmount, funding.amount)
-        assertEquals(TestConstants.feeratePerKw, funding.feerate)
+        assertTrue(alice1 is WaitForFundingSigned)
+        assertEquals(2, actions1.size)
+        actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        actions1.findOutgoingMessage<FundingCreated>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
     }
 
@@ -42,9 +38,10 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         )
         assertEquals(0, accept.minimumDepth)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
-        assertTrue(alice1 is WaitForFundingInternal)
-        assertEquals(1, actions1.size)
-        actions1.find<ChannelAction.Blockchain.MakeFundingTx>()
+        assertTrue(alice1 is WaitForFundingSigned)
+        assertEquals(2, actions1.size)
+        actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        actions1.findOutgoingMessage<FundingCreated>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
     }
 
@@ -55,9 +52,10 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         )
         assertTrue(accept.minimumDepth > 0)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
-        assertTrue(alice1 is WaitForFundingInternal)
-        assertEquals(1, actions1.size)
-        actions1.find<ChannelAction.Blockchain.MakeFundingTx>()
+        assertTrue(alice1 is WaitForFundingSigned)
+        assertEquals(2, actions1.size)
+        actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        actions1.findOutgoingMessage<FundingCreated>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroReserveChannels)))
     }
 

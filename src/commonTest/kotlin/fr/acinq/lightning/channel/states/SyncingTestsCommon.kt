@@ -74,7 +74,8 @@ class SyncingTestsCommon : LightningTestSuite() {
     companion object {
         fun init(): Pair<Normal, Normal> {
             // NB: we disable channel backups to ensure Bob sends his channel_reestablish on reconnection.
-            return reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+            val (alice, bob, _) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+            return Pair(alice, bob)
         }
 
         fun disconnect(alice: Normal, bob: Normal): Triple<Syncing, Syncing, Pair<ChannelReestablish, ChannelReestablish>> {

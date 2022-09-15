@@ -1,15 +1,14 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.AcceptChannel
 import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.FundingCreated
 import fr.acinq.lightning.wire.OpenChannel
 
 data class WaitForAcceptChannel(
@@ -44,22 +43,58 @@ data class WaitForAcceptChannel(
                         )
                         val localFundingPubkey = init.localParams.channelKeys.fundingPubKey
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
-                        val makeFundingTx = ChannelAction.Blockchain.MakeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate)
-                        val nextState = WaitForFundingInternal(
-                            staticParams,
-                            currentTip,
-                            currentOnChainFeerates,
+                        val (fundingTx, fundingTxFee) = createFundingTx(fundingPubkeyScript)
+                        // let's create the first commitment tx that spends the yet uncommitted funding tx
+                        val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
+                            keyManager,
+                            temporaryChannelId,
                             init.localParams,
                             remoteParams,
                             init.fundingAmount,
                             init.pushAmount,
                             init.commitTxFeerate,
+                            fundingTx.hash,
+                            0,
                             event.message.firstPerCommitmentPoint,
-                            init.channelConfig,
-                            channelFeatures,
-                            lastSent
                         )
-                        Pair(nextState, listOf(makeFundingTx))
+                        when (firstCommitTxRes) {
+                            is Either.Left -> {
+                                logger.error(firstCommitTxRes.value) { "c:$temporaryChannelId cannot create first commit tx" }
+                                handleLocalError(event, firstCommitTxRes.value)
+                            }
+                            is Either.Right -> {
+                                val firstCommitTx = firstCommitTxRes.value
+                                require(fundingTx.txOut[0].publicKeyScript == firstCommitTx.localCommitTx.input.txOut.publicKeyScript) { "pubkey script mismatch!" }
+                                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, init.localParams.channelKeys.fundingPrivateKey)
+                                // signature of their initial commitment tx that pays remote pushMsat
+                                val fundingCreated = FundingCreated(
+                                    temporaryChannelId = temporaryChannelId,
+                                    fundingTxid = fundingTx.hash,
+                                    fundingOutputIndex = 0,
+                                    signature = localSigOfRemoteTx
+                                )
+                                val channelId = Lightning.toLongId(fundingTx.hash, 0)
+                                val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+                                val nextState = WaitForFundingSigned(
+                                    staticParams,
+                                    currentTip,
+                                    currentOnChainFeerates,
+                                    channelId,
+                                    init.localParams,
+                                    remoteParams,
+                                    fundingTx,
+                                    fundingTxFee,
+                                    firstCommitTx.localSpec,
+                                    firstCommitTx.localCommitTx,
+                                    RemoteCommit(0, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, event.message.firstPerCommitmentPoint),
+                                    lastSent.channelFlags,
+                                    init.channelConfig,
+                                    channelFeatures,
+                                    fundingCreated
+                                )
+                                Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(fundingCreated)))
+                            }
+                        }
                     }
                     is Either.Left -> {
                         logger.error(res.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
@@ -77,6 +112,17 @@ data class WaitForAcceptChannel(
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
             else -> unhandled(event)
         }
+    }
+
+    private fun createFundingTx(fundingPubkeyScript: ByteVector): Pair<Transaction, Satoshi> {
+        val inputs = init.fundingInputs.inputs.map { i -> TxIn(i.outpoint, 0) }
+        val unsignedTx = Transaction(2, inputs, listOf(TxOut(init.fundingAmount, fundingPubkeyScript)), currentBlockHeight.toLong())
+        val witnesses = init.fundingInputs.inputs.mapIndexed { i, input ->
+            val sig = Transaction.signInput(unsignedTx, i, Script.pay2pkh(input.privateKey.publicKey()), SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_WITNESS_V0, input.privateKey)
+            Script.witnessPay2wpkh(input.privateKey.publicKey(), sig.byteVector())
+        }
+        val fees = init.fundingInputs.totalAmount - init.fundingAmount
+        return Pair(unsignedTx.updateWitnesses(witnesses), fees)
     }
 
     override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
