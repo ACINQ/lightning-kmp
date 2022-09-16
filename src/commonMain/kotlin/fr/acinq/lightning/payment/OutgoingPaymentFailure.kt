@@ -15,6 +15,7 @@ sealed class FinalFailure {
     // @formatter:off
     object AlreadyPaid : FinalFailure() { override fun toString(): String = "this invoice has already been paid" }
     object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
+    object FeaturesNotSupported : FinalFailure() { override fun toString(): String = "payment request features not supported" }
     object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
     object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
     object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
