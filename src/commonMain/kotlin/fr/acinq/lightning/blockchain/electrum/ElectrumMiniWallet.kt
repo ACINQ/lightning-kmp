@@ -83,9 +83,7 @@ class ElectrumMiniWallet(
                             }
                             is ScriptHashListUnspentResponse -> {
                                 scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
-                                    println("state1=${_walletStateFlow.value}")
                                     val walletState = WalletState(_walletStateFlow.value.addresses + (bitcoinAddress to msg.unspents))
-                                    println("state2=${walletState}")
                                     logger.info { "${msg.unspents.size} utxo(s) for address=$bitcoinAddress, balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
