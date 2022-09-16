@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.utils.toByteVector32
-import fr.acinq.secp256k1.Hex
 
 sealed class FailureMessage {
     abstract val message: String
@@ -57,10 +56,7 @@ sealed class FailureMessage {
                 ExpiryTooFar.code -> ExpiryTooFar
                 InvalidOnionPayload.code -> InvalidOnionPayload(LightningCodecs.bigSize(stream).toULong(), LightningCodecs.u16(stream))
                 PaymentTimeout.code -> PaymentTimeout
-                else -> {
-                    LightningMessage.logger.warning { "cannot decode ${Hex.encode(input)}" }
-                    UnknownFailureMessage(code)
-                }
+                else -> UnknownFailureMessage(code)
             }
         }
 

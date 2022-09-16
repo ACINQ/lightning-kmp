@@ -54,12 +54,27 @@ interface SendPayment {
     val paymentRequest: PaymentRequest
     val paymentHash: ByteVector32 get() = details.paymentHash
 }
-data class SendPaymentNormal(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.Normal, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+
+data class SendPaymentNormal(
+    override val paymentId: UUID,
+    override val amount: MilliSatoshi,
+    override val recipient: PublicKey,
+    override val details: OutgoingPayment.Details.Normal,
+    override val trampolineFeesOverride: List<TrampolineFees>? = null
+) : PaymentEvent(), SendPayment {
     override val paymentRequest = details.paymentRequest
 }
-data class SendPaymentSwapOut(override val paymentId: UUID, override val amount: MilliSatoshi, override val recipient: PublicKey, override val details: OutgoingPayment.Details.SwapOut, override val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentEvent(), SendPayment {
+
+data class SendPaymentSwapOut(
+    override val paymentId: UUID,
+    override val amount: MilliSatoshi,
+    override val recipient: PublicKey,
+    override val details: OutgoingPayment.Details.SwapOut,
+    override val trampolineFeesOverride: List<TrampolineFees>? = null
+) : PaymentEvent(), SendPayment {
     override val paymentRequest = details.paymentRequest
 }
+
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentEvent()
 
 sealed class PeerListenerEvent
@@ -533,8 +548,11 @@ class Peer(
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
-                msg?.let { if (it !is Ping && it !is Pong) logger.info { "n:$remoteNodeId received $it" } }
+                msg.let { if (it !is Ping && it !is Pong) logger.info { "n:$remoteNodeId received $it" } }
                 when {
+                    msg is UnknownMessage -> {
+                        logger.warning { "unhandled code=${msg.type}, cannot decode input=${Hex.encode(event.data)}" }
+                    }
                     msg is Init -> {
                         val theirFeatures = Features(msg.features)
                         logger.info { "n:$remoteNodeId peer is using features $theirFeatures" }

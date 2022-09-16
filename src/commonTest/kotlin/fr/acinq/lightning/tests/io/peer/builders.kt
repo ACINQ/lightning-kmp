@@ -52,7 +52,7 @@ public suspend fun newPeers(
     val bob2alice = flow {
         while (scope.isActive) {
             val bytes = bob.outputLightningMessages.receive()
-            val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
+            val msg = LightningMessage.decode(bytes)
             println("Bob sends $msg")
             emit(msg)
         }
@@ -60,7 +60,7 @@ public suspend fun newPeers(
     val alice2bob = flow {
         while (scope.isActive) {
             val bytes = alice.outputLightningMessages.receive()
-            val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
+            val msg = LightningMessage.decode(bytes)
             println("Alice sends $msg")
             emit(msg)
         }

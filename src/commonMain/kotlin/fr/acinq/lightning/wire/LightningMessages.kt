@@ -16,7 +16,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.native.concurrent.ThreadLocal
 
 interface LightningMessage {
 
@@ -34,16 +33,14 @@ interface LightningMessage {
         return out.toByteArray()
     }
 
-    @ThreadLocal
     companion object {
-        val logger by lightningLogger<LightningMessage>()
 
         /**
          * @param input a single, complete message (typically received over the transport layer).
          * There is a very strong assumption that framing has been taken care of and that there are no missing or extra bytes.
          * Whatever we don't read will simply be ignored, as per the BOLTs.
          */
-        fun decode(input: ByteArray): LightningMessage? {
+        fun decode(input: ByteArray): LightningMessage {
             val stream = ByteArrayInput(input)
             val code = LightningCodecs.u16(stream)
             return when (code.toLong()) {
@@ -94,10 +91,7 @@ interface LightningMessage {
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PhoenixAndroidLegacyMigrate.type -> PhoenixAndroidLegacyMigrate.read(stream)
                 OnionMessage.type -> OnionMessage.read(stream)
-                else -> {
-                    logger.warning { "unhandled code=${code}, cannot decode input=${Hex.encode(input)}" }
-                    null
-                }
+                else -> UnknownMessage(code.toLong())
             }
         }
 
@@ -1839,4 +1833,14 @@ data class OnionMessage(
             return OnionMessage(blindingKey, onion)
         }
     }
+}
+
+data class UnknownMessage(
+    override val type: Long
+
+) : LightningMessage {
+    override fun write(out: Output) {
+        TODO("Serialization of unknown messages is not implemented")
+    }
+
 }
