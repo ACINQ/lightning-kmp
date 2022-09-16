@@ -40,6 +40,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     private val logger = nodeParams.loggerFactory.newLogger(this::class)
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
+    private val routeCalculation = RouteCalculation(nodeParams.loggerFactory)
 
     // NB: this function should only be used in tests.
     fun getPendingPayment(parentId: UUID): PaymentAttempt? = pending[parentId]
@@ -66,7 +67,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
         val trampolineFees = request.trampolineFeesOverride ?: walletParams.trampolineFees
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)
-        return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
+        return when (val result = routeCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
@@ -104,7 +105,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
                 val ignore = payment.ignore + channelId // we ignore the failing channel in retries
-                when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, add.amount, channels - ignore)) {
+                when (val routes = routeCalculation.findRoutes(payment.request.paymentId, add.amount, channels - ignore)) {
                     is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, Either.Left(event.error), db, logger)
                     is Either.Right -> {
                         val newPayments = createChildPayments(payment.request, routes.value, payment.trampolinePayload)
@@ -165,7 +166,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         val nextFees = trampolineFees[payment.attemptNumber + 1]
                         logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, nextFees, currentBlockHeight)
-                        when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
+                        when (val routes = routeCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
                             is Either.Left -> {
                                 logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
