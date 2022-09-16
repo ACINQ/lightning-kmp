@@ -7,22 +7,22 @@ import fr.acinq.bitcoin.TxIn
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
-import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.currentTimestampMillis
-import fr.acinq.lightning.utils.lightningLogger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.flow.*
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.math.absoluteValue
 import kotlin.math.max
-import kotlin.native.concurrent.ThreadLocal
 
 sealed class WatcherEvent
 class PublishAsapEvent(val tx: Transaction) : WatcherEvent()
@@ -66,7 +66,7 @@ private data class BroadcastTxAction(val tx: Transaction) : WatcherAction()
  *
  */
 internal sealed class WatcherState {
-    abstract fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>>
+    abstract fun process(event: WatcherEvent, logger: Logger): Pair<WatcherState, List<WatcherAction>>
 }
 
 private data class WatcherDisconnected(
@@ -75,7 +75,7 @@ private data class WatcherDisconnected(
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val getTxQueue: List<GetTxWithMeta> = listOf()
 ) : WatcherState() {
-    override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
+    override fun process(event: WatcherEvent, logger: Logger): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
             is ClientStateUpdate -> {
                 if (event.connection == Connection.ESTABLISHED) returnState(AskForHeaderUpdate)
@@ -85,7 +85,7 @@ private data class WatcherDisconnected(
                 is HeaderSubscriptionResponse -> {
                     newState {
                         actions = buildList {
-                            watches.mapNotNull { registerToScriptHash(it) }.forEach { add(it) }
+                            watches.mapNotNull { registerToScriptHash(it, logger) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }
@@ -120,7 +120,7 @@ internal data class WatcherRunning(
     val block2tx: Map<Long, List<Transaction>> = mapOf(),
     val sent: Set<Transaction> = setOf()
 ) : WatcherState() {
-    override fun process(event: WatcherEvent): Pair<WatcherState, List<WatcherAction>> =
+    override fun process(event: WatcherEvent, logger: Logger): Pair<WatcherState, List<WatcherAction>> =
         when (event) {
             is ReceivedMessage -> {
                 val message = event.message
@@ -304,7 +304,8 @@ internal data class WatcherRunning(
                                 ByteVector32.Zeroes, parentTxid,
                                 parentPublicKeyScript, 1, BITCOIN_PARENT_TX_CONFIRMED(tx),
                                 channelNotification = false
-                            )
+                            ),
+                            logger = logger
                         )
                     }
                     cltvTimeout > blockCount -> {
@@ -322,7 +323,7 @@ internal data class WatcherRunning(
                     }
                 }
             }
-            is ReceiveWatch -> setupWatch(event.watch)
+            is ReceiveWatch -> setupWatch(event.watch, logger)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
                     if (event.watchEvent.event !is BITCOIN_PARENT_TX_CONFIRMED) returnState()
@@ -362,11 +363,11 @@ internal data class WatcherRunning(
             }
         }
 
-    private fun setupWatch(watch: Watch) = when (watch) {
+    private fun setupWatch(watch: Watch, logger: Logger) = when (watch) {
         is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
         else -> {
-            val action = registerToScriptHash(watch)
+            val action = registerToScriptHash(watch, logger)
             newState {
                 state = copy(
                     watches = watches + watch,
@@ -407,8 +408,11 @@ private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(
     val client: ElectrumClient,
-    val scope: CoroutineScope
+    val scope: CoroutineScope,
+    loggerFactory: LoggerFactory
 ) : CoroutineScope by scope {
+
+    private val logger = loggerFactory.newLogger(this::class)
 
     private val _notificationsFlow = MutableSharedFlow<NotifyEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     val notificationsFlow: SharedFlow<NotifyEvent> = _notificationsFlow
@@ -468,7 +472,7 @@ class ElectrumWatcher(
     private suspend fun run() {
         input.consumeEach { input ->
 
-            val (newState, actions) = state.process(input)
+            val (newState, actions) = state.process(input, logger)
             val oldState = state
             state = newState
 
@@ -603,11 +607,9 @@ class ElectrumWatcher(
         eventChannel.cancel()
     }
 
-    @ThreadLocal
     companion object {
-        val logger by lightningLogger<ElectrumWatcher>()
 
-        internal fun registerToScriptHash(watch: Watch): RegisterToScriptHashNotification? = when (watch) {
+        internal fun registerToScriptHash(watch: Watch, logger: Logger): RegisterToScriptHashNotification? = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch
                 val scriptHash = computeScriptHash(publicKeyScript)
