@@ -49,12 +49,12 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (alice, _) = TestsHelper.reachNormal()
         val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
         // The following invoice requires payment_metadata.
-        val invoice1 = PaymentRequest.read("lnbc5n1p3jxw4vpp5wx34rq09j23xu7st7c0e3nvgj0fpxqan228p9cn7j844ntg0x76sdp2d4skuerpw3hhy7fqwpshjmt9de6zqmt9w3skgct5vycqpxsp5um9px6qwcptwygnalxst2u6rs6sxh3quxt4yaj5xtk7m4xsjf43q9q2gqqqqqqsgqp08gpettwwak2zhqaj3emaxz8aa35mfmh4t8e8zhjwevvrz30c2x590dx6nm4t79hcydqfkwm6wemkmncdaxy296dpwvysljmqtj2ecqz3el57")
+        val invoice1 = PaymentRequestTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
         // The following invoice requires unknown feature bit 188.
-        val invoice2 = PaymentRequest.read("lnbc5n1p3jxwhzpp59m50ft09rlcvsyw05n3vpm8a9wmqdqq9v04nhh2dqrs3a24w3jfsdpgd4skuerpw3hhy7fqw4hxkmn0wahzqen9v9682un9cqpxsp5lessxrq3qg88ztrhkhw3unw8kfmw2rxk3pk3ptxxlkqj2gc3dtzs9pxgqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsgqmk8mdcragv2pvln3j960m2t7fxv8g8zx3yafhnvs6rz6e3j768ajm2tzcz302ppvc3spukpah2v3d4tynfghnv9lsk3xxq2e9ctrhncqw007ae")
+        val invoice2 = PaymentRequestTestsCommon.createInvoiceUnsafe(features = Features(mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), setOf(UnknownFeature(188))))
         for (invoice in listOf(invoice1, invoice2)) {
             val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.nodeId, defaultWalletParams, InMemoryPaymentsDb())
-            val payment = SendPaymentNormal(UUID.randomUUID(), invoice.amount!!, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+            val payment = SendPaymentNormal(UUID.randomUUID(), 15_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
             val result = outgoingPaymentHandler.sendPayment(payment, mapOf(), features, alice.currentBlockHeight)
             assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.FeaturesNotSupported.toPaymentFailure()))
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))

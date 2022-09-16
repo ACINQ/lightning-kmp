@@ -46,13 +46,13 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
 
     private fun getPaymentAttempt(childId: UUID): PaymentAttempt? = childToParentId[childId]?.let { pending[it] }
 
-    suspend fun sendPayment(request: SendPayment, channels: Map<ByteVector32, ChannelState>, features: Features, currentBlockHeight: Int): SendPaymentResult {
+    suspend fun sendPayment(request: SendPayment, channels: Map<ByteVector32, ChannelState>, nodeFeatures: Features, currentBlockHeight: Int): SendPaymentResult {
         logger.info { "h:${request.paymentHash} p:${request.paymentId} sending ${request.amount} to ${request.recipient}" }
         if (request.amount <= 0.msat) {
             logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment amount must be positive (${request.amount})" }
             return Failure(request, FinalFailure.InvalidPaymentAmount.toPaymentFailure())
         }
-        if (!features.areSupported(Features(request.paymentRequest.features).invoiceFeatures())) {
+        if (!nodeFeatures.areSupported(Features(request.paymentRequest.features).invoiceFeatures())) {
             logger.warning { "h:${request.paymentHash} p:${request.paymentId} invoice contains mandatory features that we don't support" }
             return Failure(request, FinalFailure.FeaturesNotSupported.toPaymentFailure())
         }

@@ -4,14 +4,15 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.channel.remove
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
 import kotlin.test.*
 
 class PaymentRequestTestsCommon : LightningTestSuite() {
-    val priv = PrivateKey(Hex.decode("e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734"))
-    val pub = priv.publicKey()
+    private val priv = PrivateKey(Hex.decode("e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734"))
+    private val pub = priv.publicKey()
     val nodeId = pub
 
     init {
@@ -441,13 +442,13 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
     fun `filter non-invoice features when parsing invoices`() {
         // The following invoice has feature bit 20 activated (option_anchor_outputs) without feature bit 12 (option_static_remotekey).
         // This doesn't satisfy the feature dependency graph, but since those aren't invoice features, we should ignore it.
-        val invoice = "lntb250u1p3jxdmwpp5mnjuf5zwkndq4e29lmvqen8cnwc57aqr0658jlfl3q42667q3lgsdpqdehkuttfdemx76trv5sxvetpw36hyetncqpxsp5a0epznfadhwjrtsrqykjpxu97800grzzjv3kuq3xnlsdgaytqn3s9pqzqqqqqqzqqqqqqqqqqqqqqqqqqqqqsgqk243r3nnm92d8qaam7hgwc5yhupq4wvmnufyyt6kk6hww98a4vtrzxy0pqrpj7dyffykdfx326k0ggcw4l2d08xkknes4unt6vu3ptgqk9zn8r"
         val features = Features(
-            mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory),
+            mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory),
             setOf(UnknownFeature(121), UnknownFeature(156))
         )
-        val pr = PaymentRequest.read(invoice)
-        assertEquals(features, Features(pr.features))
+        val pr = PaymentRequest.read(createInvoiceUnsafe(features = features).write())
+        assertEquals(Features(pr.features), features)
+        assertEquals(Features(pr.features).invoiceFeatures(), features.remove(Feature.AnchorOutputs))
     }
 
     @Test
@@ -503,6 +504,43 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
                 CltvExpiryDelta(18),
                 Features(Feature.VariableLengthOnion to FeatureSupport.Optional, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
             )
+        }
+    }
+
+    companion object {
+        fun createInvoiceUnsafe(
+            amount: MilliSatoshi? = null,
+            paymentHash: ByteVector32 = randomBytes32(),
+            privateKey: PrivateKey = randomKey(),
+            description: String = "invoice",
+            minFinalCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(6),
+            features: Features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory),
+            paymentSecret: ByteVector32 = randomBytes32(),
+            paymentMetadata: ByteVector? = null,
+            expirySeconds: Long? = null,
+            extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>> = listOf(),
+            timestampSeconds: Long = currentTimestampSeconds()
+        ): PaymentRequest {
+            val tags = mutableListOf(
+                PaymentRequest.TaggedField.PaymentHash(paymentHash),
+                PaymentRequest.TaggedField.Description(description),
+                PaymentRequest.TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),
+                PaymentRequest.TaggedField.PaymentSecret(paymentSecret),
+                PaymentRequest.TaggedField.Features(features.toByteArray().toByteVector())
+            )
+            paymentMetadata?.let { tags.add(PaymentRequest.TaggedField.PaymentMetadata(it)) }
+            expirySeconds?.let { tags.add(PaymentRequest.TaggedField.Expiry(it)) }
+            if (extraHops.isNotEmpty()) {
+                extraHops.forEach { tags.add(PaymentRequest.TaggedField.RoutingInfo(it)) }
+            }
+            return PaymentRequest(
+                prefix = "lnbcrt",
+                amount = amount,
+                timestampSeconds = timestampSeconds,
+                nodeId = privateKey.publicKey(),
+                tags = tags,
+                signature = ByteVector.empty
+            ).sign(privateKey)
         }
     }
 
