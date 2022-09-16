@@ -151,7 +151,7 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)
-    private val logger by lightningLogger<JvmTcpSocket>()
+    private val logger by lightningLogger<PlatformSocketBuilder>()
 
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket {
         return withContext(Dispatchers.IO) {
