@@ -9,7 +9,6 @@ import platform.posix.ECONNREFUSED
 import platform.posix.ECONNRESET
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.native.concurrent.ThreadLocal
 import swift.phoenix_crypto.NativeSocket
 import swift.phoenix_crypto.NativeSocketError
 import swift.phoenix_crypto.NativeSocketTLS
