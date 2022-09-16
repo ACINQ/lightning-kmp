@@ -77,7 +77,6 @@ sealed class ChannelAction {
 
     sealed class ChannelId : ChannelAction() {
         data class IdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelId()
-        data class IdSwitch(val oldChannelId: ByteVector32, val newChannelId: ByteVector32) : ChannelId()
     }
 
     sealed class Blockchain : ChannelAction() {
@@ -160,7 +159,7 @@ sealed class ChannelState : LoggingContext {
                 else -> this
             }
             val actions1 = when {
-                oldState is WaitForFundingCreated && newState is WaitForFundingConfirmed -> {
+                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForFundingLocked) && !oldState.localParams.isInitiator -> {
                     actions + ChannelAction.Storage.StoreIncomingAmount(oldState.pushAmount, oldState.channelOrigin)
                 }
                 // we only want to fire the PaymentSent event when we transition to Closing for the first time
@@ -223,7 +222,7 @@ sealed class ChannelState : LoggingContext {
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         this is ChannelStateWithCommitments && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
-                it is ChannelAction.Message.Send && it.message is FundingSigned -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
+                it is ChannelAction.Message.Send && it.message is TxSignatures -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
                 it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
                 it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
                 it is ChannelAction.Message.Send && it.message is Shutdown -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))
@@ -346,7 +345,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 currentTip = currentTip,
                 currentOnChainFeerates = currentOnChainFeerates,
                 commitments = commitments,
-                fundingTx = fundingTx,
+                fundingTx = fundingTx.signedTx,
                 waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
@@ -489,7 +488,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     staticParams = staticParams, currentTip = currentTip,
                     currentOnChainFeerates = currentOnChainFeerates,
                     commitments = commitments,
-                    fundingTx = fundingTx,
+                    fundingTx = fundingTx.signedTx,
                     waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )

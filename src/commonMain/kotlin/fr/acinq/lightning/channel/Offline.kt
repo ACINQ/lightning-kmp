@@ -89,7 +89,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
             event is ChannelEvent.GetFundingTxResponse && state is WaitForFundingConfirmed && event.getTxResponse.txid == state.commitments.commitInput.outPoint.txid -> handleGetFundingTx(
                 event.getTxResponse,
                 state.waitingSinceBlock,
-                state.fundingTx
+                state.fundingTx.signedTx
             )
             event is ChannelEvent.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()

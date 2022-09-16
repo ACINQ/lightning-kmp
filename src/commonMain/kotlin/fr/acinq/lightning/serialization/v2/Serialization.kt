@@ -89,6 +89,7 @@ object Serialization {
             contextual(ByteVector64KSerializer)
             contextual(ByteVector32KSerializer)
             contextual(ByteVectorKSerializer)
+            contextual(ScriptWitnessKSerializer)
             contextual(SatoshiKSerializer)
             contextual(PrivateKeyKSerializer)
             contextual(PublicKeyKSerializer)

@@ -52,8 +52,6 @@ interface LightningMessage {
                 Pong.type -> Pong.read(stream)
                 OpenDualFundedChannel.type -> OpenDualFundedChannel.read(stream)
                 AcceptDualFundedChannel.type -> AcceptDualFundedChannel.read(stream)
-                FundingCreated.type -> FundingCreated.read(stream)
-                FundingSigned.type -> FundingSigned.read(stream)
                 FundingLocked.type -> FundingLocked.read(stream)
                 TxAddInput.type -> TxAddInput.read(stream)
                 TxAddOutput.type -> TxAddOutput.read(stream)
@@ -430,8 +428,11 @@ data class TxSignatures(
     @Contextual val txId: ByteVector32,
     val witnesses: List<@Contextual ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
-) : InteractiveTxMessage(), HasChannelId {
+) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = TxSignatures.type
+
+    override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -444,10 +445,14 @@ data class TxSignatures(
                 LightningCodecs.writeBytes(element.toByteArray(), out)
             }
         }
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
     companion object : LightningMessageReader<TxSignatures> {
         const val type: Long = 71
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>)
 
         override fun read(input: Input): TxSignatures {
             val channelId = LightningCodecs.bytes(input, 32).byteVector32()
@@ -463,7 +468,8 @@ data class TxSignatures(
                 }
                 witnesses += ScriptWitness(stack.toList())
             }
-            return TxSignatures(channelId, txId, witnesses)
+            val tlvs = TlvStreamSerializer(false, readers).read(input)
+            return TxSignatures(channelId, txId, witnesses, tlvs)
         }
     }
 }
@@ -723,69 +729,6 @@ data class AcceptDualFundedChannel(
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                TlvStreamSerializer(false, readers).read(input)
-            )
-        }
-    }
-}
-
-@Serializable
-data class FundingCreated(
-    @Contextual override val temporaryChannelId: ByteVector32,
-    @Contextual val fundingTxid: ByteVector32,
-    val fundingOutputIndex: Int,
-    @Contextual val signature: ByteVector64
-) : ChannelMessage, HasTemporaryChannelId {
-    override val type: Long get() = FundingCreated.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(temporaryChannelId, out)
-        LightningCodecs.writeBytes(fundingTxid, out)
-        LightningCodecs.writeU16(fundingOutputIndex, out)
-        LightningCodecs.writeBytes(signature, out)
-    }
-
-    companion object : LightningMessageReader<FundingCreated> {
-        const val type: Long = 34
-
-        override fun read(input: Input): FundingCreated {
-            return FundingCreated(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                LightningCodecs.u16(input),
-                ByteVector64(LightningCodecs.bytes(input, 64))
-            )
-        }
-    }
-}
-
-@Serializable
-data class FundingSigned(
-    @Contextual override val channelId: ByteVector32,
-    @Contextual val signature: ByteVector64,
-    val tlvStream: TlvStream<FundingSignedTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
-    override val type: Long get() = FundingSigned.type
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<FundingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): FundingSigned = copy(tlvStream = tlvStream.addOrUpdate(FundingSignedTlv.ChannelData(ecd)))
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(channelId, out)
-        LightningCodecs.writeBytes(signature, out)
-        TlvStreamSerializer(false, readers).write(tlvStream, out)
-    }
-
-    companion object : LightningMessageReader<FundingSigned> {
-        const val type: Long = 35
-
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(FundingSignedTlv.ChannelData.tag to FundingSignedTlv.ChannelData.Companion as TlvValueReader<FundingSignedTlv>)
-
-        override fun read(input: Input): FundingSigned {
-            return FundingSigned(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                ByteVector64(LightningCodecs.bytes(input, 64)),
                 TlvStreamSerializer(false, readers).read(input)
             )
         }

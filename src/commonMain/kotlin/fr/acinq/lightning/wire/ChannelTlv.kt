@@ -121,20 +121,6 @@ sealed class ChannelTlv : Tlv {
 }
 
 @Serializable
-sealed class FundingSignedTlv : Tlv {
-    @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : FundingSignedTlv() {
-        override val tag: Long get() = ChannelData.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
-
-        companion object : TlvValueReader<ChannelData> {
-            const val tag: Long = 0x47010000
-            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
-        }
-    }
-}
-
-@Serializable
 sealed class CommitSigTlv : Tlv {
     @Serializable
     data class ChannelData(@Contextual val ecb: EncryptedChannelData) : CommitSigTlv() {

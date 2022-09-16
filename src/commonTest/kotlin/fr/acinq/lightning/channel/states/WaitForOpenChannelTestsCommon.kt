@@ -18,6 +18,7 @@ import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class WaitForOpenChannelTestsCommon : LightningTestSuite() {
@@ -46,7 +47,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
                     null
                 )
             )
-            assertTrue(alice1 is Aborted)
+            assertIs<Aborted>(alice1)
             assertTrue(actions1.isEmpty())
         }
     }
@@ -57,7 +58,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         assertEquals(open.pushAmount, TestConstants.pushAmount)
         assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
-        assertTrue(bob1 is WaitForFundingCreated)
+        assertIs<WaitForFundingCreated>(bob1)
         assertTrue(bob1.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
         assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
@@ -68,7 +69,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 20_000_000.sat)
         assertEquals(open.pushAmount, TestConstants.pushAmount)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
-        assertTrue(bob1 is WaitForFundingCreated)
+        assertIs<WaitForFundingCreated>(bob1)
         assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
     }
@@ -77,7 +78,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     fun `recv OpenChannel -- zero conf -- zero reserve`() {
         val (_, bob, open) = TestsHelper.init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
-        assertTrue(bob1 is WaitForFundingCreated)
+        assertIs<WaitForFundingCreated>(bob1)
         assertTrue(bob1.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
         assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
         val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
@@ -91,7 +92,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, MissingChannelType(open.temporaryChannelId).message))
-        assertTrue(bob1 is Aborted)
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -101,7 +102,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, ChannelType.SupportedChannelType.StaticRemoteKey).message))
-        assertTrue(bob1 is Aborted)
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -111,7 +112,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, bob.staticParams.nodeParams.chainHash, Block.LivenetGenesisBlock.hash).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -120,7 +121,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100.sat, bob.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -129,7 +130,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 30_000_000.sat, bob.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -139,7 +140,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, Channel.MAX_ACCEPTED_HTLCS + 1, Channel.MAX_ACCEPTED_HTLCS).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -149,7 +150,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, open.fundingAmount.toMilliSatoshi() + 1.msat, open.fundingAmount.toMilliSatoshi()).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
@@ -160,14 +161,14 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, invalidToSelfDelay, bob.staticParams.nodeParams.maxToLocalDelayBlocks).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
     fun `recv OpenChannel -- zero-reserve below dust`() {
         val (_, bob, open) = TestsHelper.init(bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional))
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
-        assertTrue { bob1 is WaitForFundingCreated }
+        assertIs<WaitForFundingCreated>(bob1)
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
     }
 
@@ -179,31 +180,31 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, dustLimitTooHigh, bob.staticParams.nodeParams.maxRemoteDustLimit).message))
-        assertTrue { bob1 is Aborted }
+        assertIs<Aborted>(bob1)
     }
 
     @Test
     fun `recv Error`() {
         val (_, bob, _) = TestsHelper.init()
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertTrue { bob1 is Aborted }
-        assertTrue { actions.isEmpty() }
+        assertIs<Aborted>(bob1)
+        assertTrue(actions.isEmpty())
     }
 
     @Test
     fun `recv CMD_CLOSE`() {
         val (_, bob, _) = TestsHelper.init()
         val (bob1, actions) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue { bob1 is Aborted }
-        assertTrue { actions.isEmpty() }
+        assertIs<Aborted>(bob1)
+        assertTrue(actions.isEmpty())
     }
 
     @Test
     fun `recv Disconnected`() {
         val (_, bob, _) = TestsHelper.init()
         val (bob1, actions) = bob.process(ChannelEvent.Disconnected)
-        assertTrue { bob1 is WaitForOpenChannel }
-        assertTrue { actions.isEmpty() }
+        assertIs<WaitForOpenChannel>(bob1)
+        assertTrue(actions.isEmpty())
     }
 
 }

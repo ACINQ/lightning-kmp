@@ -1,11 +1,14 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Script
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
@@ -24,13 +27,14 @@ data class WaitForOpenChannel(
             event is ChannelEvent.MessageReceived ->
                 when (event.message) {
                     is OpenDualFundedChannel -> {
-                        when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, event.message, localParams.features, Features(remoteInit.features))) {
+                        val open = event.message
+                        when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open, localParams.features, Features(remoteInit.features))) {
                             is Either.Right -> {
                                 val channelFeatures = res.value
-                                val channelOrigin = event.message.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin
-                                val minimumDepth = if (channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, event.message.fundingAmount)
+                                val channelOrigin = open.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin
+                                val minimumDepth = if (channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val accept = AcceptDualFundedChannel(
-                                    temporaryChannelId = event.message.temporaryChannelId,
+                                    temporaryChannelId = open.temporaryChannelId,
                                     fundingAmount = fundingInputs.fundingAmount,
                                     dustLimit = localParams.dustLimit,
                                     maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
@@ -48,39 +52,50 @@ data class WaitForOpenChannel(
                                 )
                                 val remoteParams = RemoteParams(
                                     nodeId = staticParams.remoteNodeId,
-                                    dustLimit = event.message.dustLimit,
-                                    maxHtlcValueInFlightMsat = event.message.maxHtlcValueInFlightMsat,
-                                    htlcMinimum = event.message.htlcMinimum,
-                                    toSelfDelay = event.message.toSelfDelay,
-                                    maxAcceptedHtlcs = event.message.maxAcceptedHtlcs,
-                                    fundingPubKey = event.message.fundingPubkey,
-                                    revocationBasepoint = event.message.revocationBasepoint,
-                                    paymentBasepoint = event.message.paymentBasepoint,
-                                    delayedPaymentBasepoint = event.message.delayedPaymentBasepoint,
-                                    htlcBasepoint = event.message.htlcBasepoint,
+                                    dustLimit = open.dustLimit,
+                                    maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
+                                    htlcMinimum = open.htlcMinimum,
+                                    toSelfDelay = open.toSelfDelay,
+                                    maxAcceptedHtlcs = open.maxAcceptedHtlcs,
+                                    fundingPubKey = open.fundingPubkey,
+                                    revocationBasepoint = open.revocationBasepoint,
+                                    paymentBasepoint = open.paymentBasepoint,
+                                    delayedPaymentBasepoint = open.delayedPaymentBasepoint,
+                                    htlcBasepoint = open.htlcBasepoint,
                                     features = Features(remoteInit.features)
                                 )
-                                val channelId = computeChannelId(event.message, accept)
+                                val channelId = computeChannelId(open, accept)
                                 val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId)
-                                // TODO: start interactive-tx flow
-                                val nextState = WaitForFundingCreated(
-                                    staticParams,
-                                    currentTip,
-                                    currentOnChainFeerates,
-                                    channelId,
-                                    localParams,
-                                    remoteParams,
-                                    event.message.fundingAmount,
-                                    event.message.pushAmount,
-                                    event.message.commitmentFeerate,
-                                    event.message.firstPerCommitmentPoint,
-                                    event.message.channelFlags,
-                                    channelConfig,
-                                    channelFeatures,
-                                    channelOrigin,
-                                    accept
-                                )
-                                Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(accept)))
+                                val localFundingPubkey = localParams.channelKeys.fundingPubKey
+                                val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
+                                val dustLimit = open.dustLimit.max(localParams.dustLimit)
+                                val fundingParams = InteractiveTxParams(channelId, false, fundingInputs.fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
+                                when (val fundingContributions = FundingContributions.create(fundingParams, fundingInputs.inputs, null)) {
+                                    is Either.Left -> {
+                                        logger.error { "c:$temporaryChannelId could not fund channel: ${fundingContributions.value}" }
+                                        Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
+                                    }
+                                    is Either.Right -> {
+                                        val interactiveTxSession = InteractiveTxSession(fundingParams, fundingContributions.value)
+                                        val nextState = WaitForFundingCreated(
+                                            staticParams,
+                                            currentTip,
+                                            currentOnChainFeerates,
+                                            localParams,
+                                            remoteParams,
+                                            interactiveTxSession,
+                                            fundingInputs.inputs.map { it.privateKey },
+                                            open.pushAmount,
+                                            open.commitmentFeerate,
+                                            open.firstPerCommitmentPoint,
+                                            open.channelFlags,
+                                            channelConfig,
+                                            channelFeatures,
+                                            channelOrigin
+                                        )
+                                        Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(accept)))
+                                    }
+                                }
                             }
                             is Either.Left -> {
                                 logger.error(res.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }

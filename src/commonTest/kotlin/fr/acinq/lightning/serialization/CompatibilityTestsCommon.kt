@@ -23,7 +23,7 @@ class CompatibilityTestsCommon {
     fun `generate data`() {
         // generate test data
         val (alice, bob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
-        val fundingTx = alice.fundingTx!!
+        val fundingTx = alice.fundingTx.signedTx!!
         val bin = Serialization.encrypt(TestConstants.Bob.nodeParams.nodePrivateKey, bob)
         println("wait_for_funding_confirmed: ${bin.data}")
 

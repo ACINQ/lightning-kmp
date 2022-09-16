@@ -469,10 +469,10 @@ class Peer(
                     db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
                     _eventsFlow.emit(ChannelClosing(channelId))
                 }
-                action is ChannelAction.ChannelId.IdSwitch -> {
-                    logger.info { "n:$remoteNodeId c:$actualChannelId switching channel id from ${action.oldChannelId} to ${action.newChannelId}" }
-                    actualChannelId = action.newChannelId
-                    _channels[action.oldChannelId]?.let { _channels = _channels + (action.newChannelId to it) }
+                action is ChannelAction.ChannelId.IdAssigned -> {
+                    logger.info { "n:$remoteNodeId c:$actualChannelId switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
+                    actualChannelId = action.channelId
+                    _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) }
                 }
                 action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
                 else -> logger.warning { "n:$remoteNodeId c:$actualChannelId unhandled action: ${action::class}" }
@@ -664,9 +664,8 @@ class Peer(
                         processActions(msg.temporaryChannelId, actions)
                         _channels = _channels + (msg.temporaryChannelId to state1)
                         logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state1::class}" }
-                        actions.filterIsInstance<ChannelAction.ChannelId.IdSwitch>().forEach {
-                            logger.info { "n:$remoteNodeId id switch from ${it.oldChannelId} to ${it.newChannelId}" }
-                            _channels = _channels - it.oldChannelId + (it.newChannelId to state1)
+                        actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().forEach {
+                            _channels = _channels - it.temporaryChannelId + (it.channelId to state1)
                         }
                     }
                     msg is HasChannelId && !_channels.containsKey(msg.channelId) -> {

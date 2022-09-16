@@ -9,23 +9,19 @@ import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.WatchLost
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.FundingCreated
 import fr.acinq.lightning.wire.FundingLocked
-import fr.acinq.lightning.wire.FundingSigned
 
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    val fundingTx: Transaction?,
+    val fundingTx: SignedSharedTransaction,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
-    val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -85,7 +81,7 @@ data class WaitForFundingConfirmed(
                 else -> unhandled(event)
             }
             is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
-                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
+                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx.signedTx)
                 else -> Pair(this, emptyList())
             }
             is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
