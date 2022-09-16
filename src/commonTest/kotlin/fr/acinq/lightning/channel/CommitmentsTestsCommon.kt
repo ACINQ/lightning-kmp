@@ -25,13 +25,17 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.lightning.wire.UpdateAddHtlc
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
-    override val logger by lightningLogger()
+
+    override val logger: Logger = LoggerFactory.default.newLogger(this::class)
 
     @Test
     fun `reach normal state`() {

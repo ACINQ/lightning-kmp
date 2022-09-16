@@ -1,13 +1,14 @@
 package fr.acinq.lightning.io
 
-import fr.acinq.lightning.utils.lightningLogger
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
-import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.withContext
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import java.net.ConnectException
 import java.net.SocketException
 import java.security.KeyFactory
@@ -20,7 +21,10 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 
-class JvmTcpSocket(val socket: Socket) : TcpSocket {
+class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
+
+    private val logger = loggerFactory.newLogger(this::class)
+
     private val connection = socket.connection()
 
     override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) =
@@ -69,10 +73,10 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
                 trustManager = unsafeX509TrustManager()
             }
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey))
+                connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger))
             }
             else -> socket
-        })
+        }, loggerFactory)
     } catch (e: Exception) {
         throw when (e) {
             is ConnectException -> TcpSocket.IOException.ConnectionRefused()
@@ -86,7 +90,6 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
     }
 
     companion object {
-        private val logger by lightningLogger<JvmTcpSocket>()
 
         fun unsafeX509TrustManager() = object : X509TrustManager {
             override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
@@ -94,7 +97,7 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
             override fun getAcceptedIssuers(): Array<X509Certificate>? = null
         }
 
-        fun buildPublicKey(encodedKey: ByteArray): java.security.PublicKey {
+        fun buildPublicKey(encodedKey: ByteArray, logger: Logger): java.security.PublicKey {
             val spec = X509EncodedKeySpec(encodedKey)
             val algorithms = listOf("RSA", "EC", "DiffieHellman", "DSA", "RSASSA-PSS", "XDH", "X25519", "X448")
             algorithms.map {
@@ -107,7 +110,7 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
             throw IllegalArgumentException("unsupported key's algorithm, only $algorithms")
         }
 
-        fun tlsConfigForPinnedCert(pinnedPubkey: String): TLSConfig = TLSConfigBuilder().apply {
+        fun tlsConfigForPinnedCert(pinnedPubkey: String, logger: Logger): TLSConfig = TLSConfigBuilder().apply {
             // build a default X509 trust manager.
             val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())!!
             factory.init(null as KeyStore?)
@@ -121,14 +124,14 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 
                 override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
                     val serverKey = try {
-                        buildPublicKey(chain?.asList()?.firstOrNull()?.publicKey?.encoded ?: throw RuntimeException("certificate missing"))
+                        buildPublicKey(chain?.asList()?.firstOrNull()?.publicKey?.encoded ?: throw RuntimeException("certificate missing"), logger)
                     } catch (e: Exception) {
                         logger.error(e) { "failed to read server's pubkey=${pinnedPubkey}" }
                         throw e
                     }
 
                     val pinnedKey = try {
-                        buildPublicKey(Base64.getDecoder().decode(pinnedPubkey))
+                        buildPublicKey(Base64.getDecoder().decode(pinnedPubkey), logger)
                     } catch (e: Exception) {
                         logger.error(e) { "failed to read pinned pubkey=${pinnedPubkey}" }
                         throw e
@@ -151,9 +154,9 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
     private val selectorManager = ActorSelectorManager(Dispatchers.IO)
-    private val logger by lightningLogger<PlatformSocketBuilder>()
 
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS): TcpSocket {
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+        val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
             try {
                 val socket = aSocket(selectorManager).tcp().connect(host, port).let { socket ->
@@ -165,12 +168,12 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                         }
                         is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                             logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(Dispatchers.IO, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey))
+                            socket.tls(Dispatchers.IO, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
                         }
                         else -> socket
                     }
                 }
-                JvmTcpSocket(socket)
+                JvmTcpSocket(socket, loggerFactory)
             } catch (e: Exception) {
                 throw when (e) {
                     is ConnectException -> TcpSocket.IOException.ConnectionRefused()

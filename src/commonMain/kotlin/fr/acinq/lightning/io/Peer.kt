@@ -279,7 +279,8 @@ class Peer(
             socketBuilder?.connect(
                 host = walletParams.trampolineNode.host,
                 port = walletParams.trampolineNode.port,
-                tls = TcpSocket.TLS.DISABLED
+                tls = TcpSocket.TLS.DISABLED,
+                loggerFactory = nodeParams.loggerFactory
             ) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }

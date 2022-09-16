@@ -178,7 +178,7 @@ data class RequestResponseTimestamp(
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
-    loggerFactory: LoggerFactory
+    private val loggerFactory: LoggerFactory
 ) : CoroutineScope by scope {
 
     private val logger = loggerFactory.newLogger(this::class)
@@ -259,7 +259,7 @@ class ElectrumClient(
         socket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socketBuilder?.connect(host, port, tls) ?: error("socket builder is null.")
+            socketBuilder?.connect(host, port, tls, loggerFactory) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "TCP connect: ${ex.message}" }
             val ioException = when (ex) {
