@@ -21,7 +21,7 @@ class FeaturesTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features`() {
+    fun `'initial_routing_sync' 'data_loss_protect' and 'variable_length_onion' features`() {
         val features = Features(
             InitialRoutingSync to FeatureSupport.Optional,
             OptionDataLossProtect to FeatureSupport.Optional,

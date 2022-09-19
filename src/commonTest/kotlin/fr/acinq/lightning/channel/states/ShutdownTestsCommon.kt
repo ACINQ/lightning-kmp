@@ -43,7 +43,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (zero-reserve)`() {
+    fun `recv CMD_ADD_HTLC -- zero-reserve`() {
         val (_, bob) = init(bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional))
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(add))
@@ -61,7 +61,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FULFILL_HTLC (unknown htlc id)`() {
+    fun `recv CMD_FULFILL_HTLC -- unknown htlc id`() {
         val (_, bob) = init()
         val cmd = CMD_FULFILL_HTLC(42, randomBytes32())
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(cmd))
@@ -70,7 +70,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FULFILL_HTLC (invalid preimage)`() {
+    fun `recv CMD_FULFILL_HTLC -- invalid preimage`() {
         val (_, bob) = init()
         val cmd = CMD_FULFILL_HTLC(0, randomBytes32())
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(cmd))
@@ -88,7 +88,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFulfillHtlc (unknown htlc id)`() {
+    fun `recv UpdateFulfillHtlc -- unknown htlc id`() {
         val (alice, _) = init()
         val (alice1, actions) = alice.processEx(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 42, r1)))
         actions.hasOutgoingMessage<Error>()
@@ -98,7 +98,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFulfillHtlc (invalid preimage)`() {
+    fun `recv UpdateFulfillHtlc -- invalid preimage`() {
         val (alice, _) = init()
         val (alice1, actions) = alice.processEx(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice.channelId, 0, randomBytes32())))
         actions.hasOutgoingMessage<Error>()
@@ -116,7 +116,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FAIL_HTLC (unknown htlc id)`() {
+    fun `recv CMD_FAIL_HTLC -- unknown htlc id`() {
         val (_, bob) = init()
         val cmdFail = CMD_FAIL_HTLC(42, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(cmdFail))
@@ -133,7 +133,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)`() {
+    fun `recv CMD_FAIL_MALFORMED_HTLC -- unknown htlc id`() {
         val (_, bob) = init()
         val cmdFail = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32(Crypto.sha256(ByteVector.empty)), FailureMessage.BADONION)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(cmdFail))
@@ -142,7 +142,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FAIL_MALFORMED_HTLC (invalid failure_code)`() {
+    fun `recv CMD_FAIL_MALFORMED_HTLC -- invalid failure_code`() {
         val (_, bob) = init()
         val cmdFail = CMD_FAIL_MALFORMED_HTLC(42, randomBytes32(), 42)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(cmdFail))
@@ -160,7 +160,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFailHtlc (unknown htlc id)`() {
+    fun `recv UpdateFailHtlc -- unknown htlc id`() {
         val (alice, _) = init()
         val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice.processEx(ChannelEvent.MessageReceived(UpdateFailHtlc(alice.channelId, 42, ByteVector.empty)))
@@ -183,7 +183,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFailMalformedHtlc (invalid failure_code)`() {
+    fun `recv UpdateFailMalformedHtlc -- invalid failure_code`() {
         val (alice, _) = init()
         val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, ByteVector.empty.sha256(), 42)
         val (alice1, actions) = alice.processEx(ChannelEvent.MessageReceived(fail))
@@ -215,7 +215,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (no changes)`() {
+    fun `recv CMD_SIGN -- no changes`() {
         val (_, bob) = init()
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertEquals(bob, bob1)
@@ -223,7 +223,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (while waiting for RevokeAndAck)`() {
+    fun `recv CMD_SIGN -- while waiting for RevokeAndAck`() {
         val (_, bob) = init()
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         actions1.hasOutgoingMessage<UpdateFulfillHtlc>()
@@ -253,7 +253,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (no changes)`() {
+    fun `recv CommitSig -- no changes`() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
@@ -271,7 +271,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (invalid signature)`() {
+    fun `recv CommitSig -- invalid signature`() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
@@ -287,7 +287,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (with remaining htlcs on both sides)`() {
+    fun `recv RevokeAndAck -- with remaining htlcs on both sides`() {
         val (alice0, bob0) = init()
         val (alice1, bob1) = fulfillHtlc(1, r2, alice0, bob0)
         val (bob2, alice2) = crossSign(bob1, alice1)
@@ -300,7 +300,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (with remaining htlcs on one side)`() {
+    fun `recv RevokeAndAck -- with remaining htlcs on one side`() {
         val (alice0, bob0) = init()
         val (alice1, bob1) = fulfillHtlc(0, r1, alice0, bob0)
         val (alice2, bob2) = fulfillHtlc(1, r2, alice1, bob1)
@@ -319,7 +319,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (no more htlcs on either side)`() {
+    fun `recv RevokeAndAck -- no more htlcs on either side`() {
         val (alice0, bob0) = init()
         val (alice1, bob1) = fulfillHtlc(0, r1, alice0, bob0)
         val (alice2, bob2) = fulfillHtlc(1, r2, alice1, bob1)
@@ -329,7 +329,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (invalid preimage)`() {
+    fun `recv RevokeAndAck -- invalid preimage`() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
@@ -347,7 +347,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (unexpectedly)`() {
+    fun `recv RevokeAndAck -- unexpectedly`() {
         val (alice0, _) = init()
         val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(RevokeAndAck(alice0.channelId, randomKey(), randomKey().publicKey())))
         assertTrue(alice1 is Closing)
@@ -369,7 +369,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (no htlc timed out)`() {
+    fun `recv NewBlock -- no htlc timed out`() {
         val (alice, _) = init()
 
         run {
@@ -386,7 +386,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (an htlc timed out)`() {
+    fun `recv NewBlock -- an htlc timed out`() {
         val (alice, _) = init()
         val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val htlcExpiry = alice.commitments.localCommit.spec.htlcs.map { it.add.cltvExpiry }.first()
@@ -401,7 +401,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (their commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- their commit`() {
         val (alice, bob) = init()
         // bob publishes his current commit tx, which contains two pending htlcs alice->bob
         val bobCommitTx = bob.commitments.localCommit.publishableTxs.commitTx.tx
@@ -414,7 +414,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (their next commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- their next commit`() {
         val (alice, bob) = run {
             val (alice0, bob0) = reachNormal()
             val (nodes1, _, _) = addHtlc(25_000_000.msat, alice0, bob0)
@@ -444,7 +444,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (revoked tx)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- revoked tx`() {
         val (alice, _, revokedTx) = run {
             val (alice0, bob0) = reachNormal()
             val (nodes1, _, _) = addHtlc(25_000_000.msat, alice0, bob0)

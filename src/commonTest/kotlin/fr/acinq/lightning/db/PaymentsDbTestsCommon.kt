@@ -373,7 +373,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `outgoing normal payment fee & amount computation`() = runSuspendTest {
+    fun `outgoing normal payment fee and amount computation`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         val (a, b, c) = listOf(randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey())
 
@@ -405,7 +405,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `outgoing swap-out payment fee & amount computation`() = runSuspendTest {
+    fun `outgoing swap-out payment fee and amount computation`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         val (a, b, c) = listOf(randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey())
         val hops = listOf(HopDesc(a, c, ShortChannelId(42)), HopDesc(b, c))

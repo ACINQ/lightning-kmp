@@ -277,7 +277,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @OptIn(FlowPreview::class)
     @Test
-    fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runSuspendTest(timeout = 50.seconds) {
+    fun `watch for mempool transactions -- txs in mempool before we set the watch`() = runSuspendTest(timeout = 50.seconds) {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -322,7 +322,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`() = runSuspendTest {
+    fun `watch for mempool transactions -- txs not yet in the mempool when we set the watch`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 

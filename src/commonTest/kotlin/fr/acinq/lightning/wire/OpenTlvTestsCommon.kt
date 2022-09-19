@@ -60,7 +60,7 @@ class OpenTlvTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `channel version TLV (legacy)`() {
+    fun `channel version TLV -- legacy`() {
         val testCases = listOf(
             Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, Hex.decode("fe47000001 04 00000007")),
             Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, Hex.decode("fe47000001 04 0000000f"))

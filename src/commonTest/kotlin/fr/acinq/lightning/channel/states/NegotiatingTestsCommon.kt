@@ -75,19 +75,19 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (theirCloseFee != ourCloseFee)`() {
+    fun `recv ClosingSigned -- theirCloseFee != ourCloseFee`() {
         val (alice, bob) = reachNormal()
         testClosingSignedDifferentFees(alice, bob)
     }
 
     @Test
-    fun `recv ClosingSigned (theirCloseFee != ourCloseFee, bob starts closing)`() {
+    fun `recv ClosingSigned -- theirCloseFee != ourCloseFee + bob starts closing`() {
         val (alice, bob) = reachNormal()
         testClosingSignedDifferentFees(alice, bob, bobInitiates = true)
     }
 
     @Test
-    fun `recv ClosingSigned (theirMinCloseFee greater than ourCloseFee)`() {
+    fun `recv ClosingSigned -- theirMinCloseFee greater than ourCloseFee`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(2_500.sat))
@@ -100,7 +100,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (theirMaxCloseFee smaller than ourCloseFee)`() {
+    fun `recv ClosingSigned -- theirMaxCloseFee smaller than ourCloseFee`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(5_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(20_000.sat))
@@ -136,19 +136,19 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (theirCloseFee == ourCloseFee)`() {
+    fun `recv ClosingSigned -- theirCloseFee == ourCloseFee`() {
         val (alice, bob) = reachNormal()
         testClosingSignedSameFees(alice, bob)
     }
 
     @Test
-    fun `recv ClosingSigned (theirCloseFee == ourCloseFee, bob starts closing)`() {
+    fun `recv ClosingSigned -- theirCloseFee == ourCloseFee + bob starts closing`() {
         val (alice, bob) = reachNormal()
         testClosingSignedSameFees(alice, bob, bobInitiates = true)
     }
 
     @Test
-    fun `override on-chain fee estimator (initiator)`() {
+    fun `override on-chain fee estimator -- initiator`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
@@ -176,7 +176,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `override on-chain fee estimator (non-initiator)`() {
+    fun `override on-chain fee estimator -- non-initiator`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(10_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
@@ -199,7 +199,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (nothing at stake)`() {
+    fun `recv ClosingSigned -- nothing at stake`() {
         val (alice, bob) = reachNormal(pushMsat = 0.msat)
         val alice1 = alice.updateFeerate(FeeratePerKw(5_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
@@ -214,7 +214,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (other side ignores our fee range, initiator)`() {
+    fun `recv ClosingSigned -- other side ignores our fee range + initiator`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(1_000.sat))
         val (alice2, bob2, aliceCloseSig1) = mutualCloseAlice(alice1, bob)
@@ -262,7 +262,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (other side ignores our fee range, non-initiator)`() {
+    fun `recv ClosingSigned -- other side ignores our fee range + non-initiator`() {
         val (alice, bob) = reachNormal()
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
         val (alice2, bob2, _) = mutualCloseBob(alice, bob1)
@@ -309,7 +309,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (other side ignores our fee range, max iterations reached)`() {
+    fun `recv ClosingSigned -- other side ignores our fee range + max iterations reached`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(1_000.sat))
         val (alice2, bob2, aliceCloseSig1) = mutualCloseAlice(alice1, bob)
@@ -331,7 +331,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingSigned (invalid signature)`() {
+    fun `recv ClosingSigned -- invalid signature`() {
         val (_, bob, aliceCloseSig) = init()
         val (bob1, actions) = bob.processEx(ChannelEvent.MessageReceived(aliceCloseSig.copy(feeSatoshis = 99_000.sat)))
         assertTrue(bob1 is Closing)
@@ -352,7 +352,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- counterparty's mutual close`() {
         // NB: we're not the initiator here
         val (bob, alice, fundingTx) = reachNormal()
         val priv = randomKey()
@@ -395,7 +395,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (an older mutual close)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- an older mutual close`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(1_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))

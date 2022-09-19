@@ -39,7 +39,7 @@ class CommitmentsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `correct values for availableForSend - availableForReceive (success case)`() {
+    fun `correct values for availableForSend - availableForReceive -- success case`() {
         val (alice, bob) = reachNormal()
 
         val a = 764_660_000.msat // initial balance alice
@@ -125,7 +125,7 @@ class CommitmentsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `correct values for availableForSend - availableForReceive (failure case)`() {
+    fun `correct values for availableForSend - availableForReceive -- failure case`() {
         val (alice, bob) = reachNormal()
 
         val a = 764_660_000.msat // initial balance alice
@@ -211,7 +211,7 @@ class CommitmentsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `correct values for availableForSend - availableForReceive (multiple htlcs)`() {
+    fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
         val (alice, bob) = reachNormal()
 
         val a = 764_660_000.msat // initial balance alice

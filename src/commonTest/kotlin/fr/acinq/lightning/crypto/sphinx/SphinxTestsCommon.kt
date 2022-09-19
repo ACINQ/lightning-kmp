@@ -100,7 +100,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `generate ephemeral keys and secrets (reference test vector)`() {
+    fun `generate ephemeral keys and secrets -- reference test vector`() {
         val (ephkeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
         assertEquals(ephkeys[0], PublicKey.fromHex("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
         assertEquals(sharedsecrets[0], ByteVector32("53eb63ea8a3fec3b3cd433b85cd62a4b145e1dda09391b348c4e1cd36a03ea66"))
@@ -115,7 +115,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `generate filler with fixed-size payloads (reference test vector)`() {
+    fun `generate filler with fixed-size payloads -- reference test vector`() {
         val (_, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
         val filler = generateFiller("rho", sharedsecrets.dropLast(1), referenceFixedSizePayloads.dropLast(1).map { it.toByteArray() }, OnionRoutingPacket.PaymentPacketLength)
         assertEquals(
@@ -192,7 +192,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `create packet with fixed-size payloads (reference test vector)`() {
+    fun `create packet with fixed-size payloads -- reference test vector`() {
         val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referenceFixedSizePayloads.map { it.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
         val onion = packetAndSecrets.packet
         assertEquals(
@@ -218,7 +218,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `create packet with variable-size payloads (reference test vector)`() {
+    fun `create packet with variable-size payloads -- reference test vector`() {
         val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referenceVariableSizePayloads.map { it.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
         val onion = packetAndSecrets.packet
         assertEquals(
@@ -416,7 +416,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `last node replies with a failure message (reference test vector)`() {
+    fun `last node replies with a failure message -- reference test vector`() {
         val testCases = listOf(
             Pair(OnionRoutingPacket.PaymentPacketLength, referenceFixedSizePayloads),
             Pair(OnionRoutingPacket.PaymentPacketLength, referenceVariableSizePayloads),
@@ -476,7 +476,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `intermediate node replies with a failure message (reference test vector)`() {
+    fun `intermediate node replies with a failure message -- reference test vector`() {
         val testCases = listOf(
             Pair(OnionRoutingPacket.PaymentPacketLength, referenceFixedSizePayloads),
             Pair(OnionRoutingPacket.PaymentPacketLength, referenceVariableSizePayloads),
@@ -510,7 +510,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `create blinded route (reference test vector)`() {
+    fun `create blinded route -- reference test vector`() {
         val sessionKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"))
         val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
         assertEquals(blindedRoute.introductionNode.publicKey, publicKeys[0])
@@ -569,7 +569,7 @@ class SphinxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `concatenate blinded routes (reference test vector)`() {
+    fun `concatenate blinded routes -- reference test vector`() {
         // The recipient creates a blinded route to himself.
         val (blindingOverride, blindedRouteEnd, payloadsEnd) = run {
             val sessionKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"))

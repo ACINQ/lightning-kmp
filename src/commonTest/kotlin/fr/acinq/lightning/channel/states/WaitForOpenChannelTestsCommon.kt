@@ -53,7 +53,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (without wumbo)`() {
+    fun `recv OpenChannel -- without wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.Wumbo))
         // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
         assertEquals(open.tlvStream.get(), ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))
@@ -67,7 +67,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (wumbo)`() {
+    fun `recv OpenChannel -- wumbo`() {
         val (_, bob, open) = TestsHelper.init(fundingAmount = 20_000_000.sat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         assertTrue(bob1 is WaitForFundingCreated)
@@ -76,7 +76,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (zero-reserve)`() {
+    fun `recv OpenChannel -- zero-reserve`() {
         val (_, bob, open) = TestsHelper.init(bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional))
         assertEquals(0.sat, open.channelReserveSatoshis)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
@@ -87,7 +87,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (zero-conf)`() {
+    fun `recv OpenChannel -- zero-conf`() {
         val (_, bob, open) = TestsHelper.init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Optional))
         assertTrue(open.channelReserveSatoshis > 0.sat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
@@ -99,7 +99,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (missing channel type)`() {
+    fun `recv OpenChannel -- missing channel type`() {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(tlvStream = TlvStream(listOf()))
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
@@ -109,7 +109,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (invalid channel type)`() {
+    fun `recv OpenChannel -- invalid channel type`() {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey))))
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
@@ -119,7 +119,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (invalid chain)`() {
+    fun `recv OpenChannel -- invalid chain`() {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(chainHash = Block.LivenetGenesisBlock.hash)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
@@ -129,7 +129,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (funding too low)`() {
+    fun `recv OpenChannel -- funding too low`() {
         val (_, bob, open) = TestsHelper.init(fundingAmount = 100.sat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
@@ -138,7 +138,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (funding too high)`() {
+    fun `recv OpenChannel -- funding too high`() {
         val (_, bob, open) = TestsHelper.init(fundingAmount = 30_000_000.sat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
@@ -147,7 +147,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (invalid max accepted htlcs)`() {
+    fun `recv OpenChannel -- invalid max accepted htlcs`() {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(maxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
@@ -157,7 +157,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (invalid push_msat)`() {
+    fun `recv OpenChannel -- invalid push_msat`() {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(pushMsat = open.fundingSatoshis.toMilliSatoshi() + 10.msat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
@@ -167,7 +167,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (to_self_delay too high)`() {
+    fun `recv OpenChannel -- to_self_delay too high`() {
         val (_, bob, open) = TestsHelper.init()
         val invalidToSelfDelay = bob.staticParams.nodeParams.maxToLocalDelayBlocks + CltvExpiryDelta(10)
         val open1 = open.copy(toSelfDelay = invalidToSelfDelay)
@@ -178,7 +178,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (reserve too high)`() {
+    fun `recv OpenChannel -- reserve too high`() {
         val (_, bob, open) = TestsHelper.init()
         val reserveTooHigh = open.fundingSatoshis * 0.3
         val open1 = open.copy(channelReserveSatoshis = reserveTooHigh)
@@ -189,7 +189,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (reserve below dust)`() {
+    fun `recv OpenChannel -- reserve below dust`() {
         val (_, bob, open) = TestsHelper.init()
         val reserveTooSmall = open.dustLimitSatoshis - 1.sat
         val open1 = open.copy(channelReserveSatoshis = reserveTooSmall)
@@ -200,7 +200,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (reserve below dust, zero-reserve channel)`() {
+    fun `recv OpenChannel -- reserve below dust + zero-reserve channel`() {
         val (_, bob, open) = TestsHelper.init(bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional))
         assertEquals(0.sat, open.channelReserveSatoshis)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
@@ -209,7 +209,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (dust limit too high)`() {
+    fun `recv OpenChannel -- dust limit too high`() {
         val (_, bob, open) = TestsHelper.init()
         val dustLimitTooHigh = 2000.sat
         val open1 = open.copy(dustLimitSatoshis = dustLimitTooHigh)
@@ -220,7 +220,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel (toLocal + toRemote below reserve)`() {
+    fun `recv OpenChannel -- toLocal + toRemote below reserve`() {
         val (_, bob, open) = TestsHelper.init()
         val fundingAmount = open.channelReserveSatoshis + 499.sat
         val pushMsat = 500.sat.toMilliSatoshi()
