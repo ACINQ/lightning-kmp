@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -97,7 +98,6 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                                     BITCOIN_FUNDING_SPENT
                                 )
                             ),
-                            //SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
                         )
                         val minDepth = event.state.staticParams.nodeParams.minDepthBlocks.toLong()
                         event.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
@@ -108,11 +108,27 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
-                            actions.add(ChannelAction.Blockchain.GetFundingTx(commitments.commitInput.outPoint.txid))
+                            event.state.fundingTx?.let { actions.add(ChannelAction.Blockchain.PublishTx(it)) }
                         }
                         Pair(event.state, actions)
                     }
                 }
+            }
+            event is ChannelEvent.Restore && event.state is WaitForFundingConfirmed -> {
+                val minDepth = if (event.state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, event.state.fundingParams.fundingAmount)
+                logger.info { "c:${event.state.channelId} restoring unconfirmed channel (waiting for $minDepth confirmations)" }
+                val watchConfirmed = WatchConfirmed(
+                    event.state.channelId,
+                    event.state.commitments.commitInput.outPoint.txid,
+                    event.state.commitments.commitInput.txOut.publicKeyScript,
+                    minDepth.toLong(),
+                    BITCOIN_FUNDING_DEPTHOK
+                )
+                val actions = buildList {
+                    event.state.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+                    add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
+                }
+                Pair(Offline(event.state), actions)
             }
             event is ChannelEvent.Restore && event.state is ChannelStateWithCommitments -> {
                 logger.info { "c:${event.state.channelId} restoring channel" }
@@ -123,19 +139,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     event.state.commitments.commitInput.txOut.publicKeyScript,
                     BITCOIN_FUNDING_SPENT
                 )
-                val watchConfirmed = WatchConfirmed(
-                    event.state.channelId,
-                    event.state.commitments.commitInput.outPoint.txid,
-                    event.state.commitments.commitInput.txOut.publicKeyScript,
-                    staticParams.nodeParams.minDepthBlocks.toLong(),
-                    BITCOIN_FUNDING_DEPTHOK
-                )
-                val actions = listOf(
-                    ChannelAction.Blockchain.SendWatch(watchSpent),
-                    ChannelAction.Blockchain.SendWatch(watchConfirmed),
-                    ChannelAction.Blockchain.GetFundingTx(event.state.commitments.commitInput.outPoint.txid)
-                )
-                Pair(Offline(event.state), actions)
+                Pair(Offline(event.state), listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())

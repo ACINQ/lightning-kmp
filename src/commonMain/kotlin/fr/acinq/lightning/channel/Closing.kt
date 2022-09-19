@@ -285,10 +285,6 @@ data class Closing(
                 }
                 else -> unhandled(event)
             }
-            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
-                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
-                else -> Pair(this, emptyList())
-            }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -392,10 +388,10 @@ data class Closing(
                 revokedCommitPublished.htlcPenaltyTxs.forEach { add(it.tx to "revoked-htlc-penalty") }
                 revokedCommitPublished.claimHtlcDelayedPenaltyTxs.forEach { add(it.tx to "revoked-htlc-penalty-delayed") }
             }
-        }.map { (tx, desc) ->
+        }.associate { (tx, desc) ->
             // will allow easy lookup of parent transaction
             tx.txid to (tx to desc)
-        }.toMap()
+        }
 
         return txs[tx.txid]?.let { (_, desc) ->
             val parentTxOut = if (isCommitTx) {

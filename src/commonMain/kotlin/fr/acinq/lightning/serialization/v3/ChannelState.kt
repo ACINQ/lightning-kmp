@@ -547,6 +547,8 @@ data class InteractiveTxParams(
         from.dustLimit,
         from.targetFeerate
     )
+
+    fun export() = fr.acinq.lightning.channel.InteractiveTxParams(channelId, isInitiator, localAmount, remoteAmount, fundingPubkeyScript, lockTime, dustLimit, targetFeerate)
 }
 
 @Serializable
@@ -682,7 +684,10 @@ data class WaitForFundingConfirmed(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
+    val fundingParams: InteractiveTxParams,
+    val pushAmount: MilliSatoshi,
     val fundingTx: SignedSharedTransaction,
+    val fundingPrivateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
     val waitingSinceBlock: Long,
     val deferred: FundingLocked?,
 ) : ChannelStateWithCommitments() {
@@ -691,7 +696,10 @@ data class WaitForFundingConfirmed(
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
         Commitments(from.commitments),
+        InteractiveTxParams(from.fundingParams),
+        from.pushAmount,
         SignedSharedTransaction.import(from.fundingTx),
+        from.fundingPrivateKeys,
         from.waitingSinceBlock,
         from.deferred,
     )
@@ -701,7 +709,10 @@ data class WaitForFundingConfirmed(
         currentTip,
         currentOnChainFeerates.export(),
         commitments.export(nodeParams),
+        fundingParams.export(),
+        pushAmount,
         fundingTx.export(),
+        fundingPrivateKeys,
         waitingSinceBlock,
         deferred,
     )

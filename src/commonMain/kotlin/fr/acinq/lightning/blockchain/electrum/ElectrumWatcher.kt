@@ -237,7 +237,7 @@ internal data class WatcherRunning(
                                 newState {
                                     // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
                                     // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
-                                    state = copy(watches = watches - watchConfirmedTriggered)
+                                    state = copy(watches = watches - watchConfirmedTriggered.toSet())
                                     actions = notifyWatchSpentList + notifyWatchConfirmedList + getMerkleList
                                 }
                             }
@@ -279,7 +279,7 @@ internal data class WatcherRunning(
                         } ?: emptyList()
 
                         newState {
-                            state = copy(watches = watches - triggered)
+                            state = copy(watches = watches - triggered.toSet())
                             actions = notifyWatchConfirmedList
                         }
                     }
@@ -364,27 +364,22 @@ internal data class WatcherRunning(
         }
 
     private fun setupWatch(watch: Watch, logger: Logger) = when (watch) {
-        is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
         else -> {
             val action = registerToScriptHash(watch, logger)
             newState {
                 state = copy(
                     watches = watches + watch,
-                    scriptHashSubscriptions = action?.let {
-                        scriptHashSubscriptions + it.scriptHash
-                    } ?: scriptHashSubscriptions
+                    scriptHashSubscriptions = scriptHashSubscriptions + action.scriptHash
                 )
-                actions = action?.let {
-                    if (scriptHashSubscriptions.contains(it.scriptHash)) {
-                        // We've already registered to subscriptions from this scriptHash.
-                        // Both WatchSpent & WatchConfirmed can be translated into the exact same
-                        // electrum request, so we filter the duplicates here.
-                        actions
-                    } else {
-                        actions + it
-                    }
-                } ?: actions
+                actions = if (scriptHashSubscriptions.contains(action.scriptHash)) {
+                    // We've already registered to subscriptions from this scriptHash.
+                    // Both WatchSpent & WatchConfirmed can be translated into the exact same
+                    // electrum request, so we filter the duplicates here.
+                    actions
+                } else {
+                    actions + action
+                }
             }
         }
     }
@@ -532,7 +527,7 @@ class ElectrumWatcher(
         timerJob = null
     }
 
-    private suspend fun checkIsUpToDate(): Unit {
+    private suspend fun checkIsUpToDate() {
 
         // Get a list of timestamps from the client for all outgoing requests.
         // This returns an array of `RequestResponseTimestamp` instances, which includes:
@@ -609,7 +604,7 @@ class ElectrumWatcher(
 
     companion object {
 
-        internal fun registerToScriptHash(watch: Watch, logger: Logger): RegisterToScriptHashNotification? = when (watch) {
+        internal fun registerToScriptHash(watch: Watch, logger: Logger): RegisterToScriptHashNotification = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch
                 val scriptHash = computeScriptHash(publicKeyScript)
@@ -622,7 +617,6 @@ class ElectrumWatcher(
                 logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
                 RegisterToScriptHashNotification(scriptHash)
             }
-            else -> null
         }
 
         internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {

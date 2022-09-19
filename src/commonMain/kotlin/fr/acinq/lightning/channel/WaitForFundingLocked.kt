@@ -23,69 +23,63 @@ data class WaitForFundingLocked(
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when (event) {
-            is ChannelEvent.MessageReceived -> when (event.message) {
-                is FundingLocked -> {
-                    // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-                    val watchConfirmed = WatchConfirmed(
-                        this.channelId,
-                        commitments.commitInput.outPoint.txid,
-                        commitments.commitInput.txOut.publicKeyScript,
-                        ANNOUNCEMENTS_MINCONF.toLong(),
-                        BITCOIN_FUNDING_DEEPLYBURIED
-                    )
-                    // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
-                    val initialChannelUpdate = Announcements.makeChannelUpdate(
-                        staticParams.nodeParams.chainHash,
-                        staticParams.nodeParams.nodePrivateKey,
-                        staticParams.remoteNodeId,
-                        shortChannelId,
-                        staticParams.nodeParams.expiryDeltaBlocks,
-                        commitments.remoteParams.htlcMinimum,
-                        staticParams.nodeParams.feeBase,
-                        staticParams.nodeParams.feeProportionalMillionth.toLong(),
-                        commitments.localCommit.spec.totalFunds,
-                        enable = Helpers.aboveReserve(commitments)
-                    )
-                    val nextState = Normal(
-                        staticParams,
-                        currentTip,
-                        currentOnChainFeerates,
-                        commitments.copy(remoteNextCommitInfo = Either.Right(event.message.nextPerCommitmentPoint)),
-                        shortChannelId,
-                        buried = false,
-                        null,
-                        initialChannelUpdate,
-                        null,
-                        null,
-                        null,
-                        null
-                    )
-                    val actions = listOf(
-                        ChannelAction.Blockchain.SendWatch(watchConfirmed),
-                        ChannelAction.Storage.StoreState(nextState)
-                    )
-                    Pair(nextState, actions)
-                }
-                is Error -> handleRemoteError(event.message)
-                else -> unhandled(event)
+        return when {
+            event is ChannelEvent.MessageReceived && event.message is FundingLocked -> {
+                // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
+                val watchConfirmed = WatchConfirmed(
+                    this.channelId,
+                    commitments.commitInput.outPoint.txid,
+                    commitments.commitInput.txOut.publicKeyScript,
+                    ANNOUNCEMENTS_MINCONF.toLong(),
+                    BITCOIN_FUNDING_DEEPLYBURIED
+                )
+                // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
+                val initialChannelUpdate = Announcements.makeChannelUpdate(
+                    staticParams.nodeParams.chainHash,
+                    staticParams.nodeParams.nodePrivateKey,
+                    staticParams.remoteNodeId,
+                    shortChannelId,
+                    staticParams.nodeParams.expiryDeltaBlocks,
+                    commitments.remoteParams.htlcMinimum,
+                    staticParams.nodeParams.feeBase,
+                    staticParams.nodeParams.feeProportionalMillionth.toLong(),
+                    commitments.localCommit.spec.totalFunds,
+                    enable = Helpers.aboveReserve(commitments)
+                )
+                val nextState = Normal(
+                    staticParams,
+                    currentTip,
+                    currentOnChainFeerates,
+                    commitments.copy(remoteNextCommitInfo = Either.Right(event.message.nextPerCommitmentPoint)),
+                    shortChannelId,
+                    buried = false,
+                    null,
+                    initialChannelUpdate,
+                    null,
+                    null,
+                    null,
+                    null
+                )
+                val actions = listOf(
+                    ChannelAction.Blockchain.SendWatch(watchConfirmed),
+                    ChannelAction.Storage.StoreState(nextState)
+                )
+                Pair(nextState, actions)
             }
-            is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
-                is WatchEventSpent -> when (watch.tx.txid) {
-                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
-                    else -> handleRemoteSpentOther(watch.tx)
-                }
-                else -> unhandled(event)
+            event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)
+            event is ChannelEvent.WatchReceived && event.watch is WatchEventSpent -> when (event.watch.tx.txid) {
+                commitments.remoteCommit.txid -> handleRemoteSpentCurrent(event.watch.tx)
+                else -> handleRemoteSpentOther(event.watch.tx)
             }
-            is ChannelEvent.ExecuteCommand -> when (event.command) {
+            event is ChannelEvent.ExecuteCommand -> when (event.command) {
                 is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
                 is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
                 else -> unhandled(event)
             }
-            is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
-            is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
+            event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
+            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
+            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
+            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
             else -> unhandled(event)
         }
     }

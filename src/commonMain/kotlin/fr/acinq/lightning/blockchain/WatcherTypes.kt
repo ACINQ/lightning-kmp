@@ -1,21 +1,15 @@
 package fr.acinq.lightning.blockchain
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
-import kotlinx.coroutines.CompletableDeferred
 
 sealed class BitcoinEvent
-object BITCOIN_FUNDING_PUBLISH_FAILED : BitcoinEvent()
 object BITCOIN_FUNDING_DEPTHOK : BitcoinEvent()
 object BITCOIN_FUNDING_DEEPLYBURIED : BitcoinEvent()
-object BITCOIN_FUNDING_LOST : BitcoinEvent()
-object BITCOIN_FUNDING_TIMEOUT : BitcoinEvent()
 object BITCOIN_FUNDING_SPENT : BitcoinEvent()
 object BITCOIN_OUTPUT_SPENT : BitcoinEvent()
 data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()
-data class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(val shortChannelId: ShortChannelId) : BitcoinEvent()
 data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent()
 
 /**
@@ -75,8 +69,6 @@ data class WatchSpent(
     )
 }
 
-data class WatchLost(override val channelId: ByteVector32, val txId: ByteVector32, val minDepth: Long, override val event: BitcoinEvent) : Watch()
-
 /**
  * generic "watch" event
  */
@@ -87,8 +79,6 @@ sealed class WatchEvent {
 
 data class WatchEventConfirmed(override val channelId: ByteVector32, override val event: BitcoinEvent, val blockHeight: Int, val txIndex: Int, val tx: Transaction) : WatchEvent()
 data class WatchEventSpent(override val channelId: ByteVector32, override val event: BitcoinEvent, val tx: Transaction) : WatchEvent()
-data class WatchEventSpentBasic(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()
-data class WatchEventLost(override val channelId: ByteVector32, override val event: BitcoinEvent) : WatchEvent()
 
 data class PublishAsap(val tx: Transaction)
 data class GetTxWithMeta(val channelId: ByteVector32, val txid: ByteVector32)

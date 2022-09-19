@@ -29,6 +29,7 @@ data class ChannelFundingError                     (override val channelId: Byte
 data class DualFundingAborted                      (override val channelId: ByteVector32, val reason: String) : ChannelException(channelId, "dual funding aborted: $reason")
 data class UnexpectedCommitSig                     (override val channelId: ByteVector32) : ChannelException(channelId, "unexpected commitment signatures (commit_sig)")
 data class UnexpectedFundingSignatures             (override val channelId: ByteVector32) : ChannelException(channelId, "unexpected funding signatures (tx_signatures)")
+data class InvalidFundingSignature                 (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid funding signature: txId=$txId")
 data class InvalidRbfAttempt                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid rbf attempt")
 data class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new htlcs, closing in progress")
 data class NoMoreFeeUpdateClosingInProgress        (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new update_fee, closing in progress")

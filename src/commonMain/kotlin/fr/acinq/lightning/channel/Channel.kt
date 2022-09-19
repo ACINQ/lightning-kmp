@@ -2,10 +2,12 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
+import fr.acinq.lightning.blockchain.Watch
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.channel.Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
@@ -57,7 +59,6 @@ sealed class ChannelEvent {
     data class MessageReceived(val message: LightningMessage) : ChannelEvent()
     data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
     data class ExecuteCommand(val command: Command) : ChannelEvent()
-    data class GetFundingTxResponse(val getTxResponse: GetTxWithMetaResponse) : ChannelEvent()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
     data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
     data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelEvent()
@@ -82,7 +83,6 @@ sealed class ChannelAction {
     sealed class Blockchain : ChannelAction() {
         data class SendWatch(val watch: Watch) : Blockchain()
         data class PublishTx(val tx: Transaction) : Blockchain()
-        data class GetFundingTx(val txid: ByteVector32) : Blockchain()
     }
 
     sealed class Storage : ChannelAction() {
@@ -238,45 +238,6 @@ sealed class ChannelState : LoggingContext {
         return when (cmd) {
             is CMD_ADD_HTLC -> Pair(this, listOf(ChannelAction.ProcessCmdRes.AddFailed(cmd, error, channelUpdate)))
             else -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, error)))
-        }
-    }
-
-    internal fun handleGetFundingTx(getTxResponse: GetTxWithMetaResponse, waitingSinceBlock: Long, fundingTx_opt: Transaction?): Pair<ChannelState, List<ChannelAction>> = when {
-        getTxResponse.tx_opt != null -> Pair(this, emptyList()) // the funding tx exists, nothing to do
-        fundingTx_opt != null -> {
-            // if we are the initiator, we never give up
-            logger.info { "republishing the funding tx..." }
-            // TODO we should also check if the funding tx has been double-spent
-            // see eclair-2.13 -> Channel.scala -> checkDoubleSpent(fundingTx)
-            this to listOf(ChannelAction.Blockchain.PublishTx(fundingTx_opt))
-        }
-        (currentTip.first - waitingSinceBlock) > FUNDING_TIMEOUT_NON_INITIATOR_BLOCK -> {
-            // if we are not the initiator, we give up after some time
-            handleFundingTimeout()
-        }
-        else -> {
-            // let's wait a little longer
-            logger.info { "funding tx still hasn't been published in ${currentTip.first - waitingSinceBlock} blocks, will wait ${(FUNDING_TIMEOUT_NON_INITIATOR_BLOCK - currentTip.first + waitingSinceBlock)} more blocks..." }
-            Pair(this, emptyList())
-        }
-    }
-
-    internal fun handleFundingPublishFailed(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        require(this is ChannelStateWithCommitments) { "${this::class} must be of type HasCommitments" }
-        logger.error { "c:$channelId failed to publish funding tx" }
-        val exc = ChannelFundingError(channelId)
-        val error = Error(channelId, exc.message)
-        // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
-        // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
-    }
-
-    private fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        return when (this) {
-            is ChannelStateWithCommitments -> this.handleFundingTimeout()
-            is Offline -> this.state.handleFundingTimeout()
-            is Syncing -> this.state.handleFundingTimeout()
-            else -> error("${this::class} does not handle funding tx timeouts")
         }
     }
 
@@ -555,13 +516,6 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
-
-    fun handleFundingTimeout(): Pair<ChannelState, List<ChannelAction.Message.Send>> {
-        logger.warning { "c:$channelId funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_NON_INITIATOR_BLOCK blocks" }
-        val exc = FundingTxTimedout(channelId)
-        val error = Error(channelId, exc.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
-    }
 }
 
 object Channel {
@@ -588,9 +542,6 @@ object Channel {
 
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
-
-    // as a non-initiator, we will wait that block count for the funding tx to confirm (the initiator will rely on the funding tx being double-spent)
-    const val FUNDING_TIMEOUT_NON_INITIATOR_BLOCK = 2016
 
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()

@@ -67,7 +67,10 @@ data class WaitForFundingSigned(
                                     currentTip,
                                     currentOnChainFeerates,
                                     commitments,
+                                    fundingParams,
+                                    pushAmount,
                                     signedFundingTx,
+                                    fundingPrivateKeys,
                                     currentBlockHeight.toLong(),
                                     null
                                 )

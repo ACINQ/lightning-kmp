@@ -4,9 +4,9 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.Feature
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
-import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.FeatureSupport
+import fr.acinq.lightning.Features
+import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
@@ -16,9 +16,8 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.Init
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import fr.acinq.lightning.wire.TxSignatures
+import kotlin.test.*
 
 class SyncingTestsCommon : LightningTestSuite() {
 
@@ -60,6 +59,56 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertEquals(watches.map { it.txId }.toSet(), setOf(revokedTx.txid, bob1.revokedCommitPublished.first().claimMainOutputTx!!.tx.txid))
     }
 
+    private fun watchUnconfirmedFundingTx(channelType: ChannelType.SupportedChannelType, aliceFeatures: Features, bobFeatures: Features, minDepth: Long) {
+        val (alice, bob, txSigs) = WaitForFundingConfirmedTestsCommon.init(channelType, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount, aliceFeatures = aliceFeatures, bobFeatures = bobFeatures)
+        val fundingTxId = txSigs.txId
+        val (alice1, bob1, channelReestablishAlice) = disconnectWithBackup(alice, bob)
+
+        val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.MessageReceived(channelReestablishAlice))
+        assertEquals(bob, bob2)
+        assertEquals(4, actionsBob2.size)
+        val channelReestablishBob = actionsBob2.hasOutgoingMessage<ChannelReestablish>()
+        actionsBob2.hasOutgoingMessage<TxSignatures>() // retransmit tx_signatures on reconnection
+        val bobWatch = actionsBob2.hasWatch<WatchConfirmed>()
+        assertEquals(fundingTxId, bobWatch.txId)
+        assertEquals(minDepth, bobWatch.minDepth)
+
+        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.MessageReceived(channelReestablishBob))
+        assertEquals(alice, alice2)
+        assertEquals(2, actionsAlice2.size)
+        actionsAlice2.hasOutgoingMessage<TxSignatures>() // retransmit tx_signatures on reconnection
+        val aliceWatch = actionsAlice2.hasWatch<WatchConfirmed>()
+        assertEquals(fundingTxId, aliceWatch.txId)
+        assertEquals(minDepth, aliceWatch.minDepth)
+    }
+
+    @Test
+    fun `watch unconfirmed funding tx`() {
+        watchUnconfirmedFundingTx(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.Alice.nodeParams.features, TestConstants.Bob.nodeParams.features, 3)
+    }
+
+    @Test
+    fun `watch unconfirmed funding tx (zero-conf)`() {
+        val aliceFeatures = TestConstants.Alice.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Optional)
+        val bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Mandatory)
+        watchUnconfirmedFundingTx(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, aliceFeatures, bobFeatures, 0)
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_DEPTHOK`() {
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, 0.msat)
+        val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
+        val (alice1, bob1, _) = disconnectWithBackup(alice, bob)
+        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+        assertEquals(alice1, alice2)
+        assertEquals(actionsAlice2.size, 1)
+        assertEquals(actionsAlice2.hasWatch<WatchSpent>().txId, fundingTx.txid)
+        val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+        assertEquals(bob1, bob2)
+        assertEquals(actionsBob2.size, 1)
+        assertEquals(actionsBob2.hasWatch<WatchSpent>().txId, fundingTx.txid)
+    }
+
     @Test
     fun `recv CMD_FORCECLOSE`() {
         val (alice, _, _) = run {
@@ -78,22 +127,47 @@ class SyncingTestsCommon : LightningTestSuite() {
             return Pair(alice, bob)
         }
 
-        fun disconnect(alice: Normal, bob: Normal): Triple<Syncing, Syncing, Pair<ChannelReestablish, ChannelReestablish>> {
-            val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
-            val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
-            assertTrue(alice1 is Offline)
-            assertTrue(bob1 is Offline)
+        fun disconnect(alice: ChannelStateWithCommitments, bob: ChannelStateWithCommitments): Triple<Syncing, Syncing, Pair<ChannelReestablish, ChannelReestablish>> {
+            val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.Disconnected)
+            val (bob1, actionsBob1) = bob.processEx(ChannelEvent.Disconnected)
+            assertIs<Offline>(alice1)
+            assertTrue(actionsAlice1.isEmpty())
+            assertIs<Offline>(bob1)
+            assertTrue(actionsBob1.isEmpty())
 
             val aliceInit = Init(ByteVector(alice1.state.commitments.localParams.features.toByteArray()))
             val bobInit = Init(ByteVector(bob1.state.commitments.localParams.features.toByteArray()))
+            assertFalse(bob1.state.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
-            val (alice2, actions) = alice1.processEx(ChannelEvent.Connected(aliceInit, bobInit))
-            assertTrue(alice2 is Syncing)
-            val channelReestablishA = actions.findOutgoingMessage<ChannelReestablish>()
-            val (bob2, actions1) = bob1.processEx(ChannelEvent.Connected(bobInit, aliceInit))
-            assertTrue(bob2 is Syncing)
-            val channelReestablishB = actions1.findOutgoingMessage<ChannelReestablish>()
+            val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.Connected(aliceInit, bobInit))
+            assertIs<Syncing>(alice2)
+            val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+            val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.Connected(bobInit, aliceInit))
+            assertIs<Syncing>(bob2)
+            val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
             return Triple(alice2, bob2, Pair(channelReestablishA, channelReestablishB))
+        }
+
+        fun disconnectWithBackup(alice: ChannelStateWithCommitments, bob: ChannelStateWithCommitments): Triple<Syncing, Syncing, ChannelReestablish> {
+            val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.Disconnected)
+            val (bob1, actionsBob1) = bob.processEx(ChannelEvent.Disconnected)
+            assertIs<Offline>(alice1)
+            assertTrue(actionsAlice1.isEmpty())
+            assertIs<Offline>(bob1)
+            assertTrue(actionsBob1.isEmpty())
+
+            val aliceInit = Init(ByteVector(alice1.state.commitments.localParams.features.toByteArray()))
+            assertTrue(alice1.state.commitments.localParams.features.hasFeature(Feature.ChannelBackupProvider))
+            val bobInit = Init(ByteVector(bob1.state.commitments.localParams.features.toByteArray()))
+            assertTrue(bob1.state.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
+
+            val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.Connected(aliceInit, bobInit))
+            assertIs<Syncing>(alice2)
+            val channelReestablish = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+            val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.Connected(bobInit, aliceInit))
+            assertIs<Syncing>(bob2)
+            assertTrue(actionsBob2.isEmpty())
+            return Triple(alice2, bob2, channelReestablish)
         }
     }
 

@@ -3,7 +3,6 @@ package fr.acinq.lightning.io
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomKeyPath
-import fr.acinq.lightning.blockchain.GetTxWithMeta
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
@@ -190,12 +189,6 @@ class Peer(
             watcher.openWatchNotificationsFlow().collect {
                 logger.debug { "n:$remoteNodeId notification: $it" }
                 input.send(WrappedChannelEvent(it.channelId, ChannelEvent.WatchReceived(it)))
-            }
-        }
-        launch {
-            watcher.openTxNotificationsFlow().collect {
-                logger.debug { "n:$remoteNodeId tx: ${it.second} for channel: ${it.first}" }
-                input.send(WrappedChannelEvent(it.first, ChannelEvent.GetFundingTxResponse(it.second)))
             }
         }
         launch {
@@ -399,7 +392,6 @@ class Peer(
                 action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelEvent(actualChannelId, ChannelEvent.ExecuteCommand(action.command)))
                 action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
                 action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
-                action is ChannelAction.Blockchain.GetFundingTx -> watcher.send(GetTxWithMetaEvent(GetTxWithMeta(channelId, action.txid)))
                 action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
                 action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "n:$remoteNodeId c:$actualChannelId command not executed" }
                 action is ChannelAction.ProcessCmdRes.AddFailed -> {

@@ -200,7 +200,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingSigned -- nothing at stake`() {
-        val (alice, bob) = reachNormal(pushAmount = 0.msat)
+        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat, pushAmount = 0.msat)
         val alice1 = alice.updateFeerate(FeeratePerKw(5_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
 
