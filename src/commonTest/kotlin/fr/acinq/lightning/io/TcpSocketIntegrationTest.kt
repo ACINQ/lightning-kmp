@@ -6,6 +6,7 @@ import io.ktor.utils.io.core.*
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalTime::class)
@@ -17,7 +18,7 @@ class TcpSocketIntegrationTest : LightningTestSuite() {
     }.toByteArray()
 
     @Test
-    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = Duration.seconds(250)) {
+    fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 250.seconds) {
         val socket = TcpSocket.Builder().connect("localhost", 51001, TcpSocket.TLS.DISABLED)
         socket.send(serverVersionRpc)
         val ba = ByteArray(8192)
@@ -27,7 +28,7 @@ class TcpSocketIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `SSL connection`() = runSuspendTest(timeout = Duration.seconds(5)) {
+    fun `SSL connection`() = runSuspendTest(timeout = 5.seconds) {
         val socket = TcpSocket.Builder().connect("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
         socket.send(serverVersionRpc)
         val size = socket.receiveAvailable(ByteArray(8192))

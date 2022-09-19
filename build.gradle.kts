@@ -80,6 +80,8 @@ kotlin {
             implementation(ktor("server-netty"))
             implementation(ktor("serialization"))
             implementation(ktor("server-status-pages"))
+            implementation(ktor("server-content-negotiation"))
+            implementation(ktor("serialization-kotlinx-json"))
             implementation("com.typesafe:config:1.4.1")
         }
     }

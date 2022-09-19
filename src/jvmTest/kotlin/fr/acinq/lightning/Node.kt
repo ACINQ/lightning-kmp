@@ -19,19 +19,19 @@ import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.serialization.v1.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.utils.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.http.*
-import io.ktor.serialization.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
-import io.ktor.server.plugins.*
+import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -225,15 +225,15 @@ object Node {
 
             embeddedServer(Netty, 8080) {
                 install(StatusPages) {
-                    exception<Throwable> {
-                        call.respondText(it.localizedMessage, ContentType.Text.Plain, HttpStatusCode.InternalServerError)
+                    exception<Throwable> { call, cause ->
+                        call.respondText(cause.localizedMessage, ContentType.Text.Plain, HttpStatusCode.InternalServerError)
                     }
                 }
                 install(ContentNegotiation) {
-                    register(ContentType.Application.Json, SerializationConverter(Json {
+                    json(Json {
                         serializersModule = Serialization.lightningSerializersModule
                         allowStructuredMapKeys = true
-                    }))
+                    })
                 }
                 routing {
                     post("/ping") {
