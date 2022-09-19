@@ -29,8 +29,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
-import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
+import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
@@ -104,7 +103,7 @@ data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
-@OptIn(ExperimentalStdlibApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalStdlibApi::class)
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
@@ -329,14 +328,14 @@ class Peer(
         suspend fun doPing() {
             val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
-                delay(Duration.seconds(30))
+                delay(30.seconds)
                 sendToPeer(ping)
             }
         }
 
         suspend fun checkPaymentsTimeout() {
             while (isActive) {
-                delay(Duration.seconds(10)) // we schedule a check every 10 seconds
+                delay(10.seconds) // we schedule a check every 10 seconds
                 input.send(CheckPaymentsTimeout)
             }
         }

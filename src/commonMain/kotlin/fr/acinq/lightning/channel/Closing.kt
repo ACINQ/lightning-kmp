@@ -357,6 +357,7 @@ data class Closing(
                     when (it) {
                         is Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx -> add(it.tx to "local-htlc-success")
                         is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx -> add(it.tx to "local-htlc-timeout")
+                        else -> Unit
                     }
                 }
                 localCommitPublished.claimHtlcDelayedTxs.forEach { add(it.tx to "local-htlc-delayed") }
@@ -368,6 +369,7 @@ data class Closing(
                     when (it) {
                         is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> add(it.tx to "remote-htlc-success")
                         is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> add(it.tx to "remote-htlc-timeout")
+                        else -> Unit
                     }
                 }
             }
@@ -378,6 +380,7 @@ data class Closing(
                     when (it) {
                         is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> add(it.tx to "remote-htlc-success")
                         is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> add(it.tx to "remote-htlc-timeout")
+                        else -> Unit
                     }
                 }
             }
