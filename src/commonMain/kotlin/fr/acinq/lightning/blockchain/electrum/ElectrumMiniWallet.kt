@@ -10,16 +10,25 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlin.native.concurrent.ThreadLocal
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>) {
-    val utxos: List<UnspentItem> = addresses.flatMap { it.value }
+data class WalletState(val pubKeyScripts: Map<ByteVector, Pair<List<UnspentItem>, PrivateKey?>>) {
+    val utxos: List<UnspentItem> = pubKeyScripts.flatMap { it.value.first }
     val balance: Satoshi = utxos.sumOf { it.value }.sat
+    val spendable: List<Triple<ByteVector, PrivateKey, UnspentItem>> by lazy {
+        pubKeyScripts
+            .entries
+            .filter { it.value.second != null }
+            .flatMap {
+                it.value.first.map { utxo -> Triple(it.key, it.value.second!!, utxo) }
+            }
+    }
 }
 
 private sealed interface WalletCommand {
     companion object {
         object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
-        data class AddAddress(val bitcoinAddress: String) : WalletCommand
+        data class AddAddress(val bitcoinAddress: String, val privateKey: PrivateKey?) : WalletCommand
+        data class AddPubkeyScript(val pubkeyScript: ByteVector, val privateKey: PrivateKey?) : WalletCommand
     }
 }
 
@@ -37,15 +46,15 @@ class ElectrumMiniWallet(
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
-    // all currently watched bitcoin addresses and their corresponding script hash
-    private var scriptHashes: Map<ByteVector32, String> = emptyMap()
+    // all currently watched script hashes and their corresponding pubkeyscript
+    private var scriptHashes: Map<ByteVector32, ByteVector> = emptyMap()
 
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
 
-    fun addAddress(bitcoinAddress: String) {
+    fun addAddress(bitcoinAddress: String, privateKey: PrivateKey? = null) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
         }
     }
 
@@ -82,9 +91,13 @@ class ElectrumMiniWallet(
                                 }
                             }
                             is ScriptHashListUnspentResponse -> {
-                                scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
-                                    val walletState = WalletState(_walletStateFlow.value.addresses + (bitcoinAddress to msg.unspents))
-                                    logger.info { "${msg.unspents.size} utxo(s) for address=$bitcoinAddress, balance=${walletState.balance}" }
+                                scriptHashes[msg.scriptHash]?.let { pubkeyScript ->
+                                    val newValue = _walletStateFlow.value.pubKeyScripts
+                                        .getOrElse(pubkeyScript, defaultValue = { emptyList<UnspentItem>() to null }) // default value
+                                        .let { v -> msg.unspents to v.second } // update the utxos, keep the private key
+                                    val walletState = WalletState(_walletStateFlow.value.pubKeyScripts + (pubkeyScript to newValue))
+                                    val bitcoinAddress = Bitcoin.addressFromPublicKeyScript(chainHash, pubkeyScript.toByteArray())
+                                    logger.info { "${msg.unspents.size} utxo(s) for address=$bitcoinAddress pubkeyScript=$pubkeyScript, balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
                                     _walletStateFlow.value = walletState
@@ -97,17 +110,26 @@ class ElectrumMiniWallet(
                         logger.info { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
                     }
+                    is WalletCommand.Companion.AddPubkeyScript -> {
+                        logger.info { "adding new pubkeyScript=${it.pubkeyScript}" }
+                        scriptHashes = scriptHashes + subscribe(it.pubkeyScript)
+                    }
                 }
             }
         }
     }
 
-    private fun subscribe(bitcoinAddress: String): Pair<ByteVector32, String> {
+    private fun subscribe(bitcoinAddress: String): Pair<ByteVector32, ByteVector> {
         val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
+        return subscribe(pubkeyScript)
+    }
+
+    private fun subscribe(pubkeyScript: ByteVector): Pair<ByteVector32, ByteVector> {
+        val bitcoinAddress = Bitcoin.addressFromPublicKeyScript(chainHash, pubkeyScript.toByteArray())
         val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
-        logger.info { "subscribing to address=$bitcoinAddress scriptHash=$scriptHash" }
+        logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
         client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
-        return scriptHash to bitcoinAddress
+        return scriptHash to pubkeyScript
     }
 
     @ThreadLocal

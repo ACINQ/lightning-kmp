@@ -1,6 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.Block
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
@@ -39,7 +40,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 1 }
+            .filter { it.pubKeyScripts.size == 1 }
             .first()
 
         assertEquals(0, walletState.utxos.size)
@@ -55,7 +56,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 1 }
+            .filter { it.pubKeyScripts.size == 1 }
             .first()
 
         assertEquals(6, walletState.utxos.size)
@@ -69,15 +70,16 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
-        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
-        wallet.addAddress("19b3QuFuYSSYPoLt1AxVQmG3LifgSSPNyA")
+        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", randomKey())
+        wallet.addAddress("19b3QuFuYSSYPoLt1AxVQmG3LifgSSPNyA", randomKey())
 
         val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 3 }
+            .filter { it.pubKeyScripts.size == 3 }
             .first()
 
         assertEquals(6 + 4 + 1, walletState.utxos.size)
         assertEquals(72_000_000.sat + 30_000_000.sat + 5_000_000.sat, walletState.balance)
+        assertEquals(2, walletState.spendable.size)
 
         client.stop()
     }
