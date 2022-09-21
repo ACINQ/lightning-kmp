@@ -34,7 +34,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = Duration.seconds(15)) { connectToMainnetServer().stop() }
 
     @Test
-    fun `query address with no utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
+    fun `single address with no utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
@@ -50,7 +50,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `query address with existing utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
+    fun `single address with existing utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
@@ -66,7 +66,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `handle reconnections`() = runSuspendTest(timeout = Duration.seconds(15)) {
+    fun `multiple addresses`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
@@ -77,9 +77,9 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
             .filter { it.addresses.size == 3 }
             .first()
 
-        assertEquals(6 + 4 + 1, walletState.utxos.size)
+        assertEquals(4 + 6 + 1, walletState.utxos.size)
         assertEquals(72_000_000.sat + 30_000_000.sat + 5_000_000.sat, walletState.balance)
-        assertEquals(2, walletState.spendable().size)
+        assertEquals(7, walletState.spendable().size)
 
         client.stop()
     }
