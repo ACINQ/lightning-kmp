@@ -115,7 +115,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 }
             }
             event is ChannelEvent.Restore && event.state is WaitForFundingConfirmed -> {
-                val minDepth = if (event.state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, event.state.fundingParams.fundingAmount)
+                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.state.fundingParams.fundingAmount)
                 logger.info { "c:${event.state.channelId} restoring unconfirmed channel (waiting for $minDepth confirmations)" }
                 val allCommitments = listOf(event.state.commitments) + event.state.previousFundingTxs.map { it.second }
                 val watches = allCommitments.map { WatchConfirmed(it.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
@@ -127,14 +127,26 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             }
             event is ChannelEvent.Restore && event.state is ChannelStateWithCommitments -> {
                 logger.info { "c:${event.state.channelId} restoring channel" }
+                // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
+                val fundingTx = when {
+                    event.state is WaitForFundingLocked && event.state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels) -> event.state.fundingTx.signedTx
+                    else -> null
+                }
                 val watchSpent = WatchSpent(
                     event.state.channelId,
-                    event.state.commitments.commitInput.outPoint.txid,
+                    event.state.commitments.fundingTxId,
                     event.state.commitments.commitInput.outPoint.index.toInt(),
                     event.state.commitments.commitInput.txOut.publicKeyScript,
                     BITCOIN_FUNDING_SPENT
                 )
-                Pair(Offline(event.state), listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+                val actions = buildList {
+                    fundingTx?.let {
+                        logger.info { "c:${event.state.channelId} republishing funding tx (txId=${it.txid})" }
+                        add(ChannelAction.Blockchain.PublishTx(it))
+                    }
+                    add(ChannelAction.Blockchain.SendWatch(watchSpent))
+                }
+                Pair(Offline(event.state), actions)
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())

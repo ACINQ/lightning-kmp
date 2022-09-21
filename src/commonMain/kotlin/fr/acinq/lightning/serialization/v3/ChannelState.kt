@@ -727,6 +727,8 @@ data class WaitForFundingLocked(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
+    val fundingParams: InteractiveTxParams,
+    val fundingTx: SignedSharedTransaction,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
 ) : ChannelStateWithCommitments() {
@@ -735,6 +737,8 @@ data class WaitForFundingLocked(
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
         Commitments(from.commitments),
+        InteractiveTxParams(from.fundingParams),
+        SignedSharedTransaction.import(from.fundingTx),
         from.shortChannelId,
         from.lastSent
     )
@@ -744,6 +748,8 @@ data class WaitForFundingLocked(
         currentTip,
         currentOnChainFeerates.export(),
         commitments.export(nodeParams),
+        fundingParams.export(),
+        fundingTx.export(),
         shortChannelId,
         lastSent
     )

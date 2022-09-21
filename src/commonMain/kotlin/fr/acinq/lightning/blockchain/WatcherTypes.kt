@@ -39,6 +39,10 @@ data class WatchConfirmed(
         event
     )
 
+    init {
+        require(minDepth > 0) { "minimum depth must be greater than 0 when watching transaction confirmation" }
+    }
+
     companion object {
         fun extractPublicKeyScript(witness: ScriptWitness): ByteVector {
             val result = runTrying {

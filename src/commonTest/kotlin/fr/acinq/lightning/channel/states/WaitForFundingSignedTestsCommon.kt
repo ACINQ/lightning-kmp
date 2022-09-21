@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
@@ -41,6 +42,29 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushAmount, null))
             val watchConfirmed = actionsBob1.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(bob1.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
+        }
+    }
+
+    @Test
+    fun `recv CommitSig (zero conf)`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        run {
+            val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
+            assertIs<WaitForFundingLocked>(alice1)
+            assertEquals(actionsAlice1.size, 3)
+            actionsAlice1.hasOutgoingMessage<FundingLocked>()
+            assertEquals(actionsAlice1.findWatch<WatchSpent>().txId, alice1.commitments.fundingTxId)
+            actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        }
+        run {
+            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
+            assertIs<WaitForFundingLocked>(bob1)
+            assertEquals(actionsBob1.size, 5)
+            actionsBob1.hasOutgoingMessage<TxSignatures>()
+            actionsBob1.hasOutgoingMessage<FundingLocked>()
+            assertEquals(actionsBob1.findWatch<WatchSpent>().txId, bob1.commitments.fundingTxId)
+            actionsBob1.has<ChannelAction.Storage.StoreState>()
+            actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushAmount, null))
         }
     }
 

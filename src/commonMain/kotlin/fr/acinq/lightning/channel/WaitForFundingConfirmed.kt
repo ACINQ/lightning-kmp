@@ -31,37 +31,33 @@ data class WaitForFundingConfirmed(
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is TxSignatures -> {
-                when (fundingTx) {
-                    is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(event.message)) {
-                        null -> {
-                            logger.warning { "c:$channelId received invalid remote funding signatures for txId=${event.message.txId}" }
-                            // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
-                            // so we cannot close the channel yet.
-                            val actions = listOf(ChannelAction.Message.Send(Error(channelId, InvalidFundingSignature(channelId, event.message.txId).message)))
-                            Pair(this, actions)
-                        }
-                        else -> {
-                            logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
-                            val nextState = this.copy(fundingTx = fullySignedTx)
-                            val actions = buildList {
-                                // If we haven't sent our signatures yet, we do it now.
-                                if (!fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(fullySignedTx.localSigs))
-                                add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
-                                add(ChannelAction.Storage.StoreState(nextState))
-                            }
-                            Pair(nextState, actions)
-                        }
+            event is ChannelEvent.MessageReceived && event.message is TxSignatures -> when (fundingTx) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(event.message)) {
+                    null -> {
+                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${event.message.txId}" }
+                        // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
+                        Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, event.message.txId).message))))
                     }
-                    is FullySignedSharedTransaction -> when (rbfStatus) {
-                        RbfStatus.None -> {
-                            logger.info { "c:$channelId ignoring duplicate remote funding signatures" }
-                            Pair(this, listOf())
+                    else -> {
+                        logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
+                        val nextState = this.copy(fundingTx = fullySignedTx)
+                        val actions = buildList {
+                            // If we haven't sent our signatures yet, we do it now.
+                            if (!fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(fullySignedTx.localSigs))
+                            add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                            add(ChannelAction.Storage.StoreState(nextState))
                         }
-                        else -> {
-                            logger.warning { "c:$channelId received rbf tx_signatures before commit_sig, aborting" }
-                            Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, UnexpectedFundingSignatures(channelId).message))))
-                        }
+                        Pair(nextState, actions)
+                    }
+                }
+                is FullySignedSharedTransaction -> when (rbfStatus) {
+                    RbfStatus.None -> {
+                        logger.info { "c:$channelId ignoring duplicate remote funding signatures" }
+                        Pair(this, listOf())
+                    }
+                    else -> {
+                        logger.warning { "c:$channelId received rbf tx_signatures before commit_sig, aborting" }
+                        Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, UnexpectedFundingSignatures(channelId).message))))
                     }
                 }
             }
@@ -218,7 +214,6 @@ data class WaitForFundingConfirmed(
                                 }
                                 else -> {
                                     logger.info { "c:$channelId rbf funding tx created with txId=${commitInput.outPoint.txid}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }
-                                    // We now have more than one version of the funding tx, so we cannot use zero-conf.
                                     val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, rbfStatus.fundingParams.fundingAmount)
                                     logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
                                     val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
@@ -279,7 +274,7 @@ data class WaitForFundingConfirmed(
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
                         val shortChannelId = ShortChannelId(event.watch.blockHeight, event.watch.txIndex, commitments.commitInput.outPoint.index.toInt())
-                        val nextState = WaitForFundingLocked(staticParams, currentTip, currentOnChainFeerates, commitments, shortChannelId, fundingLocked)
+                        val nextState = WaitForFundingLocked(staticParams, currentTip, currentOnChainFeerates, commitments, fundingParams, fundingTx, shortChannelId, fundingLocked)
                         val actions = buildList {
                             add(ChannelAction.Blockchain.SendWatch(watchSpent))
                             if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, event.watch.tx.txid).message)))

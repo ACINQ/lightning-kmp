@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
@@ -70,7 +69,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     Pair(nextState1, actions + actions1)
                 }
                 state is WaitForFundingConfirmed -> {
-                    val minDepth = if (state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, state.fundingParams.fundingAmount)
+                    val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, state.fundingParams.fundingAmount)
                     // we put back the watches (operation is idempotent) because the event may have been fired while we were in OFFLINE
                     val allCommitments = listOf(state.commitments) + state.previousFundingTxs.map { it.second }
                     val watches = allCommitments.map { WatchConfirmed(it.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }

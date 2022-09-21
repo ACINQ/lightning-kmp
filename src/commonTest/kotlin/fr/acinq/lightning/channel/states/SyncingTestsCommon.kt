@@ -4,8 +4,6 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.Feature
-import fr.acinq.lightning.FeatureSupport
-import fr.acinq.lightning.Features
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.processEx
@@ -59,8 +57,9 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertEquals(watches.map { it.txId }.toSet(), setOf(revokedTx.txid, bob1.revokedCommitPublished.first().claimMainOutputTx!!.tx.txid))
     }
 
-    private fun watchUnconfirmedFundingTx(channelType: ChannelType.SupportedChannelType, aliceFeatures: Features, bobFeatures: Features, minDepth: Long) {
-        val (alice, bob, txSigs) = WaitForFundingConfirmedTestsCommon.init(channelType, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount, aliceFeatures = aliceFeatures, bobFeatures = bobFeatures)
+    @Test
+    fun `watch unconfirmed funding tx`() {
+        val (alice, bob, txSigs) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
         val fundingTxId = txSigs.txId
         val (alice1, bob1, channelReestablishAlice) = disconnectWithBackup(alice, bob)
 
@@ -71,7 +70,7 @@ class SyncingTestsCommon : LightningTestSuite() {
         actionsBob2.hasOutgoingMessage<TxSignatures>() // retransmit tx_signatures on reconnection
         val bobWatch = actionsBob2.hasWatch<WatchConfirmed>()
         assertEquals(fundingTxId, bobWatch.txId)
-        assertEquals(minDepth, bobWatch.minDepth)
+        assertEquals(3, bobWatch.minDepth)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.MessageReceived(channelReestablishBob))
         assertEquals(alice, alice2)
@@ -79,19 +78,7 @@ class SyncingTestsCommon : LightningTestSuite() {
         actionsAlice2.hasOutgoingMessage<TxSignatures>() // retransmit tx_signatures on reconnection
         val aliceWatch = actionsAlice2.hasWatch<WatchConfirmed>()
         assertEquals(fundingTxId, aliceWatch.txId)
-        assertEquals(minDepth, aliceWatch.minDepth)
-    }
-
-    @Test
-    fun `watch unconfirmed funding tx`() {
-        watchUnconfirmedFundingTx(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.Alice.nodeParams.features, TestConstants.Bob.nodeParams.features, 3)
-    }
-
-    @Test
-    fun `watch unconfirmed funding tx (zero-conf)`() {
-        val aliceFeatures = TestConstants.Alice.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Optional)
-        val bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Mandatory)
-        watchUnconfirmedFundingTx(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, aliceFeatures, bobFeatures, 0)
+        assertEquals(3, aliceWatch.minDepth)
     }
 
     @Test

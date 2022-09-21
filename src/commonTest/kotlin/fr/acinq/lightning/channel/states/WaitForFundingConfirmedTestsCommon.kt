@@ -53,7 +53,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob.copy(witnesses = listOf(Script.witnessPay2wpkh(randomKey().publicKey(), randomBytes(72).byteVector())))))
         // Alice sends an error, but stays in the same state because the funding tx may still confirm.
-        actionsAlice1.findOutgoingMessage<Error>()
+        assertEquals(actionsAlice1.size, 1)
+        actionsAlice1.findOutgoingMessage<Warning>()
         assertEquals(alice, alice1)
     }
 

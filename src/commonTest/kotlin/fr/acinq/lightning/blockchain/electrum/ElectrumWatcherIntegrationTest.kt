@@ -3,7 +3,6 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.bitcoind.BitcoindService
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -14,18 +13,14 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sat
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.channels.consume
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.withTimeout
 import org.kodein.log.LoggerFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -271,85 +266,6 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
-
-        watcher.stop()
-        client.stop()
-    }
-
-    @OptIn(FlowPreview::class)
-    @Test
-    fun `watch for mempool transactions -- txs in mempool before we set the watch`() = runSuspendTest(timeout = 50.seconds) {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
-
-        val (address, privateKey) = bitcoincli.getNewAddress()
-        val tx = bitcoincli.sendToAddress(address, 1.0)
-        val (tx1, tx2) = bitcoincli.createUnspentTxChain(tx, privateKey)
-
-        val sentTx1 = bitcoincli.sendRawTransaction(tx1)
-        assertEquals(tx1, sentTx1)
-        val sentTx2 = bitcoincli.sendRawTransaction(tx2)
-        assertEquals(tx2, sentTx2)
-
-        // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
-        val getHistoryListener = client.notifications.produceIn(this)
-
-        client.sendMessage(SendElectrumRequest(GetScriptHashHistory(computeScriptHash(tx2.txOut[0].publicKeyScript))))
-        getHistoryListener.consume {
-            val msg = this.receive()
-            if (msg is GetScriptHashHistoryResponse) {
-                val (_, history) = msg
-                if (history.map { it.txid }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) this.cancel()
-            }
-        }
-
-        val listener = watcher.openWatchNotificationsFlow()
-        watcher.watch(
-            WatchConfirmed(
-                ByteVector32.Zeroes,
-                tx2.txid,
-                tx2.txOut[0].publicKeyScript,
-                0,
-                BITCOIN_FUNDING_DEPTHOK
-            )
-        )
-
-        val watchEvent = listener.first()
-        assertTrue(watchEvent is WatchEventConfirmed)
-        assertEquals(tx2.txid, watchEvent.tx.txid)
-
-        watcher.stop()
-        client.stop()
-    }
-
-    @Test
-    fun `watch for mempool transactions -- txs not yet in the mempool when we set the watch`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
-
-        val (address, privateKey) = bitcoincli.getNewAddress()
-        val tx = bitcoincli.sendToAddress(address, 1.0)
-        val (tx1, tx2) = bitcoincli.createUnspentTxChain(tx, privateKey)
-
-        val listener = watcher.openWatchNotificationsFlow()
-        watcher.watch(
-            WatchConfirmed(
-                ByteVector32.Zeroes,
-                tx2.txid,
-                tx2.txOut[0].publicKeyScript,
-                0,
-                BITCOIN_FUNDING_DEPTHOK
-            )
-        )
-
-        val sentTx1 = bitcoincli.sendRawTransaction(tx1)
-        assertEquals(tx1, sentTx1)
-        val sentTx2 = bitcoincli.sendRawTransaction(tx2)
-        assertEquals(tx2, sentTx2)
-
-        val watchEvent = listener.first()
-        assertTrue(watchEvent is WatchEventConfirmed)
-        assertEquals(tx2.txid, watchEvent.tx.txid)
 
         watcher.stop()
         client.stop()

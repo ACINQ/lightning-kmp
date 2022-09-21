@@ -159,35 +159,63 @@ object TestsHelper {
         // Alice ---- tx_complete ----> Bob
         rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxComplete>()))
         bob = rb.first
+
         val commitAlice = ra.second.findOutgoingMessage<CommitSig>()
         val commitBob = rb.second.findOutgoingMessage<CommitSig>()
-        // Alice <--- commit_sig ----- Bob
-        ra = alice.process(ChannelEvent.MessageReceived(commitBob))
-        alice = ra.first
-        val watchAlice = ra.second.findWatch<WatchConfirmed>()
-        // Alice ---- commit_sig ----> Bob
-        rb = bob.process(ChannelEvent.MessageReceived(commitAlice))
-        bob = rb.first
-        val watchBob = rb.second.findWatch<WatchConfirmed>()
-        // Alice <--- tx_signatures ----- Bob
-        ra = alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxSignatures>()))
-        alice = ra.first
-        assertIs<WaitForFundingConfirmed>(alice)
-        assertIs<FullySignedSharedTransaction>(alice.fundingTx)
-        // Alice ---- tx_signatures ----> Bob
-        rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxSignatures>()))
-        bob = rb.first
-        assertIs<WaitForFundingConfirmed>(bob)
-        assertIs<FullySignedSharedTransaction>(bob.fundingTx)
-        val fundingTx = alice.fundingTx.signedTx!!
+        val (fundingTx, fundingLockedAlice, fundingLockedBob) = if (channelType.features.contains(Feature.ZeroConfChannels)) {
+            // Alice <--- commit_sig ----- Bob
+            ra = alice.process(ChannelEvent.MessageReceived(commitBob))
+            alice = ra.first
+            assertEquals(ra.second.hasWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
+            val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
+            // Alice ---- commit_sig ----> Bob
+            rb = bob.process(ChannelEvent.MessageReceived(commitAlice))
+            bob = rb.first
+            assertEquals(rb.second.hasWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
+            val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
 
-        ra = alice.process(ChannelEvent.WatchReceived(WatchEventConfirmed(watchAlice.channelId, watchAlice.event, currentHeight + 144, 1, fundingTx)))
-        alice = ra.first
-        val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
+            // Alice <--- tx_signatures ----- Bob
+            ra = alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxSignatures>()))
+            alice = ra.first
+            assertIs<WaitForFundingLocked>(alice)
+            assertIs<FullySignedSharedTransaction>(alice.fundingTx)
+            // Alice ---- tx_signatures ----> Bob
+            rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxSignatures>()))
+            bob = rb.first
+            assertIs<WaitForFundingLocked>(bob)
+            assertIs<FullySignedSharedTransaction>(bob.fundingTx)
+            val fundingTx = alice.fundingTx.signedTx!!
 
-        rb = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(watchBob.channelId, watchBob.event, currentHeight + 144, 1, fundingTx)))
-        bob = rb.first
-        val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
+            Triple(fundingTx, fundingLockedAlice, fundingLockedBob)
+        } else {
+            // Alice <--- commit_sig ----- Bob
+            ra = alice.process(ChannelEvent.MessageReceived(commitBob))
+            alice = ra.first
+            assertEquals(ra.second.hasWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
+            // Alice ---- commit_sig ----> Bob
+            rb = bob.process(ChannelEvent.MessageReceived(commitAlice))
+            bob = rb.first
+            assertEquals(rb.second.hasWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
+
+            // Alice <--- tx_signatures ----- Bob
+            ra = alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxSignatures>()))
+            alice = ra.first
+            assertIs<WaitForFundingConfirmed>(alice)
+            assertIs<FullySignedSharedTransaction>(alice.fundingTx)
+            // Alice ---- tx_signatures ----> Bob
+            rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxSignatures>()))
+            bob = rb.first
+            assertIs<WaitForFundingConfirmed>(bob)
+            assertIs<FullySignedSharedTransaction>(bob.fundingTx)
+            val fundingTx = alice.fundingTx.signedTx!!
+
+            ra = alice.process(ChannelEvent.WatchReceived(WatchEventConfirmed(commitAlice.channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight + 144, 1, fundingTx)))
+            alice = ra.first
+            rb = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(commitBob.channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight + 144, 1, fundingTx)))
+            bob = rb.first
+
+            Triple(fundingTx, ra.second.findOutgoingMessage(), rb.second.findOutgoingMessage())
+        }
 
         ra = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
         alice = ra.first

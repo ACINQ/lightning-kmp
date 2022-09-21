@@ -9,14 +9,15 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.FundingLocked
+import fr.acinq.lightning.wire.*
 
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
+    val fundingParams: InteractiveTxParams,
+    val fundingTx: SignedSharedTransaction,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
 ) : ChannelStateWithCommitments() {
@@ -24,6 +25,34 @@ data class WaitForFundingLocked(
 
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
+            event is ChannelEvent.MessageReceived && event.message is TxSignatures -> when (fundingTx) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(event.message)) {
+                    null -> {
+                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${event.message.txId}" }
+                        // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
+                        Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, event.message.txId).message))))
+                    }
+                    else -> {
+                        logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
+                        val nextState = this.copy(fundingTx = fullySignedTx)
+                        val actions = buildList {
+                            // If we haven't sent our signatures yet, we do it now.
+                            if (!fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(fullySignedTx.localSigs))
+                            add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                            add(ChannelAction.Storage.StoreState(nextState))
+                        }
+                        Pair(nextState, actions)
+                    }
+                }
+                is FullySignedSharedTransaction -> {
+                    logger.info { "c:$channelId ignoring duplicate remote funding signatures" }
+                    Pair(this, listOf())
+                }
+            }
+            event is ChannelEvent.MessageReceived && event.message is TxInitRbf -> {
+                logger.info { "c:$channelId rejecting tx_init_rbf, we have already accepted the channel" }
+                Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, commitments.fundingTxId).message))))
+            }
             event is ChannelEvent.MessageReceived && event.message is FundingLocked -> {
                 // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                 val watchConfirmed = WatchConfirmed(
