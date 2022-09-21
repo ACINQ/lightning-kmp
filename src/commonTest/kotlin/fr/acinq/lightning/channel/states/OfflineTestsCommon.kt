@@ -518,6 +518,30 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
+        val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, 0.msat)
+        val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigsBob)
+        val previousFundingTx = alice1.previousFundingTxs.first().first.signedTx!!
+        val (alice2, bob2) = disconnect(alice1, bob1)
+        val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
+        assertIs<Offline>(alice3)
+        val aliceState3 = alice3.state
+        assertIs<WaitForFundingConfirmed>(aliceState3)
+        assertEquals(aliceState3.commitments.fundingTxId, previousFundingTx.txid)
+        assertTrue(aliceState3.previousFundingTxs.isEmpty())
+        assertEquals(actionsAlice3.size, 1)
+        assertEquals(actionsAlice3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
+        val (bob3, actionsBob3) = bob2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
+        assertIs<Offline>(bob3)
+        val bobState3 = bob3.state
+        assertIs<WaitForFundingConfirmed>(bobState3)
+        assertEquals(bobState3.commitments.fundingTxId, previousFundingTx.txid)
+        assertTrue(bobState3.previousFundingTxs.isEmpty())
+        assertEquals(actionsBob3.size, 1)
+        assertEquals(actionsBob3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
+    }
+
+    @Test
     fun `recv NewBlock -- no htlc timed out`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, _) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)

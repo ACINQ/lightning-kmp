@@ -42,7 +42,7 @@ data class WaitForFundingSigned(
                 val localSigOfLocalTx = keyManager.sign(firstCommitTx.localCommitTx, localParams.channelKeys.fundingPrivateKey)
                 val signedLocalCommitTx = Transactions.addSigs(firstCommitTx.localCommitTx, fundingPubKey, remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
-                    is Try.Failure -> handleLocalError(event, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx))
+                    is Try.Failure -> handleLocalError(event, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx.txid))
                     is Try.Success -> {
                         val commitInput = firstCommitTx.localCommitTx.input
                         val commitments = Commitments(
@@ -70,6 +70,7 @@ data class WaitForFundingSigned(
                                     fundingParams,
                                     pushAmount,
                                     signedFundingTx,
+                                    listOf(),
                                     fundingPrivateKeys,
                                     currentBlockHeight.toLong(),
                                     null

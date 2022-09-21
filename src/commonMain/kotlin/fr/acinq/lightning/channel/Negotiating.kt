@@ -155,6 +155,7 @@ data class Negotiating(
                             commitments,
                             fundingTx = null,
                             waitingSinceBlock = currentBlockHeight.toLong(),
+                            alternativeCommitments = listOf(),
                             mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOf(closingTx)
                         )
@@ -196,6 +197,7 @@ data class Negotiating(
             commitments,
             fundingTx = null,
             waitingSinceBlock = currentBlockHeight.toLong(),
+            alternativeCommitments = listOf(),
             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
             mutualClosePublished = listOf(signedClosingTx)
         )
@@ -212,7 +214,7 @@ data class Negotiating(
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
-            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
             bestUnpublishedClosingTx != null -> {
                 // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
                 val nextState = Closing(
@@ -222,6 +224,7 @@ data class Negotiating(
                     commitments,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = listOf(),
                     mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
                     mutualClosePublished = listOf(bestUnpublishedClosingTx)
                 )

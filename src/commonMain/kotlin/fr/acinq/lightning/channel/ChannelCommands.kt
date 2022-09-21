@@ -10,6 +10,7 @@ import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.OnionRoutingPacket
+import fr.acinq.lightning.wire.TxAddInput
 
 sealed class Command
 
@@ -30,6 +31,9 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
 
 object CMD_SIGN : Command()
 data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command()
+
+// We only support a very limited fee bumping mechanism where a single new input can be added (only used in tests).
+data class CMD_BUMP_FUNDING_FEE(val targetFeerate: FeeratePerKw, val additionalInput: FundingInput, val additionalFunding: Satoshi, val lockTime: Long) : Command()
 
 data class ClosingFees(val preferred: Satoshi, val min: Satoshi, val max: Satoshi) {
     constructor(preferred: Satoshi) : this(preferred, preferred, preferred)

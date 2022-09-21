@@ -451,10 +451,10 @@ object Helpers {
                 val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.channelKeys.fundingPubKey, commitments.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
                 when (Transactions.checkSpendable(signedClosingTx)) {
                     is Try.Success -> Either.Right(Pair(signedClosingTx, closingSigned))
-                    is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+                    is Try.Failure -> Either.Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx.txid))
                 }
             } else {
-                Either.Left(InvalidCloseAmountBelowDust(commitments.channelId, closingTx.tx))
+                Either.Left(InvalidCloseAmountBelowDust(commitments.channelId, closingTx.tx.txid))
             }
         }
 

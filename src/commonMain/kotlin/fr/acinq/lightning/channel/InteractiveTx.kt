@@ -27,6 +27,9 @@ data class InteractiveTxParams(
 ) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
 
+    // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
+    val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
+
     fun shouldSignFirst(localNodeId: PublicKey, remoteNodeId: PublicKey): Boolean = when {
         // The peer with the lowest total of input amount must transmit its `tx_signatures` first.
         localAmount < remoteAmount -> true
@@ -51,8 +54,8 @@ sealed class FundingContributionFailure {
 data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<TxAddOutput>) {
     companion object {
         /** Create funding contributions from p2wpkh inputs, with an optional p2wpkh change output. */
-        fun create(params: InteractiveTxParams, utxos: List<FundingInput>, changePubKey: PublicKey?): Either<FundingContributionFailure, FundingContributions> {
-            utxos.forEach { (tx, txOutput, _) ->
+        fun create(params: InteractiveTxParams, utxos: List<FundingInput>, changePubKey: PublicKey? = null): Either<FundingContributionFailure, FundingContributions> {
+            utxos.forEach { (tx, txOutput) ->
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
                 if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
                 if (!Script.isPay2wpkh(tx.txOut[txOutput].publicKeyScript.toByteArray())) return Either.Left(FundingContributionFailure.NonPay2wpkhInput(tx.txid, txOutput))
@@ -83,8 +86,9 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
                     Pair(w1, w2)
                 }
             }
+            // If we're not the initiator, we don't return an error when we're unable to meet the desired feerate.
             val feesWithoutChange = totalAmountIn - params.localAmount
-            if (feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
+            if (params.isInitiator && feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
                 return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
             }
 
@@ -92,7 +96,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
             val serialIdParity = if (params.isInitiator) 0 else 1
 
             // We add a change output if necessary and finalize our funding contributions.
-            val inputs = utxos.mapIndexed { i, (tx, txOutput, _) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
+            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
             val sharedOutput = TxAddOutput(params.channelId, 2 * utxos.size.toLong() + serialIdParity, params.fundingAmount, params.fundingPubkeyScript)
             val changeOutput = when (changePubKey) {
                 null -> listOf()

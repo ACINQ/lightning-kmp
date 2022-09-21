@@ -249,7 +249,6 @@ sealed class ChannelState : LoggingContext {
     fun handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
         logger.error { "c:${e.channelId} peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
-
         return when {
             this is Closing -> Pair(this, listOf()) // nothing to do, there is already a spending tx published
             this is Negotiating && this.bestUnpublishedClosingTx != null -> {
@@ -260,6 +259,7 @@ sealed class ChannelState : LoggingContext {
                     commitments = commitments,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = listOf(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                 )
@@ -283,6 +283,14 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
+    fun nothingAtStake(): Boolean {
+        return when (this) {
+            is WaitForFundingConfirmed -> (listOf(commitments) + previousFundingTxs.map { it.second }).fold(true) { current, commitments -> current && commitments.nothingAtStake() }
+            is Closing -> (listOf(commitments) + alternativeCommitments).fold(true) { current, commitments -> current && commitments.nothingAtStake() }
+            else -> commitments.nothingAtStake()
+        }
+    }
+
     internal fun handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
         logger.warning { "c:$channelId they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
@@ -298,6 +306,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 commitments = commitments,
                 fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
+                alternativeCommitments = listOf(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 remoteCommitPublished = remoteCommitPublished
             )
@@ -308,6 +317,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 commitments = commitments,
                 fundingTx = fundingTx.signedTx,
                 waitingSinceBlock = currentBlockHeight.toLong(),
+                alternativeCommitments = previousFundingTxs.map { it.second },
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -317,6 +327,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 commitments = commitments,
                 fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
+                alternativeCommitments = listOf(),
                 remoteCommitPublished = remoteCommitPublished
             )
         }
@@ -345,10 +356,11 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 commitments = commitments,
                 fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
+                alternativeCommitments = listOf(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 nextRemoteCommitPublished = remoteCommitPublished
             )
-            // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed so we don't have the case where fundingTx is defined
+            // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed, so we don't have the case where fundingTx is defined
             else -> Closing(
                 staticParams = staticParams,
                 currentTip = currentTip,
@@ -356,6 +368,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 commitments = commitments,
                 fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
+                alternativeCommitments = listOf(),
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
@@ -371,7 +384,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
         return claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
             logger.warning { "c:$channelId txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
-            val ex = FundingTxSpent(channelId, tx)
+            val ex = FundingTxSpent(channelId, tx.txid)
             val error = Error(channelId, ex.message)
 
             val nextState = when (this) {
@@ -387,10 +400,11 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = listOf(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
-                // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed so we don't have the case where fundingTx is defined
+                // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed, so we don't have the case where fundingTx is defined
                 else -> Closing(
                     staticParams = staticParams,
                     currentTip = currentTip,
@@ -398,6 +412,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     currentOnChainFeerates = currentOnChainFeerates,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = listOf(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
@@ -442,6 +457,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = listOf(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     localCommitPublished = localCommitPublished
                 )
@@ -451,6 +467,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     fundingTx = fundingTx.signedTx,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = previousFundingTxs.map { it.second },
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
@@ -459,6 +476,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
+                    alternativeCommitments = listOf(),
                     localCommitPublished = localCommitPublished
                 )
             }
@@ -496,6 +514,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                             commitments,
                             fundingTx = null,
                             waitingSinceBlock = currentBlockHeight.toLong(),
+                            alternativeCommitments = listOf(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                         )

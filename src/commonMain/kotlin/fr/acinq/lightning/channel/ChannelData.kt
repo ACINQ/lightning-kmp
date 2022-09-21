@@ -426,17 +426,17 @@ sealed class ChannelOrigin {
     data class SwapInOrigin(val bitcoinAddress: String, override val fee: Satoshi) : ChannelOrigin()
 }
 
-/** A utxo that should be used for channel funding, with the private key to spend it. */
-data class FundingInput(val previousTx: Transaction, val outputIndex: Int, val privateKey: PrivateKey) {
+/** A utxo that should be used for channel funding. */
+data class FundingInput(val previousTx: Transaction, val outputIndex: Int) {
     val amount: Satoshi = previousTx.txOut[outputIndex].amount
     val outpoint: OutPoint = OutPoint(previousTx, outputIndex.toLong())
 }
 
 /** A set of utxos that should be used for channel funding. */
-data class FundingInputs(val fundingAmount: Satoshi, val inputs: List<FundingInput>) {
+data class FundingInputs(val fundingAmount: Satoshi, val inputs: List<FundingInput>, val privateKeys: List<PrivateKey>) {
     val totalAmount: Satoshi = inputs.map { it.amount }.sum()
 
     companion object {
-        val empty: FundingInputs = FundingInputs(0.sat, listOf())
+        val empty: FundingInputs = FundingInputs(0.sat, listOf(), listOf())
     }
 }

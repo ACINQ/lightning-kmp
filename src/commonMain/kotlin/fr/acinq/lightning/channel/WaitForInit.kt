@@ -54,7 +54,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 logger.warning { "c:${event.temporaryChannelId} cannot open channel with invalid channel_type=${event.channelType.name}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.Restore && event.state is Closing && event.state.commitments.nothingAtStake() -> {
+            event is ChannelEvent.Restore && event.state is Closing && event.state.nothingAtStake() -> {
                 logger.info { "c:${event.state.channelId} we have nothing at stake, going straight to CLOSED" }
                 Pair(Closed(event.state), listOf())
             }
@@ -117,16 +117,11 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             event is ChannelEvent.Restore && event.state is WaitForFundingConfirmed -> {
                 val minDepth = if (event.state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, event.state.fundingParams.fundingAmount)
                 logger.info { "c:${event.state.channelId} restoring unconfirmed channel (waiting for $minDepth confirmations)" }
-                val watchConfirmed = WatchConfirmed(
-                    event.state.channelId,
-                    event.state.commitments.commitInput.outPoint.txid,
-                    event.state.commitments.commitInput.txOut.publicKeyScript,
-                    minDepth.toLong(),
-                    BITCOIN_FUNDING_DEPTHOK
-                )
+                val allCommitments = listOf(event.state.commitments) + event.state.previousFundingTxs.map { it.second }
+                val watches = allCommitments.map { WatchConfirmed(it.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
                 val actions = buildList {
                     event.state.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
-                    add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
+                    addAll(watches.map { ChannelAction.Blockchain.SendWatch(it) })
                 }
                 Pair(Offline(event.state), actions)
             }

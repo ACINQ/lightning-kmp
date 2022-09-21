@@ -77,6 +77,7 @@ object Serialization {
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)
             subclass(Closing::class)
+            subclass(Closing2::class)
             subclass(Closed::class)
             subclass(ErrorInformationLeak::class)
         }

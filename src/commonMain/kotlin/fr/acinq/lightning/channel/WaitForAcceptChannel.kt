@@ -49,7 +49,7 @@ data class WaitForAcceptChannel(
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                         val fundingParams = InteractiveTxParams(channelId, true, init.fundingInputs.fundingAmount, accept.fundingAmount, fundingPubkeyScript, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                        when (val fundingContributions = FundingContributions.create(fundingParams, init.fundingInputs.inputs, null)) {
+                        when (val fundingContributions = FundingContributions.create(fundingParams, init.fundingInputs.inputs)) {
                             is Either.Left -> {
                                 logger.error { "c:$channelId could not fund channel: ${fundingContributions.value}" }
                                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
@@ -66,7 +66,7 @@ data class WaitForAcceptChannel(
                                             init.localParams,
                                             remoteParams,
                                             interactiveTxSession,
-                                            init.fundingInputs.inputs.map { it.privateKey },
+                                            init.fundingInputs.privateKeys,
                                             lastSent.pushAmount,
                                             lastSent.commitmentFeerate,
                                             accept.firstPerCommitmentPoint,

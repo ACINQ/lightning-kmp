@@ -73,6 +73,7 @@ data class Commitments(
         require(channelFeatures.hasFeature(Feature.AnchorOutputs)) { "invalid channel type: ${channelFeatures.channelType.name}" }
     }
 
+    val fundingTxId: ByteVector32 = commitInput.outPoint.txid
     val fundingAmount: Satoshi = commitInput.txOut.amount
     val localChannelReserve: Satoshi = if (channelFeatures.hasFeature(Feature.ZeroReserveChannels) && !localParams.isInitiator) 0.sat else (fundingAmount / 100).max(remoteParams.dustLimit)
     val remoteChannelReserve: Satoshi = if (channelFeatures.hasFeature(Feature.ZeroReserveChannels) && localParams.isInitiator) 0.sat else (fundingAmount / 100).max(localParams.dustLimit)
@@ -527,7 +528,7 @@ data class Commitments(
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
             is Try.Failure -> {
                 log.error(check.error) { "c:$channelId remote signature $commit is invalid" }
-                return Either.Left(InvalidCommitmentSignature(channelId, signedCommitTx.tx))
+                return Either.Left(InvalidCommitmentSignature(channelId, signedCommitTx.tx.txid))
             }
             else -> {}
         }
@@ -543,7 +544,7 @@ data class Commitments(
             when (htlcTx) {
                 is HtlcTx.HtlcTimeoutTx -> {
                     if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
-                        return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx))
+                        return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx.txid))
                     }
                     HtlcTxAndSigs(htlcTx, localSig, remoteSig)
                 }
@@ -551,7 +552,7 @@ data class Commitments(
                     // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
                     // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
                     if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
-                        return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx))
+                        return Either.Left(InvalidHtlcSignature(channelId, htlcTx.tx.txid))
                     }
                     HtlcTxAndSigs(htlcTx, localSig, remoteSig)
                 }

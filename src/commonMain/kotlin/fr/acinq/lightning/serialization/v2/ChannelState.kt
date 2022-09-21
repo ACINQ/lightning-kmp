@@ -508,17 +508,17 @@ data class WaitForFundingCreated(
 }
 
 @Serializable
-data class FundingInput(
-    @Serializable(with = TransactionKSerializer::class) val previousTx: Transaction,
-    val outputIndex: Int,
-    @Serializable(with = PrivateKeyKSerializer::class) val privateKey: PrivateKey
-) {
-    constructor(from: fr.acinq.lightning.channel.FundingInput) : this(from.previousTx, from.outputIndex, from.privateKey)
+data class FundingInput(@Serializable(with = TransactionKSerializer::class) val previousTx: Transaction, val outputIndex: Int) {
+    constructor(from: fr.acinq.lightning.channel.FundingInput) : this(from.previousTx, from.outputIndex)
 }
 
 @Serializable
-data class FundingInputs(@Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi, val inputs: List<FundingInput>) {
-    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) })
+data class FundingInputs(
+    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val inputs: List<FundingInput>,
+    val privateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
+) {
+    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) }, from.privateKeys)
 }
 
 @Serializable
@@ -678,6 +678,7 @@ data class WaitForFundingConfirmed(
     val fundingParams: InteractiveTxParams,
     val pushAmount: MilliSatoshi,
     val fundingTx: SignedSharedTransaction,
+    val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
     val fundingPrivateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
     val waitingSinceBlock: Long,
     val deferred: FundingLocked?,
@@ -690,6 +691,7 @@ data class WaitForFundingConfirmed(
         InteractiveTxParams(from.fundingParams),
         from.pushAmount,
         SignedSharedTransaction.import(from.fundingTx),
+        from.previousFundingTxs.map { Pair(SignedSharedTransaction.import(it.first), Commitments(it.second)) },
         from.fundingPrivateKeys,
         from.waitingSinceBlock,
         from.deferred,
@@ -703,6 +705,7 @@ data class WaitForFundingConfirmed(
         fundingParams.export(),
         pushAmount,
         fundingTx.export(),
+        previousFundingTxs.map { Pair(it.first.export(), it.second.export(nodeParams)) },
         fundingPrivateKeys,
         waitingSinceBlock,
         deferred,
@@ -889,6 +892,7 @@ data class Closing(
         commitments.export(nodeParams),
         fundingTx,
         waitingSinceBlock,
+        listOf(),
         mutualCloseProposed,
         mutualClosePublished,
         localCommitPublished?.export(),

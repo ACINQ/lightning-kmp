@@ -290,13 +290,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val fundingParams = InteractiveTxParams(randomBytes32(), true, 150_000.sat, 50_000.sat, fundingScript, 0, 660.sat, FeeratePerKw(2500.sat))
         run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(650.sat, Script.pay2wpkh(pubKey))), 0)
-            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 0, privKey)), null).left
+            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 0))).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.InputBelowDust>(result)
         }
         run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(10_000.sat, Script.pay2wpkh(pubKey)), TxOut(10_000.sat, Script.pay2pkh(randomKey().publicKey()))), 0)
-            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 1, privKey)), null).left
+            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 1))).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.NonPay2wpkhInput>(result)
         }
@@ -304,19 +304,19 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val txIn = (1..400).map { TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(pubKey, Transactions.PlaceHolderSig)) }
             val txOut = (1..400).map { i -> TxOut(1000.sat * i, Script.pay2wpkh(pubKey)) }
             val previousTx = Transaction(2, txIn, txOut, 0)
-            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 53, privKey)), null).left
+            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 53))).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.InputTxTooLarge>(result)
         }
         run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(80_000.sat, Script.pay2wpkh(pubKey)), TxOut(60_000.sat, Script.pay2wpkh(pubKey))), 0)
-            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 0, privKey), FundingInput(previousTx, 1, privKey)), null).left
+            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 0), FundingInput(previousTx, 1))).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.NotEnoughFunding>(result)
         }
         run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(80_000.sat, Script.pay2wpkh(pubKey)), TxOut(70_001.sat, Script.pay2wpkh(pubKey))), 0)
-            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 0, privKey), FundingInput(previousTx, 1, privKey)), null).left
+            val result = FundingContributions.create(fundingParams, listOf(FundingInput(previousTx, 0), FundingInput(previousTx, 1))).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.NotEnoughFees>(result)
         }
@@ -646,7 +646,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         private fun createFundingInput(amount: Satoshi, privateKey: PrivateKey = randomKey()): FundingInput {
             val inputs = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
             val outputs = listOf(TxOut(50.sat, Script.pay2wpkh(randomKey().publicKey())), TxOut(amount, Script.pay2wpkh(privateKey.publicKey())), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
-            return FundingInput(Transaction(2, inputs, outputs, 0), 1, privateKey)
+            return FundingInput(Transaction(2, inputs, outputs, 0), 1)
         }
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {

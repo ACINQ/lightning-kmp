@@ -350,7 +350,7 @@ object TestsHelper {
     fun createFunding(fundingAmount: Satoshi, fees: Satoshi): FundingInputs {
         val privKey = randomKey()
         val previousTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(fundingAmount + fees, Script.pay2wpkh(privKey.publicKey()))), 0)
-        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0, privKey)))
+        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0)), listOf(privKey))
     }
 
     fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {
@@ -463,7 +463,7 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments, saveFiles: Boolean = false) {
+    private fun checkSerialization(state: ChannelStateWithCommitments, latestOnly: Boolean = false, saveFiles: Boolean = false) {
         val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
         val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
         val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(state)
@@ -493,23 +493,29 @@ object TestsHelper {
             is ErrorInformationLeak -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
         }
 
+        // We never persist a funding RBF attempt.
+        fun removeRbfAttempt(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
+            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
+            else -> state
+        }
+
         val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
-        assertEquals(maskChannelFeatures(deserializedv1), maskChannelFeatures(state), "serialization error (v1)")
+        if (!latestOnly) assertEquals(maskChannelFeatures(deserializedv1), removeRbfAttempt(maskChannelFeatures(state)), "serialization error (v1)")
         val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
-        assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(state), "serialization error (v2)")
+        if (!latestOnly) assertEquals(maskChannelFeatures(deserializedv2), removeRbfAttempt(maskChannelFeatures(state)), "serialization error (v2)")
         val deserializedv3 = Serialization.deserialize(serializedv3, state.staticParams.nodeParams)
-        assertEquals(deserializedv3, state, "serialization error (v3)")
+        assertEquals(deserializedv3, removeRbfAttempt(state), "serialization error (v3)")
     }
 
-    private fun checkSerialization(actions: List<ChannelAction>) {
+    private fun checkSerialization(actions: List<ChannelAction>, latestOnly: Boolean = false) {
         // we check that serialization works everytime we're suppose to persist channel data
-        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data, latestOnly) }
     }
 
     // test-specific extension that allows for extra checks during tests
-    fun ChannelState.processEx(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    fun ChannelState.processEx(event: ChannelEvent, latestOnly: Boolean = false): Pair<ChannelState, List<ChannelAction>> {
         val result = this.process(event)
-        checkSerialization(result.second)
+        checkSerialization(result.second, latestOnly)
         return result
     }
 

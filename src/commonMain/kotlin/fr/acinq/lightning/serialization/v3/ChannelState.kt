@@ -399,7 +399,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             is fr.acinq.lightning.channel.Normal -> Normal(from)
             is fr.acinq.lightning.channel.ShuttingDown -> ShuttingDown(from)
             is fr.acinq.lightning.channel.Negotiating -> Negotiating(from)
-            is fr.acinq.lightning.channel.Closing -> Closing(from)
+            is fr.acinq.lightning.channel.Closing -> Closing2(from)
             is fr.acinq.lightning.channel.Closed -> Closed(from)
             is fr.acinq.lightning.channel.ErrorInformationLeak -> ErrorInformationLeak(from)
         }
@@ -513,17 +513,17 @@ data class WaitForFundingCreated(
 }
 
 @Serializable
-data class FundingInput(
-    @Serializable(with = TransactionKSerializer::class) val previousTx: Transaction,
-    val outputIndex: Int,
-    @Serializable(with = PrivateKeyKSerializer::class) val privateKey: PrivateKey
-) {
-    constructor(from: fr.acinq.lightning.channel.FundingInput) : this(from.previousTx, from.outputIndex, from.privateKey)
+data class FundingInput(@Serializable(with = TransactionKSerializer::class) val previousTx: Transaction, val outputIndex: Int) {
+    constructor(from: fr.acinq.lightning.channel.FundingInput) : this(from.previousTx, from.outputIndex)
 }
 
 @Serializable
-data class FundingInputs(@Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi, val inputs: List<FundingInput>) {
-    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) })
+data class FundingInputs(
+    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
+    val inputs: List<FundingInput>,
+    val privateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>
+) {
+    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) }, from.privateKeys)
 }
 
 @Serializable
@@ -687,6 +687,7 @@ data class WaitForFundingConfirmed(
     val fundingParams: InteractiveTxParams,
     val pushAmount: MilliSatoshi,
     val fundingTx: SignedSharedTransaction,
+    val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
     val fundingPrivateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
     val waitingSinceBlock: Long,
     val deferred: FundingLocked?,
@@ -699,6 +700,7 @@ data class WaitForFundingConfirmed(
         InteractiveTxParams(from.fundingParams),
         from.pushAmount,
         SignedSharedTransaction.import(from.fundingTx),
+        from.previousFundingTxs.map { Pair(SignedSharedTransaction.import(it.first), Commitments(it.second)) },
         from.fundingPrivateKeys,
         from.waitingSinceBlock,
         from.deferred,
@@ -712,6 +714,7 @@ data class WaitForFundingConfirmed(
         fundingParams.export(),
         pushAmount,
         fundingTx.export(),
+        previousFundingTxs.map { Pair(it.first.export(), it.second.export(nodeParams)) },
         fundingPrivateKeys,
         waitingSinceBlock,
         deferred,
@@ -904,6 +907,59 @@ data class Closing(
         commitments.export(nodeParams),
         fundingTx,
         waitingSinceBlock,
+        listOf(),
+        mutualCloseProposed,
+        mutualClosePublished,
+        localCommitPublished?.export(),
+        remoteCommitPublished?.export(),
+        nextRemoteCommitPublished?.export(),
+        futureRemoteCommitPublished?.export(),
+        revokedCommitPublished.map { it.export() }
+    )
+}
+
+@Serializable
+data class Closing2(
+    override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnChainFeerates: OnChainFeerates,
+    override val commitments: Commitments,
+    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
+    val waitingSinceBlock: Long,
+    val alternativeCommitments: List<Commitments> = emptyList(),
+    val mutualCloseProposed: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
+    val mutualClosePublished: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
+    val localCommitPublished: LocalCommitPublished? = null,
+    val remoteCommitPublished: RemoteCommitPublished? = null,
+    val nextRemoteCommitPublished: RemoteCommitPublished? = null,
+    val futureRemoteCommitPublished: RemoteCommitPublished? = null,
+    val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
+) : ChannelStateWithCommitments() {
+    constructor(from: fr.acinq.lightning.channel.Closing) : this(
+        StaticParams(from.staticParams),
+        from.currentTip,
+        OnChainFeerates(from.currentOnChainFeerates),
+        Commitments(from.commitments),
+        from.fundingTx,
+        from.waitingSinceBlock,
+        from.alternativeCommitments.map { Commitments(it) },
+        from.mutualCloseProposed,
+        from.mutualClosePublished,
+        from.localCommitPublished?.let { LocalCommitPublished(it) },
+        from.remoteCommitPublished?.let { RemoteCommitPublished(it) },
+        from.nextRemoteCommitPublished?.let { RemoteCommitPublished(it) },
+        from.futureRemoteCommitPublished?.let { RemoteCommitPublished(it) },
+        from.revokedCommitPublished.map { RevokedCommitPublished(it) }
+    )
+
+    override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.Closing(
+        staticParams.export(nodeParams),
+        currentTip,
+        currentOnChainFeerates.export(),
+        commitments.export(nodeParams),
+        fundingTx,
+        waitingSinceBlock,
+        alternativeCommitments.map { it.export(nodeParams) },
         mutualCloseProposed,
         mutualClosePublished,
         localCommitPublished?.export(),

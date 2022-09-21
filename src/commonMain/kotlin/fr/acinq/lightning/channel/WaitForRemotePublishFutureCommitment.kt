@@ -47,6 +47,7 @@ data class WaitForRemotePublishFutureCommitment(
             currentOnChainFeerates = currentOnChainFeerates,
             fundingTx = null,
             waitingSinceBlock = currentBlockHeight.toLong(),
+            alternativeCommitments = listOf(),
             futureRemoteCommitPublished = remoteCommitPublished
         )
         val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
