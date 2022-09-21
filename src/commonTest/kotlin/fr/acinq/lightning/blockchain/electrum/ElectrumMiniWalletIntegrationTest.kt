@@ -79,7 +79,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
 
         assertEquals(6 + 4 + 1, walletState.utxos.size)
         assertEquals(72_000_000.sat + 30_000_000.sat + 5_000_000.sat, walletState.balance)
-        assertEquals(2, walletState.spendable.size)
+        assertEquals(2, walletState.spendable().size)
 
         client.stop()
     }

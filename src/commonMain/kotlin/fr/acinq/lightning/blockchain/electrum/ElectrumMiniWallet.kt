@@ -13,13 +13,40 @@ import kotlin.native.concurrent.ThreadLocal
 data class WalletState(val pubKeyScripts: Map<ByteVector, Pair<List<UnspentItem>, PrivateKey?>>) {
     val utxos: List<UnspentItem> = pubKeyScripts.flatMap { it.value.first }
     val balance: Satoshi = utxos.sumOf { it.value }.sat
-    val spendable: List<Triple<ByteVector, PrivateKey, UnspentItem>> by lazy {
-        pubKeyScripts
-            .entries
+
+    fun spendable(): List<UnspentItem> {
+        return pubKeyScripts
             .filter { it.value.second != null }
-            .flatMap {
-                it.value.first.map { utxo -> Triple(it.key, it.value.second!!, utxo) }
+            .flatMap { it.value.first }
+    }
+
+    /** Sign the inputs owned by this wallet (only works for P2WPKH scripts) */
+    fun sign(tx: Transaction): Transaction {
+        return tx.txIn.foldIndexed(tx) { index, wipTx, txIn ->
+            when (val utxo = spendable().find { it.outPoint == txIn.outPoint }) {
+                is UnspentItem -> {
+                    // we know this utxo and have the private key
+                    val privateKey = pubKeyScripts.values.find { it.first.contains(utxo) }!!.second!! // TODO improve that
+                    // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
+                    // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
+                    val publicKey = privateKey.publicKey()
+                    val pubKeyScript = Script.pay2pkh(publicKey)
+                    val sig = Transaction.signInput(
+                        tx,
+                        index,
+                        pubKeyScript,
+                        SigHash.SIGHASH_ALL,
+                        utxo.value.sat,
+                        SigVersion.SIGVERSION_WITNESS_V0,
+                        privateKey
+                    )
+                    // update the signature for the corresponding input
+                    val witness = ScriptWitness(listOf(sig.byteVector(), publicKey.value))
+                    wipTx.updateWitness(index, witness)
+                }
+                else -> wipTx // we don't know how to sign this input
             }
+        }
     }
 }
 
