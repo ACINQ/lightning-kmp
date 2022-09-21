@@ -40,7 +40,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
-            .filter { it.pubKeyScripts.size == 1 }
+            .filter { it.addresses.size == 1 }
             .first()
 
         assertEquals(0, walletState.utxos.size)
@@ -56,7 +56,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
-            .filter { it.pubKeyScripts.size == 1 }
+            .filter { it.addresses.size == 1 }
             .first()
 
         assertEquals(6, walletState.utxos.size)
@@ -74,7 +74,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
         wallet.addAddress("19b3QuFuYSSYPoLt1AxVQmG3LifgSSPNyA", randomKey())
 
         val walletState = wallet.walletStateFlow
-            .filter { it.pubKeyScripts.size == 3 }
+            .filter { it.addresses.size == 3 }
             .first()
 
         assertEquals(6 + 4 + 1, walletState.utxos.size)

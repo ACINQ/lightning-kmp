@@ -10,12 +10,12 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlin.native.concurrent.ThreadLocal
 
-data class WalletState(val pubKeyScripts: Map<ByteVector, Pair<List<UnspentItem>, PrivateKey?>>) {
-    val utxos: List<UnspentItem> = pubKeyScripts.flatMap { it.value.first }
+data class WalletState(val addresses: Map<String, Pair<List<UnspentItem>, PrivateKey?>>) {
+    val utxos: List<UnspentItem> = addresses.flatMap { it.value.first }
     val balance: Satoshi = utxos.sumOf { it.value }.sat
 
     fun spendable(): List<UnspentItem> {
-        return pubKeyScripts
+        return addresses
             .filter { it.value.second != null }
             .flatMap { it.value.first }
     }
@@ -26,7 +26,7 @@ data class WalletState(val pubKeyScripts: Map<ByteVector, Pair<List<UnspentItem>
             when (val utxo = spendable().find { it.outPoint == txIn.outPoint }) {
                 is UnspentItem -> {
                     // we know this utxo and have the private key
-                    val privateKey = pubKeyScripts.values.find { it.first.contains(utxo) }!!.second!! // TODO improve that
+                    val privateKey = addresses.values.find { it.first.contains(utxo) }!!.second!! // TODO improve that
                     // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
                     // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
                     val publicKey = privateKey.publicKey()
@@ -73,8 +73,8 @@ class ElectrumMiniWallet(
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
-    // all currently watched script hashes and their corresponding pubkeyscript
-    private var scriptHashes: Map<ByteVector32, ByteVector> = emptyMap()
+    // all currently watched script hashes and their corresponding bitcoin address
+    private var scriptHashes: Map<ByteVector32, String> = emptyMap()
 
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
@@ -124,13 +124,12 @@ class ElectrumMiniWallet(
                                 }
                             }
                             is ScriptHashListUnspentResponse -> {
-                                scriptHashes[msg.scriptHash]?.let { pubkeyScript ->
-                                    val newValue = _walletStateFlow.value.pubKeyScripts
-                                        .getOrElse(pubkeyScript, defaultValue = { emptyList<UnspentItem>() to null }) // default value
+                                scriptHashes[msg.scriptHash]?.let { address ->
+                                    val newValue = _walletStateFlow.value.addresses
+                                        .getOrElse(address, defaultValue = { emptyList<UnspentItem>() to null }) // default value
                                         .let { v -> msg.unspents to v.second } // update the utxos, keep the private key
-                                    val walletState = WalletState(_walletStateFlow.value.pubKeyScripts + (pubkeyScript to newValue))
-                                    val bitcoinAddress = Bitcoin.addressFromPublicKeyScript(chainHash, pubkeyScript.toByteArray())
-                                    logger.info { "${msg.unspents.size} utxo(s) for address=$bitcoinAddress pubkeyScript=$pubkeyScript, balance=${walletState.balance}" }
+                                    val walletState = WalletState(_walletStateFlow.value.addresses + (address to newValue))
+                                    logger.info { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
                                     _walletStateFlow.value = walletState
@@ -152,17 +151,17 @@ class ElectrumMiniWallet(
         }
     }
 
-    private fun subscribe(bitcoinAddress: String): Pair<ByteVector32, ByteVector> {
+    private fun subscribe(bitcoinAddress: String): Pair<ByteVector32, String> {
         val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
         return subscribe(pubkeyScript)
     }
 
-    private fun subscribe(pubkeyScript: ByteVector): Pair<ByteVector32, ByteVector> {
-        val bitcoinAddress = Bitcoin.addressFromPublicKeyScript(chainHash, pubkeyScript.toByteArray())
+    private fun subscribe(pubkeyScript: ByteVector): Pair<ByteVector32, String> {
+        val bitcoinAddress = Bitcoin.addressFromPublicKeyScript(chainHash, pubkeyScript.toByteArray())!!
         val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
         logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
         client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
-        return scriptHash to pubkeyScript
+        return scriptHash to bitcoinAddress
     }
 
     @ThreadLocal

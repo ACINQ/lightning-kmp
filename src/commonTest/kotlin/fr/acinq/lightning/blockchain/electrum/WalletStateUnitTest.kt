@@ -26,9 +26,9 @@ class WalletStateUnitTest : LightningTestSuite() {
 
         val walletState = WalletState(
             mapOf(
-                scriptPubKey1 to (listOf(utxo) to priv1),
-                ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))) to (emptyList<UnspentItem>() to randomKey()),
-                ByteVector(Script.write(Script.pay2wpkh(randomKey().publicKey()))) to (emptyList<UnspentItem>() to null)
+                address1 to (listOf(utxo) to priv1),
+                Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to (emptyList<UnspentItem>() to randomKey()),
+                Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to (emptyList<UnspentItem>() to null)
             )
         )
 
