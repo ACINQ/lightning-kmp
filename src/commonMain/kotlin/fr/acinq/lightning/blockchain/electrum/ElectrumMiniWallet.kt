@@ -58,6 +58,12 @@ class ElectrumMiniWallet(
         }
     }
 
+    fun addPubkeyScript(pubkeyScript: ByteVector, privateKey: PrivateKey? = null) {
+        launch {
+            mailbox.send(WalletCommand.Companion.AddPubkeyScript(pubkeyScript, privateKey))
+        }
+    }
+
     init {
         launch {
             // listen to connection events
