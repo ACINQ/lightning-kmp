@@ -20,7 +20,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(aliceFundingAmount = TestConstants.aliceFundingAmount, bobFundingAmount = TestConstants.bobFundingAmount, pushAmount = TestConstants.pushAmount)
+        val (alice, commitSigAlice, bob, commitSigBob) = init()
         val commitInput = alice.firstCommitTx.localCommitTx.input
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
@@ -83,7 +83,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig (with invalid signature)`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(aliceFundingAmount = TestConstants.aliceFundingAmount, bobFundingAmount = TestConstants.bobFundingAmount, pushAmount = TestConstants.pushAmount)
+        val (alice, commitSigAlice, bob, commitSigBob) = init()
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob.copy(signature = ByteVector64.Zeroes)))
             assertEquals(actionsAlice1.size, 1)
@@ -191,15 +191,15 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
+            bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             pushAmount: MilliSatoshi = TestConstants.pushAmount,
-            aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
-            bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             channelOrigin: ChannelOrigin? = null
         ): Fixture {
-            val (alice, bob, inputAlice) = WaitForFundingCreatedTestsCommon.init(channelType, aliceFundingAmount, bobFundingAmount, pushAmount, currentHeight, aliceFeatures, bobFeatures, channelOrigin)
+            val (alice, bob, inputAlice) = WaitForFundingCreatedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, channelOrigin)
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
             // Bob's message will either be tx_add_input or tx_complete depending on whether Bob contributes or not.
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<InteractiveTxMessage>()))

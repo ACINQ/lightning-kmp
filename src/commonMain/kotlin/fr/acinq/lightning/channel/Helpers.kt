@@ -5,10 +5,7 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.Features
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.BITCOIN_OUTPUT_SPENT
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -19,6 +16,7 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Scripts.multiSig2of2
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx
@@ -332,6 +330,50 @@ object Helpers {
             val remoteCommitTx = Commitments.makeRemoteTxs(0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec).first
 
             return Either.Right(FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
+        }
+
+        sealed class ReceiveFirstCommitResult
+        data class FirstCommitments(val fundingTx: PartiallySignedSharedTransaction, val commitments: Commitments) : ReceiveFirstCommitResult()
+        object InvalidRemoteCommitSig : ReceiveFirstCommitResult()
+        object FundingSigFailure : ReceiveFirstCommitResult()
+
+        fun receiveFirstCommit(
+            keyManager: KeyManager,
+            localParams: LocalParams,
+            remoteParams: RemoteParams,
+            fundingTx: SharedTransaction,
+            fundingPrivateKeys: List<PrivateKey>,
+            firstCommitTx: FirstCommitTx,
+            remoteCommit: CommitSig,
+            channelConfig: ChannelConfig,
+            channelFeatures: ChannelFeatures,
+            channelFlags: Byte,
+            remoteFirstPerCommitmentPoint: PublicKey
+        ): ReceiveFirstCommitResult {
+            val fundingPubKey = localParams.channelKeys.fundingPubKey
+            val localSigOfLocalTx = keyManager.sign(firstCommitTx.localCommitTx, localParams.channelKeys.fundingPrivateKey)
+            val signedLocalCommitTx = Transactions.addSigs(firstCommitTx.localCommitTx, fundingPubKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommit.signature)
+            return when (Transactions.checkSpendable(signedLocalCommitTx)) {
+                is Try.Failure -> InvalidRemoteCommitSig
+                is Try.Success -> {
+                    val commitInput = firstCommitTx.localCommitTx.input
+                    val commitments = Commitments(
+                        channelConfig, channelFeatures, localParams, remoteParams, channelFlags,
+                        LocalCommit(0, firstCommitTx.localSpec, PublishableTxs(signedLocalCommitTx, listOf())),
+                        RemoteCommit(0, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
+                        LocalChanges(listOf(), listOf(), listOf()),
+                        RemoteChanges(listOf(), listOf(), listOf()),
+                        localNextHtlcId = 0L, remoteNextHtlcId = 0L,
+                        payments = mapOf(),
+                        remoteNextCommitInfo = Either.Right(Lightning.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
+                        commitInput, ShaChain.init, remoteCommit.channelId, remoteCommit.channelData
+                    )
+                    when (val signedFundingTx = fundingTx.sign(remoteCommit.channelId, fundingPrivateKeys)) {
+                        null -> FundingSigFailure
+                        else -> FirstCommitments(signedFundingTx, commitments)
+                    }
+                }
+            }
         }
     }
 

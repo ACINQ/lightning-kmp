@@ -6,9 +6,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.wire.*
 
 data class WaitForFundingConfirmed(
@@ -191,52 +189,45 @@ data class WaitForFundingConfirmed(
             }
             event is ChannelEvent.MessageReceived && event.message is CommitSig -> when (rbfStatus) {
                 is RbfStatus.WaitForCommitSig -> {
-                    val fundingPubKey = commitments.localParams.channelKeys.fundingPubKey
-                    val localSigOfLocalTx = keyManager.sign(rbfStatus.commitTx.localCommitTx, commitments.localParams.channelKeys.fundingPrivateKey)
-                    val signedLocalCommitTx = Transactions.addSigs(rbfStatus.commitTx.localCommitTx, fundingPubKey, commitments.remoteParams.fundingPubKey, localSigOfLocalTx, event.message.signature)
-                    when (Transactions.checkSpendable(signedLocalCommitTx)) {
-                        is Try.Failure -> {
+                    val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
+                        keyManager, commitments.localParams, commitments.remoteParams,
+                        rbfStatus.fundingTx, fundingPrivateKeys,
+                        rbfStatus.commitTx, event.message,
+                        commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags, commitments.remoteCommit.remotePerCommitmentPoint
+                    )
+                    when (firstCommitmentsRes) {
+                        Helpers.Funding.InvalidRemoteCommitSig -> {
                             logger.warning { "c:$channelId rbf attempt failed: invalid commit_sig" }
-                            Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx.txid).message))))
+                            Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidCommitmentSignature(channelId, rbfStatus.commitTx.localCommitTx.tx.txid).message))))
                         }
-                        is Try.Success -> {
-                            val commitInput = rbfStatus.commitTx.localCommitTx.input
-                            val commitments1 = commitments.copy(
-                                localCommit = LocalCommit(0, rbfStatus.commitTx.localSpec, PublishableTxs(signedLocalCommitTx, listOf())),
-                                remoteCommit = RemoteCommit(0, rbfStatus.commitTx.remoteSpec, rbfStatus.commitTx.remoteCommitTx.tx.txid, commitments.remoteCommit.remotePerCommitmentPoint),
-                                commitInput = commitInput,
-                                remoteChannelData = event.message.channelData
+                        Helpers.Funding.FundingSigFailure -> {
+                            logger.warning { "c:$channelId could not sign rbf funding tx" }
+                            Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
+                        }
+                        is Helpers.Funding.FirstCommitments -> {
+                            val (signedFundingTx, commitments1) = firstCommitmentsRes
+                            logger.info { "c:$channelId rbf funding tx created with txId=${commitments1.fundingTxId}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }
+                            val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, rbfStatus.fundingParams.fundingAmount)
+                            logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
+                            val watchConfirmed = WatchConfirmed(channelId, commitments1.fundingTxId, commitments1.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                            val nextState = WaitForFundingConfirmed(
+                                staticParams, currentTip, currentOnChainFeerates,
+                                commitments1,
+                                rbfStatus.fundingParams,
+                                pushAmount,
+                                signedFundingTx,
+                                listOf(Pair(fundingTx, commitments)) + previousFundingTxs,
+                                fundingPrivateKeys,
+                                waitingSinceBlock,
+                                deferred,
+                                RbfStatus.None
                             )
-                            when (val signedFundingTx = rbfStatus.fundingTx.sign(channelId, fundingPrivateKeys)) {
-                                null -> {
-                                    logger.warning { "c:$channelId could not sign rbf funding tx" }
-                                    Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
-                                }
-                                else -> {
-                                    logger.info { "c:$channelId rbf funding tx created with txId=${commitInput.outPoint.txid}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }
-                                    val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, rbfStatus.fundingParams.fundingAmount)
-                                    logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
-                                    val watchConfirmed = WatchConfirmed(channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                                    val nextState = WaitForFundingConfirmed(
-                                        staticParams, currentTip, currentOnChainFeerates,
-                                        commitments1,
-                                        rbfStatus.fundingParams,
-                                        pushAmount,
-                                        signedFundingTx,
-                                        listOf(Pair(fundingTx, commitments)) + previousFundingTxs,
-                                        fundingPrivateKeys,
-                                        waitingSinceBlock,
-                                        deferred,
-                                        RbfStatus.None
-                                    )
-                                    val actions = buildList {
-                                        add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                                        add(ChannelAction.Storage.StoreState(nextState))
-                                        if (fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
-                                    }
-                                    Pair(nextState, actions)
-                                }
+                            val actions = buildList {
+                                add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
+                                add(ChannelAction.Storage.StoreState(nextState))
+                                if (fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
                             }
+                            Pair(nextState, actions)
                         }
                     }
                 }

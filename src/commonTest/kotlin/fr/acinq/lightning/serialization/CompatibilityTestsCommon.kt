@@ -24,7 +24,7 @@ class CompatibilityTestsCommon {
     fun `generate data`() {
         // generate test data
         val (alice, bob, fundingTx) = run {
-            val (alice0, bob0, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+            val (alice0, bob0, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
             val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(txSigsBob))
             assertIs<WaitForFundingConfirmed>(alice1)
             val fundingTx = actions1.find<ChannelAction.Blockchain.PublishTx>().tx

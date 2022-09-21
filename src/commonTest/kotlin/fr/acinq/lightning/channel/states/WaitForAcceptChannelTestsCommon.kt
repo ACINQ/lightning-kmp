@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -133,13 +134,14 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     companion object {
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
+            bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
-            bobFeatures: Features = TestConstants.Bob.nodeParams.features,
+            pushAmount: MilliSatoshi = TestConstants.pushAmount,
         ): Triple<WaitForAcceptChannel, WaitForFundingCreated, AcceptDualFundedChannel> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount)
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
             assertEquals(open.fundingAmount, aliceFundingAmount)
             assertEquals(open.pushAmount, TestConstants.pushAmount)
             assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))

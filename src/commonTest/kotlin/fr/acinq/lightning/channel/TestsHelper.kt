@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.channel.states.WaitForFundingLockedTestsCommon
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -81,12 +82,12 @@ object TestsHelper {
     ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenDualFundedChannel> {
         val aliceNodeParams = TestConstants.Alice.nodeParams.copy(features = aliceFeatures)
         val bobNodeParams = TestConstants.Bob.nodeParams.copy(features = bobFeatures)
-        var alice: ChannelState = WaitForInit(
+        val alice = WaitForInit(
             StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
             currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
             currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
         )
-        var bob: ChannelState = WaitForInit(
+        val bob = WaitForInit(
             StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
             currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
             currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
@@ -96,7 +97,7 @@ object TestsHelper {
         val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
         val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
-        val ra = alice.process(
+        val (alice1, actionsAlice1) = alice.process(
             ChannelEvent.InitInitiator(
                 createFunding(aliceFundingAmount, 3500.sat),
                 pushAmount,
@@ -110,14 +111,12 @@ object TestsHelper {
                 channelOrigin
             )
         )
-        alice = ra.first
-        assertTrue(alice is WaitForAcceptChannel)
+        assertIs<WaitForAcceptChannel>(alice1)
         val bobFunding = if (bobFundingAmount > 0.sat) createFunding(bobFundingAmount, 1500.sat) else FundingInputs.empty
-        val rb = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFunding, bobChannelParams, ChannelConfig.standard, aliceInit))
-        bob = rb.first
-        assertTrue(bob is WaitForOpenChannel)
-        val open = ra.second.findOutgoingMessage<OpenDualFundedChannel>()
-        return Triple(alice, bob, open)
+        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFunding, bobChannelParams, ChannelConfig.standard, aliceInit))
+        assertIs<WaitForOpenChannel>(bob1)
+        val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
+        return Triple(alice1, bob1, open)
     }
 
     fun reachNormal(
@@ -129,101 +128,16 @@ object TestsHelper {
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
         pushAmount: MilliSatoshi = TestConstants.pushAmount,
     ): Triple<Normal, Normal, Transaction> {
-        val (a, b, open) = init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
-        var alice = a as ChannelState
-        var bob = b as ChannelState
-        // Alice ---- open_channel ----> Bob
-        var rb = bob.process(ChannelEvent.MessageReceived(open))
-        bob = rb.first
-        // Alice <--- accept_channel ----- Bob
-        val accept = rb.second.findOutgoingMessage<AcceptDualFundedChannel>()
-        var ra = alice.process(ChannelEvent.MessageReceived(accept))
-        alice = ra.first
-        // Alice ---- tx_add_input ----> Bob
-        rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxAddInput>()))
-        bob = rb.first
-        ra = if (bobFundingAmount > 0.sat) {
-            // Alice <--- tx_add_input ----- Bob
-            alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxAddInput>()))
-        } else {
-            // Alice <--- tx_complete ----- Bob
-            alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxComplete>()))
-        }
-        alice = ra.first
-        // Alice ---- tx_add_output ----> Bob
-        rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxAddOutput>()))
-        bob = rb.first
-        // Alice <--- tx_complete ----- Bob
-        ra = alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxComplete>()))
-        alice = ra.first
-        // Alice ---- tx_complete ----> Bob
-        rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxComplete>()))
-        bob = rb.first
-
-        val commitAlice = ra.second.findOutgoingMessage<CommitSig>()
-        val commitBob = rb.second.findOutgoingMessage<CommitSig>()
-        val (fundingTx, fundingLockedAlice, fundingLockedBob) = if (channelType.features.contains(Feature.ZeroConfChannels)) {
-            // Alice <--- commit_sig ----- Bob
-            ra = alice.process(ChannelEvent.MessageReceived(commitBob))
-            alice = ra.first
-            assertEquals(ra.second.hasWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
-            val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
-            // Alice ---- commit_sig ----> Bob
-            rb = bob.process(ChannelEvent.MessageReceived(commitAlice))
-            bob = rb.first
-            assertEquals(rb.second.hasWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
-            val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
-
-            // Alice <--- tx_signatures ----- Bob
-            ra = alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxSignatures>()))
-            alice = ra.first
-            assertIs<WaitForFundingLocked>(alice)
-            assertIs<FullySignedSharedTransaction>(alice.fundingTx)
-            // Alice ---- tx_signatures ----> Bob
-            rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxSignatures>()))
-            bob = rb.first
-            assertIs<WaitForFundingLocked>(bob)
-            assertIs<FullySignedSharedTransaction>(bob.fundingTx)
-            val fundingTx = alice.fundingTx.signedTx!!
-
-            Triple(fundingTx, fundingLockedAlice, fundingLockedBob)
-        } else {
-            // Alice <--- commit_sig ----- Bob
-            ra = alice.process(ChannelEvent.MessageReceived(commitBob))
-            alice = ra.first
-            assertEquals(ra.second.hasWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
-            // Alice ---- commit_sig ----> Bob
-            rb = bob.process(ChannelEvent.MessageReceived(commitAlice))
-            bob = rb.first
-            assertEquals(rb.second.hasWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
-
-            // Alice <--- tx_signatures ----- Bob
-            ra = alice.process(ChannelEvent.MessageReceived(rb.second.findOutgoingMessage<TxSignatures>()))
-            alice = ra.first
-            assertIs<WaitForFundingConfirmed>(alice)
-            assertIs<FullySignedSharedTransaction>(alice.fundingTx)
-            // Alice ---- tx_signatures ----> Bob
-            rb = bob.process(ChannelEvent.MessageReceived(ra.second.findOutgoingMessage<TxSignatures>()))
-            bob = rb.first
-            assertIs<WaitForFundingConfirmed>(bob)
-            assertIs<FullySignedSharedTransaction>(bob.fundingTx)
-            val fundingTx = alice.fundingTx.signedTx!!
-
-            ra = alice.process(ChannelEvent.WatchReceived(WatchEventConfirmed(commitAlice.channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight + 144, 1, fundingTx)))
-            alice = ra.first
-            rb = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(commitBob.channelId, BITCOIN_FUNDING_DEPTHOK, currentHeight + 144, 1, fundingTx)))
-            bob = rb.first
-
-            Triple(fundingTx, ra.second.findOutgoingMessage(), rb.second.findOutgoingMessage())
-        }
-
-        ra = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
-        alice = ra.first
-
-        rb = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
-        bob = rb.first
-
-        return Triple(alice as Normal, bob as Normal, fundingTx)
+        val (alice, fundingLockedAlice, bob, fundingLockedBob) = WaitForFundingLockedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
+        assertIs<Normal>(alice1)
+        assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+        actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
+        assertIs<Normal>(bob1)
+        assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+        actionsBob1.has<ChannelAction.Storage.StoreState>()
+        return Triple(alice1, bob1, alice.fundingTx.tx.buildUnsignedTx())
     }
 
     fun mutualCloseAlice(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {

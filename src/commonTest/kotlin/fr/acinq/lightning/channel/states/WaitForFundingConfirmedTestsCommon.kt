@@ -21,7 +21,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
         assertIs<WaitForFundingConfirmed>(alice1)
         assertIs<FullySignedSharedTransaction>(alice1.fundingTx)
@@ -39,7 +39,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- duplicate`() {
-        val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
         assertIs<WaitForFundingConfirmed>(alice1)
         assertIs<FullySignedSharedTransaction>(alice1.fundingTx)
@@ -50,7 +50,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- invalid`() {
-        val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob.copy(witnesses = listOf(Script.witnessPay2wpkh(randomKey().publicKey(), randomBytes(72).byteVector())))))
         // Alice sends an error, but stays in the same state because the funding tx may still confirm.
         assertEquals(actionsAlice1.size, 1)
@@ -60,7 +60,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
         assertIs<WaitForFundingConfirmed>(alice1)
         val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
@@ -93,7 +93,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- without remote sigs`() {
-        val (alice, _, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, _, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         assertIs<PartiallySignedSharedTransaction>(alice.fundingTx)
         val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
@@ -109,7 +109,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK (rbf in progress)`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (_, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
         val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, FeeratePerKw(6000.sat), TestConstants.aliceFundingAmount)))
@@ -128,7 +128,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK (previous funding tx)`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTxId1 = alice.commitments.fundingTxId
         val (alice1, bob1) = rbf(alice, bob, txSigsBob)
         run {
@@ -153,7 +153,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK (after restart)`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
         run {
             val (alice1, actions1) = WaitForInit(alice.staticParams, alice.currentTip, alice.currentOnChainFeerates).processEx(ChannelEvent.Restore(alice))
@@ -183,7 +183,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK (after restart, previous funding tx)`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = rbf(alice, bob, txSigsBob)
         val fundingTx1 = alice1.previousFundingTxs.first().first.signedTx!!
         val fundingTx2 = alice1.fundingTx.signedTx!!
@@ -216,7 +216,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxInitRbf`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = rbf(alice, bob, txSigsBob)
         assertEquals(alice1.previousFundingTxs.size, 1)
         assertEquals(bob1.previousFundingTxs.size, 1)
@@ -227,7 +227,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxInitRbf (invalid feerate)`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw, alice.fundingParams.localAmount)))
         assertEquals(bob1, bob)
         assertEquals(actions1.size, 1)
@@ -236,7 +236,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxInitRbf (failed rbf attempt)`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw * 1.25, alice.fundingParams.localAmount)))
         assertIs<WaitForFundingConfirmed>(bob1)
         assertIs<WaitForFundingConfirmed.Companion.RbfStatus.InProgress>(bob1.rbfStatus)
@@ -253,7 +253,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv FundingLocked`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingLockedAlice = FundingLocked(alice.channelId, randomKey().publicKey())
         val fundingLockedBob = FundingLocked(bob.channelId, randomKey().publicKey())
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob))
@@ -268,7 +268,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv FundingLocked -- no remote contribution`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, pushAmount = 0.msat)
         val fundingLockedAlice = FundingLocked(alice.channelId, randomKey().publicKey())
         val fundingLockedBob = FundingLocked(bob.channelId, randomKey().publicKey())
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob))
@@ -283,7 +283,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Error`() {
-        val (_, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (_, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Error(bob.channelId, "oops")))
         assertIs<Closing>(bob1)
         assertNotNull(bob1.localCommitPublished)
@@ -293,7 +293,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Error (previous funding tx confirms)`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val commitTxAlice1 = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val commitTxBob1 = bob.commitments.localCommit.publishableTxs.commitTx.tx
         val fundingTxId1 = alice.commitments.fundingTxId
@@ -358,7 +358,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_CLOSE`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
             val (state1, actions1) = state.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
             assertEquals(state, state1)
@@ -368,7 +368,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
             val (state1, actions1) = state.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
             assertIs<Closing>(state1)
@@ -381,7 +381,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE -- nothing at stake`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, 0.sat, 0.msat)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, pushAmount = 0.msat)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
         assertIs<Aborted>(bob1)
         assertEquals(1, actions1.size)
@@ -391,7 +391,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv NewBlock`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
             run {
                 val (state1, actions1) = state.processEx(ChannelEvent.NewBlock(state.currentBlockHeight + 1, Block.RegtestGenesisBlock.header))
@@ -408,7 +408,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Disconnected`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.aliceFundingAmount, TestConstants.bobFundingAmount, TestConstants.pushAmount)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.Disconnected)
         assertIs<Offline>(alice1)
         assertTrue(actionsAlice1.isEmpty())
@@ -419,19 +419,21 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     companion object {
         fun init(
-            channelType: ChannelType.SupportedChannelType,
-            aliceFundingAmount: Satoshi,
-            bobFundingAmount: Satoshi,
-            pushAmount: MilliSatoshi,
-            currentHeight: Int = TestConstants.defaultBlockHeight,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
+            currentHeight: Int = TestConstants.defaultBlockHeight,
+            aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+            bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
+            pushAmount: MilliSatoshi = TestConstants.pushAmount,
         ): Triple<WaitForFundingConfirmed, WaitForFundingConfirmed, TxSignatures> {
-            val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, aliceFeatures, bobFeatures)
-            val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(commitBob))
+            val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+            val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob))
             assertIs<WaitForFundingConfirmed>(alice1)
+            assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
             val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(commitAlice))
             assertIs<WaitForFundingConfirmed>(bob1)
+            assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
             val txSigs = actionsBob1.findOutgoingMessage<TxSignatures>()
             return Triple(alice1, bob1, txSigs)
         }

@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
@@ -168,22 +169,26 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
 
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
+            bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            pushAmount: MilliSatoshi = TestConstants.pushAmount
+            pushAmount: MilliSatoshi = TestConstants.pushAmount,
         ): Fixture {
             return if (channelType.features.contains(Feature.ZeroConfChannels)) {
-                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob))
                 assertIs<WaitForFundingLocked>(alice1)
+                assertEquals(actionsAlice1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
                 val fundingLockedAlice = actionsAlice1.findOutgoingMessage<FundingLocked>()
                 val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(commitAlice))
                 assertIs<WaitForFundingLocked>(bob1)
+                assertEquals(actionsBob1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
                 val fundingLockedBob = actionsBob1.findOutgoingMessage<FundingLocked>()
                 Fixture(alice1, fundingLockedAlice, bob1, fundingLockedBob)
             } else {
-                val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFundingAmount, bobFundingAmount, pushAmount, currentHeight)
+                val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
                 val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
                 val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
