@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -433,9 +432,6 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(commitAlice))
             assertIs<WaitForFundingConfirmed>(bob1)
             val txSigs = actionsBob1.findOutgoingMessage<TxSignatures>()
-            if (bobFeatures.hasFeature(Feature.ChannelBackupClient)) {
-                assertFalse(txSigs.channelData.isEmpty())
-            }
             return Triple(alice1, bob1, txSigs)
         }
 

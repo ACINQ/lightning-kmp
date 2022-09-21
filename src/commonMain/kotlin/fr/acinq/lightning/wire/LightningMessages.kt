@@ -428,11 +428,8 @@ data class TxSignatures(
     @Contextual val txId: ByteVector32,
     val witnesses: List<@Contextual ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
-) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
+) : InteractiveTxMessage(), HasChannelId {
     override val type: Long get() = TxSignatures.type
-
-    override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -445,14 +442,10 @@ data class TxSignatures(
                 LightningCodecs.writeBytes(element.toByteArray(), out)
             }
         }
-        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
     companion object : LightningMessageReader<TxSignatures> {
         const val type: Long = 71
-
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>)
 
         override fun read(input: Input): TxSignatures {
             val channelId = LightningCodecs.bytes(input, 32).byteVector32()
@@ -468,8 +461,7 @@ data class TxSignatures(
                 }
                 witnesses += ScriptWitness(stack.toList())
             }
-            val tlvs = TlvStreamSerializer(false, readers).read(input)
-            return TxSignatures(channelId, txId, witnesses, tlvs)
+            return TxSignatures(channelId, txId, witnesses)
         }
     }
 }
