@@ -11,7 +11,6 @@ class WalletStateUnitTest : LightningTestSuite() {
 
     @Test
     fun `sign a p2wpkh tx`() {
-
         val priv1 = PrivateKey.fromBase58("cV7LGVeY2VPuCyCSarqEqFCUNig2NzwiAEBTTA89vNRQ4Vqjfurs", Base58.Prefix.SecretKeyTestnet).first
         val pub1 = priv1.publicKey()
         val address1 = Bitcoin.computeP2WpkhAddress(pub1, Block.TestnetGenesisBlock.hash)
