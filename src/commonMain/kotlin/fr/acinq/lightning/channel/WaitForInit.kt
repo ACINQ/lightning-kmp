@@ -164,6 +164,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     private fun isValidChannelType(channelType: ChannelType.SupportedChannelType): Boolean {
         return when (channelType) {
             ChannelType.SupportedChannelType.AnchorOutputs -> true
+            ChannelType.SupportedChannelType.AnchorOutputsZeroReserve -> true
             ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve -> true
             else -> false
         }
