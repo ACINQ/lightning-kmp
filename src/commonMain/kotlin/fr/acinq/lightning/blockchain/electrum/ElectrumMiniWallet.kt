@@ -85,10 +85,21 @@ class ElectrumMiniWallet(
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
 
-    fun addAddress(bitcoinAddress: String, privateKey: PrivateKey? = null) {
+    internal fun addAddress(bitcoinAddress: String, privateKey: PrivateKey? = null) {
         launch {
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
         }
+    }
+
+    fun addPay2wpkhAddress(privateKey: PrivateKey) {
+        launch {
+            val bitcoinAddress = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), Block.TestnetGenesisBlock.hash)
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
+        }
+    }
+
+    fun addWatchOnlyAddress(bitcoinAddress: String) {
+        addAddress(bitcoinAddress)
     }
 
     init {

@@ -37,7 +37,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     fun `single address with no utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
-        wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
+        wallet.addWatchOnlyAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
             .filter { it.addresses.size == 1 }
@@ -53,7 +53,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     fun `single address with existing utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
-        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
+        wallet.addWatchOnlyAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
             .filter { it.addresses.size == 1 }
