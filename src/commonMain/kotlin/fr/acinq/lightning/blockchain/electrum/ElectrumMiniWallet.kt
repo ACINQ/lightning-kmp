@@ -10,14 +10,21 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlin.native.concurrent.ThreadLocal
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privateKeys: Map<String, PrivateKey>) {
+data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privateKeys: Map<String, PrivateKey>, val parentTxs: Map<ByteVector32, Transaction>) {
     val utxos: List<UnspentItem> = addresses.flatMap { it.value }
     val balance: Satoshi = utxos.sumOf { it.value }.sat
 
-    fun spendable(): List<UnspentItem> {
+    data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
+        val outPoint = OutPoint(previousTx, outputIndex.toLong())
+        val amount = previousTx.txOut[outputIndex].amount
+    }
+
+    fun spendable(): List<Utxo> {
         return addresses
             .filter { privateKeys.containsKey(it.key) }
             .flatMap { it.value }
+            .filter { parentTxs.containsKey(it.tx_hash) }
+            .map { Utxo(parentTxs[it.tx_hash]!!, it.tx_pos, it.height) }
     }
 
     private val outPoint2Address = addresses.entries.flatMap { entry -> entry.value.map { it.outPoint to entry.key } }.toMap()
@@ -76,7 +83,7 @@ class ElectrumMiniWallet(
 ) : CoroutineScope by scope {
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap(), emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -136,12 +143,20 @@ class ElectrumMiniWallet(
                             }
                             is ScriptHashListUnspentResponse -> {
                                 scriptHashes[msg.scriptHash]?.let { address ->
+                                    val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
+                                    // request new parent txs
+                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.tx_hash)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
                                     logger.info { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
                                     _walletStateFlow.value = walletState
                                 }
+                            }
+                            is GetTransactionResponse -> {
+                                val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
+                                logger.info { "received parent transaction with txid=${msg.tx.txid}" }
+                                _walletStateFlow.value = walletState
                             }
                             else -> {} // ignore other electrum msgs
                         }

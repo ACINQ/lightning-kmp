@@ -31,7 +31,8 @@ class WalletStateUnitTest : LightningTestSuite() {
                 Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList(),
                 Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList()
             ),
-            privateKeys = mapOf(address1 to priv1)
+            privateKeys = mapOf(address1 to priv1),
+            parentTxs = emptyMap()
         )
 
         val unsignedTx = Transaction(
