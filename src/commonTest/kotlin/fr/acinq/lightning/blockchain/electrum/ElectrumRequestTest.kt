@@ -51,7 +51,7 @@ class ElectrumRequestTest : LightningTestSuite() {
         }
         val response = json.decodeFromString(ElectrumResponseDeserializer, jsonRpc)
         assertEquals(
-            Either.Left(HeaderSubscriptionResponse(height = 520481, BlockHeader(
+            Either.Left(HeaderSubscriptionResponse(blockHeight = 520481, BlockHeader(
                 version = 536870912,
                 hashPreviousBlock = ByteVector32.fromValidHex("890208a0ae3a3892aa047c5468725846577cfcd9b512b5000000000000000000"),
                 hashMerkleRoot = ByteVector32.fromValidHex("5dc2b02f2d297a9064ee103036c14d678f9afc7e3d9409cf53fd58b82e938e8e"),

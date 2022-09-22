@@ -23,8 +23,8 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privat
         return addresses
             .filter { privateKeys.containsKey(it.key) }
             .flatMap { it.value }
-            .filter { parentTxs.containsKey(it.tx_hash) }
-            .map { Utxo(parentTxs[it.tx_hash]!!, it.tx_pos, it.height) }
+            .filter { parentTxs.containsKey(it.txid) }
+            .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
     }
 
     private val outPoint2Address = addresses.entries.flatMap { entry -> entry.value.map { it.outPoint to entry.key } }.toMap()
@@ -145,7 +145,7 @@ class ElectrumMiniWallet(
                                 scriptHashes[msg.scriptHash]?.let { address ->
                                     val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
                                     // request new parent txs
-                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.tx_hash)) }
+                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
                                     logger.info { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }

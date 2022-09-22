@@ -174,8 +174,8 @@ class Peer(
         launch {
             watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
-                    currentTipFlow.value = msg.height to msg.header
-                    input.send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.height, msg.header)))
+                    currentTipFlow.value = msg.blockHeight to msg.header
+                    input.send(WrappedChannelEvent(ByteVector32.Zeroes, ChannelEvent.NewBlock(msg.blockHeight, msg.header)))
                 }
         }
         launch {

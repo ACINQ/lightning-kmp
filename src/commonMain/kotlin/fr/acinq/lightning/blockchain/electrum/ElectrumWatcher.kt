@@ -90,7 +90,7 @@ private data class WatcherDisconnected(
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }
                         state = WatcherRunning(
-                            height = message.height,
+                            height = message.blockHeight,
                             tip = message.header,
                             block2tx = block2tx,
                             watches = watches,
@@ -175,8 +175,8 @@ internal data class WatcherRunning(
                         // we retrieve the transaction before checking watches
                         // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed.
                         // we need to take them into consideration if we want to handle unconfirmed txes (which is the case for turbo channels)
-                        val getTransactionList = message.history.filter { it.height >= -1 }.map {
-                            AskForTransaction(it.tx_hash, it)
+                        val getTransactionList = message.history.filter { it.blockHeight >= -1 }.map {
+                            AskForTransaction(it.txid, it)
                         }
                         returnState(actions = getTransactionList)
                     }
@@ -223,8 +223,8 @@ internal data class WatcherRunning(
                                                 )
                                             )
                                             watchConfirmedTriggered.add(w)
-                                        } else if (w.minDepth > 0L && item.height > 0) {
-                                            val txHeight = item.height
+                                        } else if (w.minDepth > 0L && item.blockHeight > 0) {
+                                            val txHeight = item.blockHeight
                                             val confirmations = height - txHeight + 1
                                             logger.info { "txid=${w.txId} was confirmed at height=$txHeight and now has confirmations=$confirmations (currentHeight=$height)" }
                                             if (confirmations >= w.minDepth) {
