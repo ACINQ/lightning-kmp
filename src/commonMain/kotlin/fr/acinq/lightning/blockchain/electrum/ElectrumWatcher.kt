@@ -154,10 +154,10 @@ internal data class WatcherRunning(
                             val existingStatus = scriptHashStatus[scriptHash]
 
                             newState {
-                            state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
+                                state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
                                 actions = buildList {
                                     when {
-                                    existingStatus == status -> logger.debug { "already have status=$status for scriptHash=$scriptHash" }
+                                        existingStatus == status -> logger.debug { "already have status=$status for scriptHash=$scriptHash" }
                                         status.isEmpty() -> logger.debug { "empty status for scriptHash=$scriptHash" }
                                         else -> {
                                             logger.debug { "scriptHash=$scriptHash at height=$height" }
