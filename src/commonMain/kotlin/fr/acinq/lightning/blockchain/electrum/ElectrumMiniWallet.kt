@@ -100,7 +100,7 @@ class ElectrumMiniWallet(
 
     fun addPay2wpkhAddress(privateKey: PrivateKey) {
         launch {
-            val bitcoinAddress = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), Block.TestnetGenesisBlock.hash)
+            val bitcoinAddress = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), chainHash)
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
         }
     }
