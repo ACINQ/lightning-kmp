@@ -27,8 +27,8 @@ class WalletStateUnitTest : LightningTestSuite() {
         val walletState = WalletState(
             addresses = mapOf(
                 address1 to listOf(utxo),
-                Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList<UnspentItem>(),
-                Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList<UnspentItem>()
+                Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList(),
+                Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList()
             ),
             privateKeys = mapOf(address1 to priv1)
         )
@@ -41,7 +41,7 @@ class WalletStateUnitTest : LightningTestSuite() {
                     3700000L.toSatoshi(),
                     scriptPubKey1
                 )
-            ), // we reuse the same output script but if could be anything else
+            ), // we reuse the same output script but it could be anything else
             lockTime = 0
         )
 

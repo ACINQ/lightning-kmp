@@ -41,7 +41,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privat
                             SigVersion.SIGVERSION_WITNESS_V0,
                             privateKey
                         )
-                        ScriptWitness(listOf(sig.byteVector(), publicKey.value))
+                        Script.witnessPay2wpkh(publicKey, sig.byteVector())
                     }
                 }
             }
