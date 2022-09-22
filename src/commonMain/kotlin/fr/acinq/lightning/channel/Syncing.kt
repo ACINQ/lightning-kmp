@@ -68,6 +68,11 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).processInternal(event)
                     Pair(nextState1, actions + actions1)
                 }
+                state is LegacyWaitForFundingConfirmed -> {
+                    val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.fundingAmount)
+                    val watch = WatchConfirmed(state.channelId, state.commitments.fundingTxId, state.commitments.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                    Pair(state, listOf(ChannelAction.Blockchain.SendWatch(watch)))
+                }
                 state is WaitForFundingConfirmed -> {
                     val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, state.fundingParams.fundingAmount)
                     // we put back the watches (operation is idempotent) because the event may have been fired while we were in OFFLINE
@@ -79,7 +84,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     Pair(state, actions)
                 }
-                state is WaitForFundingLocked -> {
+                state is WaitForFundingLocked || state is LegacyWaitForFundingLocked -> {
                     logger.debug { "c:$channelId re-sending fundingLocked" }
                     val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, 1)
                     val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)

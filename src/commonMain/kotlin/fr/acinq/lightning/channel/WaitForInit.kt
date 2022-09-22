@@ -114,6 +114,12 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     }
                 }
             }
+            event is ChannelEvent.Restore && event.state is LegacyWaitForFundingConfirmed -> {
+                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.state.commitments.fundingAmount)
+                logger.info { "c:${event.state.channelId} restoring legacy unconfirmed channel (waiting for $minDepth confirmations)" }
+                val watch = WatchConfirmed(event.state.channelId, event.state.commitments.fundingTxId, event.state.commitments.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                Pair(Offline(event.state), listOf(ChannelAction.Blockchain.SendWatch(watch)))
+            }
             event is ChannelEvent.Restore && event.state is WaitForFundingConfirmed -> {
                 val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.state.fundingParams.fundingAmount)
                 logger.info { "c:${event.state.channelId} restoring unconfirmed channel (waiting for $minDepth confirmations)" }

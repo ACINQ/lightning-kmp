@@ -52,7 +52,10 @@ object Serialization {
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
             subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
+            subclass(ChannelTlv.ChannelTypeTlv.serializer())
             subclass(ChannelTlv.ChannelOriginTlv.serializer())
+            subclass(ChannelTlv.PushAmountTlv.serializer())
+            subclass(ClosingSignedTlv.FeeRange.serializer())
             subclass(InitTlv.Networks.serializer())
             subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())
             subclass(OnionPaymentPayloadTlv.AmountToForward.serializer())
@@ -72,7 +75,9 @@ object Serialization {
         polymorphic(ChannelStateWithCommitments::class) {
             subclass(Normal::class)
             subclass(WaitForFundingConfirmed::class)
+            subclass(WaitForFundingConfirmed2::class)
             subclass(WaitForFundingLocked::class)
+            subclass(WaitForFundingLocked2::class)
             subclass(WaitForRemotePublishFutureCommitment::class)
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)

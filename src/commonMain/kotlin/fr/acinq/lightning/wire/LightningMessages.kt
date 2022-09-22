@@ -728,6 +728,60 @@ data class AcceptDualFundedChannel(
 }
 
 @Serializable
+data class FundingCreated(
+    @Contextual override val temporaryChannelId: ByteVector32,
+    @Contextual val fundingTxid: ByteVector32,
+    val fundingOutputIndex: Int,
+    @Contextual val signature: ByteVector64
+) : ChannelMessage, HasTemporaryChannelId {
+    override val type: Long get() = FundingCreated.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(temporaryChannelId, out)
+        LightningCodecs.writeBytes(fundingTxid, out)
+        LightningCodecs.writeU16(fundingOutputIndex, out)
+        LightningCodecs.writeBytes(signature, out)
+    }
+
+    companion object : LightningMessageReader<FundingCreated> {
+        const val type: Long = 34
+
+        override fun read(input: Input): FundingCreated {
+            return FundingCreated(
+                ByteVector32(LightningCodecs.bytes(input, 32)),
+                ByteVector32(LightningCodecs.bytes(input, 32)),
+                LightningCodecs.u16(input),
+                ByteVector64(LightningCodecs.bytes(input, 64))
+            )
+        }
+    }
+}
+
+@Serializable
+data class FundingSigned(
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val signature: ByteVector64,
+) : ChannelMessage, HasChannelId {
+    override val type: Long get() = FundingSigned.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeBytes(signature, out)
+    }
+
+    companion object : LightningMessageReader<FundingSigned> {
+        const val type: Long = 35
+
+        override fun read(input: Input): FundingSigned {
+            return FundingSigned(
+                ByteVector32(LightningCodecs.bytes(input, 32)),
+                ByteVector64(LightningCodecs.bytes(input, 64)),
+            )
+        }
+    }
+}
+
+@Serializable
 data class FundingLocked(
     @Contextual override val channelId: ByteVector32,
     @Contextual val nextPerCommitmentPoint: PublicKey

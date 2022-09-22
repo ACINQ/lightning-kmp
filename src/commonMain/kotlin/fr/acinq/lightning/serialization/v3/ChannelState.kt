@@ -373,11 +373,13 @@ sealed class ChannelState {
             is fr.acinq.lightning.channel.Aborted -> Aborted(from)
             is fr.acinq.lightning.channel.WaitForOpenChannel -> WaitForOpenChannel(from)
             is fr.acinq.lightning.channel.WaitForAcceptChannel -> WaitForAcceptChannel(from)
-            is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked(from)
-            is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed(from)
-            is fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
             is fr.acinq.lightning.channel.WaitForFundingCreated -> WaitForFundingCreated(from)
             is fr.acinq.lightning.channel.WaitForFundingSigned -> WaitForFundingSigned(from)
+            is fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed -> WaitForFundingConfirmed(from)
+            is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed2(from)
+            is fr.acinq.lightning.channel.LegacyWaitForFundingLocked -> WaitForFundingLocked(from)
+            is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked2(from)
+            is fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
             is fr.acinq.lightning.channel.Offline -> Offline(from)
             is fr.acinq.lightning.channel.Syncing -> Syncing(from)
             is fr.acinq.lightning.channel.ChannelStateWithCommitments -> ChannelStateWithCommitments.import(from)
@@ -394,8 +396,10 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     companion object {
         fun import(from: fr.acinq.lightning.channel.ChannelStateWithCommitments): ChannelStateWithCommitments = when (from) {
             is fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
-            is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed(from)
-            is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked(from)
+            is fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed -> WaitForFundingConfirmed(from)
+            is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed2(from)
+            is fr.acinq.lightning.channel.LegacyWaitForFundingLocked -> WaitForFundingLocked(from)
+            is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked2(from)
             is fr.acinq.lightning.channel.Normal -> Normal(from)
             is fr.acinq.lightning.channel.ShuttingDown -> ShuttingDown(from)
             is fr.acinq.lightning.channel.Negotiating -> Negotiating(from)
@@ -678,8 +682,46 @@ data class FullySignedSharedTransaction(val tx: SharedTransaction, val localSigs
     override fun export() = fr.acinq.lightning.channel.FullySignedSharedTransaction(tx.export(), localSigs, remoteSigs)
 }
 
+/**
+ * This class contains data used for channels opened before the migration to dual-funding.
+ * We cannot update it or rename it otherwise we would break serialization backwards-compatibility.
+ */
 @Serializable
 data class WaitForFundingConfirmed(
+    override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnChainFeerates: OnChainFeerates,
+    override val commitments: Commitments,
+    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
+    val waitingSinceBlock: Long, // how long have we been waiting for the funding tx to confirm
+    val deferred: FundingLocked?,
+    @Serializable(with = EitherSerializer::class) val lastSent: Either<FundingCreated, FundingSigned>
+) : ChannelStateWithCommitments() {
+    constructor(from: fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed) : this(
+        StaticParams(from.staticParams),
+        from.currentTip,
+        OnChainFeerates(from.currentOnChainFeerates),
+        Commitments(from.commitments),
+        from.fundingTx,
+        from.waitingSinceBlock,
+        from.deferred,
+        from.lastSent
+    )
+
+    override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed(
+        staticParams.export(nodeParams),
+        currentTip,
+        currentOnChainFeerates.export(),
+        commitments.export(nodeParams),
+        fundingTx,
+        waitingSinceBlock,
+        deferred,
+        lastSent
+    )
+}
+
+@Serializable
+data class WaitForFundingConfirmed2(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -721,8 +763,40 @@ data class WaitForFundingConfirmed(
     )
 }
 
+/**
+ * This class contains data used for channels opened before the migration to dual-funding.
+ * We cannot update it or rename it otherwise we would break serialization backwards-compatibility.
+ */
 @Serializable
 data class WaitForFundingLocked(
+    override val staticParams: StaticParams,
+    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentOnChainFeerates: OnChainFeerates,
+    override val commitments: Commitments,
+    val shortChannelId: ShortChannelId,
+    val lastSent: FundingLocked
+) : ChannelStateWithCommitments() {
+    constructor(from: fr.acinq.lightning.channel.LegacyWaitForFundingLocked) : this(
+        StaticParams(from.staticParams),
+        from.currentTip,
+        OnChainFeerates(from.currentOnChainFeerates),
+        Commitments(from.commitments),
+        from.shortChannelId,
+        from.lastSent
+    )
+
+    override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.LegacyWaitForFundingLocked(
+        staticParams.export(nodeParams),
+        currentTip,
+        currentOnChainFeerates.export(),
+        commitments.export(nodeParams),
+        shortChannelId,
+        lastSent
+    )
+}
+
+@Serializable
+data class WaitForFundingLocked2(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
