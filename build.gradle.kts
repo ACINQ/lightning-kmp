@@ -26,13 +26,13 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 kotlin {
     val ktorVersion: String by extra { "2.0.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val secp256k1Version = "0.6.4"
+    val secp256k1Version = "0.7.0"
     val serializationVersion = "1.3.3"
     val coroutineVersion = "1.6.3-native-mt"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.8.4")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.9.0")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.11.1")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
