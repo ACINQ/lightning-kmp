@@ -11,7 +11,7 @@ class TcpSocketIntegrationTest : LightningTestSuite() {
     private val serverVersionRpc = buildString {
         append("""{ "id":"0", "method":"server.version", "params": ["3.3.6", "1.4"]}""")
         appendLine()
-    }.toByteArray()
+    }.encodeToByteArray()
 
     @Test
     fun `TCP connection IntegrationTest`() = runSuspendTest(timeout = 250.seconds) {
