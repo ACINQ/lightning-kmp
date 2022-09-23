@@ -83,7 +83,7 @@ internal object WaitingForTip : ClientState() {
                     is Either.Right ->
                         when (val response = parseJsonResponse(HeaderSubscription, rpcResponse.value)) {
                             is HeaderSubscriptionResponse -> newState {
-                                state = ClientRunning(height = response.height, tip = response.header)
+                                state = ClientRunning(height = response.blockHeight, tip = response.header)
                                 actions = listOf(BroadcastStatus(Connection.ESTABLISHED), SendResponse(response))
                             }
                             else -> returnState()
@@ -108,7 +108,7 @@ internal data class ClientRunning(
         is ReceivedResponse -> when (val response = event.response) {
             is Either.Left -> when (val electrumResponse = response.value) {
                 is HeaderSubscriptionResponse -> newState {
-                    state = copy(height = electrumResponse.height, tip = electrumResponse.header)
+                    state = copy(height = electrumResponse.blockHeight, tip = electrumResponse.header)
                     actions = listOf(SendResponse(electrumResponse))
                 }
                 is ScriptHashSubscriptionResponse -> returnState(SendResponse(electrumResponse))

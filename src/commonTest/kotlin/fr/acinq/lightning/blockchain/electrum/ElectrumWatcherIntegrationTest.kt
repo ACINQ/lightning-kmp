@@ -296,7 +296,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             val msg = this.receive()
             if (msg is GetScriptHashHistoryResponse) {
                 val (_, history) = msg
-                if (history.map { it.tx_hash }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) this.cancel()
+                if (history.map { it.txid }.toSet() == setOf(tx.txid, tx1.txid, tx2.txid)) this.cancel()
             }
         }
 

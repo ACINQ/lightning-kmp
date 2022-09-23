@@ -90,7 +90,7 @@ private data class WatcherDisconnected(
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }
                         state = WatcherRunning(
-                            height = message.height,
+                            height = message.blockHeight,
                             tip = message.header,
                             block2tx = block2tx,
                             watches = watches,
@@ -148,30 +148,35 @@ internal data class WatcherRunning(
                         }
                     }
                     message is ScriptHashSubscriptionResponse -> {
-                        val (scriptHash, status) = message
+                        if (scriptHashSubscriptions.contains(message.scriptHash)) {
+                            val (scriptHash, status) = message
 
-                        val existingStatus = scriptHashStatus[scriptHash]
+                            val existingStatus = scriptHashStatus[scriptHash]
 
-                        newState {
-                            state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
-                            actions = buildList {
-                                when {
-                                    existingStatus == status -> logger.debug { "already have status=$status for scriptHash=$scriptHash" }
-                                    status.isEmpty() -> logger.debug { "empty status for scriptHash=$scriptHash" }
-                                    else -> {
-                                        logger.debug { "scriptHash=$scriptHash at height=$height" }
-                                        add(AskForScriptHashHistory(scriptHash))
+                            newState {
+                                state = copy(scriptHashStatus = scriptHashStatus + (scriptHash to status))
+                                actions = buildList {
+                                    when {
+                                        existingStatus == status -> logger.debug { "already have status=$status for scriptHash=$scriptHash" }
+                                        status.isEmpty() -> logger.debug { "empty status for scriptHash=$scriptHash" }
+                                        else -> {
+                                            logger.debug { "scriptHash=$scriptHash at height=$height" }
+                                            add(AskForScriptHashHistory(scriptHash))
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            // ignore responses for unknown script_hashes (electrum client doesn't maintain a list of subscribers so we receive all subscriptions)
+                            returnState()
                         }
                     }
                     message is GetScriptHashHistoryResponse -> {
                         // we retrieve the transaction before checking watches
                         // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed.
                         // we need to take them into consideration if we want to handle unconfirmed txes (which is the case for turbo channels)
-                        val getTransactionList = message.history.filter { it.height >= -1 }.map {
-                            AskForTransaction(it.tx_hash, it)
+                        val getTransactionList = message.history.filter { it.blockHeight >= -1 }.map {
+                            AskForTransaction(it.txid, it)
                         }
                         returnState(actions = getTransactionList)
                     }
@@ -218,8 +223,8 @@ internal data class WatcherRunning(
                                                 )
                                             )
                                             watchConfirmedTriggered.add(w)
-                                        } else if (w.minDepth > 0L && item.height > 0) {
-                                            val txHeight = item.height
+                                        } else if (w.minDepth > 0L && item.blockHeight > 0) {
+                                            val txHeight = item.blockHeight
                                             val confirmations = height - txHeight + 1
                                             logger.info { "txid=${w.txId} was confirmed at height=$txHeight and now has confirmations=$confirmations (currentHeight=$height)" }
                                             if (confirmations >= w.minDepth) {
