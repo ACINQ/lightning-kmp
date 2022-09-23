@@ -16,11 +16,10 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
 import kotlin.test.*
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
-@OptIn(FlowPreview::class, ExperimentalTime::class)
+@OptIn(FlowPreview::class)
 class ElectrumClientIntegrationTest : LightningTestSuite() {
     // this is tx #2690 of block #500000
     private val referenceTx =

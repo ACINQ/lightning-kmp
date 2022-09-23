@@ -27,10 +27,8 @@ import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.time.ExperimentalTime
 
 
-@OptIn(ExperimentalTime::class)
 class PeerTest : LightningTestSuite() {
 
     fun buildOpenChannel(): OpenChannel = OpenChannel(

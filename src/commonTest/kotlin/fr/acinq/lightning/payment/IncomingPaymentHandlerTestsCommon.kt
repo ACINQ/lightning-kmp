@@ -24,7 +24,6 @@ import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.delay
 import kotlin.test.*
 
-@OptIn(kotlin.time.ExperimentalTime::class)
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test

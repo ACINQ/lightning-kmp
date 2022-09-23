@@ -17,10 +17,8 @@ import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
+import kotlin.time.Duration.Companion.seconds
 
-@OptIn(ExperimentalTime::class)
 class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
 
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
@@ -35,10 +33,10 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = Duration.seconds(15)) { connectToMainnetServer().stop() }
+    fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
 
     @Test
-    fun `single address with no utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
+    fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addWatchOnlyAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
@@ -54,7 +52,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `single address with existing utxos`() = runSuspendTest(timeout = Duration.seconds(15)) {
+    fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addWatchOnlyAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
@@ -70,7 +68,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `multiple addresses`() = runSuspendTest(timeout = Duration.seconds(15)) {
+    fun `multiple addresses`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")

@@ -2,14 +2,10 @@ package fr.acinq.lightning.io
 
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import io.ktor.utils.io.core.*
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalTime::class)
 class TcpSocketIntegrationTest : LightningTestSuite() {
 
     private val serverVersionRpc = buildString {
