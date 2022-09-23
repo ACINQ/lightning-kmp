@@ -55,7 +55,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length (tlv) node relay per-hop payload`() {
+    fun `encode - decode variable-length -- tlv --  node relay per-hop payload`() {
         val nodeId = PublicKey(Hex.decode("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
         val expected = PaymentOnion.NodeRelayPayload(TlvStream(listOf(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(42)), OnionPaymentPayloadTlv.OutgoingNodeId(nodeId))))
         val bin = Hex.decode("2e 02020231 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
@@ -75,7 +75,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length (tlv) node relay to legacy per-hop payload`() {
+    fun `encode - decode variable-length -- tlv --  node relay to legacy per-hop payload`() {
         val nodeId = PublicKey(Hex.decode("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
         val features = ByteVector("0a")
         val node1 = PublicKey(Hex.decode("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))
@@ -115,7 +115,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length (tlv) final per-hop payload`() {
+    fun `encode - decode variable-length -- tlv --  final per-hop payload`() {
         val testCases = mapOf(
             TlvStream(
                 listOf(
@@ -200,7 +200,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length (tlv) final per-hop payload with custom user records`() {
+    fun `encode - decode variable-length -- tlv --  final per-hop payload with custom user records`() {
         val tlvs = TlvStream(
             listOf(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(42)), OnionPaymentPayloadTlv.PaymentData(ByteVector32.Zeroes, 0.msat)),
             listOf(GenericTlv(5432123457L, ByteVector("16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")))
@@ -232,7 +232,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `decode variable-length (tlv) final per-hop payload missing information`() {
+    fun `decode variable-length -- tlv --  final per-hop payload missing information`() {
         val testCases = listOf(
             Hex.decode("25 04012a 0820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), // missing amount
             Hex.decode("26 02020231 0820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), // missing cltv

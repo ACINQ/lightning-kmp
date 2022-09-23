@@ -3,15 +3,15 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.5.31"
-    kotlin("plugin.serialization") version "1.5.31"
-    id("org.jetbrains.dokka") version "1.5.30"
+    kotlin("multiplatform") version "1.6.21"
+    kotlin("plugin.serialization") version "1.6.21"
+    id("org.jetbrains.dokka") version "1.6.21"
     `maven-publish`
 }
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.4.2-SNAPSHOT"
+    version = "1.5.0-SNAPSHOT"
 
     repositories {
         mavenLocal()
@@ -24,22 +24,22 @@ allprojects {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    val ktorVersion: String by extra { "1.6.5" }
+    val ktorVersion: String by extra { "2.0.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val secp256k1Version = "0.6.4"
-    val serializationVersion = "1.2.2"
-    val coroutineVersion = "1.5.2-native-mt"
+    val secp256k1Version = "0.7.0"
+    val serializationVersion = "1.3.3"
+    val coroutineVersion = "1.6.3"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.8.4")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.9.0")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
             api("org.kodein.log:kodein-log:0.11.1")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-            api("org.jetbrains.kotlinx:kotlinx-datetime:0.2.0")
+            api("org.jetbrains.kotlinx:kotlinx-datetime:0.3.2")
         }
     }
     val commonTest by sourceSets.getting {
@@ -47,7 +47,8 @@ kotlin {
             api(ktor("client-core"))
             api(ktor("client-auth"))
             api(ktor("client-json"))
-            api(ktor("client-serialization"))
+            api(ktor("client-content-negotiation"))
+            api(ktor("serialization-kotlinx-json"))
             implementation(kotlin("test-common"))
             implementation(kotlin("test-annotations-common"))
             implementation("org.kodein.memory:kodein-memory-files:0.8.1")
@@ -62,7 +63,7 @@ kotlin {
             api(ktor("client-okhttp"))
             api(ktor("network"))
             api(ktor("network-tls"))
-            implementation("org.slf4j:slf4j-api:1.7.29")
+            implementation("org.slf4j:slf4j-api:1.7.36")
             api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
         compilations["test"].defaultSourceSet.dependencies {
@@ -76,8 +77,11 @@ kotlin {
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             implementation("ch.qos.logback:logback-classic:1.2.3")
-            implementation("io.ktor:ktor-server-netty:$ktorVersion")
-            implementation("io.ktor:ktor-serialization:$ktorVersion")
+            implementation(ktor("server-netty"))
+            implementation(ktor("serialization"))
+            implementation(ktor("server-status-pages"))
+            implementation(ktor("server-content-negotiation"))
+            implementation(ktor("serialization-kotlinx-json"))
             implementation("com.typesafe:config:1.4.1")
         }
     }

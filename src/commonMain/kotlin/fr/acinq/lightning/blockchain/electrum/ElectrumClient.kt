@@ -18,8 +18,7 @@ import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 import kotlin.native.concurrent.ThreadLocal
-import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
+import kotlin.time.Duration.Companion.seconds
 
 
 /*
@@ -174,7 +173,7 @@ data class RequestResponseTimestamp(
     val lastResponseTimestamp: Long?
 )
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope
@@ -289,7 +288,7 @@ class ElectrumClient(
 
         suspend fun ping() {
             while (isActive) {
-                delay(Duration.seconds(30))
+                delay(30.seconds)
                 send(Ping.asJsonRPCRequest(-1).encodeToByteArray())
             }
         }

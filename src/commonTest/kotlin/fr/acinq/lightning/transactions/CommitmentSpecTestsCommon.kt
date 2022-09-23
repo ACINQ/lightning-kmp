@@ -17,7 +17,7 @@ import kotlin.test.assertEquals
 
 class CommitmentSpecTestsCommon : LightningTestSuite() {
     @Test
-    fun `add, fulfill and fail htlcs from the sender side`() {
+    fun `add fulfill and fail htlcs from the sender side`() {
         val spec = CommitmentSpec(htlcs = setOf(), feerate = FeeratePerKw(1_000.sat), toLocal = MilliSatoshi(5000000), toRemote = MilliSatoshi(0))
         val R = randomBytes32()
         val H = ByteVector32(Crypto.sha256(R))
@@ -40,7 +40,7 @@ class CommitmentSpecTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `add, fulfill and fail htlcs from the receiver side`() {
+    fun `add fulfill and fail htlcs from the receiver side`() {
         val spec = CommitmentSpec(htlcs = setOf(), feerate = FeeratePerKw(1_000.sat), toLocal = MilliSatoshi(0), toRemote = MilliSatoshi(5000L * 1000))
         val R = randomBytes32()
         val H = ByteVector32(Crypto.sha256(R))

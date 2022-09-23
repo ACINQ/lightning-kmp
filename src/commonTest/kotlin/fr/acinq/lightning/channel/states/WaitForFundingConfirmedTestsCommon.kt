@@ -40,7 +40,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive BITCOIN_FUNDING_DEPTHOK (bad funding pubkey script)`() {
+    fun `receive BITCOIN_FUNDING_DEPTHOK -- bad funding pubkey script`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
         val fundingTx = alice.fundingTx!!
         val badOutputScript = Scripts.multiSig2of2(Lightning.randomKey().publicKey(), Lightning.randomKey().publicKey())
@@ -69,7 +69,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive BITCOIN_FUNDING_DEPTHOK (bad funding amount)`() {
+    fun `receive BITCOIN_FUNDING_DEPTHOK -- bad funding amount`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -99,7 +99,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (remote commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- remote commit`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
 
         // case 1: alice publishes her commitment tx
@@ -122,7 +122,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (other commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- other commit`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
         val spendingTx = Transaction(version = 2, txIn = alice.commitments.localCommit.publishableTxs.commitTx.tx.txIn, txOut = listOf(), lockTime = 0)
         listOf(alice, bob).forEach { state ->
@@ -166,7 +166,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE (nothing at stake)`() {
+    fun `recv CMD_FORCECLOSE -- nothing at stake`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, 0.msat)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
         assertTrue(bob1 is Aborted)
@@ -202,7 +202,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Disconnected (get funding tx successful)`() {
+    fun `recv Disconnected -- get funding tx successful`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
         val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
         assertTrue { alice1 is Offline }
@@ -217,7 +217,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Disconnected (get funding tx error)`() {
+    fun `recv Disconnected -- get funding tx error`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
         val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
         assertTrue { alice1 is Offline }

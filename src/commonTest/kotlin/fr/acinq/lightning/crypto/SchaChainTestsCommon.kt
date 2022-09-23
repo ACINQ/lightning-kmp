@@ -78,7 +78,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ generation`() {
+    fun `Rusty's reference tests -- generation`() {
         assertEquals(
             ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")),
             ShaChain.shaChainFromSeed(ByteVector32(Hex.decode("0000000000000000000000000000000000000000000000000000000000000000")), 281474976710655L)
@@ -99,7 +99,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret correct sequence`() {
+    fun `Rusty's reference tests -- insert_secret correct sequence`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -112,7 +112,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #1 incorrect`() {
+    fun `Rusty's reference tests -- insert_secret no1 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), 281474976710655L)
         assertFailsWith<IllegalArgumentException> {
@@ -121,7 +121,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #2 incorrect (#1 derived from incorrect)`() {
+    fun `Rusty's reference tests -- insert_secret no2 incorrect -- no1 derived from incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3")), 281474976710654L)
@@ -132,7 +132,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #3 incorrect`() {
+    fun `Rusty's reference tests -- insert_secret no3 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -143,7 +143,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #4 incorrect (1,2,3 derived from incorrect)`() {
+    fun `Rusty's reference tests -- insert_secret no4 incorrect -- 1 2 3 derived from incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3")), 281474976710654L)
@@ -158,7 +158,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #5 incorrect`() {
+    fun `Rusty's reference tests -- insert_secret no5 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -171,7 +171,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #6 incorrect (5 derived from incorrect)`() {
+    fun `Rusty's reference tests -- insert_secret no6 incorrect no5 derived from incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -186,7 +186,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #7 incorrect`() {
+    fun `Rusty's reference tests -- insert_secret no7 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)
@@ -201,7 +201,7 @@ class SchaChainTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `Rusty's reference tests @ insert_secret #8 incorrect`() {
+    fun `Rusty's reference tests -- insert_secret no8 incorrect`() {
         val chain = ShaChain.init
         val chain1 = chain.addHash(ByteVector32(Hex.decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")), 281474976710655L)
         val chain2 = chain1.addHash(ByteVector32(Hex.decode("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964")), 281474976710654L)

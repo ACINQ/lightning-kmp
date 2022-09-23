@@ -63,7 +63,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (incrementing ids)`() {
+    fun `recv CMD_ADD_HTLC -- incrementing ids`() {
         val (alice0, _) = reachNormal()
         var alice = alice0
         for (i in 0 until 10) {
@@ -78,7 +78,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (expiry too small)`() {
+    fun `recv CMD_ADD_HTLC -- expiry too small`() {
         val (alice0, _) = reachNormal()
         // It's usually dangerous for Bob to accept HTLCs that are expiring soon. However it's not Alice's decision to reject
         // them when she's asked to relay; she should forward those HTLCs to Bob, and Bob will choose whether to fail them
@@ -91,7 +91,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (expiry too big)`() {
+    fun `recv CMD_ADD_HTLC -- expiry too big`() {
         val (alice0, _) = reachNormal()
         val currentBlockHeight = alice0.currentBlockHeight.toLong()
         val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
@@ -104,7 +104,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (value too small)`() {
+    fun `recv CMD_ADD_HTLC -- value too small`() {
         val (alice0, _) = reachNormal()
         val add = defaultAdd.copy(amount = 50.msat)
         val (alice1, actions) = alice0.processEx(ChannelEvent.ExecuteCommand(add))
@@ -115,7 +115,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (0 msat)`() {
+    fun `recv CMD_ADD_HTLC -- 0 msat`() {
         val (alice0, bob0) = reachNormal()
         // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
         assertEquals(0.msat, alice0.commitments.localParams.htlcMinimum)
@@ -128,7 +128,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (increasing balance but still below reserve)`() {
+    fun `recv CMD_ADD_HTLC -- increasing balance but still below reserve`() {
         val (alice0, bob0) = reachNormal(pushMsat = 0.msat)
         assertFalse(alice0.commitments.channelFeatures.hasFeature(Feature.ZeroReserveChannels))
         assertFalse(bob0.commitments.channelFeatures.hasFeature(Feature.ZeroReserveChannels))
@@ -146,7 +146,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (insufficient funds)`() {
+    fun `recv CMD_ADD_HTLC -- insufficient funds`() {
         val (alice0, _) = reachNormal()
         val add = defaultAdd.copy(amount = Int.MAX_VALUE.msat)
         val (alice1, actions) = alice0.processEx(ChannelEvent.ExecuteCommand(add))
@@ -157,7 +157,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (insufficient funds, missing 1 msat)`() {
+    fun `recv CMD_ADD_HTLC -- insufficient funds + missing 1 msat`() {
         val (_, bob0) = reachNormal()
         val add = defaultAdd.copy(amount = bob0.commitments.availableBalanceForSend() + 1.sat.toMilliSatoshi())
         val (bob1, actions) = bob0.processEx(ChannelEvent.ExecuteCommand(add))
@@ -168,7 +168,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (HTLC dips into remote initiator fee reserve)`() {
+    fun `recv CMD_ADD_HTLC -- HTLC dips into remote initiator fee reserve`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(764_660_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
@@ -190,7 +190,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs)`() {
+    fun `recv CMD_ADD_HTLC -- insufficient funds with pending htlcs`() {
         val (alice0, _) = reachNormal()
         val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 300_000_000.msat)))
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
@@ -203,7 +203,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (insufficient funds with pending htlcs and 0 balance)`() {
+    fun `recv CMD_ADD_HTLC -- insufficient funds with pending htlcs and 0 balance`() {
         val (alice0, _) = reachNormal()
         val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = 500_000_000.msat)))
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
@@ -218,7 +218,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over their max in-flight htlc value)`() {
+    fun `recv CMD_ADD_HTLC -- over their max in-flight htlc value`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
             bob.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
@@ -230,7 +230,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over our max in-flight htlc value)`() {
+    fun `recv CMD_ADD_HTLC -- over our max in-flight htlc value`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
             bob.copy(commitments = bob.commitments.copy(localParams = bob.commitments.localParams.copy(maxHtlcValueInFlightMsat = 100_000_000)))
@@ -242,7 +242,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over max in-flight htlc value with duplicate amounts)`() {
+    fun `recv CMD_ADD_HTLC -- over max in-flight htlc value with duplicate amounts`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
             bob.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
@@ -256,7 +256,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over max accepted htlcs)`() {
+    fun `recv CMD_ADD_HTLC -- over max accepted htlcs`() {
         val (alice0, bob0) = reachNormal()
 
         // Bob accepts a maximum of 100 htlcs
@@ -277,7 +277,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over max offered htlcs)`() {
+    fun `recv CMD_ADD_HTLC -- over max offered htlcs`() {
         val (alice0, _) = reachNormal()
         // Bob accepts a maximum of 100 htlcs, but for Alice that value is only 5
         val alice1 = alice0.copy(commitments = alice0.commitments.copy(localParams = alice0.commitments.localParams.copy(maxAcceptedHtlcs = 5)))
@@ -299,7 +299,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (over capacity)`() {
+    fun `recv CMD_ADD_HTLC -- over capacity`() {
         val (alice0, _) = reachNormal()
         val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(defaultAdd.copy(amount = TestConstants.fundingAmount.toMilliSatoshi() * 2 / 3)))
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
@@ -314,7 +314,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (after having sent Shutdown)`() {
+    fun `recv CMD_ADD_HTLC -- after having sent Shutdown`() {
         val (alice0, _) = reachNormal()
         val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
         actionsAlice1.findOutgoingMessage<Shutdown>()
@@ -326,7 +326,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_ADD_HTLC (after having received Shutdown)`() {
+    fun `recv CMD_ADD_HTLC -- after having received Shutdown`() {
         val (alice0, bob0) = reachNormal()
 
         // let's make alice send an htlc
@@ -355,7 +355,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateAddHtlc (unexpected id)`() {
+    fun `recv UpdateAddHtlc -- unexpected id`() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 15_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelEvent.MessageReceived(add))
@@ -371,7 +371,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateAddHtlc (value too small)`() {
+    fun `recv UpdateAddHtlc -- value too small`() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 150.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelEvent.MessageReceived(add))
@@ -381,7 +381,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateAddHtlc (insufficient funds)`() {
+    fun `recv UpdateAddHtlc -- insufficient funds`() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 800_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelEvent.MessageReceived(add))
@@ -391,7 +391,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateAddHtlc (insufficient funds with pending htlcs)`() {
+    fun `recv UpdateAddHtlc -- insufficient funds with pending htlcs`() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 15_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelEvent.MessageReceived(add))
@@ -407,7 +407,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateAddHtlc (over max in-flight htlc value)`() {
+    fun `recv UpdateAddHtlc -- over max in-flight htlc value`() {
         val alice0 = run {
             val (alice, _) = reachNormal()
             alice.copy(commitments = alice.commitments.copy(localParams = alice.commitments.localParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
@@ -420,7 +420,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateAddHtlc (over max accepted htlcs)`() {
+    fun `recv UpdateAddHtlc -- over max accepted htlcs`() {
         val (_, bob0) = reachNormal()
 
         // Bob accepts a maximum of 100 htlcs
@@ -455,7 +455,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (two identical htlcs in each direction)`() {
+    fun `recv CMD_SIGN -- two identical htlcs in each direction`() {
         val (alice0, bob0) = reachNormal()
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
 
@@ -481,7 +481,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (check htlc info are persisted)`() {
+    fun `recv CMD_SIGN -- check htlc info are persisted`() {
         val (alice0, bob0) = reachNormal()
         // for the test to be really useful we have constraint on parameters
         assertTrue(alice0.staticParams.nodeParams.dustLimit > bob0.staticParams.nodeParams.dustLimit)
@@ -543,7 +543,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (htlcs with same pubkeyScript but different amounts)`() {
+    fun `recv CMD_SIGN -- htlcs with same pubkeyScript but different amounts`() {
         val (alice0, bob0) = reachNormal()
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
         val epsilons = listOf(3, 1, 5, 7, 6) // unordered on purpose
@@ -573,14 +573,14 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (no changes)`() {
+    fun `recv CMD_SIGN -- no changes`() {
         val (alice0, _) = reachNormal()
         val (_, actions) = alice0.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
         assertTrue(actions.isEmpty())
     }
 
     @Test
-    fun `recv CMD_SIGN (while waiting for RevokeAndAck, no pending changes)`() {
+    fun `recv CMD_SIGN -- while waiting for RevokeAndAck + no pending changes`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(alice1 is Normal)
@@ -600,7 +600,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (while waiting for RevokeAndAck, with pending changes)`() {
+    fun `recv CMD_SIGN -- while waiting for RevokeAndAck + with pending changes`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(alice1 is Normal)
@@ -621,7 +621,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (going above reserve)`() {
+    fun `recv CMD_SIGN -- going above reserve`() {
         val (alice0, bob0) = reachNormal(pushMsat = 0.msat)
         assertEquals(0.msat, bob0.commitments.availableBalanceForSend())
         val (nodes1, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -636,7 +636,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (after CMD_UPDATE_FEE)`() {
+    fun `recv CMD_SIGN -- after CMD_UPDATE_FEE`() {
         val (alice, _) = reachNormal()
         val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat))))
         actions1.hasOutgoingMessage<UpdateFee>()
@@ -645,7 +645,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_SIGN (channel backup, non-initiator)`() {
+    fun `recv CMD_SIGN -- channel backup + non-initiator`() {
         val (alice, bob) = reachNormal()
         assertTrue(alice.commitments.localParams.features.hasFeature(Feature.ChannelBackupProvider))
         assertTrue(bob.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
@@ -661,7 +661,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (one htlc received)`() {
+    fun `recv CommitSig -- one htlc received`() {
         val (alice0, bob0) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (nodes0, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes0
@@ -680,7 +680,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (one htlc sent)`() {
+    fun `recv CommitSig -- one htlc sent`() {
         val (alice0, bob0) = reachNormal()
         val (nodes0, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes0
@@ -699,7 +699,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (multiple htlcs in both directions)`() {
+    fun `recv CommitSig -- multiple htlcs in both directions`() {
         val (alice0, bob0) = reachNormal()
         val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0) // a->b (regular)
         val (alice1, bob1) = nodes1
@@ -726,7 +726,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (only fee update)`() {
+    fun `recv CommitSig -- only fee update`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, actions1) = alice0.processEx(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), false)))
         val updateFee = actions1.findOutgoingMessage<UpdateFee>()
@@ -741,7 +741,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (two htlcs received with same preimage)`() {
+    fun `recv CommitSig -- two htlcs received with same preimage`() {
         val (alice0, bob0) = reachNormal()
         val r = randomBytes32()
         val h = Crypto.sha256(r).toByteVector32()
@@ -764,7 +764,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (no changes)`() {
+    fun `recv CommitSig -- no changes`() {
         val (_, bob0) = reachNormal()
         val tx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
 
@@ -792,7 +792,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (invalid signature)`() {
+    fun `recv CommitSig -- invalid signature`() {
         val (_, bob0) = reachNormal()
         val tx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
 
@@ -820,7 +820,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (bad htlc sig count)`() {
+    fun `recv CommitSig -- bad htlc sig count`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(bob1 is Normal)
@@ -851,7 +851,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (invalid htlc sig)`() {
+    fun `recv CommitSig -- invalid htlc sig`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(bob1 is Normal)
@@ -881,7 +881,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (channel backup, non-initiator)`() {
+    fun `recv RevokeAndAck -- channel backup + non-initiator`() {
         val (alice, bob) = reachNormal()
         assertTrue(alice.commitments.localParams.features.hasFeature(Feature.ChannelBackupProvider))
         assertTrue(bob.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
@@ -905,7 +905,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (one htlc sent)`() {
+    fun `recv RevokeAndAck -- one htlc sent`() {
         val (alice0, bob0) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
 
@@ -924,7 +924,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (one htlc received)`() {
+    fun `recv RevokeAndAck -- one htlc received`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, add) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes
@@ -950,7 +950,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (multiple htlcs in both directions)`() {
+    fun `recv RevokeAndAck -- multiple htlcs in both directions`() {
         val (alice0, bob0) = reachNormal()
         val (nodes1, _, add1) = addHtlc(50_000_000.msat, alice0, bob0) // a->b (regular)
         val (alice1, bob1) = nodes1
@@ -989,7 +989,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (with reSignAsap=true)`() {
+    fun `recv RevokeAndAck -- with reSignAsap=true`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(alice1 is Normal)
@@ -1012,7 +1012,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (invalid preimage)`() {
+    fun `recv RevokeAndAck -- invalid preimage`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(alice1 is Normal)
@@ -1032,7 +1032,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv RevokeAndAck (unexpectedly)`() {
+    fun `recv RevokeAndAck -- unexpectedly`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
         assertTrue(alice1 is Normal)
@@ -1060,7 +1060,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FULFILL_HTLC (unknown htlc id)`() {
+    fun `recv CMD_FULFILL_HTLC -- unknown htlc id`() {
         val (_, bob0) = reachNormal()
         val cmd = CMD_FULFILL_HTLC(42, randomBytes32())
 
@@ -1071,7 +1071,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FULFILL_HTLC (invalid preimage)`() {
+    fun `recv CMD_FULFILL_HTLC -- invalid preimage`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -1100,7 +1100,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFulfillHtlc (unknown htlc id)`() {
+    fun `recv UpdateFulfillHtlc -- unknown htlc id`() {
         val (alice0, _) = reachNormal()
         val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(UpdateFulfillHtlc(alice0.channelId, 42, randomBytes32())))
@@ -1114,7 +1114,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFulfillHtlc (sender has not signed htlc)`() {
+    fun `recv UpdateFulfillHtlc -- sender has not signed htlc`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, actions1) = nodes.first.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
@@ -1132,7 +1132,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFulfillHtlc (invalid preimage)`() {
+    fun `recv UpdateFulfillHtlc -- invalid preimage`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
@@ -1162,7 +1162,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FAIL_HTLC (unknown htlc id)`() {
+    fun `recv CMD_FAIL_HTLC -- unknown htlc id`() {
         val (_, bob0) = reachNormal()
         val cmdFail = CMD_FAIL_HTLC(42, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))
         val (bob1, actions1) = bob0.processEx(ChannelEvent.ExecuteCommand(cmdFail))
@@ -1184,7 +1184,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FAIL_HTLC_MALFORMED (unknown htlc id)`() {
+    fun `recv CMD_FAIL_HTLC_MALFORMED -- unknown htlc id`() {
         val (_, bob0) = reachNormal()
         val cmdFail = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessage.BADONION)
         val (bob1, actions1) = bob0.processEx(ChannelEvent.ExecuteCommand(cmdFail))
@@ -1193,7 +1193,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FAIL_HTLC_MALFORMED (invalid failure_code)`() {
+    fun `recv CMD_FAIL_HTLC_MALFORMED -- invalid failure_code`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -1220,7 +1220,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFailHtlc (unknown htlc id)`() {
+    fun `recv UpdateFailHtlc -- unknown htlc id`() {
         val (alice0, _) = reachNormal()
         val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(UpdateFailHtlc(alice0.channelId, 42, ByteVector.empty)))
@@ -1234,7 +1234,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFailHtlc (sender has not signed htlc)`() {
+    fun `recv UpdateFailHtlc -- sender has not signed htlc`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, actions1) = nodes.first.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
@@ -1267,7 +1267,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFailMalformedHtlc (unknown htlc id)`() {
+    fun `recv UpdateFailMalformedHtlc -- unknown htlc id`() {
         val (alice0, _) = reachNormal()
         val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, 42, ByteVector32.Zeroes, FailureMessage.BADONION)))
@@ -1281,7 +1281,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFailMalformedHtlc (invalid failure_code)`() {
+    fun `recv UpdateFailMalformedHtlc -- invalid failure_code`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
@@ -1308,7 +1308,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFee (2 in a row)`() {
+    fun `recv UpdateFee -- 2 in a row`() {
         val (_, bob) = reachNormal()
         val fee1 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
         val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(fee1))
@@ -1319,7 +1319,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFee (sender cannot afford it)`() {
+    fun `recv UpdateFee -- sender cannot afford it`() {
         val (alice, bob) = reachNormal()
         // We put all the balance on Bob's side, so that Alice cannot afford a feerate increase.
         val (nodes, _, _) = addHtlc(alice.commitments.availableBalanceForSend(), alice, bob)
@@ -1337,7 +1337,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv UpdateFee (remote feerate is too small)`() {
+    fun `recv UpdateFee -- remote feerate is too small`() {
         val (_, bob) = reachNormal()
         assertEquals(FeeratePerKw.CommitmentFeerate, bob.commitments.localCommit.spec.feerate)
         val (bob1, actions) = bob.processEx(ChannelEvent.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
@@ -1371,7 +1371,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (no pending htlcs)`() {
+    fun `recv CMD_CLOSE -- no pending htlcs`() {
         val (alice, _) = reachNormal()
         assertNull(alice.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
@@ -1381,7 +1381,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with unacked sent htlcs)`() {
+    fun `recv CMD_CLOSE -- with unacked sent htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, _) = nodes
@@ -1391,7 +1391,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with unacked received htlcs)`() {
+    fun `recv CMD_CLOSE -- with unacked received htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (_, bob1) = nodes
@@ -1402,7 +1402,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with invalid final script)`() {
+    fun `recv CMD_CLOSE -- with invalid final script`() {
         val (alice, _) = reachNormal()
         assertNull(alice.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(ByteVector("00112233445566778899"), null)))
@@ -1411,7 +1411,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with unsupported native segwit script)`() {
+    fun `recv CMD_CLOSE -- with unsupported native segwit script`() {
         val (alice, _) = reachNormal()
         assertNull(alice.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(ByteVector("51050102030405"), null)))
@@ -1420,7 +1420,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with native segwit script)`() {
+    fun `recv CMD_CLOSE -- with native segwit script`() {
         val (alice, _) = reachNormal(
             aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
             bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
@@ -1433,7 +1433,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with signed sent htlcs)`() {
+    fun `recv CMD_CLOSE -- with signed sent htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
@@ -1444,7 +1444,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (two in a row)`() {
+    fun `recv CMD_CLOSE -- two in a row`() {
         val (alice, _) = reachNormal()
         assertNull(alice.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
@@ -1457,7 +1457,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (while waiting for a RevokeAndAck)`() {
+    fun `recv CMD_CLOSE -- while waiting for a RevokeAndAck`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, actions1) = nodes.first.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
@@ -1469,7 +1469,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE (with unsigned fee update)`() {
+    fun `recv CMD_CLOSE -- with unsigned fee update`() {
         val (alice, _) = reachNormal()
         val (alice1, actions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw(20_000.sat), false)))
         actions1.hasOutgoingMessage<UpdateFee>()
@@ -1482,7 +1482,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (no pending htlcs)`() {
+    fun `recv Shutdown -- no pending htlcs`() {
         val (alice, bob) = reachNormal()
         val (alice1, actions1) = alice.processEx(ChannelEvent.MessageReceived(Shutdown(alice.channelId, bob.commitments.localParams.defaultFinalScriptPubKey)))
         assertTrue(alice1 is Negotiating)
@@ -1491,7 +1491,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with unacked sent htlcs)`() {
+    fun `recv Shutdown -- with unacked sent htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (bob1, actions1) = nodes.second.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
@@ -1514,7 +1514,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with unacked received htlcs)`() {
+    fun `recv Shutdown -- with unacked received htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (bob1, actions1) = nodes.second.processEx(ChannelEvent.MessageReceived(Shutdown(alice.channelId, alice.commitments.localParams.defaultFinalScriptPubKey)))
@@ -1525,7 +1525,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with unsigned fee update)`() {
+    fun `recv Shutdown -- with unsigned fee update`() {
         val (alice, bob) = reachNormal()
         val (alice1, aliceActions1) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_UPDATE_FEE(FeeratePerKw(20_000.sat), true)))
         val updateFee = aliceActions1.hasOutgoingMessage<UpdateFee>()
@@ -1561,7 +1561,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with invalid script)`() {
+    fun `recv Shutdown -- with invalid script`() {
         val (_, bob) = reachNormal()
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Shutdown(bob.channelId, ByteVector("00112233445566778899"))))
         assertTrue(bob1 is Closing)
@@ -1571,7 +1571,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with unsupported native segwit script)`() {
+    fun `recv Shutdown -- with unsupported native segwit script`() {
         val (_, bob) = reachNormal()
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
         assertTrue(bob1 is Closing)
@@ -1581,7 +1581,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with native segwit script)`() {
+    fun `recv Shutdown -- with native segwit script`() {
         val (_, bob) = reachNormal(
             aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
             bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
@@ -1592,7 +1592,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)`() {
+    fun `recv Shutdown -- with invalid final script and signed htlcs + in response to a Shutdown`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -1608,7 +1608,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (with signed htlcs)`() {
+    fun `recv Shutdown -- with signed htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -1620,7 +1620,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (while waiting for a RevokeAndAck)`() {
+    fun `recv Shutdown -- while waiting for a RevokeAndAck`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (alice1, actions1) = nodes.first.processEx(ChannelEvent.ExecuteCommand(CMD_SIGN))
@@ -1635,7 +1635,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Shutdown (while waiting for a RevokeAndAck with pending outgoing htlc)`() {
+    fun `recv Shutdown -- while waiting for a RevokeAndAck with pending outgoing htlc`() {
         val (alice, bob) = reachNormal()
         // let's make bob send a Shutdown message
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
@@ -1676,7 +1676,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (their commit with htlc)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- their commit with htlc`() {
         val (alice0, bob0) = reachNormal()
 
         val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
@@ -1739,7 +1739,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (their next commit with htlc)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- their next commit with htlc`() {
         val (alice0, bob0) = reachNormal()
 
         val (nodes0, _, _) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
@@ -1809,7 +1809,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (revoked commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- revoked commit`() {
         var (alice, bob) = reachNormal()
         // initially we have :
         // alice = 800 000 sat
@@ -1888,7 +1888,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (no htlc timed out)`() {
+    fun `recv NewBlock -- no htlc timed out`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
@@ -1904,7 +1904,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (an htlc timed out)`() {
+    fun `recv NewBlock -- an htlc timed out`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
@@ -1948,7 +1948,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (fulfilled signed htlc ignored by peer)`() {
+    fun `recv NewBlock -- fulfilled signed htlc ignored by peer`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -1967,7 +1967,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (fulfilled proposed htlc ignored by peer)`() {
+    fun `recv NewBlock -- fulfilled proposed htlc ignored by peer`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -1983,7 +1983,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (fulfilled proposed htlc acked but not committed by peer)`() {
+    fun `recv NewBlock -- fulfilled proposed htlc acked but not committed by peer`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = crossSign(nodes.first, nodes.second)
@@ -2016,7 +2016,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Disconnected (with htlcs)`() {
+    fun `recv Disconnected -- with htlcs`() {
         val (alice0, bob0) = reachNormal()
         val (nodes0, _, htlc1) = addHtlc(250_000_000.msat, payer = alice0, payee = bob0)
         val (alice1, bob1) = nodes0
@@ -2107,7 +2107,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive Error (nothing at stake)`() {
+    fun `receive Error -- nothing at stake`() {
         val (_, bob0) = reachNormal(pushMsat = 0.msat)
         val bobCommitTx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
         val (bob1, actions) = bob0.processEx(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))

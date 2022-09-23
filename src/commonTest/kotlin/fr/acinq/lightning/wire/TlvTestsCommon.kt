@@ -278,7 +278,7 @@ class TlvTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode unordered tlv stream (codec should sort appropriately)`() {
+    fun `encode unordered tlv stream -- codec should sort appropriately`() {
         val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType254(42), TestTlv.TestType1(42)), listOf(GenericTlv(13, ByteVector("2a")), GenericTlv(11, ByteVector("2b"))))
         val out1 = ByteArrayOutput()
         testTlvStreamSerializer.write(stream, out1)

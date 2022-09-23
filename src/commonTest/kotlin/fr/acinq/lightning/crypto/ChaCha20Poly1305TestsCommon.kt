@@ -17,7 +17,7 @@ class ChaCha20Poly1305TestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `poly1305 mac #2`() {
+    fun `poly1305 mac no2`() {
         val key = "this is 32-byte key for Poly1305".encodeToByteArray()
         val data = "Hello world!".encodeToByteArray()
         val mac = Poly1305.mac(key, data)

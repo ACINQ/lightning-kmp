@@ -24,7 +24,6 @@ import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.delay
 import kotlin.test.*
 
-@OptIn(kotlin.time.ExperimentalTime::class)
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
@@ -612,7 +611,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with a mix of HTLC and pay-to-open (total amount too low)`() = runSuspendTest {
+    fun `receive multipart payment with a mix of HTLC and pay-to-open -- total amount too low`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
@@ -660,7 +659,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment with a mix of HTLC and pay-to-open (amount of the pay-to-open parts too low)`() = runSuspendTest {
+    fun `receive multipart payment with a mix of HTLC and pay-to-open -- amount of the pay-to-open parts too low`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2, amount3) = Triple(100_000.msat, 30_000.msat, 20_000.msat)
         val totalAmount = amount1 + amount2 + amount3
@@ -733,7 +732,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive normal single HTLC, with amount-less invoice`() = runSuspendTest {
+    fun `receive normal single HTLC with amount-less invoice`() = runSuspendTest {
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(invoiceAmount = null)
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
@@ -744,7 +743,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment, with amount-less invoice`() = runSuspendTest {
+    fun `receive multipart payment with amount-less invoice`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
         val totalAmount = amount1 + amount2
@@ -776,7 +775,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive multipart payment, with amount greater than total amount`() = runSuspendTest {
+    fun `receive multipart payment with amount greater than total amount`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2, amount3) = listOf(100_000.msat, 60_000.msat, 40_000.msat)
         val requestedAmount = 180_000.msat

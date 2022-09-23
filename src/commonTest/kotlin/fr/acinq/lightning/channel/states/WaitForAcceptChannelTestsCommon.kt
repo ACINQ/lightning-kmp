@@ -30,7 +30,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (zero conf)`() {
+    fun `recv AcceptChannel -- zero conf`() {
         val (alice, _, accept) = init(
             channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve,
             aliceFeatures = TestConstants.Alice.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Optional),
@@ -46,7 +46,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (zero reserve)`() {
+    fun `recv AcceptChannel -- zero reserve`() {
         val (alice, _, accept) = init(
             bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroReserveChannels to FeatureSupport.Optional),
         )
@@ -60,7 +60,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (missing channel type)`() {
+    fun `recv AcceptChannel -- missing channel type`() {
         val (alice, _, accept) = init()
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(tlvStream = TlvStream(listOf()))))
         assertTrue(alice1 is Aborted)
@@ -69,7 +69,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (invalid channel type)`() {
+    fun `recv AcceptChannel -- invalid channel type`() {
         val (alice, _, accept) = init()
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.Standard))))))
         assertTrue(alice1 is Aborted)
@@ -78,7 +78,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (invalid max accepted htlcs)`() {
+    fun `recv AcceptChannel -- invalid max accepted htlcs`() {
         val (alice, _, accept) = init()
         // spec says max = 483
         val invalidMaxAcceptedHtlcs = 484
@@ -89,7 +89,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (dust limit too low)`() {
+    fun `recv AcceptChannel -- dust limit too low`() {
         val (alice, _, accept) = init()
         // we don't want their dust limit to be below 354
         val lowDustLimitSatoshis = 353.sat
@@ -102,7 +102,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (dust limit too high)`() {
+    fun `recv AcceptChannel -- dust limit too high`() {
         val (alice, _, accept) = init()
         // we don't want their dust limit to be too high
         val highDustLimitSatoshis = 2000.sat
@@ -113,7 +113,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (to_self_delay too high)`() {
+    fun `recv AcceptChannel -- to_self_delay too high`() {
         val (alice, _, accept) = init()
         val delayTooHigh = CltvExpiryDelta(10_000)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(toSelfDelay = delayTooHigh)))
@@ -123,7 +123,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (reserve too high)`() {
+    fun `recv AcceptChannel -- reserve too high`() {
         val (alice, _, accept) = init()
         // 30% is huge, recommended ratio is 1%
         val reserveTooHigh = TestConstants.fundingAmount * 0.3
@@ -134,7 +134,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (reserve below dust limit)`() {
+    fun `recv AcceptChannel -- reserve below dust limit`() {
         val (alice, _, accept) = init()
         val reserveTooSmall = accept.dustLimitSatoshis - 1.sat
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(channelReserveSatoshis = reserveTooSmall)))
@@ -144,7 +144,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (reserve below our dust limit)`() {
+    fun `recv AcceptChannel -- reserve below our dust limit`() {
         val (alice, _, accept) = init()
         val open = alice.lastSent
         val reserveTooSmall = open.dustLimitSatoshis - 1.sat
@@ -155,7 +155,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel (dust limit above our reserve)`() {
+    fun `recv AcceptChannel -- dust limit above our reserve`() {
         val (alice, _, accept) = init()
         val open = alice.lastSent
         val dustTooBig = open.channelReserveSatoshis + 1.sat
