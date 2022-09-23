@@ -14,6 +14,7 @@ import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import org.kodein.log.LoggerFactory
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -23,7 +24,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
 
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
         val client =
-            ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
+            ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
 
         client.connectionState.first { it is Connection.CLOSED }
         client.connectionState.first { it is Connection.ESTABLISHING }
@@ -38,7 +39,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     @Test
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
         wallet.addWatchOnlyAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
@@ -54,7 +55,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     @Test
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
         wallet.addWatchOnlyAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
@@ -70,7 +71,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     @Test
     fun `multiple addresses`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", randomKey())
         wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV", randomKey())
