@@ -6,6 +6,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.Watch
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEvent
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
@@ -29,8 +30,9 @@ import org.kodein.log.newLogger
 /** Channel Events (inputs to be fed to the state machine). */
 sealed class ChannelEvent {
     data class InitInitiator(
-        val fundingInputs: FundingInputs,
+        val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
+        val wallet: WalletState,
         val commitTxFeerate: FeeratePerKw,
         val fundingTxFeerate: FeeratePerKw,
         val localParams: LocalParams,
@@ -41,18 +43,16 @@ sealed class ChannelEvent {
         val channelOrigin: ChannelOrigin? = null
     ) : ChannelEvent() {
         val temporaryChannelId: ByteVector32 = localParams.channelKeys.temporaryChannelId
-        val fundingAmount: Satoshi = fundingInputs.fundingAmount
     }
 
     data class InitNonInitiator(
         val temporaryChannelId: ByteVector32,
-        val fundingInputs: FundingInputs,
+        val fundingAmount: Satoshi,
+        val wallet: WalletState,
         val localParams: LocalParams,
         val channelConfig: ChannelConfig,
         val remoteInit: Init
-    ) : ChannelEvent() {
-        val fundingAmount: Satoshi = fundingInputs.fundingAmount
-    }
+    ) : ChannelEvent()
 
     data class Restore(val state: ChannelState) : ChannelEvent()
     object CheckHtlcTimeout : ChannelEvent()

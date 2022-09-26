@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
@@ -16,8 +17,8 @@ data class WaitForFundingCreated(
     override val currentOnChainFeerates: OnChainFeerates,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
+    val wallet: WalletState,
     val interactiveTxSession: InteractiveTxSession,
-    val fundingPrivateKeys: List<PrivateKey>,
     val pushAmount: MilliSatoshi,
     val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
@@ -63,10 +64,10 @@ data class WaitForFundingCreated(
                                     currentOnChainFeerates,
                                     localParams,
                                     remoteParams,
+                                    wallet,
                                     interactiveTxSession1.fundingParams,
                                     pushAmount,
                                     interactiveTxAction.sharedTx,
-                                    fundingPrivateKeys,
                                     firstCommitTx,
                                     remoteFirstPerCommitmentPoint,
                                     channelFlags,

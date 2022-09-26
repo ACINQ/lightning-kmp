@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Feature
@@ -12,6 +11,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
@@ -22,10 +22,10 @@ data class WaitForFundingSigned(
     override val currentOnChainFeerates: OnChainFeerates,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
+    val wallet: WalletState,
     val fundingParams: InteractiveTxParams,
     val pushAmount: MilliSatoshi,
     val fundingTx: SharedTransaction,
-    val fundingPrivateKeys: List<PrivateKey>,
     val firstCommitTx: Helpers.Funding.FirstCommitTx,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
@@ -40,7 +40,7 @@ data class WaitForFundingSigned(
             event is ChannelEvent.MessageReceived && event.message is CommitSig -> {
                 val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                     keyManager, localParams, remoteParams,
-                    fundingTx, fundingPrivateKeys,
+                    fundingTx, wallet,
                     firstCommitTx, event.message,
                     channelConfig, channelFeatures, channelFlags, remoteFirstPerCommitmentPoint
                 )
@@ -79,11 +79,11 @@ data class WaitForFundingSigned(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
+                                wallet,
                                 fundingParams,
                                 pushAmount,
                                 signedFundingTx,
                                 listOf(),
-                                fundingPrivateKeys,
                                 currentBlockHeight.toLong(),
                                 null
                             )

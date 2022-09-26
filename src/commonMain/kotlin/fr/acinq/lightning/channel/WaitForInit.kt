@@ -16,7 +16,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.InitNonInitiator -> {
-                val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.fundingInputs, event.localParams, event.channelConfig, event.remoteInit)
+                val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.fundingAmount, event.wallet, event.localParams, event.channelConfig, event.remoteInit)
                 Pair(nextState, listOf())
             }
             event is ChannelEvent.InitInitiator && isValidChannelType(event.channelType) -> {
@@ -25,7 +25,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     temporaryChannelId = event.temporaryChannelId,
                     fundingFeerate = event.fundingTxFeerate,
                     commitmentFeerate = event.commitTxFeerate,
-                    fundingAmount = event.fundingInputs.fundingAmount,
+                    fundingAmount = event.fundingAmount,
                     dustLimit = event.localParams.dustLimit,
                     maxHtlcValueInFlightMsat = event.localParams.maxHtlcValueInFlightMsat,
                     htlcMinimum = event.localParams.htlcMinimum,

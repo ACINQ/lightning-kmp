@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_OUTPUT_SPENT
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
@@ -342,7 +343,7 @@ object Helpers {
             localParams: LocalParams,
             remoteParams: RemoteParams,
             fundingTx: SharedTransaction,
-            fundingPrivateKeys: List<PrivateKey>,
+            wallet: WalletState,
             firstCommitTx: FirstCommitTx,
             remoteCommit: CommitSig,
             channelConfig: ChannelConfig,
@@ -368,7 +369,7 @@ object Helpers {
                         remoteNextCommitInfo = Either.Right(Lightning.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                         commitInput, ShaChain.init, remoteCommit.channelId, remoteCommit.channelData
                     )
-                    when (val signedFundingTx = fundingTx.sign(remoteCommit.channelId, fundingPrivateKeys)) {
+                    when (val signedFundingTx = fundingTx.sign(remoteCommit.channelId, wallet)) {
                         null -> FundingSigFailure
                         else -> FirstCommitments(signedFundingTx, commitments)
                     }

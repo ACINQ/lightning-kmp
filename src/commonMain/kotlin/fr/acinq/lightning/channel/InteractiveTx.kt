@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
@@ -54,7 +55,7 @@ sealed class FundingContributionFailure {
 data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<TxAddOutput>) {
     companion object {
         /** Create funding contributions from p2wpkh inputs, with an optional p2wpkh change output. */
-        fun create(params: InteractiveTxParams, utxos: List<FundingInput>, changePubKey: PublicKey? = null): Either<FundingContributionFailure, FundingContributions> {
+        fun create(params: InteractiveTxParams, utxos: List<WalletState.Utxo>, changePubKey: PublicKey? = null): Either<FundingContributionFailure, FundingContributions> {
             utxos.forEach { (tx, txOutput) ->
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
                 if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
@@ -68,7 +69,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
 
             // We compute the fees that we should pay in the shared transaction.
             val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
-            val dummySignedTxIn = utxos.map { TxIn(it.outpoint, ByteVector.empty, 0, dummyWitness) }
+            val dummySignedTxIn = utxos.map { TxIn(it.outPoint, ByteVector.empty, 0, dummyWitness) }
             val dummyChangeTxOut = TxOut(params.localAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
             val sharedTxOut = TxOut(params.fundingAmount, params.fundingPubkeyScript)
             val (weightWithoutChange, weightWithChange) = when (params.isInitiator) {
@@ -150,28 +151,17 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
         return Transaction(2, inputs, outputs, lockTime)
     }
 
-    fun sign(channelId: ByteVector32, privKeys: List<PrivateKey>): PartiallySignedSharedTransaction? {
+    fun sign(channelId: ByteVector32, wallet: WalletState): PartiallySignedSharedTransaction? {
         val unsignedTx = buildUnsignedTx()
         val localSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
-            when (val input = localInputs.find { txIn.outPoint == OutPoint(it.previousTx, it.previousTxOutput) }) {
+            when (localInputs.find { txIn.outPoint == OutPoint(it.previousTx, it.previousTxOutput) }) {
                 null -> null
-                else -> {
-                    // This input belongs to us, let's see if we have the corresponding private key.
-                    val txOut = input.previousTx.txOut[input.previousTxOutput.toInt()]
-                    when (val priv = privKeys.find { txOut.publicKeyScript == Script.write(Script.pay2wpkh(it.publicKey())).byteVector() }) {
-                        null -> null
-                        else -> {
-                            // We have the private key, let's sign this input.
-                            val sig = Transaction.signInput(unsignedTx, i, Script.pay2pkh(priv.publicKey()), SigHash.SIGHASH_ALL, txOut.amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-                            Script.witnessPay2wpkh(priv.publicKey(), sig.byteVector())
-                        }
-                    }
-                }
+                else -> wallet.signInput(unsignedTx, i).second
             }
         }.filterNotNull()
         return when (localSigs.size) {
             localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx.txid, localSigs))
-            else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of private keys.
+            else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of utxos.
         }
     }
 }

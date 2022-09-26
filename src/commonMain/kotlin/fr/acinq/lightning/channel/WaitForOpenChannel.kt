@@ -1,11 +1,9 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.transactions.Scripts
@@ -17,7 +15,8 @@ data class WaitForOpenChannel(
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     val temporaryChannelId: ByteVector32,
-    val fundingInputs: FundingInputs,
+    val fundingAmount: Satoshi,
+    val wallet: WalletState,
     val localParams: LocalParams,
     val channelConfig: ChannelConfig,
     val remoteInit: Init
@@ -35,7 +34,7 @@ data class WaitForOpenChannel(
                                 val minimumDepth = if (channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val accept = AcceptDualFundedChannel(
                                     temporaryChannelId = open.temporaryChannelId,
-                                    fundingAmount = fundingInputs.fundingAmount,
+                                    fundingAmount = fundingAmount,
                                     dustLimit = localParams.dustLimit,
                                     maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
                                     htlcMinimum = localParams.htlcMinimum,
@@ -69,8 +68,8 @@ data class WaitForOpenChannel(
                                 val localFundingPubkey = localParams.channelKeys.fundingPubKey
                                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                                 val dustLimit = open.dustLimit.max(localParams.dustLimit)
-                                val fundingParams = InteractiveTxParams(channelId, false, fundingInputs.fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
-                                when (val fundingContributions = FundingContributions.create(fundingParams, fundingInputs.inputs)) {
+                                val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
+                                when (val fundingContributions = FundingContributions.create(fundingParams, wallet.spendable())) {
                                     is Either.Left -> {
                                         logger.error { "c:$temporaryChannelId could not fund channel: ${fundingContributions.value}" }
                                         Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
@@ -83,8 +82,8 @@ data class WaitForOpenChannel(
                                             currentOnChainFeerates,
                                             localParams,
                                             remoteParams,
+                                            wallet,
                                             interactiveTxSession,
-                                            fundingInputs.privateKeys,
                                             open.pushAmount,
                                             open.commitmentFeerate,
                                             open.firstPerCommitmentPoint,

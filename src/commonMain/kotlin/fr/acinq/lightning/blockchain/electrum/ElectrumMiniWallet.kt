@@ -5,7 +5,10 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -30,37 +33,38 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privat
     private val outPoint2Address = addresses.entries.flatMap { entry -> entry.value.map { it.outPoint to entry.key } }.toMap()
 
     /** Sign the inputs owned by this wallet (only works for P2WPKH scripts) */
-    fun sign(tx: Transaction): Transaction {
-        return tx.txIn.foldIndexed(tx) { index, wipTx, txIn ->
-            val witness = outPoint2Address[txIn.outPoint]?.let { address ->
-                addresses[address]?.find { it.outPoint == txIn.outPoint }?.let { utxo ->
-                    privateKeys[address]?.let { privateKey ->
-                        // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
-                        // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
-                        val publicKey = privateKey.publicKey()
-                        val pubKeyScript = Script.pay2pkh(publicKey)
-                        val sig = Transaction.signInput(
-                            tx,
-                            index,
-                            pubKeyScript,
-                            SigHash.SIGHASH_ALL,
-                            utxo.value.sat,
-                            SigVersion.SIGVERSION_WITNESS_V0,
-                            privateKey
-                        )
-                        Script.witnessPay2wpkh(publicKey, sig.byteVector())
-                    }
+    fun sign(tx: Transaction): Transaction = tx.txIn.foldIndexed(tx) { index, wipTx, _ -> signInput(wipTx, index).first }
+
+    fun signInput(tx: Transaction, index: Int): Pair<Transaction, ScriptWitness?> {
+        val txIn = tx.txIn[index]
+        val witness = outPoint2Address[txIn.outPoint]?.let { address ->
+            addresses[address]?.find { it.outPoint == txIn.outPoint }?.let { utxo ->
+                privateKeys[address]?.let { privateKey ->
+                    // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
+                    // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
+                    val publicKey = privateKey.publicKey()
+                    val pubKeyScript = Script.pay2pkh(publicKey)
+                    val sig = Transaction.signInput(
+                        tx,
+                        index,
+                        pubKeyScript,
+                        SigHash.SIGHASH_ALL,
+                        utxo.value.sat,
+                        SigVersion.SIGVERSION_WITNESS_V0,
+                        privateKey
+                    )
+                    Script.witnessPay2wpkh(publicKey, sig.byteVector())
                 }
             }
-            when (witness) {
-                is ScriptWitness ->
-                    // update the signature for the corresponding input
-                    wipTx.updateWitness(index, witness)
-                else ->
-                    // we don't know how to sign this input
-                    wipTx
-            }
         }
+        return when (witness) {
+            is ScriptWitness -> Pair(tx.updateWitness(index, witness), witness)
+            else -> Pair(tx, null)
+        }
+    }
+
+    companion object {
+        val empty: WalletState = WalletState(mapOf(), mapOf(), mapOf())
     }
 }
 
@@ -71,7 +75,6 @@ private sealed interface WalletCommand {
         data class AddAddress(val bitcoinAddress: String, val privateKey: PrivateKey?) : WalletCommand
     }
 }
-
 
 /**
  * A very simple wallet that only watches one address and publishes its utxos.

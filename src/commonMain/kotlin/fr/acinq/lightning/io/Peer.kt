@@ -34,9 +34,19 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerEvent
+
+data class OpenChannel(
+    val fundingAmount: Satoshi,
+    val pushAmount: MilliSatoshi,
+    val wallet: WalletState,
+    val commitTxFeerate: FeeratePerKw,
+    val fundingTxFeerate: FeeratePerKw,
+    val channelFlags: Byte,
+    val channelType: ChannelType.SupportedChannelType
+) : PeerEvent()
+
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
-data class OpenChannel(val fundingInputs: FundingInputs, val pushAmount: MilliSatoshi, val commitTxFeerate: FeeratePerKw, val fundingTxFeerate: FeeratePerKw, val channelFlags: Byte, val channelType: ChannelType.SupportedChannelType) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 object Disconnected : PeerEvent()
 
@@ -610,7 +620,7 @@ class Peer(
                         )
                         val channelConfig = ChannelConfig.standard
                         // We currently don't add any inputs to the funding transaction.
-                        val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, FundingInputs.empty, localParams, channelConfig, theirInit!!))
+                        val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, 0.sat, WalletState.empty, localParams, channelConfig, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
                         _channels = _channels + (msg.temporaryChannelId to state2)
                         processActions(msg.temporaryChannelId, actions1 + actions2)
@@ -745,8 +755,9 @@ class Peer(
                 )
                 val (state1, actions1) = state.process(
                     ChannelEvent.InitInitiator(
-                        event.fundingInputs,
+                        event.fundingAmount,
                         event.pushAmount,
+                        event.wallet,
                         event.commitTxFeerate,
                         event.fundingTxFeerate,
                         localParams,

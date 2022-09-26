@@ -7,6 +7,8 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.electrum.UnspentItem
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.processEx
@@ -445,9 +447,15 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertIs<FullySignedSharedTransaction>(fundingTx)
             // Alice adds a new input that increases her contribution and covers the additional fees.
             val command = run {
-                val txOut = fundingTx.tx.localInputs.firstOrNull()?.let { it.previousTx.txOut[it.previousTxOutput.toInt()].copy(amount = 30_000.sat) }!!
-                val nextInput = FundingInput(Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(txOut), 0), 0)
-                CMD_BUMP_FUNDING_FEE(fundingTx.feerate * 1.1, nextInput, 20_000.sat, fundingTx.tx.lockTime + 1)
+                val priv = randomKey()
+                val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, Script.pay2wpkh(priv.publicKey()))), 0)
+                val address = Bitcoin.computeP2WpkhAddress(priv.publicKey(), Block.RegtestGenesisBlock.hash)
+                val wallet = WalletState(
+                    alice0.wallet.addresses + (address to listOf(UnspentItem(parentTx.txid, 0, 30_000, 0))),
+                    alice0.wallet.privateKeys + (address to priv),
+                    alice0.wallet.parentTxs + (parentTx.txid to parentTx),
+                )
+                CMD_BUMP_FUNDING_FEE(fundingTx.feerate * 1.1, alice0.fundingParams.localAmount + 20_000.sat, wallet, fundingTx.tx.lockTime + 1)
             }
             val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(command))
             assertEquals(actionsAlice1.size, 1)

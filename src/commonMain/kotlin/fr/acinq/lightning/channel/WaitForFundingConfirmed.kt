@@ -1,10 +1,10 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
@@ -14,11 +14,11 @@ data class WaitForFundingConfirmed(
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
+    val wallet: WalletState,
     val fundingParams: InteractiveTxParams,
     val pushAmount: MilliSatoshi,
     val fundingTx: SignedSharedTransaction,
     val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
-    val fundingPrivateKeys: List<PrivateKey>,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
     // We can have at most one ongoing RBF attempt.
@@ -86,7 +86,7 @@ data class WaitForFundingConfirmed(
                                 fundingParams.dustLimit,
                                 event.message.feerate
                             )
-                            when (val contributions = FundingContributions.create(fundingParams, fundingTx.tx.localInputs.map { FundingInput(it.previousTx, it.previousTxOutput.toInt()) })) {
+                            when (val contributions = FundingContributions.create(fundingParams, wallet.spendable())) {
                                 is Either.Left -> {
                                     logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
                                     Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -107,15 +107,14 @@ data class WaitForFundingConfirmed(
                     val fundingParams = InteractiveTxParams(
                         channelId,
                         isInitiator,
-                        fundingParams.localAmount + rbfStatus.command.additionalFunding,
+                        rbfStatus.command.fundingAmount,
                         event.message.fundingContribution,
                         fundingParams.fundingPubkeyScript,
                         rbfStatus.command.lockTime,
                         fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    val fundingInputs = fundingTx.tx.localInputs.map { FundingInput(it.previousTx, it.previousTxOutput.toInt()) } + listOf(rbfStatus.command.additionalInput)
-                    when (val contributions = FundingContributions.create(fundingParams, fundingInputs)) {
+                    when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.spendable())) {
                         is Either.Left -> {
                             logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
                             Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -124,7 +123,7 @@ data class WaitForFundingConfirmed(
                             val (session, action) = InteractiveTxSession(fundingParams, contributions.value, previousFundingTxs.map { it.first }).send()
                             when (action) {
                                 is InteractiveTxSessionAction.SendMessage -> {
-                                    val nextState = this.copy(rbfStatus = RbfStatus.InProgress(session))
+                                    val nextState = this.copy(rbfStatus = RbfStatus.InProgress(session), wallet = rbfStatus.command.wallet)
                                     Pair(nextState, listOf(ChannelAction.Message.Send(action.msg)))
                                 }
                                 else -> {
@@ -191,7 +190,7 @@ data class WaitForFundingConfirmed(
                 is RbfStatus.WaitForCommitSig -> {
                     val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                         keyManager, commitments.localParams, commitments.remoteParams,
-                        rbfStatus.fundingTx, fundingPrivateKeys,
+                        rbfStatus.fundingTx, wallet,
                         rbfStatus.commitTx, event.message,
                         commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags, commitments.remoteCommit.remotePerCommitmentPoint
                     )
@@ -213,11 +212,11 @@ data class WaitForFundingConfirmed(
                             val nextState = WaitForFundingConfirmed(
                                 staticParams, currentTip, currentOnChainFeerates,
                                 commitments1,
+                                wallet,
                                 rbfStatus.fundingParams,
                                 pushAmount,
                                 signedFundingTx,
                                 listOf(Pair(fundingTx, commitments)) + previousFundingTxs,
-                                fundingPrivateKeys,
                                 waitingSinceBlock,
                                 deferred,
                                 RbfStatus.None
@@ -293,7 +292,7 @@ data class WaitForFundingConfirmed(
                 }
                 else -> {
                     logger.info { "c:$channelId initiating rbf (current feerate = ${fundingParams.targetFeerate}, next feerate = ${event.command.targetFeerate})" }
-                    val txInitRbf = TxInitRbf(channelId, event.command.lockTime, event.command.targetFeerate, fundingParams.localAmount + event.command.additionalFunding)
+                    val txInitRbf = TxInitRbf(channelId, event.command.lockTime, event.command.targetFeerate, event.command.fundingAmount)
                     Pair(this.copy(rbfStatus = RbfStatus.RbfRequested(event.command)), listOf(ChannelAction.Message.Send(txInitRbf)))
                 }
             }

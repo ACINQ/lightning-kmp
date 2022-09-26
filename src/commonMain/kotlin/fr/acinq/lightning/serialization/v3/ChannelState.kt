@@ -517,17 +517,21 @@ data class WaitForFundingCreated(
 }
 
 @Serializable
-data class FundingInput(@Serializable(with = TransactionKSerializer::class) val previousTx: Transaction, val outputIndex: Int) {
-    constructor(from: fr.acinq.lightning.channel.FundingInput) : this(from.previousTx, from.outputIndex)
+data class UnspentItem(@Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, val outputIndex: Int, val value: Long, val blockHeight: Long) {
+    constructor(from: fr.acinq.lightning.blockchain.electrum.UnspentItem) : this(from.txid, from.outputIndex, from.value, from.blockHeight)
+
+    fun export() = fr.acinq.lightning.blockchain.electrum.UnspentItem(txid, outputIndex, value, blockHeight)
 }
 
 @Serializable
-data class FundingInputs(
-    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
-    val inputs: List<FundingInput>,
-    val privateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>
+data class WalletState(
+    val addresses: Map<String, List<UnspentItem>>,
+    val privateKeys: Map<String, @Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
+    val parentTxs: Map<@Serializable(with = ByteVector32KSerializer::class) ByteVector32, @Serializable(with = TransactionKSerializer::class) Transaction>
 ) {
-    constructor(from: fr.acinq.lightning.channel.FundingInputs) : this(from.fundingAmount, from.inputs.map { FundingInput(it) }, from.privateKeys)
+    constructor(from: fr.acinq.lightning.blockchain.electrum.WalletState) : this(from.addresses.mapValues { it.value.map { item -> UnspentItem(item) } }, from.privateKeys, from.parentTxs)
+
+    fun export() = fr.acinq.lightning.blockchain.electrum.WalletState(addresses.mapValues { it.value.map { item -> item.export() } }, privateKeys, parentTxs)
 }
 
 @Serializable
@@ -557,8 +561,9 @@ data class InteractiveTxParams(
 
 @Serializable
 data class InitInitiator(
-    val fundingInputs: FundingInputs,
+    @Serializable(with = SatoshiKSerializer::class) val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
+    val wallet: WalletState,
     val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
     val localParams: LocalParams,
@@ -568,8 +573,9 @@ data class InitInitiator(
     val channelType: ChannelType,
 ) {
     constructor(from: fr.acinq.lightning.channel.ChannelEvent.InitInitiator) : this(
-        FundingInputs(from.fundingInputs),
+        from.fundingAmount,
         from.pushAmount,
+        WalletState(from.wallet),
         from.commitTxFeerate,
         from.fundingTxFeerate,
         LocalParams(from.localParams),
@@ -726,11 +732,11 @@ data class WaitForFundingConfirmed2(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
+    val wallet: WalletState,
     val fundingParams: InteractiveTxParams,
     val pushAmount: MilliSatoshi,
     val fundingTx: SignedSharedTransaction,
     val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
-    val fundingPrivateKeys: List<@Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
     val waitingSinceBlock: Long,
     val deferred: FundingLocked?,
 ) : ChannelStateWithCommitments() {
@@ -739,11 +745,11 @@ data class WaitForFundingConfirmed2(
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
         Commitments(from.commitments),
+        WalletState(from.wallet),
         InteractiveTxParams(from.fundingParams),
         from.pushAmount,
         SignedSharedTransaction.import(from.fundingTx),
         from.previousFundingTxs.map { Pair(SignedSharedTransaction.import(it.first), Commitments(it.second)) },
-        from.fundingPrivateKeys,
         from.waitingSinceBlock,
         from.deferred,
     )
@@ -753,11 +759,11 @@ data class WaitForFundingConfirmed2(
         currentTip,
         currentOnChainFeerates.export(),
         commitments.export(nodeParams),
+        wallet.export(),
         fundingParams.export(),
         pushAmount,
         fundingTx.export(),
         previousFundingTxs.map { Pair(it.first.export(), it.second.export(nodeParams)) },
-        fundingPrivateKeys,
         waitingSinceBlock,
         deferred,
     )

@@ -5,6 +5,8 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.electrum.UnspentItem
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.WaitForFundingLockedTestsCommon
@@ -99,8 +101,9 @@ object TestsHelper {
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
         val (alice1, actionsAlice1) = alice.process(
             ChannelEvent.InitInitiator(
-                createFunding(aliceFundingAmount, 3500.sat),
+                aliceFundingAmount,
                 pushAmount,
+                createWallet(aliceFundingAmount + 3500.sat),
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -112,8 +115,8 @@ object TestsHelper {
             )
         )
         assertIs<WaitForAcceptChannel>(alice1)
-        val bobFunding = if (bobFundingAmount > 0.sat) createFunding(bobFundingAmount, 1500.sat) else FundingInputs.empty
-        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFunding, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobFundingAmount + 1500.sat) else WalletState.empty
+        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<WaitForOpenChannel>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -289,10 +292,11 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun createFunding(fundingAmount: Satoshi, fees: Satoshi): FundingInputs {
+    fun createWallet(amount: Satoshi): WalletState {
         val privKey = randomKey()
-        val previousTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(fundingAmount + fees, Script.pay2wpkh(privKey.publicKey()))), 0)
-        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0)), listOf(privKey))
+        val address = Bitcoin.computeP2WpkhAddress(privKey.publicKey(), Block.RegtestGenesisBlock.hash)
+        val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, Script.pay2wpkh(privKey.publicKey()))), 0)
+        return WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 0))), mapOf(address to privKey), mapOf(parentTx.txid to parentTx))
     }
 
     fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {
