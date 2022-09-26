@@ -205,7 +205,7 @@ internal data class WatcherRunning(
                                     .forEach { w ->
                                         if (item.blockHeight > 0) {
                                             val confirmations = height - item.blockHeight + 1
-                                            logger.info { "txid=${w.txId} was confirmed at height=${item.blockHeight} and now has confirmations=$confirmations (currentHeight=$height)" }
+                                            logger.info { "txid=${w.txId} was confirmed at blockHeight=${item.blockHeight} and now has confirmations=$confirmations (currentHeight=$height)" }
                                             if (confirmations >= w.minDepth) {
                                                 // we need to get the tx position in the block
                                                 getMerkleList.add(AskForMerkle(w.txId, item.blockHeight, tx))

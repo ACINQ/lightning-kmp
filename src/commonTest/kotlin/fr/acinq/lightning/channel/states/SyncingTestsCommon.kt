@@ -82,7 +82,7 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `watch unconfirmed funding tx (with previous funding txs)`() {
+    fun `watch unconfirmed funding tx with previous funding txs`() {
         val (alice, bob, txSigs) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigs)
         val fundingTxId1 = alice.commitments.fundingTxId
@@ -120,7 +120,7 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK (previous funding tx)`() {
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
         val (alice, bob, txSigs) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigs)
         val previousFundingTx = alice1.previousFundingTxs.first().first.signedTx!!

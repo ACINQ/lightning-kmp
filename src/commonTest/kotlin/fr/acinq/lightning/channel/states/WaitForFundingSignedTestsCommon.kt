@@ -46,7 +46,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (zero conf)`() {
+    fun `recv CommitSig -- zero conf`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
@@ -69,7 +69,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (with channel origin)`() {
+    fun `recv CommitSig -- with channel origin`() {
         val channelOrigin = ChannelOrigin.PayToOpenOrigin(randomBytes32(), 42.sat)
         val (_, commitSigAlice, bob, _) = init(pushAmount = TestConstants.pushAmount, channelOrigin = channelOrigin)
         val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
@@ -82,7 +82,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig (with invalid signature)`() {
+    fun `recv CommitSig -- with invalid signature`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob.copy(signature = ByteVector64.Zeroes)))

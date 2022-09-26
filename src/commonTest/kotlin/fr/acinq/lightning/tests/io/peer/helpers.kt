@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 
-suspend inline fun <reified LNMessage : LightningMessage> Flow<LightningMessage>.expect(): LightningMessage = first { it is LNMessage }
+suspend inline fun <reified M : LightningMessage> Flow<LightningMessage>.expect(): M = first { it is M } as M
 
 suspend inline fun Peer.forward(message: LightningMessage) = send((BytesReceived(LightningMessage.encode(message))))
 

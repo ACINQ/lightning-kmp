@@ -108,7 +108,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK (rbf in progress)`() {
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- rbf in progress`() {
         val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (_, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
@@ -127,7 +127,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK (previous funding tx)`() {
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
         val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTxId1 = alice.commitments.fundingTxId
         val (alice1, bob1) = rbf(alice, bob, txSigsBob)
@@ -152,7 +152,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK (after restart)`() {
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
         run {
@@ -182,7 +182,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK (after restart, previous funding tx)`() {
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart -- previous funding tx`() {
         val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = rbf(alice, bob, txSigsBob)
         val fundingTx1 = alice1.previousFundingTxs.first().first.signedTx!!
@@ -226,7 +226,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv TxInitRbf (invalid feerate)`() {
+    fun `recv TxInitRbf -- invalid feerate`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw, alice.fundingParams.localAmount)))
         assertEquals(bob1, bob)
@@ -235,7 +235,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv TxInitRbf (failed rbf attempt)`() {
+    fun `recv TxInitRbf -- failed rbf attempt`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw * 1.25, alice.fundingParams.localAmount)))
         assertIs<WaitForFundingConfirmed>(bob1)
@@ -292,7 +292,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Error (previous funding tx confirms)`() {
+    fun `recv Error -- previous funding tx confirms`() {
         val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val commitTxAlice1 = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val commitTxBob1 = bob.commitments.localCommit.publishableTxs.commitTx.tx

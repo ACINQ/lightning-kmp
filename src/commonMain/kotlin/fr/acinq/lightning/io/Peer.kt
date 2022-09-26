@@ -36,6 +36,7 @@ import kotlin.time.Duration.Companion.seconds
 sealed class PeerEvent
 data class BytesReceived(val data: ByteArray) : PeerEvent()
 data class WatchReceived(val watch: WatchEvent) : PeerEvent()
+data class OpenChannel(val fundingInputs: FundingInputs, val pushAmount: MilliSatoshi, val commitTxFeerate: FeeratePerKw, val fundingTxFeerate: FeeratePerKw, val channelFlags: Byte, val channelType: ChannelType.SupportedChannelType) : PeerEvent()
 data class WrappedChannelEvent(val channelId: ByteVector32, val channelEvent: ChannelEvent) : PeerEvent()
 object Disconnected : PeerEvent()
 
@@ -464,7 +465,7 @@ class Peer(
                 action is ChannelAction.ChannelId.IdAssigned -> {
                     logger.info { "n:$remoteNodeId c:$actualChannelId switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
                     actualChannelId = action.channelId
-                    _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) }
+                    _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                 }
                 action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
                 else -> logger.warning { "n:$remoteNodeId c:$actualChannelId unhandled action: ${action::class}" }
@@ -611,8 +612,8 @@ class Peer(
                         // We currently don't add any inputs to the funding transaction.
                         val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, FundingInputs.empty, localParams, channelConfig, theirInit!!))
                         val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
-                        processActions(msg.temporaryChannelId, actions1 + actions2)
                         _channels = _channels + (msg.temporaryChannelId to state2)
+                        processActions(msg.temporaryChannelId, actions1 + actions2)
                         logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state2::class}" }
                     }
                     msg is ChannelReestablish && !_channels.containsKey(msg.channelId) -> {
@@ -653,12 +654,9 @@ class Peer(
                         val state = _channels[msg.temporaryChannelId] ?: error("channel ${msg.temporaryChannelId} not found")
                         val event1 = ChannelEvent.MessageReceived(msg)
                         val (state1, actions) = state.process(event1)
-                        processActions(msg.temporaryChannelId, actions)
                         _channels = _channels + (msg.temporaryChannelId to state1)
+                        processActions(msg.temporaryChannelId, actions)
                         logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state1::class}" }
-                        actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().forEach {
-                            _channels = _channels - it.temporaryChannelId + (it.channelId to state1)
-                        }
                     }
                     msg is HasChannelId && !_channels.containsKey(msg.channelId) -> {
                         logger.error { "n:$remoteNodeId received ${msg::class} for unknown channel ${msg.channelId}" }
@@ -723,6 +721,45 @@ class Peer(
                 processActions(event.watch.channelId, actions)
                 _channels = _channels + (event.watch.channelId to state1)
                 logger.info { "n:$remoteNodeId c:${event.watch.channelId} new state: ${state1::class}" }
+            }
+            event is OpenChannel -> {
+                val fundingKeyPath = randomKeyPath(4)
+                val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
+                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
+                val localParams = LocalParams(
+                    nodeParams.nodeId,
+                    nodeParams.keyManager.channelKeys(fundingKeyPath),
+                    nodeParams.dustLimit,
+                    nodeParams.maxHtlcValueInFlightMsat,
+                    nodeParams.htlcMinimum,
+                    nodeParams.toRemoteDelayBlocks,
+                    nodeParams.maxAcceptedHtlcs,
+                    true,
+                    closingPubkeyScript.toByteVector(),
+                    features
+                )
+                val state = WaitForInit(
+                    StaticParams(nodeParams, remoteNodeId),
+                    currentTipFlow.filterNotNull().first(),
+                    onChainFeeratesFlow.filterNotNull().first()
+                )
+                val (state1, actions1) = state.process(
+                    ChannelEvent.InitInitiator(
+                        event.fundingInputs,
+                        event.pushAmount,
+                        event.commitTxFeerate,
+                        event.fundingTxFeerate,
+                        localParams,
+                        theirInit!!,
+                        event.channelFlags,
+                        ChannelConfig.standard,
+                        event.channelType
+                    )
+                )
+                val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
+                _channels = _channels + (msg.temporaryChannelId to state1)
+                processActions(msg.temporaryChannelId, actions1)
+                logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state1::class}" }
             }
             event is ReceivePayment -> {
                 // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all

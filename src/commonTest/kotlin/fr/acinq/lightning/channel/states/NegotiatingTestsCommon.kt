@@ -322,7 +322,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
             val bobNextFee = (aliceCloseSig.feeSatoshis + 500.sat).max(feeRange.max + 1.sat)
             val (_, bobClosing) = makeLegacyClosingSigned(alice2, bob2, bobNextFee)
             val (aliceNew, actions) = mutableAlice.processEx(ChannelEvent.MessageReceived(bobClosing))
-            aliceCloseSig = actions.findOutgoingMessage<ClosingSigned>()
+            aliceCloseSig = actions.findOutgoingMessage()
             mutableAlice = aliceNew as ChannelStateWithCommitments
         }
 
@@ -465,13 +465,13 @@ class NegotiatingTestsCommon : LightningTestSuite() {
                     val bobCloseSig = actions.findOutgoingMessageOpt<ClosingSigned>()
                     if (bobCloseSig != null) {
                         val (a1, actions2) = a.processEx(ChannelEvent.MessageReceived(bobCloseSig))
-                        return converge(a1, b1, actions2.findOutgoingMessageOpt<ClosingSigned>())
+                        return converge(a1, b1, actions2.findOutgoingMessageOpt())
                     }
                     val bobClosingTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.firstOrNull()
                     if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.localCommit.publishableTxs.commitTx.input.outPoint && a !is Closing) {
                         // Bob just spent the funding tx
                         val (a1, actions2) = a.processEx(ChannelEvent.WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
-                        return converge(a1, b1, actions2.findOutgoingMessageOpt<ClosingSigned>())
+                        return converge(a1, b1, actions2.findOutgoingMessageOpt())
                     }
                     converge(a, b1, null)
                 }

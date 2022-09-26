@@ -21,7 +21,7 @@ import kotlin.test.*
 class WaitForFundingLockedTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `recv TxSignatures (zero conf)`() {
+    fun `recv TxSignatures -- zero conf`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs))
         assertIs<WaitForFundingLocked>(alice1)
@@ -38,7 +38,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv TxSignatures and restart (zero conf)`() {
+    fun `recv TxSignatures and restart -- zero conf`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs))
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
@@ -50,7 +50,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv TxSignatures (duplicate)`() {
+    fun `recv TxSignatures -- duplicate`() {
         val (alice, _, bob, _) = init()
         val (alice1, actions1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs))
         assertEquals(alice1, alice)
@@ -58,7 +58,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv TxSignatures (invalid)`() {
+    fun `recv TxSignatures -- invalid`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs.copy(witnesses = listOf())))
         assertEquals(alice, alice1)

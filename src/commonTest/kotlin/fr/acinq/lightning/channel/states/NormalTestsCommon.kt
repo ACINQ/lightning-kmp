@@ -1880,7 +1880,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertTrue(aliceClosing1 is Closing)
         assertEquals(1, aliceClosing1.revokedCommitPublished.size)
         actions1.hasOutgoingMessage<Error>()
-        assertEquals(ChannelAction.Storage.GetHtlcInfos(revokedTx.txid, 4), actions1.find<ChannelAction.Storage.GetHtlcInfos>())
+        assertEquals(ChannelAction.Storage.GetHtlcInfos(revokedTx.txid, 4), actions1.find())
 
         val (aliceClosing2, actions2) = aliceClosing1.processEx(ChannelEvent.GetHtlcInfosResponse(revokedTx.txid, adds.take(4).map { ChannelAction.Storage.HtlcInfo(alice.channelId, 4, it.paymentHash, it.cltvExpiry) }))
         assertTrue(aliceClosing2 is Closing)

@@ -1,17 +1,17 @@
 package fr.acinq.lightning.io.peer
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.InvoiceDefaultRoutingFees
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeUri
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.BytesReceived
+import fr.acinq.lightning.io.OpenChannel
 import fr.acinq.lightning.io.ReceivePayment
 import fr.acinq.lightning.io.SendPaymentNormal
 import fr.acinq.lightning.payment.PaymentRequest
@@ -26,12 +26,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 
 class PeerTest : LightningTestSuite() {
 
-    fun buildOpenChannel() = OpenDualFundedChannel(
+    private fun buildOpenChannel() = OpenDualFundedChannel(
         Block.RegtestGenesisBlock.hash,
         randomBytes32(),
         TestConstants.feeratePerKw,
@@ -104,6 +105,53 @@ class PeerTest : LightningTestSuite() {
         alice2bob.expect<AcceptDualFundedChannel>()
 
         assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.channelKeys.fundingKeyPath }.toSet().size)
+    }
+
+    @Test
+    fun `open channel`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+
+        val privateKey = randomKey()
+        val fundingInput = FundingInput(Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(300_000.sat, Script.pay2wpkh(privateKey.publicKey()))), 0), 0)
+        val fundingInputs = FundingInputs(250_000.sat, listOf(fundingInput), listOf(privateKey))
+        alice.send(OpenChannel(fundingInputs, 50_000_000.msat, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve))
+
+        val open = alice2bob.expect<OpenDualFundedChannel>()
+        bob.forward(open)
+        val accept = bob2alice.expect<AcceptDualFundedChannel>()
+        assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
+        alice.forward(accept)
+        val txAddInput = alice2bob.expect<TxAddInput>()
+        assertNotEquals(txAddInput.channelId, open.temporaryChannelId) // we now have the final channel_id
+        bob.forward(txAddInput)
+        val txCompleteBob = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob)
+        val txAddOutput = alice2bob.expect<TxAddOutput>()
+        bob.forward(txAddOutput)
+        bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob)
+        val txCompleteAlice = alice2bob.expect<TxComplete>()
+        bob.forward(txCompleteAlice)
+        val commitSigBob = bob2alice.expect<CommitSig>()
+        alice.forward(commitSigBob)
+        val commitSigAlice = alice2bob.expect<CommitSig>()
+        bob.forward(commitSigAlice)
+        val txSigsBob = bob2alice.expect<TxSignatures>()
+        alice.forward(txSigsBob)
+        val fundingLockedAlice = alice2bob.expect<FundingLocked>()
+        val txSigsAlice = alice2bob.expect<TxSignatures>()
+        bob.forward(txSigsAlice)
+        val fundingLockedBob = bob2alice.expect<FundingLocked>()
+        alice.forward(fundingLockedBob)
+        bob.forward(fundingLockedAlice)
+        alice.expectState<Normal>()
+        assertEquals(alice.channels.size, 1)
+        assertTrue(alice.channels.containsKey(txAddInput.channelId))
+        bob.expectState<Normal>()
+        assertEquals(bob.channels.size, 1)
+        assertTrue(bob.channels.containsKey(txAddInput.channelId))
     }
 
     @Test
