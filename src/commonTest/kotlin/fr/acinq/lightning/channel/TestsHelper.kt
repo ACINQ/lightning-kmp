@@ -409,21 +409,11 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments, latestOnly: Boolean = false, saveFiles: Boolean = false) {
-        val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
-        val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
-        val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(state)
-
+    private fun checkSerialization(state: ChannelStateWithCommitments, minVersion: Int = 1, saveFiles: Boolean = false) {
         fun save(blob: ByteArray, suffix: String) {
             val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
             val file: Path = FileSystem.workingDir().resolve(name)
             file.openWriteableFile(false).putBytes(blob)
-        }
-
-        if (saveFiles) {
-            save(serializedv1, "v1")
-            save(serializedv2, "v2")
-            save(serializedv3, "v3")
         }
 
         // Before v3, we had a single set of hard-coded channel features, so they will not match if the test added new channel features that weren't supported then.
@@ -447,23 +437,38 @@ object TestsHelper {
             else -> state
         }
 
-        val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
-        if (!latestOnly) assertEquals(maskChannelFeatures(deserializedv1), removeRbfAttempt(maskChannelFeatures(state)), "serialization error (v1)")
-        val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
-        if (!latestOnly) assertEquals(maskChannelFeatures(deserializedv2), removeRbfAttempt(maskChannelFeatures(state)), "serialization error (v2)")
-        val deserializedv3 = Serialization.deserialize(serializedv3, state.staticParams.nodeParams)
-        assertEquals(deserializedv3, removeRbfAttempt(state), "serialization error (v3)")
+        if (saveFiles) {
+            if (minVersion <= 1) save(fr.acinq.lightning.serialization.v1.Serialization.serialize(state), "v1")
+            if (minVersion <= 2) save(fr.acinq.lightning.serialization.v2.Serialization.serialize(state), "v2")
+            if (minVersion <= 3) save(fr.acinq.lightning.serialization.v3.Serialization.serialize(state), "v3")
+        }
+
+        if (minVersion <= 1) {
+            val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
+            val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
+            assertEquals(maskChannelFeatures(deserializedv1), maskChannelFeatures(state), "serialization error (v1)")
+        }
+        if (minVersion <= 2) {
+            val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
+            val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
+            assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(state), "serialization error (v2)")
+        }
+        if (minVersion <= 3) {
+            val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(state)
+            val deserializedv3 = Serialization.deserialize(serializedv3, state.staticParams.nodeParams)
+            assertEquals(deserializedv3, removeRbfAttempt(state), "serialization error (v3)")
+        }
     }
 
-    private fun checkSerialization(actions: List<ChannelAction>, latestOnly: Boolean = false) {
+    private fun checkSerialization(actions: List<ChannelAction>, minVersion: Int = 1) {
         // we check that serialization works everytime we're suppose to persist channel data
-        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data, latestOnly) }
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data, minVersion) }
     }
 
     // test-specific extension that allows for extra checks during tests
-    fun ChannelState.processEx(event: ChannelEvent, latestOnly: Boolean = false): Pair<ChannelState, List<ChannelAction>> {
+    fun ChannelState.processEx(event: ChannelEvent, minVersion: Int = 1): Pair<ChannelState, List<ChannelAction>> {
         val result = this.process(event)
-        checkSerialization(result.second, latestOnly)
+        checkSerialization(result.second, minVersion)
         return result
     }
 

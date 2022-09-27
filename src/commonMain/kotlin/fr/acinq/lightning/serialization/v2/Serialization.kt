@@ -72,9 +72,7 @@ object Serialization {
         polymorphic(ChannelStateWithCommitments::class) {
             subclass(Normal::class)
             subclass(WaitForFundingConfirmed::class)
-            subclass(WaitForFundingConfirmed2::class)
             subclass(WaitForFundingLocked::class)
-            subclass(WaitForFundingLocked2::class)
             subclass(WaitForRemotePublishFutureCommitment::class)
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)
@@ -91,7 +89,6 @@ object Serialization {
             contextual(ByteVector64KSerializer)
             contextual(ByteVector32KSerializer)
             contextual(ByteVectorKSerializer)
-            contextual(ScriptWitnessKSerializer)
             contextual(SatoshiKSerializer)
             contextual(PrivateKeyKSerializer)
             contextual(PublicKeyKSerializer)

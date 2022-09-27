@@ -482,20 +482,20 @@ class OfflineTestsCommon : LightningTestSuite() {
     @Test
     fun `republish unconfirmed funding tx after restart`() {
         val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, pushAmount = 0.msat)
-        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob))
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
         assertIs<WaitForFundingConfirmed>(alice1)
         val txSigsAlice = actionsAlice1.findOutgoingMessage<TxSignatures>()
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
-        val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(txSigsAlice))
+        val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(txSigsAlice), minVersion = 3)
         assertIs<WaitForFundingConfirmed>(bob1)
         // Alice restarts:
-        val (alice2, actionsAlice2) = WaitForInit(alice1.staticParams, alice1.currentTip, alice1.currentOnChainFeerates).processEx(ChannelEvent.Restore(alice1))
+        val (alice2, actionsAlice2) = WaitForInit(alice1.staticParams, alice1.currentTip, alice1.currentOnChainFeerates).processEx(ChannelEvent.Restore(alice1), minVersion = 3)
         assertEquals(alice2, Offline(alice1))
         assertEquals(actionsAlice2.size, 2)
         actionsAlice2.hasTx(fundingTx)
         assertEquals(actionsAlice2.findWatch<WatchConfirmed>().txId, fundingTx.txid)
         // Bob restarts:
-        val (bob2, actionsBob2) = WaitForInit(bob1.staticParams, bob1.currentTip, bob1.currentOnChainFeerates).processEx(ChannelEvent.Restore(bob1))
+        val (bob2, actionsBob2) = WaitForInit(bob1.staticParams, bob1.currentTip, bob1.currentOnChainFeerates).processEx(ChannelEvent.Restore(bob1), minVersion = 3)
         assertEquals(bob2, Offline(bob1))
         assertEquals(actionsBob2.size, 2)
         actionsBob2.hasTx(fundingTx)
