@@ -432,11 +432,11 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `process incoming amount with swap-in origin`() = runSuspendTest {
+    fun `process incoming amount with please-open-channel origin`() = runSuspendTest {
         val channelId = randomBytes32()
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 33_000_000.msat,
-            origin = ChannelOrigin.SwapInOrigin("tb1q97tpc0y4rvdnu9wm7nu354lmmzdm8du228u3g4", 1_200.sat)
+            origin = ChannelOrigin.PleaseOpenChannelOrigin(randomBytes32(), 1_200_000.msat)
         )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         handler.process(channelId, amountOrigin)

@@ -95,10 +95,6 @@ data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentF
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
 
-object SendSwapInRequest : PeerEvent()
-data class SwapInResponseEvent(val swapInResponse: SwapInResponse) : PeerListenerEvent()
-data class SwapInPendingEvent(val swapInPending: SwapInPending) : PeerListenerEvent()
-data class SwapInConfirmedEvent(val swapInConfirmed: SwapInConfirmed) : PeerListenerEvent()
 data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerEvent()
 data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerListenerEvent()
 
@@ -694,18 +690,6 @@ class Peer(
                         logger.info { "n:$remoteNodeId received ${msg::class}" }
                         processIncomingPayment(Either.Left(msg))
                     }
-                    msg is SwapInResponse -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress}" }
-                        _eventsFlow.emit(SwapInResponseEvent(msg))
-                    }
-                    msg is SwapInPending -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
-                        _eventsFlow.emit(SwapInPendingEvent(msg))
-                    }
-                    msg is SwapInConfirmed -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} bitcoinAddress=${msg.bitcoinAddress} amount=${msg.amount}" }
-                        _eventsFlow.emit(SwapInConfirmedEvent(msg))
-                    }
                     msg is SwapOutResponse -> {
                         logger.info { "n:$remoteNodeId received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
                         _eventsFlow.emit(SwapOutResponseEvent(msg))
@@ -818,11 +802,6 @@ class Peer(
             event is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
-            }
-            event is SendSwapInRequest -> {
-                val msg = SwapInRequest(nodeParams.chainHash)
-                logger.info { "n:$remoteNodeId sending ${msg::class}" }
-                sendToPeer(msg)
             }
             event is SendSwapOutRequest -> {
                 val msg = SwapOutRequest(nodeParams.chainHash, event.amount, event.bitcoinAddress, event.feePerKw)

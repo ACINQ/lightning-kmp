@@ -415,11 +415,9 @@ object ChannelFlags {
 
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
-/** This gives the reason for creating a new channel */
+/** This gives the reason for creating a new channel. */
 @Serializable
 sealed class ChannelOrigin {
-    abstract val fee: Satoshi
-
-    data class PayToOpenOrigin(val paymentHash: ByteVector32, override val fee: Satoshi) : ChannelOrigin()
-    data class SwapInOrigin(val bitcoinAddress: String, override val fee: Satoshi) : ChannelOrigin()
+    data class PayToOpenOrigin(val paymentHash: ByteVector32, val fee: Satoshi) : ChannelOrigin()
+    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val fee: MilliSatoshi) : ChannelOrigin()
 }

@@ -14,6 +14,7 @@ data class MilliSatoshi(val msat: Long) : Comparable<MilliSatoshi> {
     // @formatter:off
     operator fun plus(other: MilliSatoshi) = MilliSatoshi(msat + other.msat)
     operator fun minus(other: MilliSatoshi) = MilliSatoshi(msat - other.msat)
+    operator fun times(m: Int) = MilliSatoshi(msat * m)
     operator fun times(m: Long) = MilliSatoshi(msat * m)
     operator fun times(m: Double) = MilliSatoshi((msat * m).toLong())
     operator fun times(m: Float) = MilliSatoshi((msat * m).toLong())

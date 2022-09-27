@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
@@ -74,19 +75,17 @@ interface LightningMessage {
                 ChannelUpdate.type -> ChannelUpdate.read(stream)
                 Shutdown.type -> Shutdown.read(stream)
                 ClosingSigned.type -> ClosingSigned.read(stream)
+                OnionMessage.type -> OnionMessage.read(stream)
                 PayToOpenRequest.type -> PayToOpenRequest.read(stream)
                 PayToOpenResponse.type -> PayToOpenResponse.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
-                SwapInRequest.type -> SwapInRequest.read(stream)
-                SwapInResponse.type -> SwapInResponse.read(stream)
-                SwapInPending.type -> SwapInPending.read(stream)
-                SwapInConfirmed.type -> SwapInConfirmed.read(stream)
                 SwapOutRequest.type -> SwapOutRequest.read(stream)
                 SwapOutResponse.type -> SwapOutResponse.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PhoenixAndroidLegacyMigrate.type -> PhoenixAndroidLegacyMigrate.read(stream)
-                OnionMessage.type -> OnionMessage.read(stream)
+                PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
+                PleaseOpenChannelRejected.type -> PleaseOpenChannelRejected.read(stream)
                 else -> UnknownMessage(code.toLong())
             }
         }
@@ -584,17 +583,11 @@ data class OpenDualFundedChannel(
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
+    val origin: ChannelOrigin? get() = tlvStream.get<ChannelTlv.ChannelOriginTlv>()?.channelOrigin
 
     override val type: Long get() = OpenDualFundedChannel.type
 
     override fun write(out: Output) {
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(
-            ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
-        )
         LightningCodecs.writeBytes(chainHash, out)
         LightningCodecs.writeBytes(temporaryChannelId, out)
         LightningCodecs.writeU32(fundingFeerate.toLong().toInt(), out)
@@ -619,36 +612,35 @@ data class OpenDualFundedChannel(
     companion object : LightningMessageReader<OpenDualFundedChannel> {
         const val type: Long = 64
 
-        override fun read(input: Input): OpenDualFundedChannel {
-            @Suppress("UNCHECKED_CAST")
-            val readers = mapOf(
-                ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
-            )
-            return OpenDualFundedChannel(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-                FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-                Satoshi(LightningCodecs.u64(input)),
-                Satoshi(LightningCodecs.u64(input)),
-                LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                MilliSatoshi(LightningCodecs.u64(input)),
-                CltvExpiryDelta(LightningCodecs.u16(input)),
-                LightningCodecs.u16(input),
-                LightningCodecs.u32(input).toLong(),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.byte(input).toByte(),
-                TlvStreamSerializer(false, readers).read(input)
-            )
-        }
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
+        )
+
+        override fun read(input: Input): OpenDualFundedChannel = OpenDualFundedChannel(
+            ByteVector32(LightningCodecs.bytes(input, 32)),
+            ByteVector32(LightningCodecs.bytes(input, 32)),
+            FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
+            FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
+            Satoshi(LightningCodecs.u64(input)),
+            Satoshi(LightningCodecs.u64(input)),
+            LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+            MilliSatoshi(LightningCodecs.u64(input)),
+            CltvExpiryDelta(LightningCodecs.u16(input)),
+            LightningCodecs.u16(input),
+            LightningCodecs.u32(input).toLong(),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            LightningCodecs.byte(input).toByte(),
+            TlvStreamSerializer(false, readers).read(input)
+        )
     }
 }
 
@@ -671,15 +663,11 @@ data class AcceptDualFundedChannel(
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
+    val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
 
     override val type: Long get() = AcceptDualFundedChannel.type
 
     override fun write(out: Output) {
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(
-            ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-        )
         LightningCodecs.writeBytes(temporaryChannelId, out)
         LightningCodecs.writeU64(fundingAmount.toLong(), out)
         LightningCodecs.writeU64(dustLimit.toLong(), out)
@@ -700,30 +688,30 @@ data class AcceptDualFundedChannel(
     companion object : LightningMessageReader<AcceptDualFundedChannel> {
         const val type: Long = 65
 
-        override fun read(input: Input): AcceptDualFundedChannel {
-            @Suppress("UNCHECKED_CAST")
-            val readers = mapOf(
-                ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-            )
-            return AcceptDualFundedChannel(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                Satoshi(LightningCodecs.u64(input)),
-                Satoshi(LightningCodecs.u64(input)),
-                LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi,
-                MilliSatoshi(LightningCodecs.u64(input)),
-                LightningCodecs.u32(input).toLong(),
-                CltvExpiryDelta(LightningCodecs.u16(input)),
-                LightningCodecs.u16(input),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                TlvStreamSerializer(false, readers).read(input)
-            )
-        }
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
+        )
+
+        override fun read(input: Input): AcceptDualFundedChannel = AcceptDualFundedChannel(
+            ByteVector32(LightningCodecs.bytes(input, 32)),
+            Satoshi(LightningCodecs.u64(input)),
+            Satoshi(LightningCodecs.u64(input)),
+            LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi,
+            MilliSatoshi(LightningCodecs.u64(input)),
+            LightningCodecs.u32(input).toLong(),
+            CltvExpiryDelta(LightningCodecs.u16(input)),
+            LightningCodecs.u16(input),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            TlvStreamSerializer(false, readers).read(input)
+        )
     }
 }
 
@@ -1343,6 +1331,30 @@ data class ClosingSigned(
     }
 }
 
+@Serializable
+data class OnionMessage(
+    @Contextual val blindingKey: PublicKey,
+    val onionRoutingPacket: OnionRoutingPacket
+) : LightningMessage {
+    override val type: Long get() = OnionMessage.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(blindingKey.value, out)
+        LightningCodecs.writeU16(onionRoutingPacket.payload.size(), out)
+        OnionRoutingPacketSerializer(onionRoutingPacket.payload.size()).write(onionRoutingPacket, out)
+    }
+
+    companion object : LightningMessageReader<OnionMessage> {
+        const val type: Long = 513
+
+        override fun read(input: Input): OnionMessage {
+            val blindingKey = PublicKey(LightningCodecs.bytes(input, 33))
+            val onion = OnionRoutingPacketSerializer(LightningCodecs.u16(input) - 66).read(input)
+            return OnionMessage(blindingKey, onion)
+        }
+    }
+}
+
 /**
  * When we don't have enough incoming liquidity to receive a payment, our peer may open a channel to us on-the-fly to carry that payment.
  * This message contains details that allow us to recalculate the fee that our peer will take in exchange for the new channel.
@@ -1436,6 +1448,7 @@ data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHa
                     val failure = if (input.availableBytes > 0) LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector() else null
                     PayToOpenResponse(chainHash, paymentHash, Result.Failure(failure))
                 }
+
                 else -> PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage))
             }
         }
@@ -1468,99 +1481,6 @@ data class FCMToken(@Contextual val token: ByteVector) : LightningMessage {
 object UnsetFCMToken : LightningMessage {
     override val type: Long get() = 35019
     override fun write(out: Output) {}
-}
-
-data class SwapInRequest(
-    override val chainHash: ByteVector32
-) : LightningMessage, HasChainHash {
-    override val type: Long get() = SwapInRequest.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash, out)
-    }
-
-    companion object : LightningMessageReader<SwapInRequest> {
-        const val type: Long = 35007
-
-        override fun read(input: Input): SwapInRequest {
-            return SwapInRequest(LightningCodecs.bytes(input, 32).toByteVector32())
-        }
-    }
-}
-
-data class SwapInResponse(
-    override val chainHash: ByteVector32,
-    val bitcoinAddress: String
-) : LightningMessage, HasChainHash {
-    override val type: Long get() = SwapInResponse.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash, out)
-        val addressBytes = bitcoinAddress.encodeToByteArray()
-        LightningCodecs.writeU16(addressBytes.size, out)
-        LightningCodecs.writeBytes(addressBytes, out)
-    }
-
-    companion object : LightningMessageReader<SwapInResponse> {
-        const val type: Long = 35009
-
-        override fun read(input: Input): SwapInResponse {
-            return SwapInResponse(
-                chainHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
-            )
-        }
-    }
-}
-
-data class SwapInPending(
-    val bitcoinAddress: String,
-    val amount: Satoshi
-) : LightningMessage {
-    override val type: Long get() = SwapInPending.type
-
-    override fun write(out: Output) {
-        val addressBytes = bitcoinAddress.encodeToByteArray()
-        LightningCodecs.writeU16(addressBytes.size, out)
-        LightningCodecs.writeBytes(addressBytes, out)
-        LightningCodecs.writeU64(amount.toLong(), out)
-    }
-
-    companion object : LightningMessageReader<SwapInPending> {
-        const val type: Long = 35005
-
-        override fun read(input: Input): SwapInPending {
-            return SwapInPending(
-                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString(),
-                amount = Satoshi(LightningCodecs.u64(input))
-            )
-        }
-    }
-}
-
-data class SwapInConfirmed(
-    val bitcoinAddress: String,
-    val amount: MilliSatoshi
-) : LightningMessage {
-    override val type: Long get() = SwapInConfirmed.type
-
-    override fun write(out: Output) {
-        val addressBytes = bitcoinAddress.encodeToByteArray()
-        LightningCodecs.writeU16(addressBytes.size, out)
-        LightningCodecs.writeBytes(addressBytes, out)
-        LightningCodecs.writeU64(amount.toLong(), out)
-    }
-
-    companion object : LightningMessageReader<SwapInConfirmed> {
-        const val type: Long = 35015
-
-        override fun read(input: Input): SwapInConfirmed {
-            return SwapInConfirmed(
-                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString(),
-                amount = MilliSatoshi(LightningCodecs.u64(input))
-            )
-        }
-    }
 }
 
 data class SwapOutRequest(
@@ -1661,36 +1581,99 @@ data class PhoenixAndroidLegacyMigrate(
     }
 }
 
-@Serializable
-data class OnionMessage(
-    @Contextual val blindingKey: PublicKey,
-    val onionRoutingPacket: OnionRoutingPacket
-) : LightningMessage {
-    override val type: Long get() = OnionMessage.type
+/**
+ * This message is used to request a channel open from a remote node, with local contributions to the funding transaction.
+ * If the remote node won't open a channel, it will respond with [PleaseOpenChannelRejected].
+ * Otherwise, it will respond with [OpenDualFundedChannel] and a fee that must be paid by a corresponding push_amount
+ * in the [AcceptDualFundedChannel] message.
+ */
+data class PleaseOpenChannel(
+    override val chainHash: ByteVector32,
+    val requestId: ByteVector32,
+    val localFundingAmount: Satoshi,
+    val localInputsCount: Int,
+    val localInputsWeight: Int,
+    val tlvs: TlvStream<PleaseOpenChannelTlv> = TlvStream.empty(),
+) : LightningMessage, HasChainHash {
+    override val type: Long get() = PleaseOpenChannel.type
+
+    val grandParents: List<OutPoint> = tlvs.get<PleaseOpenChannelTlv.GrandParents>()?.outpoints ?: listOf()
+
+    // NB: we use ceil(a/b) = (a+b-1)/b
+    fun maxFees(fundingAmount: Satoshi): MilliSatoshi? = tlvs.get<PleaseOpenChannelTlv.MaxFees>()?.basisPoints?.let { bp -> (fundingAmount.toMilliSatoshi() * bp + 10_000.msat - 1.msat) / 10_000 }
 
     override fun write(out: Output) {
-        LightningCodecs.writeBytes(blindingKey.value, out)
-        LightningCodecs.writeU16(onionRoutingPacket.payload.size(), out)
-        OnionRoutingPacketSerializer(onionRoutingPacket.payload.size()).write(onionRoutingPacket, out)
+        LightningCodecs.writeBytes(chainHash.toByteArray(), out)
+        LightningCodecs.writeBytes(requestId.toByteArray(), out)
+        LightningCodecs.writeU64(localFundingAmount.toLong(), out)
+        LightningCodecs.writeU16(localInputsCount, out)
+        LightningCodecs.writeU32(localInputsWeight, out)
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
-    companion object : LightningMessageReader<OnionMessage> {
-        const val type: Long = 513
+    companion object : LightningMessageReader<PleaseOpenChannel> {
+        const val type: Long = 36001
 
-        override fun read(input: Input): OnionMessage {
-            val blindingKey = PublicKey(LightningCodecs.bytes(input, 33))
-            val onion = OnionRoutingPacketSerializer(LightningCodecs.u16(input) - 66).read(input)
-            return OnionMessage(blindingKey, onion)
-        }
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            PleaseOpenChannelTlv.MaxFees.tag to PleaseOpenChannelTlv.MaxFees.Companion as TlvValueReader<PleaseOpenChannelTlv>,
+            PleaseOpenChannelTlv.GrandParents.tag to PleaseOpenChannelTlv.GrandParents.Companion as TlvValueReader<PleaseOpenChannelTlv>,
+        )
+
+        override fun read(input: Input): PleaseOpenChannel = PleaseOpenChannel(
+            LightningCodecs.bytes(input, 32).toByteVector32(),
+            LightningCodecs.bytes(input, 32).toByteVector32(),
+            LightningCodecs.u64(input).sat,
+            LightningCodecs.u16(input),
+            LightningCodecs.u32(input),
+            TlvStreamSerializer(false, readers).read(input)
+        )
     }
 }
 
-data class UnknownMessage(
-    override val type: Long
+sealed class PleaseOpenChannelFailure {
+    abstract val code: Int
 
+    // @formatter:off
+    object FeeInsufficient : PleaseOpenChannelFailure() { override val code: Int get() = 1 }
+    data class Unknown(override val code: Int) : PleaseOpenChannelFailure()
+    // @formatter:on
+}
+
+data class PleaseOpenChannelRejected(
+    val requestId: ByteVector32,
+    val failure: PleaseOpenChannelFailure,
+    val tlvs: TlvStream<PleaseOpenChannelRejectedTlv> = TlvStream.empty()
 ) : LightningMessage {
+    constructor(requestId: ByteVector32, failure: PleaseOpenChannelFailure, fees: MilliSatoshi) : this(requestId, failure, TlvStream(listOf(PleaseOpenChannelRejectedTlv.ExpectedFees(fees))))
+
+    override val type: Long get() = PleaseOpenChannelRejected.type
+
     override fun write(out: Output) {
-        TODO("Serialization of unknown messages is not implemented")
+        LightningCodecs.writeBytes(requestId.toByteArray(), out)
+        LightningCodecs.writeU32(failure.code, out)
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
+    companion object : LightningMessageReader<PleaseOpenChannelRejected> {
+        const val type: Long = 36003
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            PleaseOpenChannelRejectedTlv.ExpectedFees.tag to PleaseOpenChannelRejectedTlv.ExpectedFees.Companion as TlvValueReader<PleaseOpenChannelRejectedTlv>,
+        )
+
+        override fun read(input: Input): PleaseOpenChannelRejected = PleaseOpenChannelRejected(
+            LightningCodecs.bytes(input, 32).toByteVector32(),
+            when (val failureCode = LightningCodecs.u32(input)) {
+                PleaseOpenChannelFailure.FeeInsufficient.code -> PleaseOpenChannelFailure.FeeInsufficient
+                else -> PleaseOpenChannelFailure.Unknown(failureCode)
+            },
+            TlvStreamSerializer(false, readers).read(input)
+        )
+    }
+}
+
+data class UnknownMessage(override val type: Long) : LightningMessage {
+    override fun write(out: Output) = TODO("Serialization of unknown messages is not implemented")
 }

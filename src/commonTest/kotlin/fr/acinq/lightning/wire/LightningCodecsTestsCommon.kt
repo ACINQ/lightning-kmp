@@ -9,7 +9,6 @@ import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelOrigin
@@ -286,7 +285,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(25_000.msat)))) to (defaultEncoded + ByteVector("0103101000 fe470000070261a8")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), listOf(GenericTlv(321, ByteVector("2a2a")), GenericTlv(325, ByteVector("02"))))) to (defaultEncoded + ByteVector("0103101000 fd0141022a2a fd01450102")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat))))) to (defaultEncoded + ByteVector("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2")),
-            defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.SwapInOrigin("3AuM8hSkXBetjdHxWthRFiH6hYhqF2Prjr", 420.sat))))) to (defaultEncoded + ByteVector("fe47000005 2d 0002 223341754d3868536b584265746a644878577468524669483668596871463250726a72 00000000000001a4")),
+            defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 1_234_567.msat))))) to (defaultEncoded + ByteVector("fe47000005 2a 0004 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000012d687")),
         )
         // @formatter:on
         testCases.forEach { (open, bin) ->
@@ -617,15 +616,35 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode swap-in messages`() {
+    fun `encode - decode please-open-channel messages`() {
         val testCases = listOf(
-            Pair(SwapInRequest(Block.LivenetGenesisBlock.blockId), Hex.decode("88bf000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")),
-            Pair(
-                SwapInResponse(Block.LivenetGenesisBlock.blockId, "bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv"),
-                Hex.decode("88c1000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076")
-            ),
-            Pair(SwapInPending("bc1qms2el02t3fv8ecln0j74auassqwcg3ejekmypv", Satoshi(123456)), Hex.decode("88bd002a626331716d7332656c3032743366763865636c6e306a373461756173737177636733656a656b6d797076000000000001e240")),
-            Pair(SwapInConfirmed("39gzznpTuzhtjdN5R2LZu8GgWLR9NovLdi", MilliSatoshi(42_000_000)), Hex.decode("88c700223339677a7a6e7054757a68746a644e3552324c5a75384767574c52394e6f764c6469000000000280de80"))
+            // @formatter:off
+            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710"),
+            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(8)))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 010108"),
+            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(listOf(PleaseOpenChannelTlv.GrandParents(listOf())))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 fd023100"),
+            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(listOf(PleaseOpenChannelTlv.GrandParents(listOf(OutPoint(ByteVector32("d0556c8cc004933f40b9ca5e87e18cb549298fb02d7e64b0c0ee95303485145a"), 5)))))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 fd023128d0556c8cc004933f40b9ca5e87e18cb549298fb02d7e64b0c0ee95303485145a0000000000000005"),
+            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(listOf(PleaseOpenChannelTlv.GrandParents(listOf(OutPoint(ByteVector32("572b045edb5f0e3ff667e914e368273b11a874fae56a735b332b54048b7978c2"), 0), OutPoint(ByteVector32("cd6ac843158a1c317021de1323cdd2071f0f59744f79b298a8a45fda2dd7989f"), 1105)))))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 fd023150572b045edb5f0e3ff667e914e368273b11a874fae56a735b332b54048b7978c20000000000000000cd6ac843158a1c317021de1323cdd2071f0f59744f79b298a8a45fda2dd7989f0000000000000451"),
+            // @formatter:on
+        )
+
+        testCases.forEach {
+            val decoded = LightningMessage.decode(it.second)
+            assertNotNull(decoded)
+            assertEquals(it.first, decoded)
+            val encoded = LightningMessage.encode(decoded)
+            assertArrayEquals(it.second, encoded)
+        }
+    }
+
+    @Test
+    fun `encode - decode please-open-channel-rejected messages`() {
+        val testCases = listOf(
+            // @formatter:off
+            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.FeeInsufficient, TlvStream(listOf(PleaseOpenChannelRejectedTlv.ExpectedFees(1_578_000.msat)))) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000001 0103181410"),
+            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.FeeInsufficient, TlvStream(listOf(PleaseOpenChannelRejectedTlv.ExpectedFees(3_000_000.msat)))) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000001 01032dc6c0"),
+            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.Unknown(113)) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000071"),
+            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.Unknown(113), TlvStream(listOf(), listOf(GenericTlv(57, ByteVector("deadbeef"))))) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000071 3904deadbeef"),
+            // @formatter:on
         )
 
         testCases.forEach {
