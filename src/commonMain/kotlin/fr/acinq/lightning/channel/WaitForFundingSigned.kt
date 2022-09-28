@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
@@ -62,7 +61,7 @@ data class WaitForFundingSigned(
                     is Helpers.Funding.FirstCommitments -> {
                         val (signedFundingTx, commitments) = firstCommitmentsRes
                         logger.info { "c:$channelId funding tx created with txId=${commitments.fundingTxId}. ${fundingTx.localInputs.size} local inputs, ${fundingTx.remoteInputs.size} remote inputs, ${fundingTx.localOutputs.size} local outputs and ${fundingTx.remoteOutputs.size} remote outputs" }
-                        if (commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels)) {
+                        if (staticParams.useZeroConf) {
                             logger.info { "c:$channelId channel is using 0-conf, we won't wait for the funding tx to confirm" }
                             val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                             val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)

@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -135,7 +134,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 logger.info { "c:${event.state.channelId} restoring channel" }
                 // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
                 val fundingTx = when {
-                    event.state is WaitForFundingLocked && event.state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels) -> event.state.fundingTx.signedTx
+                    event.state is WaitForFundingLocked && event.state.staticParams.useZeroConf -> event.state.fundingTx.signedTx
                     else -> null
                 }
                 val watchSpent = WatchSpent(
@@ -165,7 +164,6 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
         return when (channelType) {
             ChannelType.SupportedChannelType.AnchorOutputs -> true
             ChannelType.SupportedChannelType.AnchorOutputsZeroReserve -> true
-            ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve -> true
             else -> false
         }
     }

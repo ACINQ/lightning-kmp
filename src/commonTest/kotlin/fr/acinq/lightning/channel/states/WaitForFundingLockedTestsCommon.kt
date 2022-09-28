@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
@@ -22,7 +21,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- zero conf`() {
-        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs), minVersion = 3)
         assertIs<WaitForFundingLocked>(alice1)
         assertEquals(actionsAlice1.size, 3)
@@ -39,7 +38,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures and restart -- zero conf`() {
-        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs), minVersion = 3)
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
         val (alice2, actionsAlice2) = WaitForInit(alice1.staticParams, alice1.currentTip, alice1.currentOnChainFeerates).processEx(ChannelEvent.Restore(alice1), minVersion = 3)
@@ -59,7 +58,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- invalid`() {
-        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs.copy(witnesses = listOf())), minVersion = 3)
         assertEquals(alice, alice1)
         assertEquals(actionsAlice1.size, 1)
@@ -175,9 +174,10 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            zeroConf: Boolean = false,
         ): Fixture {
-            return if (channelType.features.contains(Feature.ZeroConfChannels)) {
-                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+            return if (zeroConf) {
+                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob), minVersion = 3)
                 assertIs<WaitForFundingLocked>(alice1)
                 assertEquals(actionsAlice1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)

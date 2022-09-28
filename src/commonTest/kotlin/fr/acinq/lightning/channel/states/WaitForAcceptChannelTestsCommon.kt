@@ -26,7 +26,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
-        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
     }
 
     @Test
@@ -37,19 +37,19 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(2, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
     }
 
     @Test
     fun `recv AcceptChannel -- zero conf`() {
-        val (alice, _, accept) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (alice, _, accept) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         assertEquals(0, accept.minimumDepth)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
         assertEquals(2, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
+        assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
     }
 
     @Test
@@ -140,8 +140,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            zeroConf: Boolean = false,
         ): Triple<WaitForAcceptChannel, WaitForFundingCreated, AcceptDualFundedChannel> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
             assertEquals(open.fundingAmount, aliceFundingAmount)
             assertEquals(open.pushAmount, TestConstants.pushAmount)
             assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
@@ -151,10 +152,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
             assertEquals(accept.fundingAmount, bobFundingAmount)
             assertEquals(accept.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
-            if (bob1.channelFeatures.hasFeature(Feature.ZeroConfChannels)) {
-                assertEquals(0, accept.minimumDepth)
-            } else {
-                assertEquals(3, accept.minimumDepth)
+            when (zeroConf) {
+                true -> assertEquals(0, accept.minimumDepth)
+                false -> assertEquals(3, accept.minimumDepth)
             }
             return Triple(alice, bob1, accept)
         }

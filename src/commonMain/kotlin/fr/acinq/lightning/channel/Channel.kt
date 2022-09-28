@@ -132,7 +132,9 @@ sealed class ChannelAction {
 }
 
 /** Channel static parameters. */
-data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
+data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey) {
+    val useZeroConf: Boolean = nodeParams.zeroConfPeers.contains(remoteNodeId)
+}
 
 /** Channel state. */
 sealed class ChannelState : LoggingContext {

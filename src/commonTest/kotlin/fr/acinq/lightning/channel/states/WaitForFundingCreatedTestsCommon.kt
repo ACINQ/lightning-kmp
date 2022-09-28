@@ -58,8 +58,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         assertTrue(commitSigBob.channelData.isEmpty())
         assertIs<WaitForFundingSigned>(alice2)
         assertIs<WaitForFundingSigned>(bob3)
-        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
-        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
         verifyCommits(alice2.firstCommitTx, bob3.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.pushAmount, TestConstants.pushAmount)
     }
 
@@ -81,14 +81,14 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
         assertIs<WaitForFundingSigned>(alice2)
         assertIs<WaitForFundingSigned>(bob3)
-        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
-        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
         verifyCommits(alice2.firstCommitTx, bob3.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.pushAmount, TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.pushAmount)
     }
 
     @Test
     fun `complete interactive-tx protocol -- zero conf -- zero reserve`() {
-        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, pushAmount = 0.msat)
+        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, pushAmount = 0.msat, zeroConf = true)
         // Alice ---- tx_add_input ----> Bob
         val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
         // Alice <--- tx_add_input ----- Bob
@@ -104,8 +104,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
         assertIs<WaitForFundingSigned>(alice2)
         assertIs<WaitForFundingSigned>(bob3)
-        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroReserveChannels, Feature.ZeroConfChannels)))
-        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroReserveChannels, Feature.ZeroConfChannels)))
+        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
         verifyCommits(alice2.firstCommitTx, bob3.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi(), TestConstants.bobFundingAmount.toMilliSatoshi())
     }
 
@@ -267,9 +267,10 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            zeroConf: Boolean = false,
             channelOrigin: ChannelOrigin? = null
         ): Triple<WaitForFundingCreated, WaitForFundingCreated, TxAddInput> {
-            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, channelOrigin)
+            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf, channelOrigin)
             val (b1, actions) = b.process(ChannelEvent.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
             assertIs<WaitForFundingCreated>(b1)

@@ -78,7 +78,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_ADD_HTLC -- zero-conf -- zero-reserve`() {
-        val (_, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, bobFundingAmount = 10_000.sat, pushAmount = 0.msat)
+        val (_, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, pushAmount = 0.msat, zeroConf = true)
         assertEquals(bob0.commitments.availableBalanceForSend(), 10_000_000.msat)
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
 
@@ -395,7 +395,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv UpdateAddHtlc -- zero-conf -- zero-reserve`() {
-        val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, bobFundingAmount = 10_000.sat, pushAmount = 0.msat)
+        val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, pushAmount = 0.msat, zeroConf = true)
         assertEquals(alice0.commitments.availableBalanceForReceive(), 10_000_000.msat)
         val add = UpdateAddHtlc(alice0.channelId, 0, 10_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(add))

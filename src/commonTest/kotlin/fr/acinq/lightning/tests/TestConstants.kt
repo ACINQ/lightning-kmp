@@ -98,6 +98,7 @@ object TestConstants {
             minFundingSatoshis = 1_000.sat,
             maxFundingSatoshis = 25_000_000.sat,
             maxPaymentAttempts = 5,
+            zeroConfPeers = setOf(),
             enableTrampolinePayment = true
         )
 
@@ -175,6 +176,7 @@ object TestConstants {
             minFundingSatoshis = 1_000.sat,
             maxFundingSatoshis = 25_000_000.sat,
             maxPaymentAttempts = 5,
+            zeroConfPeers = setOf(),
             enableTrampolinePayment = true
         )
 

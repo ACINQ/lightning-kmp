@@ -47,7 +47,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- zero conf`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
             assertIs<WaitForFundingLocked>(alice1)
@@ -197,9 +197,10 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            zeroConf: Boolean = false,
             channelOrigin: ChannelOrigin? = null
         ): Fixture {
-            val (alice, bob, inputAlice) = WaitForFundingCreatedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, channelOrigin)
+            val (alice, bob, inputAlice) = WaitForFundingCreatedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf, channelOrigin)
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
             // Bob's message will either be tx_add_input or tx_complete depending on whether Bob contributes or not.
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<InteractiveTxMessage>()))

@@ -80,10 +80,19 @@ object TestsHelper {
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
         pushAmount: MilliSatoshi = TestConstants.pushAmount,
+        zeroConf: Boolean = false,
         channelOrigin: ChannelOrigin? = null
     ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenDualFundedChannel> {
-        val aliceNodeParams = TestConstants.Alice.nodeParams.copy(features = aliceFeatures)
-        val bobNodeParams = TestConstants.Bob.nodeParams.copy(features = bobFeatures)
+        val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
+            true -> Pair(
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId)),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId))
+            )
+            false -> Pair(
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures)
+            )
+        }
         val alice = WaitForInit(
             StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
             currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
@@ -130,8 +139,9 @@ object TestsHelper {
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
         pushAmount: MilliSatoshi = TestConstants.pushAmount,
+        zeroConf: Boolean = false,
     ): Triple<Normal, Normal, Transaction> {
-        val (alice, fundingLockedAlice, bob, fundingLockedBob) = WaitForFundingLockedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+        val (alice, fundingLockedAlice, bob, fundingLockedBob) = WaitForFundingLockedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
         val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
         assertIs<Normal>(alice1)
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)

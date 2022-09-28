@@ -266,7 +266,8 @@ data class ChannelType(@Serializable(with = ByteVectorKSerializer::class) val bi
 data class ChannelFeatures(@Serializable(with = ByteVectorKSerializer::class) val bin: ByteVector) {
     constructor(from: fr.acinq.lightning.channel.ChannelFeatures) : this(Features(from.features.associateWith { FeatureSupport.Mandatory }).toByteArray().toByteVector())
 
-    fun export() = fr.acinq.lightning.channel.ChannelFeatures(Features(bin.toByteArray()).activated.keys)
+    // We previously included Wumbo and an experimental ZeroConf feature bit in the channel features, but changed that in v1.5.0.
+    fun export() = fr.acinq.lightning.channel.ChannelFeatures(Features(bin.toByteArray()).activated.minus(setOf(Feature.Wumbo, Feature.ZeroConfChannels)).keys)
 }
 
 @Serializable

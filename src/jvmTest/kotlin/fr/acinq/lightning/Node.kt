@@ -158,7 +158,6 @@ object Node {
                 Feature.TrampolinePayment to FeatureSupport.Optional,
                 Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
                 Feature.ZeroReserveChannels to FeatureSupport.Optional,
-                Feature.ZeroConfChannels to FeatureSupport.Optional,
                 Feature.WakeUpNotificationClient to FeatureSupport.Optional,
                 Feature.PayToOpenClient to FeatureSupport.Optional,
                 Feature.TrustedSwapInClient to FeatureSupport.Optional,
@@ -202,6 +201,7 @@ object Node {
             minFundingSatoshis = 100000.sat,
             maxFundingSatoshis = 16777215.sat,
             maxPaymentAttempts = 5,
+            zeroConfPeers = setOf(),
             enableTrampolinePayment = true
         )
 
