@@ -18,6 +18,7 @@ import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.payment.OutgoingPaymentHandler
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
@@ -29,12 +30,13 @@ import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
 import org.kodein.log.newLogger
-import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
 import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerEvent
 
+/** Try to open a channel, consuming all the spendable utxos in the wallet state provided. */
+data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeesBasisPoint: Int) : PeerEvent()
+/** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
@@ -127,17 +129,17 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
     }
 
-    public var socketBuilder: TcpSocket.Builder? = socketBuilder
+    var socketBuilder: TcpSocket.Builder? = socketBuilder
         set(value) {
             logger.debug { "n:$remoteNodeId swap socket builder=$value" }
             field = value
         }
 
-    public val remoteNodeId: PublicKey = walletParams.trampolineNode.id
+    val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
     private val input = Channel<PeerEvent>(BUFFERED)
     private var output = Channel<ByteArray>(BUFFERED)
-    public val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
+    val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
     private val logger = nodeParams.loggerFactory.newLogger(this::class)
 
@@ -148,12 +150,15 @@ class Peer(
     val bootChannelsFlow: StateFlow<Map<ByteVector32, ChannelState>?> get() = _bootChannelsFlow
 
     // channels map, indexed by channel id
-    // note that a channel starts with a temporary id then switches to its final id once the funding tx is known
+    // note that a channel starts with a temporary id then switches to its final id once accepted
     private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
     val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
 
     private var _channels by _channelsFlow
     val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
+
+    // pending requests asking our peer to open a channel to us
+    private var channelRequests: Map<ByteVector32, RequestChannelOpen> = HashMap()
 
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
@@ -172,8 +177,8 @@ class Peer(
     private val ourInit = Init(features.initFeatures().toByteArray().toByteVector(), initTlvStream)
     private var theirInit: Init? = null
 
-    public val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
-    public val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
+    val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
+    val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
     init {
         launch {
@@ -594,33 +599,56 @@ class Peer(
                         logger.warning { "n:$remoteNodeId ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
                     }
                     msg is OpenDualFundedChannel -> {
-                        val fundingKeyPath = randomKeyPath(4)
-                        val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                        val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                        val localParams = LocalParams(
-                            nodeParams.nodeId,
-                            nodeParams.keyManager.channelKeys(fundingKeyPath),
-                            nodeParams.dustLimit,
-                            nodeParams.maxHtlcValueInFlightMsat,
-                            nodeParams.htlcMinimum,
-                            nodeParams.toRemoteDelayBlocks,
-                            nodeParams.maxAcceptedHtlcs,
-                            false,
-                            closingPubkeyScript.toByteVector(),
-                            features
-                        )
-                        val state = WaitForInit(
-                            StaticParams(nodeParams, remoteNodeId),
-                            currentTipFlow.filterNotNull().first(),
-                            onChainFeeratesFlow.filterNotNull().first()
-                        )
-                        val channelConfig = ChannelConfig.standard
-                        // We currently don't add any inputs to the funding transaction.
-                        val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, 0.sat, WalletState.empty, localParams, channelConfig, theirInit!!))
-                        val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
-                        _channels = _channels + (msg.temporaryChannelId to state2)
-                        processActions(msg.temporaryChannelId, actions1 + actions2)
-                        logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state2::class}" }
+                        val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
+                            is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
+                                is RequestChannelOpen -> {
+                                    // We have to pay the fees for our inputs, so we deduce them from our funding amount.
+                                    val utxos = request.wallet.spendable()
+                                    val fundingFees = Transactions.weight2fee(msg.fundingFeerate, utxos.size * Transactions.p2wpkhInputWeight)
+                                    val fundingAmount = utxos.map { it.amount }.sum() - fundingFees
+                                    Triple(request.wallet, fundingAmount, origin.fee)
+                                }
+                                else -> Triple(WalletState.empty, 0.sat, 0.msat)
+                            }
+                            else -> Triple(WalletState.empty, 0.sat, 0.msat)
+                        }
+                        if (fundingAmount.toMilliSatoshi() < pushAmount) {
+                            logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
+                            sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
+                        } else {
+                            val fundingKeyPath = randomKeyPath(4)
+                            val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
+                            val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
+                            // We set our max-htlc-value-in-flight to the channel capacity to ensure we can empty our channels with a single htlc.
+                            val maxHtlcValueInFlight = msg.fundingAmount + fundingAmount
+                            val localParams = LocalParams(
+                                nodeParams.nodeId,
+                                nodeParams.keyManager.channelKeys(fundingKeyPath),
+                                nodeParams.dustLimit,
+                                maxHtlcValueInFlight.toMilliSatoshi().toLong(),
+                                nodeParams.htlcMinimum,
+                                nodeParams.toRemoteDelayBlocks,
+                                nodeParams.maxAcceptedHtlcs,
+                                false,
+                                closingPubkeyScript.toByteVector(),
+                                features
+                            )
+                            val state = WaitForInit(
+                                StaticParams(nodeParams, remoteNodeId),
+                                currentTipFlow.filterNotNull().first(),
+                                onChainFeeratesFlow.filterNotNull().first()
+                            )
+                            val channelConfig = ChannelConfig.standard
+                            val (state1, actions1) = state.process(ChannelEvent.InitNonInitiator(msg.temporaryChannelId, fundingAmount, pushAmount, wallet, localParams, channelConfig, theirInit!!))
+                            val (state2, actions2) = state1.process(ChannelEvent.MessageReceived(msg))
+                            _channels = _channels + (msg.temporaryChannelId to state2)
+                            when (val origin = msg.origin) {
+                                is ChannelOrigin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
+                                else -> Unit
+                            }
+                            processActions(msg.temporaryChannelId, actions1 + actions2)
+                            logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state2::class}" }
+                        }
                     }
                     msg is ChannelReestablish && !_channels.containsKey(msg.channelId) -> {
                         if (msg.channelData.isEmpty()) {
@@ -716,6 +744,23 @@ class Peer(
                 _channels = _channels + (event.watch.channelId to state1)
                 logger.info { "n:$remoteNodeId c:${event.watch.channelId} new state: ${state1::class}" }
             }
+            event is RequestChannelOpen -> {
+                val utxos = event.wallet.spendable()
+                // We currently only support p2wpkh inputs.
+                val amountIn = utxos.map { it.amount }.sum()
+                val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
+                val pleaseOpenChannel = PleaseOpenChannel(
+                    nodeParams.chainHash,
+                    event.requestId,
+                    amountIn,
+                    utxos.size,
+                    utxos.size * Transactions.p2wpkhInputWeight,
+                    TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(event.maxFeesBasisPoint), PleaseOpenChannelTlv.GrandParents(grandParents)))
+                )
+                logger.info { "n:$remoteNodeId sending please_open_channel with ${utxos.size} utxos (amount = $amountIn)" }
+                sendToPeer(pleaseOpenChannel)
+                channelRequests = channelRequests + (pleaseOpenChannel.requestId to event)
+            }
             event is OpenChannel -> {
                 val fundingKeyPath = randomKeyPath(4)
                 val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
@@ -772,9 +817,9 @@ class Peer(
                         PaymentRequest.TaggedField.ExtraHop(
                             nodeId = walletParams.trampolineNode.id,
                             shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
-                            feeBase = remoteChannelUpdates.map { it.feeBaseMsat }.maxOrNull() ?: walletParams.invoiceDefaultRoutingFees.feeBase,
-                            feeProportionalMillionths = remoteChannelUpdates.map { it.feeProportionalMillionths }.maxOrNull() ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
-                            cltvExpiryDelta = remoteChannelUpdates.map { it.cltvExpiryDelta }.maxOrNull() ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
+                            feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
+                            feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
+                            cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
                         )
                     )
                 )

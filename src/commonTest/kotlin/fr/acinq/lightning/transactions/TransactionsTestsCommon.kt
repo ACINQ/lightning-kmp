@@ -5,11 +5,14 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
+import fr.acinq.bitcoin.Script.witnessPay2wpkh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
@@ -49,6 +52,7 @@ import fr.acinq.lightning.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.lightning.transactions.Transactions.makeHtlcPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.makeHtlcTxs
 import fr.acinq.lightning.transactions.Transactions.makeMainPenaltyTx
+import fr.acinq.lightning.transactions.Transactions.p2wpkhInputWeight
 import fr.acinq.lightning.transactions.Transactions.sign
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
@@ -93,6 +97,17 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val txNumber1 = decodeTxNumber(sequence, lockTime)
             assertEquals(txNumber, txNumber1)
         }
+    }
+
+    @Test
+    fun `default weights`() {
+        val pubkey = randomKey().publicKey()
+        // DER-encoded ECDSA signatures usually take up to 72 bytes.
+        val sig = randomBytes(72).toByteVector()
+        val tx = Transaction(2, listOf(TxIn(OutPoint(ByteVector32.Zeroes, 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
+        val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0, witnessPay2wpkh(pubkey, sig))))
+        val inputWeight = txWithAdditionalInput.weight() - tx.weight()
+        assertEquals(inputWeight, p2wpkhInputWeight)
     }
 
     @Test

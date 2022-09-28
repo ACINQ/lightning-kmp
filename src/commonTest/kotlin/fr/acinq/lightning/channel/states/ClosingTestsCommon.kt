@@ -132,7 +132,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
-        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, pushAmount = 0.msat)
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
         val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
         run {
             val (aliceClosing, _) = localClose(alice)
@@ -154,7 +154,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
-        val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, pushAmount = 0.msat)
+        val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigsBob)
         val fundingTxId = alice1.commitments.fundingTxId
         val previousFundingTx = alice1.previousFundingTxs.first().first.signedTx!!

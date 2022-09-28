@@ -77,6 +77,7 @@ data class WaitForAcceptChannel(
                                             init.wallet,
                                             interactiveTxSession,
                                             lastSent.pushAmount,
+                                            accept.pushAmount,
                                             lastSent.commitmentFeerate,
                                             accept.firstPerCommitmentPoint,
                                             lastSent.channelFlags,

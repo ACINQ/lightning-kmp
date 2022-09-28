@@ -397,7 +397,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `process incoming amount with unknown origin`() = runSuspendTest {
         val channelId = randomBytes32()
-        val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(amount = 15_000_000.msat, origin = null)
+        val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(amount = 15_000_000.msat, localInputs = setOf(), origin = null)
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         handler.process(channelId, amountOrigin)
         val dbPayment = handler.db.getIncomingPayment(channelId.sha256().sha256())
@@ -414,6 +414,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val channelId = randomBytes32()
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 15_000_000.msat,
+            localInputs = setOf(),
             origin = ChannelOrigin.PayToOpenOrigin(paymentHash = preimage.sha256(), fee = 1_000.sat)
         )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
@@ -425,7 +426,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         handler.process(channelId, amountOrigin)
         val dbPayment = handler.db.getIncomingPayment(preimage.sha256())
         assertNotNull(dbPayment)
-        assertTrue { dbPayment.origin is IncomingPayment.Origin.KeySend }
+        assertIs<IncomingPayment.Origin.KeySend>(dbPayment.origin)
         assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, fees = 1_000_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
         assertEquals(15_000_000.msat, dbPayment.received?.amount)
         assertEquals(1_000_000.msat, dbPayment.received?.fees)
@@ -436,13 +437,14 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val channelId = randomBytes32()
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 33_000_000.msat,
+            localInputs = setOf(OutPoint(randomBytes32(), 7)),
             origin = ChannelOrigin.PleaseOpenChannelOrigin(randomBytes32(), 1_200_000.msat)
         )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         handler.process(channelId, amountOrigin)
         val dbPayment = handler.db.getIncomingPayment(channelId.sha256().sha256())
         assertNotNull(dbPayment)
-        assertTrue { dbPayment.origin is IncomingPayment.Origin.SwapIn }
+        assertIs<IncomingPayment.Origin.DualSwapIn>(dbPayment.origin)
         val newChannelUUID = dbPayment.received!!.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.NewChannel>().first().id
         assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 33_000_000.msat, fees = 1_200_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
         assertEquals(33_000_000.msat, dbPayment.received?.amount)

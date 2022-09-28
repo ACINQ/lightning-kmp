@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
@@ -40,7 +39,8 @@ data class WaitForFundingCreated(
     val remoteParams: RemoteParams,
     val wallet: WalletState,
     val interactiveTxSession: InteractiveTxSession,
-    val pushAmount: MilliSatoshi,
+    val localPushAmount: MilliSatoshi,
+    val remotePushAmount: MilliSatoshi,
     val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
@@ -64,7 +64,8 @@ data class WaitForFundingCreated(
                             remoteParams,
                             interactiveTxSession.fundingParams.localAmount,
                             interactiveTxSession.fundingParams.remoteAmount,
-                            pushAmount,
+                            localPushAmount,
+                            remotePushAmount,
                             commitTxFeerate,
                             interactiveTxAction.sharedTx.buildUnsignedTx().hash,
                             interactiveTxAction.sharedOutputIndex,
@@ -87,7 +88,8 @@ data class WaitForFundingCreated(
                                     remoteParams,
                                     wallet,
                                     interactiveTxSession1.fundingParams,
-                                    pushAmount,
+                                    localPushAmount,
+                                    remotePushAmount,
                                     interactiveTxAction.sharedTx,
                                     firstCommitTx,
                                     remoteFirstPerCommitmentPoint,

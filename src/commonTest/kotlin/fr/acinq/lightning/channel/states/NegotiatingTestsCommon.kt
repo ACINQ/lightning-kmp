@@ -200,7 +200,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingSigned -- nothing at stake`() {
-        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         val alice1 = alice.updateFeerate(FeeratePerKw(5_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
 
@@ -443,8 +443,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun init(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, pushAmount: MilliSatoshi = TestConstants.pushAmount): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = reachNormal(channelType = channelType, pushAmount = pushAmount)
+        fun init(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount): Triple<Negotiating, Negotiating, ClosingSigned> {
+            val (alice, bob) = reachNormal(channelType = channelType, alicePushAmount = alicePushAmount)
             return mutualCloseAlice(alice, bob)
         }
 

@@ -79,7 +79,8 @@ object TestsHelper {
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-        pushAmount: MilliSatoshi = TestConstants.pushAmount,
+        alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
+        bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
         channelOrigin: ChannelOrigin? = null
     ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenDualFundedChannel> {
@@ -111,7 +112,7 @@ object TestsHelper {
         val (alice1, actionsAlice1) = alice.process(
             ChannelEvent.InitInitiator(
                 aliceFundingAmount,
-                pushAmount,
+                alicePushAmount,
                 createWallet(aliceFundingAmount + 3500.sat),
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
@@ -125,7 +126,7 @@ object TestsHelper {
         )
         assertIs<WaitForAcceptChannel>(alice1)
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobFundingAmount + 1500.sat) else WalletState.empty
-        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<WaitForOpenChannel>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -138,10 +139,11 @@ object TestsHelper {
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-        pushAmount: MilliSatoshi = TestConstants.pushAmount,
+        alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
+        bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
     ): Triple<Normal, Normal, Transaction> {
-        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
+        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
         val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(channelReadyBob))
         assertIs<Normal>(alice1)
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)

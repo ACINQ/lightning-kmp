@@ -20,7 +20,8 @@ object TestConstants {
     const val defaultBlockHeight = 400_000
     val aliceFundingAmount = 850_000.sat
     val bobFundingAmount = 150_000.sat
-    val pushAmount = 50_000_000.msat
+    val alicePushAmount = 50_000_000.msat
+    val bobPushAmount = 0.msat
     val feeratePerKw = FeeratePerKw(5000.sat) // 20 sat/byte
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 

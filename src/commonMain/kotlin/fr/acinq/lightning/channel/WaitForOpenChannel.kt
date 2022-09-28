@@ -2,11 +2,13 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
 
 /*
@@ -24,6 +26,7 @@ data class WaitForOpenChannel(
     override val currentOnChainFeerates: OnChainFeerates,
     val temporaryChannelId: ByteVector32,
     val fundingAmount: Satoshi,
+    val pushAmount: MilliSatoshi,
     val wallet: WalletState,
     val localParams: LocalParams,
     val channelConfig: ChannelConfig,
@@ -38,7 +41,6 @@ data class WaitForOpenChannel(
                         when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open, localParams.features)) {
                             is Either.Right -> {
                                 val channelFeatures = res.value
-                                val channelOrigin = open.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin
                                 val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val accept = AcceptDualFundedChannel(
                                     temporaryChannelId = open.temporaryChannelId,
@@ -55,7 +57,12 @@ data class WaitForOpenChannel(
                                     delayedPaymentBasepoint = localParams.channelKeys.delayedPaymentBasepoint,
                                     htlcBasepoint = localParams.channelKeys.htlcBasepoint,
                                     firstPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelConfig), 0),
-                                    tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))),
+                                    tlvStream = TlvStream(
+                                        buildList {
+                                            add(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))
+                                            if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
+                                        }
+                                    ),
                                 )
                                 val remoteParams = RemoteParams(
                                     nodeId = staticParams.remoteNodeId,
@@ -92,13 +99,14 @@ data class WaitForOpenChannel(
                                             remoteParams,
                                             wallet,
                                             interactiveTxSession,
+                                            pushAmount,
                                             open.pushAmount,
                                             open.commitmentFeerate,
                                             open.firstPerCommitmentPoint,
                                             open.channelFlags,
                                             channelConfig,
                                             channelFeatures,
-                                            channelOrigin
+                                            open.origin
                                         )
                                         Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(accept)))
                                     }

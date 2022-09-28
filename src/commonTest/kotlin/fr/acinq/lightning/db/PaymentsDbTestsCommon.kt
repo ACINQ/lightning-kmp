@@ -1,9 +1,6 @@
 package fr.acinq.lightning.db
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -15,7 +12,6 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.TemporaryNodeFailure
 import kotlin.test.*
-
 
 class PaymentsDbTestsCommon : LightningTestSuite() {
 
@@ -163,7 +159,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val db = InMemoryPaymentsDb()
         val preimage = randomBytes32()
         val channelId = randomBytes32()
-        val origin = IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb")
+        val origin = IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 3)))
         val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, fees = MilliSatoshi(1234), channelId = channelId, id = UUID.randomUUID()))
         assertNull(db.getIncomingPayment(randomBytes32()))
 
@@ -216,7 +212,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         val preimage2 = randomBytes32()
         val received2 = createInvoice(preimage2)
-        db.addIncomingPayment(preimage2, IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"))
+        db.addIncomingPayment(preimage2, IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 0), OutPoint(randomBytes32(), 5))))
         db.receivePayment(received2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(UUID.randomUUID(), 180_000.msat, 10_000.msat, channelId = null)), 60)
         val payment2 = db.getIncomingPayment(received2.paymentHash)!!
 
@@ -326,12 +322,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
     @Test
     fun `outgoing payment from closed channel`() = runSuspendTest {
-
         // When a channel is closed, a corresponding OutgoingPayment is
         // automatically injected into the database (the user's ledger).
         // The payment.recipientAmount is set to the channel's local balance
         // at the time the channel is closed.
-
         val (db, _, pr) = createFixture()
         val paymentId = UUID.randomUUID()
         val channelBalance = 100_000_000.msat
@@ -562,12 +556,13 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     fun `list payments`() = runSuspendTest {
         val (db, _, _) = createFixture()
 
-        val (preimage1, preimage2, preimage3, preimage4) = listOf(randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
+        val (preimage1, preimage2, preimage3, preimage4, preimage5) = listOf(randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
         val incoming1 = IncomingPayment(preimage1, IncomingPayment.Origin.Invoice(createInvoice(preimage1)), null, createdAt = 20)
         val incoming2 = IncomingPayment(preimage2, IncomingPayment.Origin.SwapIn("1PwLgmRdDjy5GAKWyp8eyAC4SFzWuboLLb"), null, createdAt = 21)
         val incoming3 = IncomingPayment(preimage3, IncomingPayment.Origin.Invoice(createInvoice(preimage3)), null, createdAt = 22)
         val incoming4 = IncomingPayment(preimage4, IncomingPayment.Origin.Invoice(createInvoice(preimage4)), null, createdAt = 23)
-        listOf(incoming1, incoming2, incoming3, incoming4).forEach { db.addIncomingPayment(it.preimage, it.origin, it.createdAt) }
+        val incoming5 = IncomingPayment(preimage5, IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 2), OutPoint(randomBytes32(), 7))), null, createdAt = 24)
+        listOf(incoming1, incoming2, incoming3, incoming4, incoming5).forEach { db.addIncomingPayment(it.preimage, it.origin, it.createdAt) }
 
         val outgoing1 = OutgoingPayment(UUID.randomUUID(), 50_000.msat, randomKey().publicKey(), OutgoingPayment.Details.Normal(createInvoice(randomBytes32())))
         val outgoing2 = OutgoingPayment(UUID.randomUUID(), 55_000.msat, randomKey().publicKey(), OutgoingPayment.Details.KeySend(randomBytes32()))
@@ -586,10 +581,14 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val outFinal1 = db.getOutgoingPayment(outgoing1.id)!!
         db.completeOutgoingPaymentOffchain(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
-        val newChannelUUID = UUID.randomUUID()
-        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), receivedAt = 105)
-        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), 105))
-        db.completeOutgoingPaymentOffchain(outgoing3.id, randomBytes32(), completedAt = 106)
+        val newChannelUUID1 = UUID.randomUUID()
+        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), receivedAt = 105)
+        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), 105))
+        val channelId2 = randomBytes32()
+        val newChannelUUID2 = UUID.randomUUID()
+        db.receivePayment(incoming5.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, fees = 1_500.msat, channelId = channelId2)), receivedAt = 106)
+        val inFinal5 = incoming5.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, fees = 1_500.msat, channelId = channelId2)), 106))
+        db.completeOutgoingPaymentOffchain(outgoing3.id, randomBytes32(), completedAt = 107)
         val outFinal3 = db.getOutgoingPayment(outgoing3.id)!!
         val channelId4 = randomBytes32()
         db.receivePayment(incoming4.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 10_000.msat, channelId = channelId4, 1)), receivedAt = 110)
@@ -598,11 +597,12 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val outFinal5 = db.getOutgoingPayment(outgoing5.id)!!
         // outgoing4 and incoming3 are still pending.
 
-        assertEquals(listOf(outFinal5, inFinal4, outFinal3, inFinal2, outFinal2, outFinal1, inFinal1), db.listPayments(count = 10, skip = 0))
-        assertEquals(listOf(outFinal1, inFinal1), db.listPayments(count = 5, skip = 5))
+        assertEquals(listOf(outFinal5, inFinal4, outFinal3, inFinal5, inFinal2, outFinal2, outFinal1, inFinal1), db.listPayments(count = 10, skip = 0))
+        assertEquals(listOf(outFinal2, outFinal1, inFinal1), db.listPayments(count = 5, skip = 5))
         assertEquals(listOf(outFinal5, inFinal4, outFinal1, inFinal1), db.listPayments(count = 10, skip = 0, setOf(PaymentTypeFilter.Normal)))
         assertEquals(listOf(outFinal5, inFinal4, outFinal2, outFinal1, inFinal1), db.listPayments(count = 10, skip = 0, setOf(PaymentTypeFilter.Normal, PaymentTypeFilter.KeySend)))
         assertEquals(listOf(outFinal1, inFinal1), db.listPayments(count = 5, skip = 3, setOf(PaymentTypeFilter.Normal, PaymentTypeFilter.KeySend)))
+        assertEquals(listOf(inFinal5, inFinal2), db.listPayments(count = 5, skip = 0, setOf(PaymentTypeFilter.SwapIn)))
         assertEquals(listOf(), db.listPayments(count = 5, skip = 5, setOf(PaymentTypeFilter.Normal, PaymentTypeFilter.KeySend)))
     }
 

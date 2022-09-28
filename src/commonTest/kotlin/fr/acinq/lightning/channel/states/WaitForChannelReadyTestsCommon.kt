@@ -12,6 +12,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.ChannelReady
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.Warning
@@ -78,6 +79,40 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         assertEquals(2, actionsBob1.size)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+    }
+
+    @Test
+    fun `recv FundingLocked -- push amount on both sides`() {
+        val (alice, fundingLockedAlice, bob, fundingLockedBob) = init(bobPushAmount = 25_000_000.msat)
+        val aliceBalance = TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount + 25_000_000.msat
+        assertEquals(aliceBalance, 825_000_000.msat)
+        val bobBalance = TestConstants.bobFundingAmount.toMilliSatoshi() - 25_000_000.msat + TestConstants.alicePushAmount
+        assertEquals(bobBalance, 175_000_000.msat)
+        val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob), minVersion = 3)
+        assertIs<Normal>(alice1)
+        assertEquals(alice1.commitments.localCommit.spec.toLocal, aliceBalance)
+        assertEquals(alice1.commitments.localCommit.spec.toRemote, bobBalance)
+        val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(fundingLockedAlice), minVersion = 3)
+        assertIs<Normal>(bob1)
+        assertEquals(bob1.commitments.localCommit.spec.toLocal, bobBalance)
+        assertEquals(bob1.commitments.localCommit.spec.toRemote, aliceBalance)
+    }
+
+    @Test
+    fun `recv FundingLocked -- push amount on both sides -- zero-conf`() {
+        val (alice, fundingLockedAlice, bob, fundingLockedBob) = init(bobPushAmount = 25_000_000.msat, zeroConf = true)
+        val aliceBalance = TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount + 25_000_000.msat
+        assertEquals(aliceBalance, 825_000_000.msat)
+        val bobBalance = TestConstants.bobFundingAmount.toMilliSatoshi() - 25_000_000.msat + TestConstants.alicePushAmount
+        assertEquals(bobBalance, 175_000_000.msat)
+        val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob), minVersion = 3)
+        assertIs<Normal>(alice1)
+        assertEquals(alice1.commitments.localCommit.spec.toLocal, aliceBalance)
+        assertEquals(alice1.commitments.localCommit.spec.toRemote, bobBalance)
+        val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(fundingLockedAlice), minVersion = 3)
+        assertIs<Normal>(bob1)
+        assertEquals(bob1.commitments.localCommit.spec.toLocal, bobBalance)
+        assertEquals(bob1.commitments.localCommit.spec.toRemote, aliceBalance)
     }
 
     @Test
@@ -155,7 +190,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE -- nothing at stake`() {
-        val (_, _, bob, _) = init(bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val (_, _, bob, _) = init(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE), minVersion = 3)
         assertIs<Aborted>(bob1)
         assertEquals(1, actions1.size)
@@ -173,11 +208,12 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
+            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             zeroConf: Boolean = false,
         ): Fixture {
             return if (zeroConf) {
-                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
+                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob), minVersion = 3)
                 assertIs<WaitForChannelReady>(alice1)
                 assertEquals(actionsAlice1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
@@ -188,7 +224,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
                 val channelReadyBob = actionsBob1.findOutgoingMessage<ChannelReady>()
                 Fixture(alice1, channelReadyAlice, bob1, channelReadyBob)
             } else {
-                val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+                val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
                 val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
                 val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
