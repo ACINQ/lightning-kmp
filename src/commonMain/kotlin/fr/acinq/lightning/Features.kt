@@ -128,17 +128,6 @@ sealed class Feature {
 
     // The following features have not been standardised, hence the high feature bits to avoid conflicts.
 
-    // We historically used the following feature bit in our invoices.
-    // However, the spec assigned the same feature bit to `option_scid_alias` (https://github.com/lightning/bolts/pull/910).
-    // We're moving this feature bit to 148, but we have to keep supporting it until enough wallet users have migrated, then we can remove it.
-    // We cannot rename that object otherwise we will not be able to read old serialized data.
-    @Serializable
-    object TrampolinePayment : Feature() {
-        override val rfcName get() = "trampoline_payment_backwards_compat"
-        override val mandatory get() = 50
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
-    }
-
     /** This feature bit should be activated when a node accepts having their channel reserve set to 0. */
     @Serializable
     object ZeroReserveChannels : Feature() {
@@ -292,7 +281,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ShutdownAnySegwit,
             Feature.ChannelType,
             Feature.PaymentMetadata,
-            Feature.TrampolinePayment,
             Feature.ExperimentalTrampolinePayment,
             Feature.ZeroReserveChannels,
             Feature.ZeroConfChannels,
@@ -334,7 +322,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.PaymentSecret to listOf(Feature.VariableLengthOnion),
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
-            Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
             Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret)
         )
 
