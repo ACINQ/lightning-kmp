@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
+/** We wait for the channel funding transaction to confirm. */
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

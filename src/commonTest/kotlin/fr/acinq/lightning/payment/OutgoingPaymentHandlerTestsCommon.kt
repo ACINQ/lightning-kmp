@@ -26,7 +26,6 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
-
 class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
@@ -46,7 +45,13 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `features not supported`() = runSuspendTest {
         val (alice, _) = TestsHelper.reachNormal()
-        val features = Features(Feature.ChannelType to FeatureSupport.Mandatory, Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
+        val features = Features(
+            Feature.ChannelType to FeatureSupport.Mandatory,
+            Feature.VariableLengthOnion to FeatureSupport.Mandatory,
+            Feature.PaymentSecret to FeatureSupport.Mandatory,
+            Feature.BasicMultiPartPayment to FeatureSupport.Optional,
+            Feature.DualFunding to FeatureSupport.Mandatory
+        )
         // The following invoice requires payment_metadata.
         val invoice1 = PaymentRequestTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
         // The following invoice requires unknown feature bit 188.

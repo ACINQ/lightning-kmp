@@ -10,6 +10,15 @@ import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
+/*
+ * We are waiting for our peer to initiate a channel open.
+ *
+ *       Local                        Remote
+ *         |       open_channel2        |
+ *         |<---------------------------|
+ *         |      accept_channel2       |
+ *         |--------------------------->|
+ */
 data class WaitForOpenChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

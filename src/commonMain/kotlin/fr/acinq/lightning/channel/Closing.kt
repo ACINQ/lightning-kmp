@@ -99,12 +99,12 @@ data class Closing(
                                 logger.info { "c:$channelId channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
                                 val watchSpent = WatchSpent(channelId, watch.tx, commitments1.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
                                 val commitTx = commitments1.localCommit.publishableTxs.commitTx.tx
-                                val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, commitTx, currentOnChainFeerates)
+                                val localCommitPublished = claimCurrentLocalCommitTxOutputs(keyManager, commitments1, commitTx, currentOnChainFeerates)
                                 val nextState = Closing(staticParams, currentTip, currentOnChainFeerates, commitments1, watch.tx, waitingSinceBlock, alternativeCommitments = listOf(), localCommitPublished = localCommitPublished)
                                 val actions = buildList {
                                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
                                     add(ChannelAction.Storage.StoreState(nextState))
-                                    addAll(localCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+                                    localCommitPublished.run { addAll(doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong())) }
                                 }
                                 Pair(nextState, actions)
                             }

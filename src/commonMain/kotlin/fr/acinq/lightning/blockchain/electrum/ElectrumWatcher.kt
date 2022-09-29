@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxIn
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
-import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.logger
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Connection
@@ -83,7 +82,7 @@ private data class WatcherDisconnected(
                 is HeaderSubscriptionResponse -> {
                     newState {
                         actions = buildList {
-                            watches.mapNotNull { registerToScriptHash(it, logger) }.forEach { add(it) }
+                            watches.map { registerToScriptHash(it, logger) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }

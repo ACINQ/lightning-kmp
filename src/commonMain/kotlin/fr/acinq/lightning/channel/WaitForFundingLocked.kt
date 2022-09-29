@@ -11,6 +11,7 @@ import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
+/** The channel funding transaction was confirmed, we exchange funding_locked messages. */
 data class WaitForFundingLocked(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

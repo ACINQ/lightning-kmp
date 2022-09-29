@@ -13,6 +13,15 @@ import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.OpenDualFundedChannel
 
+/*
+ * We initiated a channel open and are waiting for our peer to accept it.
+ *
+ *       Local                        Remote
+ *         |      accept_channel2       |
+ *         |<---------------------------|
+ *         |       tx_add_input         |
+ *         |--------------------------->|
+ */
 data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

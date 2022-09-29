@@ -16,6 +16,15 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
 
+/*
+ * We exchange signatures for a new channel.
+ *
+ *       Local                        Remote
+ *         |         commit_sig         |
+ *         |<---------------------------|
+ *         |        tx_signatures       |
+ *         |--------------------------->|
+ */
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

@@ -11,6 +11,27 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
+/*
+ * We build the funding transaction for a new channel.
+ *
+ *       Local                        Remote
+ *         |       tx_add_input         |
+ *         |<---------------------------|
+ *         |       tx_add_input         |
+ *         |--------------------------->|
+ *         |            ...             |
+ *         |       tx_add_output        |
+ *         |<---------------------------|
+ *         |       tx_add_output        |
+ *         |--------------------------->|
+ *         |            ...             |
+ *         |      tx_add_complete       |
+ *         |<---------------------------|
+ *         |      tx_add_complete       |
+ *         |--------------------------->|
+ *         |        commit_sig          |
+ *         |--------------------------->|
+ */
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
