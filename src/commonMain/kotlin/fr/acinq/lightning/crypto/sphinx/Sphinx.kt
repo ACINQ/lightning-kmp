@@ -91,37 +91,18 @@ object Sphinx {
     }
 
     /**
-     * The 1.1 BOLT spec changed the onion frame format to use variable-length per-hop payloads.
      * The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
      * That varint is considered to be part of the payload, so the payload length includes the number of bytes used by
      * the varint prefix.
      *
-     * @param payload payload buffer, which starts with our own cleartext payload followed by the rest of the encrypted onion payload .
-     * our payload start with an encoded size that matches the TLV length format
      * @return the size of our payload
      */
-    private fun decodePayloadLength(payload: ByteArray): Int {
+    fun decodePayloadLength(payload: ByteArray): Int {
         val input = ByteArrayInput(payload)
         val size = LightningCodecs.bigSize(input)
+        require(size > 0) { "legacy onion format is not supported" }
         val sizeLength = payload.size - input.availableBytes
-        return size.toInt() + sizeLength
-    }
-
-    /**
-     * Peek at the first bytes of the per-hop payload to extract its length.
-     */
-    fun peekPayloadLength(payload: ByteArray): Int {
-        return when (payload.first()) {
-            0.toByte() ->
-                // The 1.0 BOLT spec used 65-bytes frames inside the onion payload.
-                // The first byte of the frame (called `realm`) is set to 0x00, followed by 32 bytes of per-hop data, followed by a 32-bytes mac.
-                65
-            else ->
-                // The 1.1 BOLT spec changed the frame format to use variable-length per-hop payloads.
-                // The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
-                // Since messages are always smaller than 65535 bytes, this varint will either be 1 or 3 bytes long.
-                MacLength + decodePayloadLength(payload)
-        }
+        return MacLength + size.toInt() + sizeLength
     }
 
     /**
@@ -139,7 +120,7 @@ object Sphinx {
 
         return (sharedSecrets zip payloads).fold(ByteArray(0)) { padding, secretAndPayload ->
             val (secret, perHopPayload) = secretAndPayload
-            val perHopPayloadLength = peekPayloadLength(perHopPayload)
+            val perHopPayloadLength = decodePayloadLength(perHopPayload)
             require(perHopPayloadLength == perHopPayload.size + MacLength) { "invalid payload: length isn't correctly encoded: $perHopPayload" }
             val key = generateKey(keyType, secret)
             val padding1 = padding + ByteArray(perHopPayloadLength)
@@ -180,15 +161,16 @@ object Sphinx {
                         // we have to pessimistically generate a long cipher stream.
                         val stream = generateStream(rho, 2 * packetLength)
                         val bin = (packet.payload.toByteArray() + ByteArray(packetLength)) xor stream
-
-                        val perHopPayloadLength = peekPayloadLength(bin)
-                        val perHopPayload = bin.take(perHopPayloadLength - MacLength).toByteArray().toByteVector()
-
-                        val hmac = ByteVector32(bin.slice(perHopPayloadLength - MacLength..perHopPayloadLength).toByteArray())
-                        val nextOnionPayload = bin.drop(perHopPayloadLength).take(packetLength).toByteArray().toByteVector()
-                        val nextPubKey = blind(packetEphKey, computeBlindingFactor(packetEphKey, sharedSecret))
-
-                        Either.Right(DecryptedPacket(perHopPayload, OnionRoutingPacket(0, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
+                        when (val perHopPayloadLength = runTrying { decodePayloadLength(bin) }) {
+                            is Try.Success -> {
+                                val perHopPayload = bin.take(perHopPayloadLength.result - MacLength).toByteArray().toByteVector()
+                                val hmac = ByteVector32(bin.slice(perHopPayloadLength.result - MacLength..perHopPayloadLength.result).toByteArray())
+                                val nextOnionPayload = bin.drop(perHopPayloadLength.result).take(packetLength).toByteArray().toByteVector()
+                                val nextPubKey = blind(packetEphKey, computeBlindingFactor(packetEphKey, sharedSecret))
+                                Either.Right(DecryptedPacket(perHopPayload, OnionRoutingPacket(0, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
+                            }
+                            else -> Either.Left(InvalidOnionVersion(hash(packet)))
+                        }
                     } else {
                         Either.Left(InvalidOnionHmac(hash(packet)))
                     }
