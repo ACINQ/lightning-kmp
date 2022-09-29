@@ -294,7 +294,10 @@ tasks.withType<AbstractTestTask> {
 // Linux native does not support integration tests (sockets are not implemented in Linux native)
 if (currentOs.isLinux) {
     val linuxTest by tasks.getting(KotlinNativeTest::class) {
+        // we don't run these tests on linux because the tcp socket implementation is missing
         filter.excludeTestsMatching("*IntegrationTest")
+        filter.excludeTestsMatching("*ElectrumClientTest")
+        filter.excludeTestsMatching("*ElectrumMiniWalletTest")
     }
 }
 
