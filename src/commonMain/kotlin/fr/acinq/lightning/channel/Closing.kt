@@ -3,6 +3,10 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedHtlcTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxHtlcOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.extractPreimages
 import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
@@ -97,7 +101,7 @@ data class Closing(
                         // we can then use these preimages to fulfill payments
                         logger.info { "c:$channelId processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=${watch.tx}" }
                         val htlcSettledActions = mutableListOf<ChannelAction>()
-                        commitments.localCommit.extractPreimages(watch.tx).forEach { (htlc, preimage) ->
+                        extractPreimages(commitments.localCommit, watch.tx).forEach { (htlc, preimage) ->
                             when (val paymentId = commitments.payments[htlc.id]) {
                                 null -> {
                                     // if we don't have a reference to the payment, it means that we already have forwarded the fulfill so that's not a big deal.
@@ -113,7 +117,7 @@ data class Closing(
 
                         val revokedCommitPublishActions = mutableListOf<ChannelAction>()
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
-                            val (newRevokedCommitPublished, penaltyTxs) = Helpers.Closing.claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
+                            val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(keyManager, commitments, rev, watch.tx, currentOnChainFeerates)
                             penaltyTxs.forEach {
                                 revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it.tx)
                                 revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
@@ -151,8 +155,8 @@ data class Closing(
                         // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                         val htlcSettledActions = mutableListOf<ChannelAction>()
                         val timedOutHtlcs = when (val closingType = closing1.closingTypeAlreadyKnown()) {
-                            is LocalClose -> closingType.localCommit.timedOutHtlcs(closingType.localCommitPublished, commitments.localParams.dustLimit, watch.tx)
-                            is RemoteClose -> closingType.remoteCommit.timedOutHtlcs(closingType.remoteCommitPublished, commitments.remoteParams.dustLimit, watch.tx)
+                            is LocalClose -> timedOutHtlcs(closingType.localCommit, closingType.localCommitPublished, commitments.localParams.dustLimit, watch.tx)
+                            is RemoteClose -> timedOutHtlcs(closingType.remoteCommit, closingType.remoteCommitPublished, commitments.remoteParams.dustLimit, watch.tx)
                             else -> setOf() // we lose htlc outputs in option_data_loss_protect scenarios (future remote commit)
                         }
                         timedOutHtlcs.forEach { add ->
@@ -210,11 +214,11 @@ data class Closing(
             is ChannelEvent.GetHtlcInfosResponse -> {
                 val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == event.revokedCommitTxId }
                 if (index >= 0) {
-                    val revokedCommitPublished1 = Helpers.Closing.claimRevokedRemoteCommitTxHtlcOutputs(keyManager, commitments, revokedCommitPublished[index], currentOnChainFeerates, event.htlcInfos)
+                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(keyManager, commitments, revokedCommitPublished[index], currentOnChainFeerates, event.htlcInfos)
                     val nextState = copy(revokedCommitPublished = revokedCommitPublished.updated(index, revokedCommitPublished1))
                     val actions = buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
-                        addAll(revokedCommitPublished1.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+                        addAll(revokedCommitPublished1.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
                     }
                     Pair(nextState, actions)
                 } else {
@@ -250,14 +254,14 @@ data class Closing(
                         logger.info { "c:$channelId got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
                         val commitments1 = result.value.first
                         val localCommitPublished1 = localCommitPublished?.let {
-                            Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, it.commitTx, currentOnChainFeerates)
+                            claimCurrentLocalCommitTxOutputs(keyManager, commitments1, it.commitTx, currentOnChainFeerates)
                         }
                         val remoteCommitPublished1 = remoteCommitPublished?.let {
-                            Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, it.commitTx, currentOnChainFeerates)
+                            claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, it.commitTx, currentOnChainFeerates)
                         }
                         val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
                             val remoteCommit = commitments1.remoteNextCommitInfo.left?.nextRemoteCommit ?: error("next remote commit must be defined")
-                            Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, remoteCommit, it.commitTx, currentOnChainFeerates)
+                            claimRemoteCommitTxOutputs(keyManager, commitments1, remoteCommit, it.commitTx, currentOnChainFeerates)
                         }
                         val republishList = buildList {
                             val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()

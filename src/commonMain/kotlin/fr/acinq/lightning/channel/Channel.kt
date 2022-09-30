@@ -6,6 +6,9 @@ import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK
+import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Serialization
@@ -14,6 +17,7 @@ import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import org.kodein.log.Logger
+import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -132,15 +136,14 @@ sealed class ChannelAction {
 data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 
 /** Channel state. */
-sealed class ChannelState {
+sealed class ChannelState : LoggingContext {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
     abstract val currentOnChainFeerates: OnChainFeerates
     val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
-
-    val logger by lightningLogger()
+    override val logger: Logger get() = staticParams.nodeParams.loggerFactory.newLogger(this::class)
 
     /**
      * @param event input event (for example, a message was received, a command was sent by the GUI/API, etc)
@@ -324,7 +327,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         logger.warning { "c:$channelId they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
-        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnChainFeerates)
+        val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnChainFeerates)
 
         val nextState = when (this) {
             is Closing -> this.copy(remoteCommitPublished = remoteCommitPublished)
@@ -360,7 +363,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
         return Pair(nextState, buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+            addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
         })
     }
 
@@ -371,7 +374,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         require(remoteCommit != null) { "remote commit must not be null" }
         require(commitTx.txid == remoteCommit.txid) { "txid mismatch" }
 
-        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, currentOnChainFeerates)
+        val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, currentOnChainFeerates)
 
         val nextState = when (this) {
             is Closing -> copy(nextRemoteCommitPublished = remoteCommitPublished)
@@ -399,14 +402,14 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
         return Pair(nextState, buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+            addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
         })
     }
 
     internal fun handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:$channelId funding tx spent in txid=${tx.txid}" }
 
-        return Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
+        return claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
             logger.warning { "c:$channelId txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
             val ex = FundingTxSpent(channelId, tx)
             val error = Error(channelId, ex.message)
@@ -441,7 +444,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
             return Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                addAll(revokedCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+                addAll(revokedCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
                 add(ChannelAction.Message.Send(error))
                 add(ChannelAction.Storage.GetHtlcInfos(revokedCommitPublished.commitTx.txid, txNumber))
             })
@@ -464,7 +467,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             Pair(this as ChannelState, listOf())
         } else {
             val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
-            val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(
+            val localCommitPublished = claimCurrentLocalCommitTxOutputs(
                 keyManager,
                 commitments,
                 commitTx,
@@ -502,7 +505,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
             Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                addAll(localCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+                addAll(localCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
             })
         }
     }

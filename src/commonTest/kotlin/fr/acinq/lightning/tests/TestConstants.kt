@@ -14,6 +14,7 @@ import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.secp256k1.Hex
+import org.kodein.log.LoggerFactory
 
 object TestConstants {
     const val defaultBlockHeight = 400_000
@@ -39,6 +40,7 @@ object TestConstants {
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
+            loggerFactory = LoggerFactory.default,
             keyManager = keyManager,
             alias = "alice",
             features = Features(
@@ -115,6 +117,7 @@ object TestConstants {
         val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
         val walletParams = WalletParams(NodeUri(randomKey().publicKey(), "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
+            loggerFactory = LoggerFactory.default,
             keyManager = keyManager,
             alias = "bob",
             features = Features(

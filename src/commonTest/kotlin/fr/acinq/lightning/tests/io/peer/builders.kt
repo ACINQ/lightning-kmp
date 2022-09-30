@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.kodein.log.LoggerFactory
 
 public suspend fun newPeers(
     scope: CoroutineScope,
@@ -51,7 +52,7 @@ public suspend fun newPeers(
     val bob2alice = flow {
         while (scope.isActive) {
             val bytes = bob.outputLightningMessages.receive()
-            val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
+            val msg = LightningMessage.decode(bytes)
             println("Bob sends $msg")
             emit(msg)
         }
@@ -59,7 +60,7 @@ public suspend fun newPeers(
     val alice2bob = flow {
         while (scope.isActive) {
             val bytes = alice.outputLightningMessages.receive()
-            val msg = LightningMessage.decode(bytes) ?: error("cannot decode lightning message $bytes")
+            val msg = LightningMessage.decode(bytes)
             println("Alice sends $msg")
             emit(msg)
         }
@@ -165,8 +166,8 @@ public fun buildPeer(
     walletParams: WalletParams,
     databases: InMemoryDatabases = InMemoryDatabases()
 ): Peer {
-    val electrum = ElectrumClient(TcpSocket.Builder(), scope)
-    val watcher = ElectrumWatcher(electrum, scope)
+    val electrum = ElectrumClient(TcpSocket.Builder(), scope, LoggerFactory.default)
+    val watcher = ElectrumWatcher(electrum, scope, LoggerFactory.default)
     val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
     peer.onChainFeeratesFlow.value = OnChainFeerates(

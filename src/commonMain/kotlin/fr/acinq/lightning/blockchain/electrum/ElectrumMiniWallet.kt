@@ -2,13 +2,13 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.utils.Connection
-import fr.acinq.lightning.utils.lightningLogger
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlin.native.concurrent.ThreadLocal
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
 data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privateKeys: Map<String, PrivateKey>, val parentTxs: Map<ByteVector32, Transaction>) {
     val utxos: List<UnspentItem> = addresses.flatMap { it.value }
@@ -79,8 +79,11 @@ private sealed interface WalletCommand {
 class ElectrumMiniWallet(
     val chainHash: ByteVector32,
     private val client: ElectrumClient,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    loggerFactory: LoggerFactory
 ) : CoroutineScope by scope {
+
+    private val logger = loggerFactory.newLogger(this::class)
 
     // state flow with the current balance
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap(), emptyMap()))
@@ -179,10 +182,5 @@ class ElectrumMiniWallet(
         logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
         client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
         return scriptHash to bitcoinAddress
-    }
-
-    @ThreadLocal
-    companion object {
-        val logger by lightningLogger<ElectrumMiniWallet>()
     }
 }

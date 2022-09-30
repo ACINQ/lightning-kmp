@@ -21,11 +21,17 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Cla
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
+import fr.acinq.lightning.utils.LoggingContext
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.*
 
-class ChannelDataTestsCommon : LightningTestSuite() {
+class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
+
+    override val logger: Logger = LoggerFactory.default.newLogger(this::class)
 
     @Test
     fun `local commit published`() {
@@ -34,7 +40,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
         assertFalse(lcp.isDone())
 
         run {
-            val actions = lcp.doPublish(randomBytes32(), 6)
+            val actions = lcp.run { doPublish(randomBytes32(), 6) }
             // We use watch-confirmed on the outputs only us can claim.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, setOf(lcp.commitTx.txid, lcp.claimMainDelayedOutputTx!!.tx.txid) + lcp.claimHtlcDelayedTxs.map { it.tx.txid }.toSet())
@@ -62,7 +68,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
         assertFalse(lcp3.isDone())
 
         run {
-            val actions = lcp3.doPublish(randomBytes32(), 3)
+            val actions = lcp3.run { doPublish(randomBytes32(), 3) }
             // The only remaining transactions to watch are the 3rd-stage txs for the htlc-timeout.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, lcp.claimHtlcDelayedTxs.drop(2).map { it.tx.txid }.toSet())
@@ -105,7 +111,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
         assertFalse(rcp.isDone())
 
         run {
-            val actions = rcp.doPublish(randomBytes32(), 6)
+            val actions = rcp.run { doPublish(randomBytes32(), 6) }
             // We use watch-confirmed on the outputs only us can claim.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, setOf(rcp.commitTx.txid, rcp.claimMainOutputTx!!.tx.txid))
@@ -133,7 +139,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
         assertFalse(rcp3.isDone())
 
         run {
-            val actions = rcp3.doPublish(randomBytes32(), 3)
+            val actions = rcp3.run { doPublish(randomBytes32(), 3) }
             // Our main output has been confirmed already.
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // We still watch the remaining unclaimed htlc outputs.
@@ -174,7 +180,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
         assertFalse(rvk.isDone())
 
         run {
-            val actions = rvk.doPublish(randomBytes32(), 6)
+            val actions = rvk.run { doPublish(randomBytes32(), 6) }
             // We use watch-confirmed on the outputs only us can claim.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, setOf(rvk.commitTx.txid, rvk.claimMainOutputTx!!.tx.txid))
@@ -199,7 +205,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
         assertFalse(rvk3.isDone())
 
         run {
-            val actions = rvk3.doPublish(randomBytes32(), 3)
+            val actions = rvk3.run { doPublish(randomBytes32(), 3) }
             // Our main output has been confirmed already.
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // We still watch the remaining unclaimed outputs (htlc and remote main output).
@@ -235,7 +241,7 @@ class ChannelDataTestsCommon : LightningTestSuite() {
             )
             assertFalse(rvk4b.isDone())
 
-            val actions = rvk4b.doPublish(randomBytes32(), 3)
+            val actions = rvk4b.run { doPublish(randomBytes32(), 3) }
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // NB: the channel, after calling Helpers.claimRevokedHtlcTxOutputs, will put a watch-spent on the htlc-txs.
             assertTrue(actions.findWatches<WatchSpent>().isEmpty())

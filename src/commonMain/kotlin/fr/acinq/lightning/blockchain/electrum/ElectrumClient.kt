@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.logger
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.version
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.linesFlow
@@ -17,7 +16,9 @@ import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
-import kotlin.native.concurrent.ThreadLocal
+import org.kodein.log.Logger
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -52,11 +53,11 @@ internal data class BroadcastStatus(val connection: Connection) : ElectrumClient
  *
  */
 internal sealed class ClientState {
-    abstract fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>>
+    abstract fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>>
 }
 
 internal object WaitingForVersion : ClientState() {
-    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when {
+    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when {
         event is ReceivedResponse && event.response is Either.Right -> {
             when (parseJsonResponse(version, event.response.value)) {
                 is ServerVersionResponse -> newState {
@@ -70,12 +71,12 @@ internal object WaitingForVersion : ClientState() {
                 else -> returnState() // TODO handle error?
             }
         }
-        else -> unhandled(event)
+        else -> unhandled(event, logger)
     }
 }
 
 internal object WaitingForTip : ClientState() {
-    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
+    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
             is ReceivedResponse -> {
                 when (val rpcResponse = event.response) {
@@ -90,7 +91,7 @@ internal object WaitingForTip : ClientState() {
                     else -> returnState()
                 }
             }
-            else -> unhandled(event)
+            else -> unhandled(event, logger)
         }
 }
 
@@ -101,7 +102,7 @@ internal data class ClientRunning(
     val responseTimestamps: MutableMap<Int, Long?> = mutableMapOf()
 ) : ClientState() {
 
-    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
+    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
         is AskForHeader -> returnState(SendHeader(height, tip))
         is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
         is ReceivedResponse -> when (val response = event.response) {
@@ -124,7 +125,7 @@ internal data class ClientRunning(
                 } ?: returnState()
             }
         }
-        else -> unhandled(event)
+        else -> unhandled(event, logger)
     }
 
     private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
@@ -136,17 +137,17 @@ internal data class ClientRunning(
 }
 
 internal object ClientClosed : ClientState() {
-    override fun process(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
+    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
         when (event) {
             Connected -> newState {
                 state = WaitingForVersion
                 actions = listOf(SendRequest(version.asJsonRPCRequest()))
             }
-            else -> unhandled(event)
+            else -> unhandled(event, logger)
         }
 }
 
-private fun ClientState.unhandled(event: ClientEvent): Pair<ClientState, List<ElectrumClientAction>> =
+private fun ClientState.unhandled(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
         Disconnected -> ClientClosed to emptyList()
         AskForHeader -> returnState() // TODO something else ?
@@ -176,8 +177,11 @@ data class RequestResponseTimestamp(
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    private val loggerFactory: LoggerFactory
 ) : CoroutineScope by scope {
+
+    private val logger = loggerFactory.newLogger(this::class)
 
     var socketBuilder: TcpSocket.Builder? = socketBuilder
         set(value) {
@@ -219,7 +223,7 @@ class ElectrumClient(
     private suspend fun run() {
         eventChannel.consumeEach { event ->
 
-            val (newState, actions) = state.process(event)
+            val (newState, actions) = state.process(event, logger)
             state = newState
 
             actions.forEach { action ->
@@ -255,7 +259,7 @@ class ElectrumClient(
         socket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socketBuilder?.connect(host, port, tls) ?: error("socket builder is null.")
+            socketBuilder?.connect(host, port, tls, loggerFactory) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "TCP connect: ${ex.message}" }
             val ioException = when (ex) {
@@ -356,11 +360,9 @@ class ElectrumClient(
         eventChannel.cancel()
     }
 
-    @ThreadLocal
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
-        val logger by lightningLogger<ElectrumClient>()
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }

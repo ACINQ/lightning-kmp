@@ -9,6 +9,7 @@ import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
+import fr.acinq.lightning.utils.LoggingContext
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.ClosingSigned
@@ -102,7 +103,7 @@ data class LocalCommitPublished(
             .isNotEmpty()
     }
 
-    internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+    internal fun LoggingContext.doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
         val publishQueue = buildList {
             add(commitTx)
             claimMainDelayedOutputTx?.let { add(it.tx) }
@@ -209,7 +210,7 @@ data class RemoteCommitPublished(
             .isNotEmpty()
     }
 
-    internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+    internal fun LoggingContext.doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
         val publishQueue = buildList {
             claimMainOutputTx?.let { add(it.tx) }
             addAll(claimHtlcTxs.values.mapNotNull { it?.tx })
@@ -309,7 +310,7 @@ data class RevokedCommitPublished(
         return irrevocablySpent.values.any { it.txid == commitTx.txid } || irrevocablySpent.keys.any { it.txid == commitTx.txid }
     }
 
-    internal fun doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+    internal fun LoggingContext.doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
         val publishQueue = buildList {
             claimMainOutputTx?.let { add(it.tx) }
             mainPenaltyTx?.let { add(it.tx) }

@@ -10,7 +10,6 @@ import fr.acinq.lightning.crypto.ChaCha20
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import fr.acinq.secp256k1.Hex
-import kotlin.native.concurrent.ThreadLocal
 
 /**
  * Decrypting an onion packet yields a payload for the current node and the encrypted packet for the next node.
@@ -295,10 +294,7 @@ data class DecryptedFailurePacket(val originNode: PublicKey, val failureMessage:
  * +----------------+----------------------------------+-----------------+----------------------+-----+
  * with failure message length + pad length = 256
  */
-@ThreadLocal
 object FailurePacket {
-
-    private val logger by lightningLogger()
 
     private const val MaxPayloadLength = 256
     private const val PacketLength = Sphinx.MacLength + MaxPayloadLength + 2 + 2
@@ -352,15 +348,18 @@ object FailurePacket {
      * @param sharedSecret destination node's shared secret.
      * @return an encrypted failure packet that can be sent to the destination node.
      */
-    fun wrap(packet: ByteArray, sharedSecret: ByteVector32): ByteArray {
+    fun wrap(packet: ByteArray, sharedSecret: ByteVector32): ByteArray = tryWrap(packet, sharedSecret).get()
+
+    private fun tryWrap(packet: ByteArray, sharedSecret: ByteVector32): Try<ByteArray> {
         if (packet.size != PacketLength) {
-            logger.warning { "invalid error packet length ${packet.size}, must be $PacketLength (malicious or buggy downstream node)" }
+            val ex = IllegalArgumentException("invalid error packet length ${packet.size}, must be $PacketLength (malicious or buggy downstream node)")
+            return Try.Failure(ex)
         }
         val key = Sphinx.generateKey("ammag", sharedSecret)
         val stream = Sphinx.generateStream(key, PacketLength)
         // If we received a packet with an invalid length, we trim and pad to forward a packet with a normal length upstream.
         // This is a poor man's attempt at increasing the likelihood of the sender receiving the error.
-        return packet.take(PacketLength).toByteArray().leftPaddedCopyOf(PacketLength) xor stream
+        return Try.Success(packet.take(PacketLength).toByteArray().leftPaddedCopyOf(PacketLength) xor stream)
     }
 
     /**
@@ -379,15 +378,18 @@ object FailurePacket {
         fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
             return if (secrets.isEmpty()) {
                 val ex = IllegalArgumentException("couldn't parse error packet=$packet with sharedSecrets=$secrets")
-                logger.warning(ex)
                 Try.Failure(ex)
             } else {
                 val (secret, pubkey) = secrets.first()
-                val packet1 = wrap(packet, secret)
-                val um = Sphinx.generateKey("um", secret)
-                when (val error = decode(packet1, um)) {
-                    is Try.Failure -> loop(packet1, secrets.tail())
-                    is Try.Success -> Try.Success(DecryptedFailurePacket(pubkey, error.result))
+                when (val packet1 = tryWrap(packet, secret)) {
+                    is Try.Failure -> Try.Failure(packet1.error)
+                    is Try.Success -> {
+                        val um = Sphinx.generateKey("um", secret)
+                        when (val error = decode(packet1.result, um)) {
+                            is Try.Failure -> loop(packet1.result, secrets.tail())
+                            is Try.Success -> Try.Success(DecryptedFailurePacket(pubkey, error.result))
+                        }
+                    }
                 }
             }
         }

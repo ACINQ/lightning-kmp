@@ -29,6 +29,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
+import org.kodein.log.newLogger
+import kotlin.time.Duration
+import kotlin.time.ExperimentalTime
 import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerEvent
@@ -130,7 +133,7 @@ class Peer(
     private var output = Channel<ByteArray>(BUFFERED)
     public val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
-    private val logger by lightningLogger()
+    private val logger = nodeParams.loggerFactory.newLogger(this::class)
 
     // The channels map, as initially loaded from the database at "boot" (on Peer.init).
     // As the channelsFlow is unavailable until the electrum connection is up-and-running,
@@ -156,7 +159,7 @@ class Peer(
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, walletParams, db.payments)
 
     // encapsulates logic for sending payments
-    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams.nodeId, walletParams, db.payments)
+    private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, walletParams, db.payments)
 
     private val features = nodeParams.features
 
@@ -276,7 +279,8 @@ class Peer(
             socketBuilder?.connect(
                 host = walletParams.trampolineNode.host,
                 port = walletParams.trampolineNode.port,
-                tls = TcpSocket.TLS.DISABLED
+                tls = TcpSocket.TLS.DISABLED,
+                loggerFactory = nodeParams.loggerFactory
             ) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
             logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
@@ -545,8 +549,11 @@ class Peer(
         when {
             event is BytesReceived -> {
                 val msg = LightningMessage.decode(event.data)
-                msg?.let { if (it !is Ping && it !is Pong) logger.info { "n:$remoteNodeId received $it" } }
+                msg.let { if (it !is Ping && it !is Pong) logger.info { "n:$remoteNodeId received $it" } }
                 when {
+                    msg is UnknownMessage -> {
+                        logger.warning { "unhandled code=${msg.type}, cannot decode input=${Hex.encode(event.data)}" }
+                    }
                     msg is Init -> {
                         val theirFeatures = Features(msg.features)
                         logger.info { "n:$remoteNodeId peer is using features $theirFeatures" }
@@ -759,7 +766,7 @@ class Peer(
             }
             event is SendPayment -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
-                when (val result = outgoingPaymentHandler.sendPayment(event, _channels, features, currentTip.first)) {
+                when (val result = outgoingPaymentHandler.sendPayment(event, _channels, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
                         _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                         result.actions.forEach { input.send(it) }
