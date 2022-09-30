@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.toMilliSatoshi
+import org.kodein.log.LoggerFactory
 
 data class NodeUri(val id: PublicKey, val host: String, val port: Int)
 
@@ -76,6 +77,7 @@ data class WalletParams(
  * @param enableTrampolinePayment enable trampoline payments.
  */
 data class NodeParams(
+    val loggerFactory: LoggerFactory,
     val keyManager: KeyManager,
     val alias: String,
     val features: Features,

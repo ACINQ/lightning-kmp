@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitMainOutput
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
 
@@ -33,7 +34,7 @@ data class WaitForRemotePublishFutureCommitment(
 
     internal fun handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:${commitments.channelId} they published their future commit (because we asked them to) in txid=${tx.txid}" }
-        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(
+        val remoteCommitPublished = claimRemoteCommitMainOutput(
             keyManager,
             commitments,
             tx,
@@ -49,7 +50,7 @@ data class WaitForRemotePublishFutureCommitment(
             futureRemoteCommitPublished = remoteCommitPublished
         )
         val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))
-        actions.addAll(remoteCommitPublished.doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()))
+        actions.addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
         return Pair(nextState, actions)
     }
 }

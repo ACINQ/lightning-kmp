@@ -3,13 +3,13 @@ package fr.acinq.lightning.io
 import fr.acinq.lightning.utils.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
+import org.kodein.log.LoggerFactory
 import platform.Foundation.NSData
 import platform.Network.*
 import platform.posix.ECONNREFUSED
 import platform.posix.ECONNRESET
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.native.concurrent.ThreadLocal
 import swift.phoenix_crypto.NativeSocket
 import swift.phoenix_crypto.NativeSocketError
 import swift.phoenix_crypto.NativeSocketTLS
@@ -123,15 +123,14 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
     }
 }
 
-@ThreadLocal
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-//  private val logger by lightningLogger<IosTcpSocket>()
 
     @OptIn(ExperimentalUnsignedTypes::class)
     override suspend fun connect(
         host: String,
         port: Int,
-        tls: TcpSocket.TLS
+        tls: TcpSocket.TLS,
+        loggerFactory: LoggerFactory
     ): TcpSocket = suspendCancellableCoroutine { continuation ->
 
         // @kotlinx.cinterop.ObjCMethod
@@ -170,10 +169,10 @@ fun TcpSocket.TLS.toNativeSocketTLS(): NativeSocketTLS {
     }
 }
 
-sealed class NativeSocketException: Exception() {
-    data class POSIX(val errorCode: Int): NativeSocketException()
-    data class DNS(val errorType: Int): NativeSocketException()
-    data class TLS(val status: Int): NativeSocketException()
+sealed class NativeSocketException : Exception() {
+    data class POSIX(val errorCode: Int) : NativeSocketException()
+    data class DNS(val errorType: Int) : NativeSocketException()
+    data class TLS(val status: Int) : NativeSocketException()
 }
 
 private fun NativeSocketError.toIOException(): TcpSocket.IOException {

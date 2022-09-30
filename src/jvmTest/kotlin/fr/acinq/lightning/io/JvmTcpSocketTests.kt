@@ -2,11 +2,15 @@ package fr.acinq.lightning.io
 
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import org.junit.Test
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import java.util.*
 import kotlin.test.assertEquals
 
 
 class JvmTcpSocketTests : LightningTestSuite() {
+
+    val logger = LoggerFactory.default.newLogger(this::class)
 
     @Test
     fun `build public key from base64`() {
@@ -22,7 +26,7 @@ class JvmTcpSocketTests : LightningTestSuite() {
         )
 
         testCases.forEach { keyBase64 ->
-            val key = JvmTcpSocket.buildPublicKey(Base64.getDecoder().decode(keyBase64))
+            val key = JvmTcpSocket.buildPublicKey(Base64.getDecoder().decode(keyBase64), logger)
             assertEquals(keyBase64, String(Base64.getEncoder().encode(key.encoded)))
         }
     }

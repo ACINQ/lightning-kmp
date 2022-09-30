@@ -17,6 +17,7 @@ import fr.acinq.lightning.io.PeerEvent
 import fr.acinq.lightning.io.WrappedChannelEvent
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import org.kodein.log.newLogger
 
 sealed class PaymentPart {
     abstract val amount: MilliSatoshi
@@ -66,7 +67,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         fun add(part: PaymentPart): PendingPayment = copy(parts = parts + part)
     }
 
-    private val logger by lightningLogger()
+    private val logger = nodeParams.loggerFactory.newLogger(this::class)
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 

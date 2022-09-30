@@ -31,12 +31,8 @@ import fr.acinq.lightning.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.math.max
-import kotlin.native.concurrent.ThreadLocal
 
-@ThreadLocal
 object Helpers {
-
-    val logger by lightningLogger()
 
     /**
      * Returns the number of confirmations needed to safely handle the funding transaction,
@@ -291,7 +287,7 @@ object Helpers {
     }
 
     /** This helper method will publish txs only if they haven't yet reached minDepth. */
-    fun publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.PublishTx> {
+    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.PublishTx> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
         skip.forEach { tx -> logger.info { "c:$channelId no need to republish txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx ->
@@ -301,14 +297,14 @@ object Helpers {
     }
 
     /** This helper method will watch txs only if they haven't yet reached minDepth. */
-    fun watchConfirmedIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32, minDepth: Long): List<ChannelAction.Blockchain.SendWatch> {
+    fun LoggingContext.watchConfirmedIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32, minDepth: Long): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
         skip.forEach { tx -> logger.info { "c:$channelId no need to watch txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx -> ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))) }
     }
 
     /** This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent. */
-    fun watchSpentIfNeeded(parentTx: Transaction, outputs: List<OutPoint>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.SendWatch> {
+    fun LoggingContext.watchSpentIfNeeded(parentTx: Transaction, outputs: List<OutPoint>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = outputs.partition { irrevocablySpent.contains(it) }
         skip.forEach { output -> logger.info { "c:$channelId no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent[output]?.txid}" } }
         return process.map { output ->
@@ -536,7 +532,7 @@ object Helpers {
          * @param commitments our commitment data, which include payment preimages.
          * @return a list of transactions (one per output that we can claim).
          */
-        fun claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): LocalCommitPublished {
+        fun LoggingContext.claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): LocalCommitPublished {
             val localCommit = commitments.localCommit
             val localParams = commitments.localParams
             require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current local commit tx" }
@@ -614,7 +610,7 @@ object Helpers {
          * @param tx the remote commitment transaction that has just been published.
          * @return a list of transactions (one per output that we can claim).
          */
-        fun claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
+        fun LoggingContext.claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
             val localParams = commitments.localParams
             val remoteParams = commitments.remoteParams
             val commitInput = commitments.commitInput
@@ -717,7 +713,7 @@ object Helpers {
          * @param tx the remote commitment transaction that has just been published.
          * @return a transaction to claim our main output.
          */
-        internal fun claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, tx: Transaction, claimMainFeerate: FeeratePerKw): RemoteCommitPublished {
+        internal fun LoggingContext.claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, tx: Transaction, claimMainFeerate: FeeratePerKw): RemoteCommitPublished {
             val localPaymentPoint = commitments.localParams.channelKeys.paymentBasepoint
 
             val mainTx = generateTx("claim-remote-delayed-output") {
@@ -740,7 +736,7 @@ object Helpers {
          * When an unexpected transaction spending the funding tx is detected, we can use our secrets to identify the commitment number.
          * This can then be used to find the necessary information to build penalty txs for every htlc output.
          */
-        private fun extractTxNumber(keyManager: KeyManager, commitments: Commitments, tx: Transaction): Long {
+        private fun LoggingContext.extractTxNumber(keyManager: KeyManager, commitments: Commitments, tx: Transaction): Long {
             require(tx.txIn.size == 1) { "commitment tx should have 1 input" }
             val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelConfig)
             val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
@@ -762,7 +758,7 @@ object Helpers {
          * @return a [[RevokedCommitPublished]] object containing a penalty transaction for the remote's main output and the commitment number.
          * With the commitment number, the caller should fetch information about the htlcs in this commitment and then call [[claimRevokedRemoteCommitTxHtlcOutputs]].
          */
-        fun claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): Pair<RevokedCommitPublished, Long>? {
+        fun LoggingContext.claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, feerates: OnChainFeerates): Pair<RevokedCommitPublished, Long>? {
             val txNumber = extractTxNumber(keyManager, commitments, tx)
             // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
             val hash = commitments.remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber) ?: return null
@@ -813,7 +809,7 @@ object Helpers {
         /**
          * Once we've fetched htlc information for a revoked commitment from the DB, we create penalty transactions to claim all htlc outputs.
          */
-        fun claimRevokedRemoteCommitTxHtlcOutputs(
+        fun LoggingContext.claimRevokedRemoteCommitTxHtlcOutputs(
             keyManager: KeyManager,
             commitments: Commitments,
             revokedCommitPublished: RevokedCommitPublished,
@@ -870,7 +866,7 @@ object Helpers {
          * NB: when anchor outputs is used, htlc transactions can be aggregated in a single transaction if they share the same
          * lockTime (thanks to the use of sighash_single | sighash_anyonecanpay), so we may need to claim multiple outputs.
          */
-        fun claimRevokedHtlcTxOutputs(
+        fun LoggingContext.claimRevokedHtlcTxOutputs(
             keyManager: KeyManager,
             commitments: Commitments,
             revokedCommitPublished: RevokedCommitPublished,
@@ -932,7 +928,7 @@ object Helpers {
          *           - add is the htlc in the downstream channel from which we extracted the preimage
          *           - preimage needs to be sent to the upstream channel
          */
-        fun LocalCommit.extractPreimages(tx: Transaction): Set<Pair<UpdateAddHtlc, ByteVector32>> {
+        fun LoggingContext.extractPreimages(localCommit: LocalCommit, tx: Transaction): Set<Pair<UpdateAddHtlc, ByteVector32>> {
             val htlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromHtlcSuccess())
                 .onEach { logger.info { "extracted paymentPreimage=$it from tx=$tx (htlc-success)" } }
             val claimHtlcSuccess = tx.txIn.map { it.witness }.mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess())
@@ -944,7 +940,7 @@ object Helpers {
                 // if an outgoing htlc is in the remote commitment, then:
                 // - either it is in the local commitment (it was never fulfilled)
                 // - or we have already received the fulfill and forwarded it upstream
-                spec.htlcs.filter { it is OutgoingHtlc && it.add.paymentHash.contentEquals(sha256(paymentPreimage)) }.map { it.add to paymentPreimage }
+                localCommit.spec.htlcs.filter { it is OutgoingHtlc && it.add.paymentHash.contentEquals(sha256(paymentPreimage)) }.map { it.add to paymentPreimage }
             }.toSet()
         }
 
@@ -955,12 +951,12 @@ object Helpers {
          * @param tx a tx that has reached min_depth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun LocalCommit.timedOutHtlcs(localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
-            val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, spec).map { it.add }
+        fun LoggingContext.timedOutHtlcs(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+            val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec).map { it.add }
             return when {
-                tx.txid == publishableTxs.commitTx.tx.txid -> {
+                tx.txid == localCommit.publishableTxs.commitTx.tx.txid -> {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-                    (spec.htlcs.outgoings() - untrimmedHtlcs.toSet()).toSet()
+                    (localCommit.spec.htlcs.outgoings() - untrimmedHtlcs.toSet()).toSet()
                 }
                 localCommitPublished.isHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
@@ -991,12 +987,12 @@ object Helpers {
          * @param tx a tx that has reached min_depth
          * @return a set of htlcs that need to be failed upstream
          */
-        fun RemoteCommit.timedOutHtlcs(remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
-            val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, spec).map { it.add }
+        fun LoggingContext.timedOutHtlcs(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction): Set<UpdateAddHtlc> {
+            val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec).map { it.add }
             return when {
-                tx.txid == txid -> {
+                tx.txid == remoteCommit.txid -> {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-                    (spec.htlcs.incomings() - untrimmedHtlcs.toSet()).toSet()
+                    (remoteCommit.spec.htlcs.incomings() - untrimmedHtlcs.toSet()).toSet()
                 }
                 remoteCommitPublished.isClaimHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
@@ -1079,7 +1075,7 @@ object Helpers {
         /**
          * Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment.
          */
-        private fun <T : Transactions.TransactionWithInputInfo> generateTx(desc: String, attempt: () -> Transactions.TxResult<T>): T? =
+        private fun <T : Transactions.TransactionWithInputInfo> LoggingContext.generateTx(desc: String, attempt: () -> Transactions.TxResult<T>): T? =
             when (val result = runTrying { attempt() }) {
                 is Try.Success -> when (val txResult = result.get()) {
                     is Transactions.TxResult.Success -> {

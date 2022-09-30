@@ -73,19 +73,19 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         Pair(event.state, doPublish(closingType.tx, event.state.channelId))
                     }
                     is LocalClose -> {
-                        val actions = closingType.localCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
+                        val actions = closingType.localCommitPublished.run { doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(event.state, actions)
                     }
                     is RemoteClose -> {
-                        val actions = closingType.remoteCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
+                        val actions = closingType.remoteCommitPublished.run { doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(event.state, actions)
                     }
                     is RevokedClose -> {
-                        val actions = closingType.revokedCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
+                        val actions = closingType.revokedCommitPublished.run { doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(event.state, actions)
                     }
                     is RecoveryClose -> {
-                        val actions = closingType.remoteCommitPublished.doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong())
+                        val actions = closingType.remoteCommitPublished.run { doPublish(event.state.channelId, event.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(event.state, actions)
                     }
                     null -> {
@@ -108,7 +108,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         event.state.localCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         event.state.remoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         event.state.nextRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
-                        event.state.revokedCommitPublished.forEach { actions.addAll(it.doPublish(event.state.channelId, minDepth)) }
+                        event.state.revokedCommitPublished.forEach { it.run { actions.addAll(doPublish(event.state.channelId, minDepth)) } }
                         event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {

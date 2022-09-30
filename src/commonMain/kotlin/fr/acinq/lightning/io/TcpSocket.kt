@@ -5,6 +5,7 @@ import fr.acinq.lightning.utils.splitByLines
 import fr.acinq.lightning.utils.subArray
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import org.kodein.log.LoggerFactory
 
 
 @OptIn(ExperimentalStdlibApi::class)
@@ -49,7 +50,7 @@ interface TcpSocket {
     }
 
     interface Builder {
-        suspend fun connect(host: String, port: Int, tls: TLS): TcpSocket
+        suspend fun connect(host: String, port: Int, tls: TLS, loggerFactory: LoggerFactory): TcpSocket
 
         companion object {
             operator fun invoke(): Builder = PlatformSocketBuilder

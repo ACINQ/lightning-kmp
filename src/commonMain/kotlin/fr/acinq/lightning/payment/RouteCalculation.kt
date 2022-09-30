@@ -5,15 +5,17 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelState
 import fr.acinq.lightning.channel.Normal
-import fr.acinq.lightning.utils.*
-import kotlin.native.concurrent.ThreadLocal
+import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
-@ThreadLocal
-object RouteCalculation {
+class RouteCalculation(loggerFactory: LoggerFactory) {
+
+    private val logger = loggerFactory.newLogger(this::class)
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
-
-    private val logger by lightningLogger()
 
     fun findRoutes(paymentId: UUID, amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
         data class ChannelBalance(val c: Normal) {

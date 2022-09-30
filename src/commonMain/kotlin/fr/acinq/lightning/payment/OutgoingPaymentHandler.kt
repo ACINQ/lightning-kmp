@@ -1,7 +1,6 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
@@ -18,8 +17,9 @@ import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import org.kodein.log.Logger
+import org.kodein.log.newLogger
 
-class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
+class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 
     interface SendPaymentResult
     interface ProcessFailureResult
@@ -37,22 +37,23 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
     /** The payment was successfully made. */
     data class Success(val request: SendPayment, val payment: OutgoingPayment, val preimage: ByteVector32) : ProcessFailureResult, ProcessFulfillResult
 
-    private val logger by lightningLogger()
+    private val logger = nodeParams.loggerFactory.newLogger(this::class)
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
+    private val routeCalculation = RouteCalculation(nodeParams.loggerFactory)
 
     // NB: this function should only be used in tests.
     fun getPendingPayment(parentId: UUID): PaymentAttempt? = pending[parentId]
 
     private fun getPaymentAttempt(childId: UUID): PaymentAttempt? = childToParentId[childId]?.let { pending[it] }
 
-    suspend fun sendPayment(request: SendPayment, channels: Map<ByteVector32, ChannelState>, nodeFeatures: Features, currentBlockHeight: Int): SendPaymentResult {
+    suspend fun sendPayment(request: SendPayment, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): SendPaymentResult {
         logger.info { "h:${request.paymentHash} p:${request.paymentId} sending ${request.amount} to ${request.recipient}" }
         if (request.amount <= 0.msat) {
             logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment amount must be positive (${request.amount})" }
             return Failure(request, FinalFailure.InvalidPaymentAmount.toPaymentFailure())
         }
-        if (!nodeFeatures.areSupported(Features(request.paymentRequest.features).invoiceFeatures())) {
+        if (!nodeParams.features.areSupported(Features(request.paymentRequest.features).invoiceFeatures())) {
             logger.warning { "h:${request.paymentHash} p:${request.paymentId} invoice contains mandatory features that we don't support" }
             return Failure(request, FinalFailure.FeaturesNotSupported.toPaymentFailure())
         }
@@ -66,7 +67,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         }
         val trampolineFees = request.trampolineFeesOverride ?: walletParams.trampolineFees
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)
-        return when (val result = RouteCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
+        return when (val result = routeCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
@@ -104,7 +105,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
                 val ignore = payment.ignore + channelId // we ignore the failing channel in retries
-                when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, add.amount, channels - ignore)) {
+                when (val routes = routeCalculation.findRoutes(payment.request.paymentId, add.amount, channels - ignore)) {
                     is Either.Left -> PaymentAttempt.PaymentAborted(payment.request, routes.value, payment.pending, payment.failures).failChild(add.paymentId, Either.Left(event.error), db, logger)
                     is Either.Right -> {
                         val newPayments = createChildPayments(payment.request, routes.value, payment.trampolinePayload)
@@ -165,7 +166,7 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
                         val nextFees = trampolineFees[payment.attemptNumber + 1]
                         logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, nextFees, currentBlockHeight)
-                        when (val routes = RouteCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
+                        when (val routes = routeCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
                             is Either.Left -> {
                                 logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
@@ -315,10 +316,10 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         val outgoingPayment = OutgoingPayment.LightningPart(
             id = childId,
             amount = route.amount,
-            route = listOf(HopDesc(nodeId, route.channel.staticParams.remoteNodeId, route.channel.shortChannelId), HopDesc(route.channel.staticParams.remoteNodeId, request.recipient)),
+            route = listOf(HopDesc(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.shortChannelId), HopDesc(route.channel.staticParams.remoteNodeId, request.recipient)),
             status = OutgoingPayment.LightningPart.Status.Pending
         )
-        val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
+        val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
         val (add, secrets) = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
         return Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ChannelEvent.ExecuteCommand(add)))
     }
@@ -327,10 +328,10 @@ class OutgoingPaymentHandler(val nodeId: PublicKey, val walletParams: WalletPara
         // We are either directly paying our peer (the trampoline node) or a remote node via our peer (using trampoline).
         val trampolineRoute = when (request.recipient) {
             walletParams.trampolineNode.id -> listOf(
-                NodeHop(nodeId, request.recipient, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat)
+                NodeHop(nodeParams.nodeId, request.recipient, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat)
             )
             else -> listOf(
-                NodeHop(nodeId, walletParams.trampolineNode.id, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat),
+                NodeHop(nodeParams.nodeId, walletParams.trampolineNode.id, /* ignored */ CltvExpiryDelta(0), /* ignored */ 0.msat),
                 NodeHop(walletParams.trampolineNode.id, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
             )
         }
