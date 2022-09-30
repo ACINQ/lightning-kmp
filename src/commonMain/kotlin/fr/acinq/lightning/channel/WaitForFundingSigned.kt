@@ -65,7 +65,7 @@ data class WaitForFundingSigned(
                             logger.info { "c:$channelId channel is using 0-conf, we won't wait for the funding tx to confirm" }
                             val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                             val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)
-                            val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
+                            val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint, TlvStream(listOf(FundingLockedTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
                             // We use part of the funding txid to create a dummy short channel id.
                             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
                             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).

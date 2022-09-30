@@ -270,7 +270,15 @@ data class ChannelVersion(@Serializable(with = ByteVectorKSerializer::class) val
         val channelConfig = fr.acinq.lightning.channel.ChannelConfig.standard
 
         // These are the corresponding channel features
-        val channelFeatures = fr.acinq.lightning.channel.ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels))
+        val channelFeatures = fr.acinq.lightning.channel.ChannelFeatures(
+            setOf(
+                Feature.Wumbo,
+                Feature.StaticRemoteKey,
+                Feature.AnchorOutputs,
+                Feature.ZeroReserveChannels,
+                Feature.ZeroConfChannels,
+            )
+        )
     }
 }
 

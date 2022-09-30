@@ -784,22 +784,29 @@ data class FundingSigned(
 @Serializable
 data class FundingLocked(
     @Contextual override val channelId: ByteVector32,
-    @Contextual val nextPerCommitmentPoint: PublicKey
+    @Contextual val nextPerCommitmentPoint: PublicKey,
+    val tlvStream: TlvStream<FundingLockedTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = FundingLocked.type
+    val alias: ShortChannelId? = tlvStream.get<FundingLockedTlv.ShortChannelIdTlv>()?.alias
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(nextPerCommitmentPoint.value, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<FundingLocked> {
         const val type: Long = 36
 
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(FundingLockedTlv.ShortChannelIdTlv.tag to FundingLockedTlv.ShortChannelIdTlv.Companion as TlvValueReader<FundingLockedTlv>)
+
         override fun read(input: Input): FundingLocked {
             return FundingLocked(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
-                PublicKey(LightningCodecs.bytes(input, 33))
+                PublicKey(LightningCodecs.bytes(input, 33)),
+                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }

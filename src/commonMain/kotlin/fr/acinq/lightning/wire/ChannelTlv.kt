@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.utils.msat
@@ -116,6 +117,20 @@ sealed class ChannelTlv : Tlv {
             const val tag: Long = 0x47000007
 
             override fun read(input: Input): PushAmountTlv = PushAmountTlv(LightningCodecs.tu64(input).msat)
+        }
+    }
+}
+
+@Serializable
+sealed class FundingLockedTlv : Tlv {
+    @Serializable
+    data class ShortChannelIdTlv(val alias: ShortChannelId) : FundingLockedTlv() {
+        override val tag: Long get() = ShortChannelIdTlv.tag
+        override fun write(out: Output) = LightningCodecs.writeU64(alias.toLong(), out)
+
+        companion object : TlvValueReader<ShortChannelIdTlv> {
+            const val tag: Long = 1
+            override fun read(input: Input): ShortChannelIdTlv = ShortChannelIdTlv(ShortChannelId(LightningCodecs.u64(input)))
         }
     }
 }
