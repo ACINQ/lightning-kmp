@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
@@ -26,6 +27,17 @@ data class InteractiveTxParams(
     val targetFeerate: FeeratePerKw
 ) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
+
+    // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
+    val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
+
+    fun shouldSignFirst(localNodeId: PublicKey, remoteNodeId: PublicKey): Boolean = when {
+        // The peer with the lowest total of input amount must transmit its `tx_signatures` first.
+        localAmount < remoteAmount -> true
+        // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
+        localAmount == remoteAmount -> LexicographicalOrdering.isLessThan(localNodeId, remoteNodeId)
+        else -> false
+    }
 }
 
 sealed class FundingContributionFailure {
@@ -43,8 +55,8 @@ sealed class FundingContributionFailure {
 data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<TxAddOutput>) {
     companion object {
         /** Create funding contributions from p2wpkh inputs, with an optional p2wpkh change output. */
-        fun create(params: InteractiveTxParams, utxos: List<FundingInput>, changePubKey: PublicKey?): Either<FundingContributionFailure, FundingContributions> {
-            utxos.forEach { (tx, txOutput, _) ->
+        fun create(params: InteractiveTxParams, utxos: List<WalletState.Utxo>, changePubKey: PublicKey? = null): Either<FundingContributionFailure, FundingContributions> {
+            utxos.forEach { (tx, txOutput) ->
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
                 if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
                 if (!Script.isPay2wpkh(tx.txOut[txOutput].publicKeyScript.toByteArray())) return Either.Left(FundingContributionFailure.NonPay2wpkhInput(tx.txid, txOutput))
@@ -57,7 +69,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
 
             // We compute the fees that we should pay in the shared transaction.
             val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
-            val dummySignedTxIn = utxos.map { TxIn(it.outpoint, ByteVector.empty, 0, dummyWitness) }
+            val dummySignedTxIn = utxos.map { TxIn(it.outPoint, ByteVector.empty, 0, dummyWitness) }
             val dummyChangeTxOut = TxOut(params.localAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
             val sharedTxOut = TxOut(params.fundingAmount, params.fundingPubkeyScript)
             val (weightWithoutChange, weightWithChange) = when (params.isInitiator) {
@@ -75,8 +87,9 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
                     Pair(w1, w2)
                 }
             }
+            // If we're not the initiator, we don't return an error when we're unable to meet the desired feerate.
             val feesWithoutChange = totalAmountIn - params.localAmount
-            if (feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
+            if (params.isInitiator && feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
                 return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
             }
 
@@ -84,7 +97,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
             val serialIdParity = if (params.isInitiator) 0 else 1
 
             // We add a change output if necessary and finalize our funding contributions.
-            val inputs = utxos.mapIndexed { i, (tx, txOutput, _) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
+            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
             val sharedOutput = TxAddOutput(params.channelId, 2 * utxos.size.toLong() + serialIdParity, params.fundingAmount, params.fundingPubkeyScript)
             val changeOutput = when (changePubKey) {
                 null -> listOf()
@@ -138,28 +151,17 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
         return Transaction(2, inputs, outputs, lockTime)
     }
 
-    fun sign(channelId: ByteVector32, privKeys: List<PrivateKey>): PartiallySignedSharedTransaction? {
+    fun sign(channelId: ByteVector32, wallet: WalletState): PartiallySignedSharedTransaction? {
         val unsignedTx = buildUnsignedTx()
         val localSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
-            when (val input = localInputs.find { txIn.outPoint == OutPoint(it.previousTx, it.previousTxOutput) }) {
+            when (localInputs.find { txIn.outPoint == OutPoint(it.previousTx, it.previousTxOutput) }) {
                 null -> null
-                else -> {
-                    // This input belongs to us, let's see if we have the corresponding private key.
-                    val txOut = input.previousTx.txOut[input.previousTxOutput.toInt()]
-                    when (val priv = privKeys.find { txOut.publicKeyScript == Script.write(Script.pay2wpkh(it.publicKey())).byteVector() }) {
-                        null -> null
-                        else -> {
-                            // We have the private key, let's sign this input.
-                            val sig = Transaction.signInput(unsignedTx, i, Script.pay2pkh(priv.publicKey()), SigHash.SIGHASH_ALL, txOut.amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-                            Script.witnessPay2wpkh(priv.publicKey(), sig.byteVector())
-                        }
-                    }
-                }
+                else -> wallet.signInput(unsignedTx, i).second
             }
         }.filterNotNull()
         return when (localSigs.size) {
             localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx.txid, localSigs))
-            else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of private keys.
+            else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of utxos.
         }
     }
 }

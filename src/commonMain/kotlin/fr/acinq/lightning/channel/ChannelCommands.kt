@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.UUID
@@ -30,6 +31,9 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
 
 object CMD_SIGN : Command()
 data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command()
+
+// We only support a very limited fee bumping mechanism where all spendable utxos will be used (only used in tests).
+data class CMD_BUMP_FUNDING_FEE(val targetFeerate: FeeratePerKw, val fundingAmount: Satoshi, val wallet: WalletState, val lockTime: Long) : Command()
 
 data class ClosingFees(val preferred: Satoshi, val min: Satoshi, val max: Satoshi) {
     constructor(preferred: Satoshi) : this(preferred, preferred, preferred)

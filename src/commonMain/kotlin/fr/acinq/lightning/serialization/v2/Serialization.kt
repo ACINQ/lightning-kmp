@@ -52,7 +52,6 @@ object Serialization {
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
             subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
-            subclass(ChannelTlv.ChannelVersionTlv.serializer())
             subclass(ChannelTlv.ChannelOriginTlv.serializer())
             subclass(InitTlv.Networks.serializer())
             subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())

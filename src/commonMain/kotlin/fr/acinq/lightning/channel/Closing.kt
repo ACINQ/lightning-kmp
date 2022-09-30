@@ -1,6 +1,9 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.updated
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
@@ -13,7 +16,6 @@ import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.db.OutgoingPayment
-import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.ChannelReestablish
@@ -39,8 +41,9 @@ data class Closing(
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    val fundingTx: Transaction?, // this will be non-empty if we are the initiator and we got in closing while waiting for our own tx to be published
+    val fundingTx: Transaction?, // this will be non-empty if we got in closing while waiting for the funding tx to confirm
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
+    val alternativeCommitments: List<Commitments>, // commitments we signed that spend a different funding output
     val mutualCloseProposed: List<ClosingTx> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
     val mutualClosePublished: List<ClosingTx> = emptyList(),
     val localCommitPublished: LocalCommitPublished? = null,
@@ -66,6 +69,47 @@ data class Closing(
             is ChannelEvent.WatchReceived -> {
                 val watch = event.watch
                 when {
+                    watch is WatchEventConfirmed && watch.event is BITCOIN_FUNDING_DEPTHOK -> {
+                        when (val commitments1 = alternativeCommitments.find { it.fundingTxId == watch.tx.txid }) {
+                            null -> if (commitments.fundingTxId == watch.tx.txid) {
+                                // The best funding tx candidate has been confirmed, we can forget alternative commitments.
+                                val nextState = this.copy(alternativeCommitments = listOf())
+                                val watchSpent = WatchSpent(channelId, watch.tx, commitments.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
+                                val actions = listOf(
+                                    ChannelAction.Blockchain.SendWatch(watchSpent),
+                                    ChannelAction.Storage.StoreState(nextState)
+                                )
+                                Pair(nextState, actions)
+                            } else {
+                                logger.warning { "c:$channelId an unknown funding tx with txId=${watch.tx.txid} got confirmed, this should not happen" }
+                                Pair(this, listOf())
+                            }
+                            else -> {
+                                // This is a corner case where:
+                                //  - the funding tx was RBF-ed
+                                //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
+                                //  - *and* an older version of the funding tx confirmed and reached min depth (it won't be re-orged out)
+                                //
+                                // This means that:
+                                //  - the whole current commitment tree has been double-spent and can safely be forgotten
+                                //  - from now on, we only need to keep track of the commitment associated to the funding tx that got confirmed
+                                //
+                                // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
+                                // to negotiate a mutual close.
+                                logger.info { "c:$channelId channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
+                                val watchSpent = WatchSpent(channelId, watch.tx, commitments1.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
+                                val commitTx = commitments1.localCommit.publishableTxs.commitTx.tx
+                                val localCommitPublished = claimCurrentLocalCommitTxOutputs(keyManager, commitments1, commitTx, currentOnChainFeerates)
+                                val nextState = Closing(staticParams, currentTip, currentOnChainFeerates, commitments1, watch.tx, waitingSinceBlock, alternativeCommitments = listOf(), localCommitPublished = localCommitPublished)
+                                val actions = buildList {
+                                    add(ChannelAction.Blockchain.SendWatch(watchSpent))
+                                    add(ChannelAction.Storage.StoreState(nextState))
+                                    localCommitPublished.run { addAll(doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong())) }
+                                }
+                                Pair(nextState, actions)
+                            }
+                        }
+                    }
                     watch is WatchEventSpent && watch.event is BITCOIN_FUNDING_SPENT -> when {
                         mutualClosePublished.any { it.tx.txid == watch.tx.txid } -> {
                             // we already know about this tx, probably because we have published it ourselves after successful negotiation
@@ -146,11 +190,6 @@ data class Closing(
                             futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
                             revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
                         )
-                        closing1.networkFeePaid(watch.tx)?.let {
-                            logger.info { "c:$channelId paid fee=${it.first} for txid=${watch.tx.txid} desc=${it.second}" }
-                        } ?: run {
-                            logger.info { "c:$channelId paid UNKNOWN fee for txid=${watch.tx.txid}" }
-                        }
 
                         // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                         val htlcSettledActions = mutableListOf<ChannelAction>()
@@ -231,7 +270,7 @@ data class Closing(
                     // they haven't detected that we were closing and are trying to reestablish a connection
                     // we give them one of the published txs as a hint
                     // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
-                    val exc = FundingTxSpent(channelId, spendingTxs.first())
+                    val exc = FundingTxSpent(channelId, spendingTxs.first().txid)
                     val error = Error(channelId, exc.message)
                     Pair(this, listOf(ChannelAction.Message.Send(error)))
                 }
@@ -285,10 +324,6 @@ data class Closing(
                 }
                 else -> unhandled(event)
             }
-            is ChannelEvent.GetFundingTxResponse -> when (event.getTxResponse.txid) {
-                commitments.commitInput.outPoint.txid -> handleGetFundingTx(event.getTxResponse, waitingSinceBlock, fundingTx)
-                else -> Pair(this, emptyList())
-            }
             is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
             is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
@@ -338,77 +373,6 @@ data class Closing(
     }
 
     /**
-     * This helper function returns the fee paid by the given transaction.
-     * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
-     *
-     * @param tx a tx for which we want to compute the fee
-     * @return if the parent tx is found, a tuple (fee, description)
-     */
-    private fun networkFeePaid(tx: Transaction): Pair<Satoshi, String>? {
-        // we can compute the fees only for transactions with a single parent for which we know the output amount
-        if (tx.txIn.size != 1) return null
-        // only the initiator pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
-        val isCommitTx = tx.txIn.any { it.outPoint == commitments.commitInput.outPoint }
-        if (isCommitTx && !commitments.localParams.isInitiator) return null
-
-        // we build a map with all known txs (that's not particularly efficient, but it doesn't really matter)
-        val txs = buildList {
-            mutualClosePublished.map { it.tx to "mutual" }.forEach { add(it) }
-            localCommitPublished?.let { localCommitPublished ->
-                add(localCommitPublished.commitTx to "local-commit")
-                localCommitPublished.claimMainDelayedOutputTx?.let { add(it.tx to "local-main-delayed") }
-                localCommitPublished.htlcTxs.values.filterNotNull().forEach {
-                    when (it) {
-                        is Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx -> add(it.tx to "local-htlc-success")
-                        is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx -> add(it.tx to "local-htlc-timeout")
-                    }
-                }
-                localCommitPublished.claimHtlcDelayedTxs.forEach { add(it.tx to "local-htlc-delayed") }
-            }
-            remoteCommitPublished?.let { remoteCommitPublished ->
-                add(remoteCommitPublished.commitTx to "remote-commit")
-                remoteCommitPublished.claimMainOutputTx?.let { add(it.tx to "remote-main") }
-                remoteCommitPublished.claimHtlcTxs.values.filterNotNull().forEach {
-                    when (it) {
-                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> add(it.tx to "remote-htlc-success")
-                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> add(it.tx to "remote-htlc-timeout")
-                    }
-                }
-            }
-            nextRemoteCommitPublished?.let { nextRemoteCommitPublished ->
-                add(nextRemoteCommitPublished.commitTx to "remote-commit")
-                nextRemoteCommitPublished.claimMainOutputTx?.let { add(it.tx to "remote-main") }
-                nextRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().forEach {
-                    when (it) {
-                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> add(it.tx to "remote-htlc-success")
-                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> add(it.tx to "remote-htlc-timeout")
-                    }
-                }
-            }
-            revokedCommitPublished.forEach { revokedCommitPublished ->
-                add(revokedCommitPublished.commitTx to "revoked-commit")
-                revokedCommitPublished.claimMainOutputTx?.let { add(it.tx to "revoked-main") }
-                revokedCommitPublished.mainPenaltyTx?.let { add(it.tx to "revoked-main-penalty") }
-                revokedCommitPublished.htlcPenaltyTxs.forEach { add(it.tx to "revoked-htlc-penalty") }
-                revokedCommitPublished.claimHtlcDelayedPenaltyTxs.forEach { add(it.tx to "revoked-htlc-penalty-delayed") }
-            }
-        }.map { (tx, desc) ->
-            // will allow easy lookup of parent transaction
-            tx.txid to (tx to desc)
-        }.toMap()
-
-        return txs[tx.txid]?.let { (_, desc) ->
-            val parentTxOut = if (isCommitTx) {
-                commitments.commitInput.txOut
-            } else {
-                val outPoint = tx.txIn.first().outPoint
-                txs[outPoint.txid]?.let { (parent, _) -> parent.txOut[outPoint.index.toInt()] }
-            }
-            parentTxOut?.let { txOut -> txOut.amount - tx.txOut.map { it.amount }.sum() }?.let { it to desc }
-        }
-    }
-
-    /**
      * This method returns the closing transactions that should be persisted in a database. It should be
      * called when the channel has been actually closed, so that we know those transactions are confirmed.
      *
@@ -418,11 +382,7 @@ data class Closing(
     private fun storeChannelClosed(additionalConfirmedTx: Transaction): ChannelAction.Storage.StoreChannelClosed {
 
         /** Helper method to extract a [OutgoingPayment.ClosingTxPart] from a list of transactions, given a set of confirmed tx ids. */
-        fun extractClosingTx(
-            confirmedTxids: Set<ByteVector32>,
-            txs: List<Transaction>,
-            closingType: ChannelClosingType
-        ): List<OutgoingPayment.ClosingTxPart> {
+        fun extractClosingTx(confirmedTxids: Set<ByteVector32>, txs: List<Transaction>, closingType: ChannelClosingType): List<OutgoingPayment.ClosingTxPart> {
             return txs.filter { confirmedTxids.contains(it.txid) }.map {
                 OutgoingPayment.ClosingTxPart(
                     id = UUID.randomUUID(),

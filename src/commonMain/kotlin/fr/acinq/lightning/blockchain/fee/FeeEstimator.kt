@@ -25,6 +25,8 @@ data class OnChainFeeConf(val closeOnOfflineMismatch: Boolean, val updateFeeMinD
 /** Fee rate in satoshi-per-bytes. */
 data class FeeratePerByte(val feerate: Satoshi) {
     constructor(feeratePerKw: FeeratePerKw) : this(FeeratePerKB(feeratePerKw).feerate / 1000)
+
+    override fun toString(): String = "$feerate/byte"
 }
 
 /** Fee rate in satoshi-per-kilo-bytes (1 kB = 1000 bytes). */
@@ -36,6 +38,8 @@ data class FeeratePerKB(val feerate: Satoshi) : Comparable<FeeratePerKB> {
     fun max(other: FeeratePerKB): FeeratePerKB = if (this > other) this else other
     fun min(other: FeeratePerKB): FeeratePerKB = if (this < other) this else other
     fun toLong(): Long = feerate.toLong()
+
+    override fun toString(): String = "$feerate/kB"
 }
 
 @Serializable
@@ -52,6 +56,8 @@ data class FeeratePerKw(@Contextual val feerate: Satoshi) : Comparable<FeeratePe
     operator fun times(l: Long): FeeratePerKw = FeeratePerKw(feerate * l)
     operator fun div(l: Long): FeeratePerKw = FeeratePerKw(feerate / l)
     fun toLong(): Long = feerate.toLong()
+
+    override fun toString(): String = "$feerate/kw"
 
     companion object {
         /**

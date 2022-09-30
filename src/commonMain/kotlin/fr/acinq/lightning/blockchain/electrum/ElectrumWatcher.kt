@@ -4,10 +4,8 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxIn
-import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
-import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.makeDummyShortChannelId
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Connection
@@ -21,7 +19,6 @@ import kotlinx.coroutines.flow.*
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import kotlin.math.absoluteValue
 import kotlin.math.max
 
 sealed class WatcherEvent
@@ -85,7 +82,7 @@ private data class WatcherDisconnected(
                 is HeaderSubscriptionResponse -> {
                     newState {
                         actions = buildList {
-                            watches.mapNotNull { registerToScriptHash(it, logger) }.forEach { add(it) }
+                            watches.map { registerToScriptHash(it, logger) }.forEach { add(it) }
                             publishQueue.forEach { add(PublishAsapAction(it.tx)) }
                             getTxQueue.forEach { add(AskForTransaction(it.txid, it.channelId)) }
                         }
@@ -194,9 +191,7 @@ internal data class WatcherRunning(
                                             .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                                             .map { w ->
                                                 logger.info { "output ${w.txId}:${w.outputIndex} spent by transaction ${tx.txid}" }
-                                                NotifyWatch(
-                                                    WatchEventSpent(w.channelId, w.event, tx)
-                                                )
+                                                NotifyWatch(WatchEventSpent(w.channelId, w.event, tx))
                                             }
                                     }
 
@@ -207,29 +202,12 @@ internal data class WatcherRunning(
                                 watches.filterIsInstance<WatchConfirmed>()
                                     .filter { it.txId == tx.txid }
                                     .forEach { w ->
-                                        if (w.event is BITCOIN_FUNDING_DEPTHOK && w.minDepth == 0L) {
-                                            // special case for mempool watches (min depth = 0)
-                                            val (dummyHeight, dummyTxIndex) = makeDummyShortChannelId(w.txId)
-                                            notifyWatchConfirmedList.add(
-                                                NotifyWatch(
-                                                    watchEvent = WatchEventConfirmed(
-                                                        w.channelId,
-                                                        BITCOIN_FUNDING_DEPTHOK,
-                                                        dummyHeight,
-                                                        dummyTxIndex,
-                                                        tx
-                                                    ),
-                                                    broadcastNotification = w.channelNotification
-                                                )
-                                            )
-                                            watchConfirmedTriggered.add(w)
-                                        } else if (w.minDepth > 0L && item.blockHeight > 0) {
-                                            val txHeight = item.blockHeight
-                                            val confirmations = height - txHeight + 1
-                                            logger.info { "txid=${w.txId} was confirmed at height=$txHeight and now has confirmations=$confirmations (currentHeight=$height)" }
+                                        if (item.blockHeight > 0) {
+                                            val confirmations = height - item.blockHeight + 1
+                                            logger.info { "txid=${w.txId} was confirmed at blockHeight=${item.blockHeight} and now has confirmations=$confirmations (currentHeight=$height)" }
                                             if (confirmations >= w.minDepth) {
                                                 // we need to get the tx position in the block
-                                                getMerkleList.add(AskForMerkle(w.txId, txHeight, tx))
+                                                getMerkleList.add(AskForMerkle(w.txId, item.blockHeight, tx))
                                             }
                                         }
                                     }
@@ -237,7 +215,7 @@ internal data class WatcherRunning(
                                 newState {
                                     // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
                                     // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
-                                    state = copy(watches = watches - watchConfirmedTriggered)
+                                    state = copy(watches = watches - watchConfirmedTriggered.toSet())
                                     actions = notifyWatchSpentList + notifyWatchConfirmedList + getMerkleList
                                 }
                             }
@@ -279,7 +257,7 @@ internal data class WatcherRunning(
                         } ?: emptyList()
 
                         newState {
-                            state = copy(watches = watches - triggered)
+                            state = copy(watches = watches - triggered.toSet())
                             actions = notifyWatchConfirmedList
                         }
                     }
@@ -364,27 +342,22 @@ internal data class WatcherRunning(
         }
 
     private fun setupWatch(watch: Watch, logger: Logger) = when (watch) {
-        is WatchLost -> returnState() // ignore WatchLost for now
         in watches -> returnState()
         else -> {
             val action = registerToScriptHash(watch, logger)
             newState {
                 state = copy(
                     watches = watches + watch,
-                    scriptHashSubscriptions = action?.let {
-                        scriptHashSubscriptions + it.scriptHash
-                    } ?: scriptHashSubscriptions
+                    scriptHashSubscriptions = scriptHashSubscriptions + action.scriptHash
                 )
-                actions = action?.let {
-                    if (scriptHashSubscriptions.contains(it.scriptHash)) {
-                        // We've already registered to subscriptions from this scriptHash.
-                        // Both WatchSpent & WatchConfirmed can be translated into the exact same
-                        // electrum request, so we filter the duplicates here.
-                        actions
-                    } else {
-                        actions + it
-                    }
-                } ?: actions
+                actions = if (scriptHashSubscriptions.contains(action.scriptHash)) {
+                    // We've already registered to subscriptions from this scriptHash.
+                    // Both WatchSpent & WatchConfirmed can be translated into the exact same
+                    // electrum request, so we filter the duplicates here.
+                    actions
+                } else {
+                    actions + action
+                }
             }
         }
     }
@@ -532,7 +505,7 @@ class ElectrumWatcher(
         timerJob = null
     }
 
-    private suspend fun checkIsUpToDate(): Unit {
+    private suspend fun checkIsUpToDate() {
 
         // Get a list of timestamps from the client for all outgoing requests.
         // This returns an array of `RequestResponseTimestamp` instances, which includes:
@@ -609,7 +582,7 @@ class ElectrumWatcher(
 
     companion object {
 
-        internal fun registerToScriptHash(watch: Watch, logger: Logger): RegisterToScriptHashNotification? = when (watch) {
+        internal fun registerToScriptHash(watch: Watch, logger: Logger): RegisterToScriptHashNotification = when (watch) {
             is WatchSpent -> {
                 val (_, txid, outputIndex, publicKeyScript, _) = watch
                 val scriptHash = computeScriptHash(publicKeyScript)
@@ -622,20 +595,6 @@ class ElectrumWatcher(
                 logger.info { "added watch-confirmed on txid=$txid scriptHash=$scriptHash" }
                 RegisterToScriptHashNotification(scriptHash)
             }
-            else -> null
-        }
-
-        internal fun makeDummyShortChannelId(txid: ByteVector32): Pair<Int, Int> {
-            // we use a height of 0
-            // - to make sure that the tx will be marked as "confirmed"
-            // - to easily identify scids linked to 0-conf channels
-            //
-            // this gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
-            // collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed)
-            // if this ever becomes a problem we could just extract some bits for our dummy height instead of just returning 0
-            val height = 0
-            val txIndex = Pack.int32BE(txid.slice(0, 16).toByteArray()).absoluteValue
-            return height to txIndex
         }
     }
 }

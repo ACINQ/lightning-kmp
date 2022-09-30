@@ -28,13 +28,6 @@ object Lightning {
         return KeyPath(path)
     }
 
-    fun toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 {
-        require(fundingOutputIndex < 65536) { "fundingOutputIndex must not be greater than FFFF" }
-        val x1 = fundingTxHash[30] xor (fundingOutputIndex.shr(8)).toByte()
-        val x2 = fundingTxHash[31] xor fundingOutputIndex.toByte()
-        return ByteVector32(fundingTxHash.take(30).concat(x1).concat(x2))
-    }
-
     /**
      * @param baseFee fixed fee
      * @param proportionalFee proportional fee (millionths)

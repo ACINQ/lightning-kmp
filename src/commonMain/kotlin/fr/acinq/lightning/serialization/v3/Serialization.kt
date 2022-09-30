@@ -52,8 +52,10 @@ object Serialization {
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
             subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
-            subclass(ChannelTlv.ChannelVersionTlv.serializer())
+            subclass(ChannelTlv.ChannelTypeTlv.serializer())
             subclass(ChannelTlv.ChannelOriginTlv.serializer())
+            subclass(ChannelTlv.PushAmountTlv.serializer())
+            subclass(ClosingSignedTlv.FeeRange.serializer())
             subclass(InitTlv.Networks.serializer())
             subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())
             subclass(OnionPaymentPayloadTlv.AmountToForward.serializer())
@@ -73,11 +75,14 @@ object Serialization {
         polymorphic(ChannelStateWithCommitments::class) {
             subclass(Normal::class)
             subclass(WaitForFundingConfirmed::class)
+            subclass(WaitForFundingConfirmed2::class)
             subclass(WaitForFundingLocked::class)
+            subclass(WaitForFundingLocked2::class)
             subclass(WaitForRemotePublishFutureCommitment::class)
             subclass(ShuttingDown::class)
             subclass(Negotiating::class)
             subclass(Closing::class)
+            subclass(Closing2::class)
             subclass(Closed::class)
             subclass(ErrorInformationLeak::class)
         }
@@ -90,6 +95,7 @@ object Serialization {
             contextual(ByteVector64KSerializer)
             contextual(ByteVector32KSerializer)
             contextual(ByteVectorKSerializer)
+            contextual(ScriptWitnessKSerializer)
             contextual(SatoshiKSerializer)
             contextual(PrivateKeyKSerializer)
             contextual(PublicKeyKSerializer)

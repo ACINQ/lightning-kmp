@@ -5,8 +5,11 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.electrum.UnspentItem
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.channel.states.WaitForFundingLockedTestsCommon
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -74,35 +77,33 @@ object TestsHelper {
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         currentHeight: Int = TestConstants.defaultBlockHeight,
-        fundingAmount: Satoshi = TestConstants.fundingAmount,
-        pushMsat: MilliSatoshi = TestConstants.pushMsat,
+        aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+        bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
+        pushAmount: MilliSatoshi = TestConstants.pushAmount,
         channelOrigin: ChannelOrigin? = null
-    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenChannel> {
+    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenDualFundedChannel> {
         val aliceNodeParams = TestConstants.Alice.nodeParams.copy(features = aliceFeatures)
         val bobNodeParams = TestConstants.Bob.nodeParams.copy(features = bobFeatures)
-        var alice: ChannelState = WaitForInit(
+        val alice = WaitForInit(
             StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
             currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
             currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
         )
-        var bob: ChannelState = WaitForInit(
+        val bob = WaitForInit(
             StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
             currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
             currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
         )
         val channelFlags = 0.toByte()
-        var aliceChannelParams = TestConstants.Alice.channelParams.copy(features = aliceFeatures)
-        val bobChannelParams = TestConstants.Bob.channelParams.copy(features = bobFeatures)
-        // If Bob accepts zero-reserve channels, Alice is nice and doesn't require a reserve from Bob.
-        if (bobFeatures.hasFeature(Feature.ZeroReserveChannels)) {
-            aliceChannelParams = aliceChannelParams.copy(channelReserve = 0.sat)
-        }
+        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures)
+        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
         val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
-        val ra = alice.process(
+        val (alice1, actionsAlice1) = alice.process(
             ChannelEvent.InitInitiator(
-                createFunding(fundingAmount, 100.sat),
-                pushMsat,
+                aliceFundingAmount,
+                pushAmount,
+                createWallet(aliceFundingAmount + 3500.sat),
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -113,13 +114,12 @@ object TestsHelper {
                 channelOrigin
             )
         )
-        alice = ra.first
-        assertTrue(alice is WaitForAcceptChannel)
-        val rb = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, FundingInputs.empty, bobChannelParams, ChannelConfig.standard, aliceInit))
-        bob = rb.first
-        assertTrue(bob is WaitForOpenChannel)
-        val open = ra.second.findOutgoingMessage<OpenChannel>()
-        return Triple(alice, bob, open)
+        assertIs<WaitForAcceptChannel>(alice1)
+        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobFundingAmount + 1500.sat) else WalletState.empty
+        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        assertIs<WaitForOpenChannel>(bob1)
+        val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
+        return Triple(alice1, bob1, open)
     }
 
     fun reachNormal(
@@ -127,46 +127,20 @@ object TestsHelper {
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         currentHeight: Int = TestConstants.defaultBlockHeight,
-        fundingAmount: Satoshi = TestConstants.fundingAmount,
-        pushMsat: MilliSatoshi = TestConstants.pushMsat
+        aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+        bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
+        pushAmount: MilliSatoshi = TestConstants.pushAmount,
     ): Triple<Normal, Normal, Transaction> {
-        val (a, b, open) = init(channelType, aliceFeatures, bobFeatures, currentHeight, fundingAmount, pushMsat)
-        var alice = a as ChannelState
-        var bob = b as ChannelState
-        var rb = bob.process(ChannelEvent.MessageReceived(open))
-        bob = rb.first
-        val accept = rb.second.findOutgoingMessage<AcceptChannel>()
-        var ra = alice.process(ChannelEvent.MessageReceived(accept))
-        alice = ra.first
-        assertIs<WaitForFundingSigned>(alice)
-        val fundingTx = alice.fundingTx
-        val created = ra.second.findOutgoingMessage<FundingCreated>()
-        rb = bob.process(ChannelEvent.MessageReceived(created))
-        bob = rb.first
-        val signedBob = rb.second.findOutgoingMessage<FundingSigned>()
-        ra = alice.process(ChannelEvent.MessageReceived(signedBob))
-        alice = ra.first
-        val watchConfirmed = run {
-            val candidates = ra.second.findWatches<WatchConfirmed>()
-            assertTrue(candidates.isNotEmpty(), "cannot find watch confirmed on funding tx")
-            candidates.first()
-        }
-
-        ra = alice.process(ChannelEvent.WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
-        alice = ra.first
-        val fundingLockedAlice = ra.second.findOutgoingMessage<FundingLocked>()
-
-        rb = bob.process(ChannelEvent.WatchReceived(WatchEventConfirmed(watchConfirmed.channelId, watchConfirmed.event, currentHeight + 144, 1, fundingTx)))
-        bob = rb.first
-        val fundingLockedBob = rb.second.findOutgoingMessage<FundingLocked>()
-
-        ra = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
-        alice = ra.first
-
-        rb = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
-        bob = rb.first
-
-        return Triple(alice as Normal, bob as Normal, fundingTx)
+        val (alice, fundingLockedAlice, bob, fundingLockedBob) = WaitForFundingLockedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
+        assertIs<Normal>(alice1)
+        assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+        actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
+        assertIs<Normal>(bob1)
+        assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+        actionsBob1.has<ChannelAction.Storage.StoreState>()
+        return Triple(alice1, bob1, alice.fundingTx.tx.buildUnsignedTx())
     }
 
     fun mutualCloseAlice(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
@@ -318,10 +292,11 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun createFunding(fundingAmount: Satoshi, fees: Satoshi): FundingInputs {
+    fun createWallet(amount: Satoshi): WalletState {
         val privKey = randomKey()
-        val previousTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(fundingAmount + fees, Script.pay2wpkh(privKey.publicKey()))), 0)
-        return FundingInputs(fundingAmount, listOf(FundingInput(previousTx, 0, privKey)))
+        val address = Bitcoin.computeP2WpkhAddress(privKey.publicKey(), Block.RegtestGenesisBlock.hash)
+        val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, Script.pay2wpkh(privKey.publicKey()))), 0)
+        return WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 0))), mapOf(address to privKey), mapOf(parentTx.txid to parentTx))
     }
 
     fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {
@@ -434,27 +409,19 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments, saveFiles: Boolean = false) {
-        val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
-        val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
-        val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(state)
-
+    private fun checkSerialization(state: ChannelStateWithCommitments, minVersion: Int = 1, saveFiles: Boolean = false) {
         fun save(blob: ByteArray, suffix: String) {
             val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
             val file: Path = FileSystem.workingDir().resolve(name)
             file.openWriteableFile(false).putBytes(blob)
         }
 
-        if (saveFiles) {
-            save(serializedv1, "v1")
-            save(serializedv2, "v2")
-            save(serializedv3, "v3")
-        }
-
         // Before v3, we had a single set of hard-coded channel features, so they will not match if the test added new channel features that weren't supported then.
         fun maskChannelFeatures(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
             is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
+            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
+            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is WaitForFundingLocked -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is Normal -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is ShuttingDown -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
@@ -464,23 +431,44 @@ object TestsHelper {
             is ErrorInformationLeak -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
         }
 
-        val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
-        assertEquals(maskChannelFeatures(deserializedv1), maskChannelFeatures(state), "serialization error (v1)")
-        val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
-        assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(state), "serialization error (v2)")
-        val deserializedv3 = Serialization.deserialize(serializedv3, state.staticParams.nodeParams)
-        assertEquals(deserializedv3, state, "serialization error (v3)")
+        // We never persist a funding RBF attempt.
+        fun removeRbfAttempt(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
+            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
+            else -> state
+        }
+
+        if (saveFiles) {
+            if (minVersion <= 1) save(fr.acinq.lightning.serialization.v1.Serialization.serialize(state), "v1")
+            if (minVersion <= 2) save(fr.acinq.lightning.serialization.v2.Serialization.serialize(state), "v2")
+            if (minVersion <= 3) save(fr.acinq.lightning.serialization.v3.Serialization.serialize(state), "v3")
+        }
+
+        if (minVersion <= 1) {
+            val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
+            val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
+            assertEquals(maskChannelFeatures(deserializedv1), maskChannelFeatures(state), "serialization error (v1)")
+        }
+        if (minVersion <= 2) {
+            val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
+            val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
+            assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(state), "serialization error (v2)")
+        }
+        if (minVersion <= 3) {
+            val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(state)
+            val deserializedv3 = Serialization.deserialize(serializedv3, state.staticParams.nodeParams)
+            assertEquals(deserializedv3, removeRbfAttempt(state), "serialization error (v3)")
+        }
     }
 
-    private fun checkSerialization(actions: List<ChannelAction>) {
+    private fun checkSerialization(actions: List<ChannelAction>, minVersion: Int = 1) {
         // we check that serialization works everytime we're suppose to persist channel data
-        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data, minVersion) }
     }
 
     // test-specific extension that allows for extra checks during tests
-    fun ChannelState.processEx(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    fun ChannelState.processEx(event: ChannelEvent, minVersion: Int = 1): Pair<ChannelState, List<ChannelAction>> {
         val result = this.process(event)
-        checkSerialization(result.second)
+        checkSerialization(result.second, minVersion)
         return result
     }
 

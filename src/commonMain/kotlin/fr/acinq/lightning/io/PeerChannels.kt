@@ -2,25 +2,23 @@ package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.KeyPath
-import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.LocalParams
 
 object PeerChannels {
-    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, fundingAmount: Satoshi): LocalParams {
+    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, maxHtlcValueInFlight: MilliSatoshi): LocalParams {
         // we make sure that initiator and non-initiator key path end differently
         val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator)
-        return makeChannelParams(nodeParams, defaultFinalScriptPubkey, isInitiator, fundingAmount, fundingKeyPath)
+        return makeChannelParams(nodeParams, defaultFinalScriptPubkey, isInitiator, maxHtlcValueInFlight, fundingKeyPath)
     }
 
-    fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, fundingAmount: Satoshi, fundingKeyPath: KeyPath): LocalParams {
+    private fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, maxHtlcValueInFlight: MilliSatoshi, fundingKeyPath: KeyPath): LocalParams {
         return LocalParams(
             nodeParams.nodeId,
             nodeParams.keyManager.channelKeys(fundingKeyPath),
             dustLimit = nodeParams.dustLimit,
-            maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-            channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+            maxHtlcValueInFlightMsat = maxHtlcValueInFlight.toLong(),
             htlcMinimum = nodeParams.htlcMinimum,
             toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
             maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,

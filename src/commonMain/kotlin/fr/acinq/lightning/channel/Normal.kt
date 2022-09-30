@@ -94,6 +94,7 @@ data class Normal(
                         }
                     }
                     is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
+                    is CMD_BUMP_FUNDING_FEE -> unhandled(event)
                 }
             }
             is ChannelEvent.MessageReceived -> {
@@ -311,7 +312,7 @@ data class Normal(
         logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
-            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
             else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
         }
     }

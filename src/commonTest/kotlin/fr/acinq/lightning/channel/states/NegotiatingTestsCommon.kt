@@ -200,7 +200,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingSigned -- nothing at stake`() {
-        val (alice, bob) = reachNormal(pushMsat = 0.msat)
+        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat, pushAmount = 0.msat)
         val alice1 = alice.updateFeerate(FeeratePerKw(5_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
 
@@ -322,7 +322,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
             val bobNextFee = (aliceCloseSig.feeSatoshis + 500.sat).max(feeRange.max + 1.sat)
             val (_, bobClosing) = makeLegacyClosingSigned(alice2, bob2, bobNextFee)
             val (aliceNew, actions) = mutableAlice.processEx(ChannelEvent.MessageReceived(bobClosing))
-            aliceCloseSig = actions.findOutgoingMessage<ClosingSigned>()
+            aliceCloseSig = actions.findOutgoingMessage()
             mutableAlice = aliceNew as ChannelStateWithCommitments
         }
 
@@ -443,8 +443,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun init(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, pushMsat: MilliSatoshi = TestConstants.pushMsat): Triple<Negotiating, Negotiating, ClosingSigned> {
-            val (alice, bob) = reachNormal(channelType = channelType, pushMsat = pushMsat)
+        fun init(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, pushAmount: MilliSatoshi = TestConstants.pushAmount): Triple<Negotiating, Negotiating, ClosingSigned> {
+            val (alice, bob) = reachNormal(channelType = channelType, pushAmount = pushAmount)
             return mutualCloseAlice(alice, bob)
         }
 
@@ -465,13 +465,13 @@ class NegotiatingTestsCommon : LightningTestSuite() {
                     val bobCloseSig = actions.findOutgoingMessageOpt<ClosingSigned>()
                     if (bobCloseSig != null) {
                         val (a1, actions2) = a.processEx(ChannelEvent.MessageReceived(bobCloseSig))
-                        return converge(a1, b1, actions2.findOutgoingMessageOpt<ClosingSigned>())
+                        return converge(a1, b1, actions2.findOutgoingMessageOpt())
                     }
                     val bobClosingTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.firstOrNull()
                     if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.localCommit.publishableTxs.commitTx.input.outPoint && a !is Closing) {
                         // Bob just spent the funding tx
                         val (a1, actions2) = a.processEx(ChannelEvent.WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
-                        return converge(a1, b1, actions2.findOutgoingMessageOpt<ClosingSigned>())
+                        return converge(a1, b1, actions2.findOutgoingMessageOpt())
                     }
                     converge(a, b1, null)
                 }

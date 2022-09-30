@@ -1,14 +1,19 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.*
+import fr.acinq.lightning.Features
+import fr.acinq.lightning.Lightning.randomBytes
+import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.electrum.UnspentItem
+import fr.acinq.lightning.blockchain.electrum.WalletState
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.transactions.Scripts
-import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
@@ -17,136 +22,347 @@ import kotlin.test.*
 class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `receive FundingLocked`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val fundingTx = alice.fundingTx!!
-        val (bob1, actionsBob) = bob.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
-        val fundingLocked = actionsBob.findOutgoingMessage<FundingLocked>()
-        assertTrue { bob1 is WaitForFundingLocked }
-        val (alice1, actionsAlice) = alice.processEx(ChannelEvent.MessageReceived(fundingLocked))
-        assertTrue { alice1 is WaitForFundingConfirmed && alice1.deferred == fundingLocked }
-        assertTrue { actionsAlice.isEmpty() } // alice waits until she sees on-chain confirmations herself
+    fun `recv TxSignatures`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(alice1)
+        assertIs<FullySignedSharedTransaction>(alice1.fundingTx)
+        assertEquals(actionsAlice1.size, 3)
+        val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
+        val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
+        actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(txSigsAlice), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(bob1)
+        assertIs<FullySignedSharedTransaction>(bob1.fundingTx)
+        assertEquals(actionsBob1.size, 2)
+        actionsBob1.hasTx(fundingTx)
+        actionsBob1.has<ChannelAction.Storage.StoreState>()
     }
 
     @Test
-    fun `receive BITCOIN_FUNDING_DEPTHOK`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val fundingTx = alice.fundingTx!!
-        val (bob1, actions) = bob.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
-        actions.findOutgoingMessage<FundingLocked>()
-        actions.hasWatch<WatchLost>()
-        actions.has<ChannelAction.Storage.StoreState>()
-        assertTrue { bob1 is WaitForFundingLocked }
+    fun `recv TxSignatures -- duplicate`() {
+        val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(alice1)
+        assertIs<FullySignedSharedTransaction>(alice1.fundingTx)
+        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+        assertEquals(alice1, alice2)
+        assertTrue(actionsAlice2.isEmpty())
     }
 
     @Test
-    fun `receive BITCOIN_FUNDING_DEPTHOK -- bad funding pubkey script`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val fundingTx = alice.fundingTx!!
-        val badOutputScript = Scripts.multiSig2of2(Lightning.randomKey().publicKey(), Lightning.randomKey().publicKey())
-        val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updatePublicKeyScript(badOutputScript)))
-
-        val (bob1, actions1) = bob.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
-        assertTrue(bob1 is Closing)
-
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(InvalidCommitmentSignature(bob.channelId, badFundingTx).message, error.toAscii())
-
-        val commitTx = bob1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.tx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.tx.txid, watches.last().txId)
+    fun `recv TxSignatures -- invalid`() {
+        val (alice, _, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob.copy(witnesses = listOf(Script.witnessPay2wpkh(randomKey().publicKey(), randomBytes(72).byteVector())))), minVersion = 3)
+        // Alice sends an error, but stays in the same state because the funding tx may still confirm.
+        assertEquals(actionsAlice1.size, 1)
+        actionsAlice1.findOutgoingMessage<Warning>()
+        assertEquals(alice, alice1)
     }
 
     @Test
-    fun `receive BITCOIN_FUNDING_DEPTHOK -- bad funding amount`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val fundingTx = alice.fundingTx
-        assertNotNull(fundingTx)
-        val badAmount = 1_234_567.sat
-        val badFundingTx = fundingTx.copy(txOut = fundingTx.txOut.updated(0, fundingTx.txOut[0].updateAmount(badAmount)))
-
-        val (bob1, actions1) = bob.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, badFundingTx)))
-        assertTrue(bob1 is Closing)
-
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(InvalidCommitmentSignature(bob.channelId, badFundingTx).message, error.toAscii())
-
-        val commitTx = bob1.localCommitPublished?.commitTx
-        assertNotNull(commitTx)
-        val claimDelayedOutputTx = bob1.localCommitPublished?.claimMainDelayedOutputTx
-        assertNotNull(claimDelayedOutputTx)
-
-        val publishAsap = actions1.findTxs()
-        assertEquals(2, publishAsap.size)
-        assertEquals(commitTx.txid, publishAsap.first().txid)
-        assertEquals(claimDelayedOutputTx.tx.txid, publishAsap.last().txid)
-
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
-        val watches = actions1.findWatches<WatchConfirmed>()
-        assertEquals(commitTx.txid, watches.first().txId)
-        assertEquals(claimDelayedOutputTx.tx.txid, watches.last().txId)
-    }
-
-    @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- remote commit`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-
-        // case 1: alice publishes her commitment tx
+    fun `recv BITCOIN_FUNDING_DEPTHOK`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(alice1)
+        val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
+        val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
         run {
-            val (bob1, actions1) = bob.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
-            assertTrue(bob1 is Closing)
-            assertNotNull(bob1.remoteCommitPublished)
-            actions1.hasTx(bob1.remoteCommitPublished!!.claimMainOutputTx!!.tx)
-            assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
+            val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+            assertIs<WaitForFundingLocked>(alice2)
+            assertEquals(actionsAlice2.size, 3)
+            actionsAlice2.hasOutgoingMessage<FundingLocked>()
+            actionsAlice2.has<ChannelAction.Storage.StoreState>()
+            val watch = actionsAlice2.hasWatch<WatchSpent>()
+            assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
+            assertEquals(watch.txId, fundingTx.txid)
+            assertEquals(watch.outputIndex.toLong(), alice.commitments.commitInput.outPoint.index)
         }
-
-        // case 2: bob publishes his commitment tx
         run {
-            val (alice1, actions1) = alice.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bob.commitments.localCommit.publishableTxs.commitTx.tx)))
-            assertTrue(alice1 is Closing)
-            assertNotNull(alice1.remoteCommitPublished)
-            actions1.hasTx(alice1.remoteCommitPublished!!.claimMainOutputTx!!.tx)
-            assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
+            val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(txSigsAlice), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(bob1)
+            val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+            assertIs<WaitForFundingLocked>(bob2)
+            assertEquals(actionsBob2.size, 3)
+            actionsBob2.hasOutgoingMessage<FundingLocked>()
+            actionsBob2.has<ChannelAction.Storage.StoreState>()
+            val watch = actionsBob2.hasWatch<WatchSpent>()
+            assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
+            assertEquals(watch.txId, fundingTx.txid)
+            assertEquals(watch.outputIndex.toLong(), bob.commitments.commitInput.outPoint.index)
         }
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- other commit`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val spendingTx = Transaction(version = 2, txIn = alice.commitments.localCommit.publishableTxs.commitTx.tx.txIn, txOut = listOf(), lockTime = 0)
-        listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.processEx(ChannelEvent.WatchReceived(WatchEventSpent(state.channelId, BITCOIN_FUNDING_SPENT, spendingTx)))
-            assertTrue(state1 is ErrorInformationLeak)
-            assertTrue(actions1.isEmpty())
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- without remote sigs`() {
+        val (alice, _, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        assertIs<PartiallySignedSharedTransaction>(alice.fundingTx)
+        val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+        assertIs<WaitForFundingLocked>(alice1)
+        assertEquals(actionsAlice1.size, 3)
+        actionsAlice1.hasOutgoingMessage<FundingLocked>()
+        actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        val watch = actionsAlice1.hasWatch<WatchSpent>()
+        assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
+        assertEquals(watch.txId, fundingTx.txid)
+        assertEquals(watch.outputIndex.toLong(), alice.commitments.commitInput.outPoint.index)
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- rbf in progress`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (_, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+        val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
+        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, FeeratePerKw(6000.sat), TestConstants.aliceFundingAmount)), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(bob1)
+        assertIs<WaitForFundingConfirmed.Companion.RbfStatus.InProgress>(bob1.rbfStatus)
+        assertEquals(actionsBob1.size, 1)
+        actionsBob1.hasOutgoingMessage<TxAckRbf>()
+        // The funding transaction confirms while the RBF attempt is in progress.
+        val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+        assertIs<WaitForFundingLocked>(bob2)
+        val watch = actionsBob2.hasWatch<WatchSpent>()
+        assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
+        assertEquals(watch.txId, fundingTx.txid)
+        assertEquals(watch.outputIndex.toLong(), bob.commitments.commitInput.outPoint.index)
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val fundingTxId1 = alice.commitments.fundingTxId
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        run {
+            val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, alice.fundingTx.tx.buildUnsignedTx())), minVersion = 3)
+            assertIs<WaitForFundingLocked>(bob2)
+            assertEquals(bob2.commitments.fundingTxId, fundingTxId1)
+            val watch = actionsBob2.hasWatch<WatchSpent>()
+            assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
+            assertEquals(watch.txId, fundingTxId1)
+            assertEquals(watch.outputIndex.toLong(), bob.commitments.commitInput.outPoint.index)
         }
+        run {
+            val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, alice.fundingTx.tx.buildUnsignedTx())), minVersion = 3)
+            assertIs<WaitForFundingLocked>(alice2)
+            assertEquals(alice2.commitments.fundingTxId, fundingTxId1)
+            val watch = actionsAlice2.hasWatch<WatchSpent>()
+            assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
+            assertEquals(watch.txId, fundingTxId1)
+            assertEquals(watch.outputIndex.toLong(), bob.commitments.commitInput.outPoint.index)
+        }
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart`() {
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val fundingTx = alice.fundingTx.tx.buildUnsignedTx()
+        run {
+            val (alice1, actions1) = WaitForInit(alice.staticParams, alice.currentTip, alice.currentOnChainFeerates).processEx(ChannelEvent.Restore(alice), minVersion = 3)
+            assertIs<Offline>(alice1)
+            assertEquals(actions1.size, 1)
+            assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
+            val (alice2, actions2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+            assertIs<Offline>(alice2)
+            assertEquals(actions2.size, 1)
+            val watchSpent = actions2.findWatch<WatchSpent>()
+            assertEquals(watchSpent.txId, fundingTx.txid)
+            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+        }
+        run {
+            val (bob1, actions1) = WaitForInit(bob.staticParams, bob.currentTip, bob.currentOnChainFeerates).processEx(ChannelEvent.Restore(bob), minVersion = 3)
+            assertIs<Offline>(bob1)
+            assertEquals(actions1.size, 1)
+            assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
+            val (bob2, actions2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+            assertIs<Offline>(bob2)
+            assertEquals(actions2.size, 1)
+            val watchSpent = actions2.findWatch<WatchSpent>()
+            assertEquals(watchSpent.txId, fundingTx.txid)
+            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+        }
+    }
+
+    @Test
+    fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart -- previous funding tx`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        val fundingTx1 = alice1.previousFundingTxs.first().first.signedTx!!
+        val fundingTx2 = alice1.fundingTx.signedTx!!
+        run {
+            val (alice2, actions2) = WaitForInit(alice.staticParams, alice.currentTip, alice.currentOnChainFeerates).processEx(ChannelEvent.Restore(alice1), minVersion = 3)
+            assertIs<Offline>(alice2)
+            assertEquals(actions2.size, 3)
+            actions2.hasTx(fundingTx2)
+            assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
+            val (alice3, actions3) = alice2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx1)), minVersion = 3)
+            assertIs<Offline>(alice3)
+            assertEquals(actions3.size, 1)
+            val watchSpent = actions3.findWatch<WatchSpent>()
+            assertEquals(watchSpent.txId, fundingTx1.txid)
+            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+        }
+        run {
+            val (bob2, actions2) = WaitForInit(bob.staticParams, bob.currentTip, bob.currentOnChainFeerates).processEx(ChannelEvent.Restore(bob1), minVersion = 3)
+            assertIs<Offline>(bob2)
+            assertEquals(actions2.size, 2) // Bob doesn't have Alice's signatures for the latest funding tx, so he cannot re-publish it
+            assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
+            val (bob3, actions3) = bob2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx1)), minVersion = 3)
+            assertIs<Offline>(bob3)
+            assertEquals(actions3.size, 1)
+            val watchSpent = actions3.findWatch<WatchSpent>()
+            assertEquals(watchSpent.txId, fundingTx1.txid)
+            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+        }
+    }
+
+    @Test
+    fun `recv TxInitRbf`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        assertEquals(alice1.previousFundingTxs.size, 1)
+        assertEquals(bob1.previousFundingTxs.size, 1)
+        assertTrue(alice1.commitments.fundingTxId != alice.commitments.fundingTxId)
+        assertTrue(bob1.commitments.fundingTxId != bob.commitments.fundingTxId)
+        assertEquals(alice1.commitments.fundingTxId, bob1.commitments.fundingTxId)
+    }
+
+    @Test
+    fun `recv TxInitRbf -- invalid feerate`() {
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw, alice.fundingParams.localAmount)), minVersion = 3)
+        assertEquals(bob1, bob)
+        assertEquals(actions1.size, 1)
+        actions1.hasOutgoingMessage<TxAbort>()
+    }
+
+    @Test
+    fun `recv TxInitRbf -- failed rbf attempt`() {
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw * 1.25, alice.fundingParams.localAmount)), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(bob1)
+        assertIs<WaitForFundingConfirmed.Companion.RbfStatus.InProgress>(bob1.rbfStatus)
+        assertEquals(actions1.size, 1)
+        actions1.hasOutgoingMessage<TxAckRbf>()
+        val (bob2, actions2) = bob1.processEx(ChannelEvent.MessageReceived(alice.fundingTx.tx.localInputs.first()), minVersion = 3)
+        assertEquals(actions2.size, 1)
+        actions2.hasOutgoingMessage<TxAddInput>()
+        val (bob3, actions3) = bob2.processEx(ChannelEvent.MessageReceived(TxAbort(alice.channelId, null)), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(bob3)
+        assertEquals(bob3.rbfStatus, WaitForFundingConfirmed.Companion.RbfStatus.None)
+        assertTrue(actions3.isEmpty())
+    }
+
+    @Test
+    fun `recv FundingLocked`() {
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val fundingLockedAlice = FundingLocked(alice.channelId, randomKey().publicKey())
+        val fundingLockedBob = FundingLocked(bob.channelId, randomKey().publicKey())
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(alice1)
+        assertEquals(alice1.deferred, fundingLockedBob)
+        assertTrue(actionsAlice1.isEmpty())
+        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(fundingLockedAlice), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(bob1)
+        assertEquals(bob1.deferred, fundingLockedAlice)
+        assertTrue(actionsBob1.isEmpty())
+    }
+
+    @Test
+    fun `recv FundingLocked -- no remote contribution`() {
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val fundingLockedAlice = FundingLocked(alice.channelId, randomKey().publicKey())
+        val fundingLockedBob = FundingLocked(bob.channelId, randomKey().publicKey())
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(alice1)
+        assertEquals(alice1.deferred, fundingLockedBob)
+        assertTrue(actionsAlice1.isEmpty())
+        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(fundingLockedAlice), minVersion = 3)
+        assertIs<WaitForFundingConfirmed>(bob1)
+        assertEquals(bob1.deferred, fundingLockedAlice)
+        assertTrue(actionsBob1.isEmpty())
     }
 
     @Test
     fun `recv Error`() {
-        val (_, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Error(bob.channelId, "oops")))
-        assertTrue(bob1 is Closing)
+        val (_, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(Error(bob.channelId, "oops")), minVersion = 3)
+        assertIs<Closing>(bob1)
         assertNotNull(bob1.localCommitPublished)
         actions1.hasTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)
         assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
     }
 
     @Test
+    fun `recv Error -- previous funding tx confirms`() {
+        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val commitTxAlice1 = alice.commitments.localCommit.publishableTxs.commitTx.tx
+        val commitTxBob1 = bob.commitments.localCommit.publishableTxs.commitTx.tx
+        val fundingTxId1 = alice.commitments.fundingTxId
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        val commitTxAlice2 = alice1.commitments.localCommit.publishableTxs.commitTx.tx
+        val commitTxBob2 = bob1.commitments.localCommit.publishableTxs.commitTx.tx
+        val fundingTxId2 = alice1.commitments.fundingTxId
+        assertTrue(fundingTxId1 != fundingTxId2)
+        assertTrue(commitTxAlice1.txid != commitTxAlice2.txid)
+        assertTrue(commitTxBob1.txid != commitTxBob2.txid)
+        run {
+            // Bob receives an error and publishes his latest commitment.
+            val (bob2, actions2) = bob1.processEx(ChannelEvent.MessageReceived(Error(bob.channelId, "oops")), minVersion = 3)
+            assertIs<Closing>(bob2)
+            assertFalse(bob2.alternativeCommitments.isEmpty())
+            actions2.hasTx(commitTxBob2)
+            val lcp1 = bob2.localCommitPublished
+            assertNotNull(lcp1)
+            assertTrue(lcp1.commitTx.txIn.map { it.outPoint.txid }.contains(fundingTxId2))
+            // A previous funding transaction confirms, so Bob publishes the corresponding commit tx.
+            val (bob3, actions3) = bob2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, alice.fundingTx.tx.buildUnsignedTx())), minVersion = 3)
+            assertIs<Closing>(bob3)
+            assertTrue(bob3.alternativeCommitments.isEmpty())
+            actions3.hasTx(commitTxBob1)
+            val lcp2 = bob3.localCommitPublished
+            assertNotNull(lcp2)
+            assertTrue(lcp2.commitTx.txIn.map { it.outPoint.txid }.contains(fundingTxId1))
+            // Alice publishes her commit tx, Bob reacts by spending his remote main output.
+            val (bob4, actions4) = bob3.processEx(ChannelEvent.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, commitTxAlice1)), minVersion = 3)
+            assertIs<Closing>(bob4)
+            assertNotNull(bob4.localCommitPublished)
+            assertNotNull(bob4.remoteCommitPublished)
+            val claimMain = actions4.findTxs().first()
+            assertEquals(claimMain.txIn.first().outPoint.txid, commitTxAlice1.txid)
+        }
+        run {
+            // Alice receives an error and publishes her latest commitment.
+            val (alice2, actions2) = alice1.processEx(ChannelEvent.MessageReceived(Error(alice.channelId, "oops")), minVersion = 3)
+            assertIs<Closing>(alice2)
+            assertFalse(alice2.alternativeCommitments.isEmpty())
+            actions2.hasTx(commitTxAlice2)
+            val lcp1 = alice2.localCommitPublished
+            assertNotNull(lcp1)
+            assertTrue(lcp1.commitTx.txIn.map { it.outPoint.txid }.contains(fundingTxId2))
+            // A previous funding transaction confirms, so Alice publishes the corresponding commit tx.
+            val (alice3, actions3) = alice2.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, bob.fundingTx.tx.buildUnsignedTx())), minVersion = 3)
+            assertIs<Closing>(alice3)
+            assertTrue(alice3.alternativeCommitments.isEmpty())
+            actions3.hasTx(commitTxAlice1)
+            val lcp2 = alice3.localCommitPublished
+            assertNotNull(lcp2)
+            assertTrue(lcp2.commitTx.txIn.map { it.outPoint.txid }.contains(fundingTxId1))
+            // Bob publishes his commit tx, Alice reacts by spending her remote main output.
+            val (alice4, actions4) = alice3.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, commitTxBob1)), minVersion = 3)
+            assertIs<Closing>(alice4)
+            assertNotNull(alice4.localCommitPublished)
+            assertNotNull(alice4.remoteCommitPublished)
+            val claimMain = actions4.findTxs().first()
+            assertEquals(claimMain.txIn.first().outPoint.txid, commitTxBob1.txid)
+        }
+    }
+
+    @Test
     fun `recv CMD_CLOSE`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
+            val (state1, actions1) = state.processEx(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)), minVersion = 3)
             assertEquals(state, state1)
             actions1.hasCommandError<CommandUnavailableInThisState>()
         }
@@ -154,10 +370,10 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-            assertTrue(state1 is Closing)
+            val (state1, actions1) = state.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE), minVersion = 3)
+            assertIs<Closing>(state1)
             assertNotNull(state1.localCommitPublished)
             actions1.hasTx(state1.localCommitPublished!!.commitTx)
             actions1.hasTx(state1.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
@@ -167,9 +383,9 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE -- nothing at stake`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, 0.msat)
-        val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
-        assertTrue(bob1 is Aborted)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE), minVersion = 3)
+        assertIs<Aborted>(bob1)
         assertEquals(1, actions1.size)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(ForcedLocalCommit(alice.channelId).message, error.toAscii())
@@ -177,15 +393,15 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv NewBlock`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
             run {
-                val (state1, actions1) = state.processEx(ChannelEvent.NewBlock(state.currentBlockHeight + 1, Block.RegtestGenesisBlock.header))
+                val (state1, actions1) = state.processEx(ChannelEvent.NewBlock(state.currentBlockHeight + 1, Block.RegtestGenesisBlock.header), minVersion = 3)
                 assertEquals(state.copy(currentTip = state1.currentTip), state1)
                 assertTrue(actions1.isEmpty())
             }
             run {
-                val (state1, actions1) = state.processEx(ChannelEvent.CheckHtlcTimeout)
+                val (state1, actions1) = state.processEx(ChannelEvent.CheckHtlcTimeout, minVersion = 3)
                 assertEquals(state, state1)
                 assertTrue(actions1.isEmpty())
             }
@@ -194,136 +410,116 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Disconnected`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
-        val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
-        assertTrue { bob1 is Offline }
-    }
-
-    @Test
-    fun `recv Disconnected -- get funding tx successful`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
-        val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
-        assertTrue { bob1 is Offline }
-
-        alice.fundingTx?.let {
-            val (alice2, actions2) = alice1.process(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(it.txid, it, currentTimestampMillis())))
-            assertTrue { alice2 is Offline }
-            assertTrue { actions2.isEmpty() }
-        } ?: fail("Alice's funding tx must not be null.")
-    }
-
-    @Test
-    fun `recv Disconnected -- get funding tx error`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
-        assertTrue { alice1 is Offline }
-        val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
-        assertTrue { bob1 is Offline }
-
-        alice.fundingTx?.let {
-            val (alice2, actions2) = alice1.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(it.txid, null, currentTimestampMillis())))
-            assertTrue { alice2 is Offline }
-            assertTrue { actions2.isNotEmpty() }
-            actions2.hasTx(it)
-        } ?: fail("Alice's funding tx must not be null.")
-    }
-
-    @Test
-    fun `on reconnection a zero-conf channel needs to register a zero-confirmation watch on funding tx`() {
-        val bobFeatures = TestConstants.Bob.nodeParams.features.add(Feature.ZeroConfChannels to FeatureSupport.Mandatory)
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, TestConstants.fundingAmount, TestConstants.pushMsat, bobFeatures = bobFeatures)
-        val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
-        assertTrue(bob1 is Offline)
-
-        val localInit = Init(ByteVector(TestConstants.Alice.channelParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bobFeatures.toByteArray()))
-        val (bob2, actions2) = bob1.processEx(ChannelEvent.Connected(remoteInit, localInit))
-        assertTrue(bob2 is Syncing)
-        assertTrue(actions2.isEmpty())
-
-        val channelReestablishAlice = run {
-            val yourLastPerCommitmentSecret = alice.commitments.remotePerCommitmentSecrets.lastIndex?.let { alice.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-            val channelKeyPath = alice.keyManager.channelKeyPath(alice.commitments.localParams, alice.commitments.channelConfig)
-            val myCurrentPerCommitmentPoint = alice.keyManager.commitmentPoint(channelKeyPath, alice.commitments.localCommit.index)
-
-            ChannelReestablish(
-                channelId = alice.channelId,
-                nextLocalCommitmentNumber = alice.commitments.localCommit.index + 1,
-                nextRemoteRevocationNumber = alice.commitments.remoteCommit.index,
-                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-            ).withChannelData(alice.commitments.remoteChannelData)
-        }
-
-        val (bob3, actions3) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishAlice))
-        assertEquals(bob, bob3)
-        assertEquals(2, actions3.size)
-        actions3.hasOutgoingMessage<ChannelReestablish>()
-        val bobWatch = actions3.hasWatch<WatchConfirmed>()
-        assertEquals(0, bobWatch.minDepth)
-    }
-
-    @Test
-    fun `get funding tx in Syncing state`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
-        assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
-        val localInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(alice.commitments.localParams.features.toByteArray()))
-        val (bob2, _) = bob1.processEx(ChannelEvent.Connected(localInit, remoteInit))
-        assertTrue { bob2 is Syncing && bob2.state is WaitForFundingConfirmed }
-
-        // Actual test start here
-        // Nothing happens, we need to wait 2016 blocks for the funding tx to be confirmed
-        val (bob3, _) = bob2.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
-        assertEquals(bob2, bob3)
-        // Fast forward after the funding timeout
-        val (bob4, _) = bob3.processEx(ChannelEvent.NewBlock(bob3.currentBlockHeight + Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
-        // We give up, Channel is aborted
-        val (bob5, actions5) = bob4.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
-        assertTrue { bob5 is Aborted }
-        assertEquals(1, actions5.size)
-        val error = actions5.hasOutgoingMessage<Error>()
-        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
-    }
-
-    @Test
-    fun `get funding tx in Offline state`() {
-        val (_, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, TestConstants.fundingAmount, TestConstants.pushMsat)
-        val (bob1, _) = bob.process(ChannelEvent.Disconnected)
-        assertTrue { bob1 is Offline && bob1.state is WaitForFundingConfirmed }
-
-        // Actual test start here
-        // Nothing happens, we need to wait 2016 blocks for the funding tx to be confirmed
-        val (bob2, _) = bob1.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
-        assertEquals(bob1, bob2)
-        // Fast forward after the funding timeout
-        val (bob3, _) = bob2.processEx(ChannelEvent.NewBlock(bob2.currentBlockHeight + Channel.FUNDING_TIMEOUT_NON_INITIATOR_BLOCK + 1, BlockHeader(0, ByteVector32.Zeroes, ByteVector32.Zeroes, 0, 0, 0)))
-        // We give up, Channel is aborted
-        val (bob4, actions4) = bob3.processEx(ChannelEvent.GetFundingTxResponse(GetTxWithMetaResponse(bob.commitments.commitInput.outPoint.txid, null, currentTimestampMillis())))
-        assertTrue { bob4 is Aborted }
-        assertEquals(1, actions4.size)
-        val error = actions4.hasOutgoingMessage<Error>()
-        assertEquals(Error(bob.channelId, FundingTxTimedout(bob.channelId).message), error)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.Disconnected, minVersion = 3)
+        assertIs<Offline>(alice1)
+        assertTrue(actionsAlice1.isEmpty())
+        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.Disconnected, minVersion = 3)
+        assertIs<Offline>(bob1)
+        assertTrue(actionsBob1.isEmpty())
     }
 
     companion object {
         fun init(
-            channelType: ChannelType.SupportedChannelType,
-            fundingAmount: Satoshi,
-            pushAmount: MilliSatoshi,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
-        ): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
-            val (alice, bob, fundingCreated) = WaitForFundingCreatedTestsCommon.init(channelType, fundingAmount, pushAmount, aliceFeatures, bobFeatures)
-            val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(fundingCreated))
-            val fundingSigned = actions1.findOutgoingMessage<FundingSigned>()
-            val (alice1, _) = alice.processEx(ChannelEvent.MessageReceived(fundingSigned))
-            return Pair(alice1 as WaitForFundingConfirmed, bob1 as WaitForFundingConfirmed)
+            currentHeight: Int = TestConstants.defaultBlockHeight,
+            aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
+            bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
+            pushAmount: MilliSatoshi = TestConstants.pushAmount,
+        ): Triple<WaitForFundingConfirmed, WaitForFundingConfirmed, TxSignatures> {
+            val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
+            val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(alice1)
+            assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
+            val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(commitAlice), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(bob1)
+            assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
+            val txSigs = actionsBob1.findOutgoingMessage<TxSignatures>()
+            return Triple(alice1, bob1, txSigs)
+        }
+
+        fun rbf(alice: WaitForFundingConfirmed, bob: WaitForFundingConfirmed, txSigsBob: TxSignatures): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
+            val (alice0, _) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(alice0)
+            val fundingTx = alice0.fundingTx
+            assertIs<FullySignedSharedTransaction>(fundingTx)
+            // Alice adds a new input that increases her contribution and covers the additional fees.
+            val command = run {
+                val priv = randomKey()
+                val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, Script.pay2wpkh(priv.publicKey()))), 0)
+                val address = Bitcoin.computeP2WpkhAddress(priv.publicKey(), Block.RegtestGenesisBlock.hash)
+                val wallet = WalletState(
+                    alice0.wallet.addresses + (address to listOf(UnspentItem(parentTx.txid, 0, 30_000, 0))),
+                    alice0.wallet.privateKeys + (address to priv),
+                    alice0.wallet.parentTxs + (parentTx.txid to parentTx),
+                )
+                CMD_BUMP_FUNDING_FEE(fundingTx.feerate * 1.1, alice0.fundingParams.localAmount + 20_000.sat, wallet, fundingTx.tx.lockTime + 1)
+            }
+            val (alice1, actionsAlice1) = alice0.processEx(ChannelEvent.ExecuteCommand(command), minVersion = 3)
+            assertEquals(actionsAlice1.size, 1)
+            val txInitRbf = actionsAlice1.findOutgoingMessage<TxInitRbf>()
+            assertEquals(txInitRbf.fundingContribution, alice.fundingParams.localAmount + 20_000.sat)
+            val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(txInitRbf), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(bob1)
+            assertEquals(actionsBob1.size, 1)
+            val txAckRbf = actionsBob1.findOutgoingMessage<TxAckRbf>()
+            assertEquals(txAckRbf.fundingContribution, bob.fundingParams.localAmount) // the non-initiator doesn't change its contribution
+            val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.MessageReceived(txAckRbf), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(alice2)
+            assertEquals(actionsAlice2.size, 1)
+            // Alice and Bob build the next funding transaction.
+            val (alice3, bob2) = completeInteractiveTxRbf(alice2, bob1, actionsAlice2.findOutgoingMessage())
+            assertIs<WaitForFundingConfirmed>(alice3)
+            val fundingTx1 = alice3.fundingTx
+            assertIs<FullySignedSharedTransaction>(fundingTx1)
+            assertEquals(fundingTx1.signedTx.lockTime, fundingTx.tx.lockTime + 1)
+            assertEquals(alice3.commitments.fundingAmount, alice.commitments.fundingAmount + 20_000.sat)
+            assertEquals(alice3.rbfStatus, WaitForFundingConfirmed.Companion.RbfStatus.None)
+            assertEquals(bob2.rbfStatus, WaitForFundingConfirmed.Companion.RbfStatus.None)
+            return Pair(alice3, bob2)
+        }
+
+        private fun completeInteractiveTxRbf(alice: WaitForFundingConfirmed, bob: WaitForFundingConfirmed, messageAlice: InteractiveTxMessage): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
+            val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(messageAlice), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(bob1)
+            assertEquals(actionsBob1.size, 1)
+            val messageBob = actionsBob1.findOutgoingMessage<InteractiveTxConstructionMessage>()
+            val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(messageBob), minVersion = 3)
+            assertIs<WaitForFundingConfirmed>(alice1)
+            return when (val txComplete = actionsAlice1.findOutgoingMessageOpt<TxComplete>()) {
+                null -> {
+                    assertEquals(actionsAlice1.size, 1)
+                    completeInteractiveTxRbf(alice1, bob1, actionsAlice1.findOutgoingMessage())
+                }
+                else -> {
+                    assertEquals(actionsAlice1.size, 2)
+                    val commitSigAlice = actionsAlice1.findOutgoingMessage<CommitSig>()
+                    val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.MessageReceived(txComplete), minVersion = 3)
+                    assertEquals(actionsBob2.size, 1)
+                    val commitSigBob = actionsBob2.findOutgoingMessage<CommitSig>()
+                    val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.MessageReceived(commitSigBob), minVersion = 3)
+                    assertEquals(actionsAlice2.size, 2)
+                    actionsAlice2.has<ChannelAction.Storage.StoreState>()
+                    val watchAlice = actionsAlice2.findWatch<WatchConfirmed>()
+                    val (bob3, actionsBob3) = bob2.processEx(ChannelEvent.MessageReceived(commitSigAlice), minVersion = 3)
+                    assertIs<WaitForFundingConfirmed>(bob3)
+                    assertEquals(actionsBob3.size, 3)
+                    actionsBob3.has<ChannelAction.Storage.StoreState>()
+                    val watchBob = actionsBob3.findWatch<WatchConfirmed>()
+                    val txSigsBob = actionsBob3.findOutgoingMessage<TxSignatures>()
+                    val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+                    assertIs<WaitForFundingConfirmed>(alice3)
+                    assertEquals(actionsAlice3.size, 3)
+                    actionsAlice3.has<ChannelAction.Storage.StoreState>()
+                    actionsAlice3.hasOutgoingMessage<TxSignatures>()
+                    val fundingTx = actionsAlice3.find<ChannelAction.Blockchain.PublishTx>().tx
+                    assertEquals(watchAlice.txId, fundingTx.txid)
+                    assertEquals(watchBob.txId, fundingTx.txid)
+                    Pair(alice3, bob3)
+                }
+            }
         }
     }
 

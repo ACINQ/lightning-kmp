@@ -1,51 +1,48 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ByteVector
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelTlv
-import fr.acinq.lightning.wire.OpenChannel
+import fr.acinq.lightning.wire.OpenDualFundedChannel
 import fr.acinq.lightning.wire.TlvStream
 
 data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.InitNonInitiator -> {
-                val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.localParams, event.channelConfig, event.remoteInit)
+                val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.fundingAmount, event.wallet, event.localParams, event.channelConfig, event.remoteInit)
                 Pair(nextState, listOf())
             }
             event is ChannelEvent.InitInitiator && isValidChannelType(event.channelType) -> {
-                val fundingPubKey = event.localParams.channelKeys.fundingPubKey
-                val paymentBasepoint = event.localParams.channelKeys.paymentBasepoint
-                val open = OpenChannel(
-                    staticParams.nodeParams.chainHash,
+                val open = OpenDualFundedChannel(
+                    chainHash = staticParams.nodeParams.chainHash,
                     temporaryChannelId = event.temporaryChannelId,
-                    fundingSatoshis = event.fundingAmount,
-                    pushMsat = event.pushAmount,
-                    dustLimitSatoshis = event.localParams.dustLimit,
+                    fundingFeerate = event.fundingTxFeerate,
+                    commitmentFeerate = event.commitTxFeerate,
+                    fundingAmount = event.fundingAmount,
+                    dustLimit = event.localParams.dustLimit,
                     maxHtlcValueInFlightMsat = event.localParams.maxHtlcValueInFlightMsat,
-                    channelReserveSatoshis = event.localParams.channelReserve,
-                    htlcMinimumMsat = event.localParams.htlcMinimum,
-                    feeratePerKw = event.commitTxFeerate,
+                    htlcMinimum = event.localParams.htlcMinimum,
                     toSelfDelay = event.localParams.toSelfDelay,
                     maxAcceptedHtlcs = event.localParams.maxAcceptedHtlcs,
-                    fundingPubkey = fundingPubKey,
+                    lockTime = currentBlockHeight.toLong(),
+                    fundingPubkey = event.localParams.channelKeys.fundingPubKey,
                     revocationBasepoint = event.localParams.channelKeys.revocationBasepoint,
-                    paymentBasepoint = paymentBasepoint,
+                    paymentBasepoint = event.localParams.channelKeys.paymentBasepoint,
                     delayedPaymentBasepoint = event.localParams.channelKeys.delayedPaymentBasepoint,
                     htlcBasepoint = event.localParams.channelKeys.htlcBasepoint,
                     firstPerCommitmentPoint = keyManager.commitmentPoint(event.localParams.channelKeys.shaSeed, 0),
                     channelFlags = event.channelFlags,
                     tlvStream = TlvStream(
                         buildList {
-                            // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
-                            // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-                            add(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))
                             add(ChannelTlv.ChannelTypeTlv(event.channelType))
+                            if (event.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(event.pushAmount))
                             if (event.channelOrigin != null) add(ChannelTlv.ChannelOriginTlv(event.channelOrigin))
                         }
                     )
@@ -57,7 +54,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 logger.warning { "c:${event.temporaryChannelId} cannot open channel with invalid channel_type=${event.channelType.name}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.Restore && event.state is Closing && event.state.commitments.nothingAtStake() -> {
+            event is ChannelEvent.Restore && event.state is Closing && event.state.nothingAtStake() -> {
                 logger.info { "c:${event.state.channelId} we have nothing at stake, going straight to CLOSED" }
                 Pair(Closed(event.state), listOf())
             }
@@ -101,7 +98,6 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                                     BITCOIN_FUNDING_SPENT
                                 )
                             ),
-                            //SendWatch(WatchLost(event.state.channelId, commitments.commitInput.outPoint.txid, event.state.staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_FUNDING_LOST))
                         )
                         val minDepth = event.state.staticParams.nodeParams.minDepthBlocks.toLong()
                         event.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, event.state.channelId)) }
@@ -112,33 +108,50 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         event.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(event.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
                         if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
-                            actions.add(ChannelAction.Blockchain.GetFundingTx(commitments.commitInput.outPoint.txid))
+                            event.state.fundingTx?.let { actions.add(ChannelAction.Blockchain.PublishTx(it)) }
                         }
                         Pair(event.state, actions)
                     }
                 }
             }
+            event is ChannelEvent.Restore && event.state is LegacyWaitForFundingConfirmed -> {
+                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.state.commitments.fundingAmount)
+                logger.info { "c:${event.state.channelId} restoring legacy unconfirmed channel (waiting for $minDepth confirmations)" }
+                val watch = WatchConfirmed(event.state.channelId, event.state.commitments.fundingTxId, event.state.commitments.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                Pair(Offline(event.state), listOf(ChannelAction.Blockchain.SendWatch(watch)))
+            }
+            event is ChannelEvent.Restore && event.state is WaitForFundingConfirmed -> {
+                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, event.state.fundingParams.fundingAmount)
+                logger.info { "c:${event.state.channelId} restoring unconfirmed channel (waiting for $minDepth confirmations)" }
+                val allCommitments = listOf(event.state.commitments) + event.state.previousFundingTxs.map { it.second }
+                val watches = allCommitments.map { WatchConfirmed(it.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
+                val actions = buildList {
+                    event.state.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+                    addAll(watches.map { ChannelAction.Blockchain.SendWatch(it) })
+                }
+                Pair(Offline(event.state), actions)
+            }
             event is ChannelEvent.Restore && event.state is ChannelStateWithCommitments -> {
                 logger.info { "c:${event.state.channelId} restoring channel" }
+                // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
+                val fundingTx = when {
+                    event.state is WaitForFundingLocked && event.state.commitments.channelFeatures.hasFeature(Feature.ZeroConfChannels) -> event.state.fundingTx.signedTx
+                    else -> null
+                }
                 val watchSpent = WatchSpent(
                     event.state.channelId,
-                    event.state.commitments.commitInput.outPoint.txid,
+                    event.state.commitments.fundingTxId,
                     event.state.commitments.commitInput.outPoint.index.toInt(),
                     event.state.commitments.commitInput.txOut.publicKeyScript,
                     BITCOIN_FUNDING_SPENT
                 )
-                val watchConfirmed = WatchConfirmed(
-                    event.state.channelId,
-                    event.state.commitments.commitInput.outPoint.txid,
-                    event.state.commitments.commitInput.txOut.publicKeyScript,
-                    staticParams.nodeParams.minDepthBlocks.toLong(),
-                    BITCOIN_FUNDING_DEPTHOK
-                )
-                val actions = listOf(
-                    ChannelAction.Blockchain.SendWatch(watchSpent),
-                    ChannelAction.Blockchain.SendWatch(watchConfirmed),
-                    ChannelAction.Blockchain.GetFundingTx(event.state.commitments.commitInput.outPoint.txid)
-                )
+                val actions = buildList {
+                    fundingTx?.let {
+                        logger.info { "c:${event.state.channelId} republishing funding tx (txId=${it.txid})" }
+                        add(ChannelAction.Blockchain.PublishTx(it))
+                    }
+                    add(ChannelAction.Blockchain.SendWatch(watchSpent))
+                }
                 Pair(Offline(event.state), actions)
             }
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())

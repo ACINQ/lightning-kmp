@@ -10,8 +10,6 @@ import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.LoggingContext
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.ClosingSigned
 import kotlinx.serialization.Serializable
 
@@ -387,7 +385,6 @@ data class LocalParams(
     val channelKeys: ChannelKeys,
     val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
@@ -400,7 +397,6 @@ data class RemoteParams(
     val nodeId: PublicKey,
     val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
@@ -426,19 +422,4 @@ sealed class ChannelOrigin {
 
     data class PayToOpenOrigin(val paymentHash: ByteVector32, override val fee: Satoshi) : ChannelOrigin()
     data class SwapInOrigin(val bitcoinAddress: String, override val fee: Satoshi) : ChannelOrigin()
-}
-
-/** A utxo that should be used for channel funding, with the private key to spend it. */
-data class FundingInput(val previousTx: Transaction, val outputIndex: Int, val privateKey: PrivateKey) {
-    val amount: Satoshi = previousTx.txOut[outputIndex].amount
-    val outpoint: OutPoint = OutPoint(previousTx, outputIndex.toLong())
-}
-
-/** A set of utxos that should be used for channel funding. */
-data class FundingInputs(val fundingAmount: Satoshi, val inputs: List<FundingInput>) {
-    val totalAmount: Satoshi = inputs.map { it.amount }.sum()
-
-    companion object {
-        val empty: FundingInputs = FundingInputs(0.sat, listOf())
-    }
 }

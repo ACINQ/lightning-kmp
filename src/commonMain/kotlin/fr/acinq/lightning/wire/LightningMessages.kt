@@ -50,12 +50,8 @@ interface LightningMessage {
                 Error.type -> Error.read(stream)
                 Ping.type -> Ping.read(stream)
                 Pong.type -> Pong.read(stream)
-                OpenChannel.type -> OpenChannel.read(stream)
-                AcceptChannel.type -> AcceptChannel.read(stream)
                 OpenDualFundedChannel.type -> OpenDualFundedChannel.read(stream)
                 AcceptDualFundedChannel.type -> AcceptDualFundedChannel.read(stream)
-                FundingCreated.type -> FundingCreated.read(stream)
-                FundingSigned.type -> FundingSigned.read(stream)
                 FundingLocked.type -> FundingLocked.read(stream)
                 TxAddInput.type -> TxAddInput.read(stream)
                 TxAddOutput.type -> TxAddOutput.read(stream)
@@ -565,174 +561,6 @@ data class TxAbort(
 }
 
 @Serializable
-data class OpenChannel(
-    @Contextual override val chainHash: ByteVector32,
-    @Contextual override val temporaryChannelId: ByteVector32,
-    @Contextual val fundingSatoshis: Satoshi,
-    val pushMsat: MilliSatoshi,
-    @Contextual val dustLimitSatoshis: Satoshi,
-    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    @Contextual val channelReserveSatoshis: Satoshi,
-    val htlcMinimumMsat: MilliSatoshi,
-    val feeratePerKw: FeeratePerKw,
-    val toSelfDelay: CltvExpiryDelta,
-    val maxAcceptedHtlcs: Int,
-    @Contextual val fundingPubkey: PublicKey,
-    @Contextual val revocationBasepoint: PublicKey,
-    @Contextual val paymentBasepoint: PublicKey,
-    @Contextual val delayedPaymentBasepoint: PublicKey,
-    @Contextual val htlcBasepoint: PublicKey,
-    @Contextual val firstPerCommitmentPoint: PublicKey,
-    val channelFlags: Byte,
-    val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
-) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
-    val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType ?: tlvStream.get<ChannelTlv.ChannelVersionTlv>()?.channelType
-
-    override val type: Long get() = OpenChannel.type
-
-    override fun write(out: Output) {
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(
-            ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>
-        )
-        LightningCodecs.writeBytes(chainHash, out)
-        LightningCodecs.writeBytes(temporaryChannelId, out)
-        LightningCodecs.writeU64(fundingSatoshis.toLong(), out)
-        LightningCodecs.writeU64(pushMsat.toLong(), out)
-        LightningCodecs.writeU64(dustLimitSatoshis.toLong(), out)
-        LightningCodecs.writeU64(maxHtlcValueInFlightMsat, out)
-        LightningCodecs.writeU64(channelReserveSatoshis.toLong(), out)
-        LightningCodecs.writeU64(htlcMinimumMsat.toLong(), out)
-        LightningCodecs.writeU32(feeratePerKw.toLong().toInt(), out)
-        LightningCodecs.writeU16(toSelfDelay.toInt(), out)
-        LightningCodecs.writeU16(maxAcceptedHtlcs, out)
-        LightningCodecs.writeBytes(fundingPubkey.value, out)
-        LightningCodecs.writeBytes(revocationBasepoint.value, out)
-        LightningCodecs.writeBytes(paymentBasepoint.value, out)
-        LightningCodecs.writeBytes(delayedPaymentBasepoint.value, out)
-        LightningCodecs.writeBytes(htlcBasepoint.value, out)
-        LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
-        LightningCodecs.writeByte(channelFlags.toInt(), out)
-        TlvStreamSerializer(false, readers).write(tlvStream, out)
-    }
-
-    companion object : LightningMessageReader<OpenChannel> {
-        const val type: Long = 32
-
-        override fun read(input: Input): OpenChannel {
-            @Suppress("UNCHECKED_CAST")
-            val readers = mapOf(
-                ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>
-            )
-            return OpenChannel(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                Satoshi(LightningCodecs.u64(input)),
-                MilliSatoshi(LightningCodecs.u64(input)),
-                Satoshi(LightningCodecs.u64(input)),
-                LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                Satoshi(LightningCodecs.u64(input)),
-                MilliSatoshi(LightningCodecs.u64(input)),
-                FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-                CltvExpiryDelta(LightningCodecs.u16(input)),
-                LightningCodecs.u16(input),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.byte(input).toByte(),
-                TlvStreamSerializer(false, readers).read(input)
-            )
-        }
-    }
-}
-
-@Serializable
-data class AcceptChannel(
-    @Contextual override val temporaryChannelId: ByteVector32,
-    @Contextual val dustLimitSatoshis: Satoshi,
-    val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-    @Contextual val channelReserveSatoshis: Satoshi,
-    val htlcMinimumMsat: MilliSatoshi,
-    val minimumDepth: Long,
-    val toSelfDelay: CltvExpiryDelta,
-    val maxAcceptedHtlcs: Int,
-    @Contextual val fundingPubkey: PublicKey,
-    @Contextual val revocationBasepoint: PublicKey,
-    @Contextual val paymentBasepoint: PublicKey,
-    @Contextual val delayedPaymentBasepoint: PublicKey,
-    @Contextual val htlcBasepoint: PublicKey,
-    @Contextual val firstPerCommitmentPoint: PublicKey,
-    val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
-) : ChannelMessage, HasTemporaryChannelId {
-    val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
-
-    override val type: Long get() = AcceptChannel.type
-
-    override fun write(out: Output) {
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(
-            ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
-        )
-        LightningCodecs.writeBytes(temporaryChannelId, out)
-        LightningCodecs.writeU64(dustLimitSatoshis.toLong(), out)
-        LightningCodecs.writeU64(maxHtlcValueInFlightMsat, out)
-        LightningCodecs.writeU64(channelReserveSatoshis.toLong(), out)
-        LightningCodecs.writeU64(htlcMinimumMsat.toLong(), out)
-        LightningCodecs.writeU32(minimumDepth.toInt(), out)
-        LightningCodecs.writeU16(toSelfDelay.toInt(), out)
-        LightningCodecs.writeU16(maxAcceptedHtlcs, out)
-        LightningCodecs.writeBytes(fundingPubkey.value, out)
-        LightningCodecs.writeBytes(revocationBasepoint.value, out)
-        LightningCodecs.writeBytes(paymentBasepoint.value, out)
-        LightningCodecs.writeBytes(delayedPaymentBasepoint.value, out)
-        LightningCodecs.writeBytes(htlcBasepoint.value, out)
-        LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
-        TlvStreamSerializer(false, readers).write(tlvStream, out)
-    }
-
-    companion object : LightningMessageReader<AcceptChannel> {
-        const val type: Long = 33
-
-        override fun read(input: Input): AcceptChannel {
-            @Suppress("UNCHECKED_CAST")
-            val readers = mapOf(
-                ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelVersionTlv.tag to ChannelTlv.ChannelVersionTlv.Companion as TlvValueReader<ChannelTlv>
-            )
-            return AcceptChannel(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                Satoshi(LightningCodecs.u64(input)),
-                LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi,
-                Satoshi(LightningCodecs.u64(input)),
-                MilliSatoshi(LightningCodecs.u64(input)),
-                LightningCodecs.u32(input).toLong(),
-                CltvExpiryDelta(LightningCodecs.u16(input)),
-                LightningCodecs.u16(input),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                PublicKey(LightningCodecs.bytes(input, 33)),
-                TlvStreamSerializer(false, readers).read(input)
-            )
-        }
-    }
-}
-
-@Serializable
 data class OpenDualFundedChannel(
     @Contextual override val chainHash: ByteVector32,
     @Contextual override val temporaryChannelId: ByteVector32,
@@ -755,6 +583,7 @@ data class OpenDualFundedChannel(
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
+    val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
 
     override val type: Long get() = OpenDualFundedChannel.type
 
@@ -763,7 +592,8 @@ data class OpenDualFundedChannel(
         val readers = mapOf(
             ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>
+            ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
         LightningCodecs.writeBytes(chainHash, out)
         LightningCodecs.writeBytes(temporaryChannelId, out)
@@ -794,7 +624,8 @@ data class OpenDualFundedChannel(
             val readers = mapOf(
                 ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
                 ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
-                ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>
+                ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>,
+                ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
             )
             return OpenDualFundedChannel(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
@@ -930,30 +761,21 @@ data class FundingCreated(
 data class FundingSigned(
     @Contextual override val channelId: ByteVector32,
     @Contextual val signature: ByteVector64,
-    val tlvStream: TlvStream<FundingSignedTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+) : ChannelMessage, HasChannelId {
     override val type: Long get() = FundingSigned.type
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<FundingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): FundingSigned = copy(tlvStream = tlvStream.addOrUpdate(FundingSignedTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(signature, out)
-        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<FundingSigned> {
         const val type: Long = 35
 
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(FundingSignedTlv.ChannelData.tag to FundingSignedTlv.ChannelData.Companion as TlvValueReader<FundingSignedTlv>)
-
         override fun read(input: Input): FundingSigned {
             return FundingSigned(
                 ByteVector32(LightningCodecs.bytes(input, 32)),
                 ByteVector64(LightningCodecs.bytes(input, 64)),
-                TlvStreamSerializer(false, readers).read(input)
             )
         }
     }

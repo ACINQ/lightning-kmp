@@ -27,7 +27,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
 
     private fun makeChannel(channelId: ByteVector32, balance: MilliSatoshi, htlcMin: MilliSatoshi): Normal {
         val shortChannelId = ShortChannelId(Random.nextLong())
-        val reserve = defaultChannel.commitments.remoteParams.channelReserve
+        val reserve = defaultChannel.commitments.localChannelReserve
         val commitments = defaultChannel.commitments.copy(
             channelId = channelId,
             remoteCommit = defaultChannel.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, balance + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))

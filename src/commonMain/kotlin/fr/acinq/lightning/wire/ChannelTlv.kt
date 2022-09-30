@@ -6,9 +6,10 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.utils.BitField
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
@@ -60,47 +61,6 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
-    /** This legacy TLV was used before ChannelType was introduced: it should be removed whenever possible. */
-    @Serializable
-    data class ChannelVersionTlv(val channelType: ChannelType) : ChannelTlv() {
-        override val tag: Long get() = ChannelVersionTlv.tag
-
-        override fun write(out: Output) {
-            val bits = BitField(4)
-            when (channelType) {
-                ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve -> {
-                    bits.setRight(1)
-                    bits.setRight(2)
-                    bits.setRight(3)
-                }
-                ChannelType.SupportedChannelType.StaticRemoteKey -> {
-                    bits.setRight(1)
-                    bits.setRight(3)
-                }
-                ChannelType.SupportedChannelType.Standard -> {
-                    bits.setRight(3)
-                }
-                is ChannelType.UnsupportedChannelType -> throw IllegalArgumentException("unsupported channel type: ${channelType.name}")
-            }
-            LightningCodecs.writeBytes(bits.bytes, out)
-        }
-
-        companion object : TlvValueReader<ChannelVersionTlv> {
-            const val tag: Long = 0x47000001
-
-            override fun read(input: Input): ChannelVersionTlv {
-                val len = input.availableBytes
-                val bits = BitField.from(LightningCodecs.bytes(input, len))
-                val channelType = when {
-                    bits.getRight(2) -> ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve
-                    bits.getRight(1) -> ChannelType.SupportedChannelType.StaticRemoteKey
-                    else -> ChannelType.SupportedChannelType.Standard
-                }
-                return ChannelVersionTlv(channelType)
-            }
-        }
-    }
-
     @Serializable
     data class ChannelOriginTlv(val channelOrigin: ChannelOrigin) : ChannelTlv() {
         override val tag: Long get() = ChannelOriginTlv.tag
@@ -144,18 +104,18 @@ sealed class ChannelTlv : Tlv {
             }
         }
     }
-}
 
-@Serializable
-sealed class FundingSignedTlv : Tlv {
+    /** Amount that will be offered by the initiator of a dual-funded channel to the non-initiator. */
     @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : FundingSignedTlv() {
-        override val tag: Long get() = ChannelData.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+    data class PushAmountTlv(@Contextual val amount: MilliSatoshi) : ChannelTlv() {
+        override val tag: Long get() = PushAmountTlv.tag
 
-        companion object : TlvValueReader<ChannelData> {
-            const val tag: Long = 0x47010000
-            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
+
+        companion object : TlvValueReader<PushAmountTlv> {
+            const val tag: Long = 0x47000007
+
+            override fun read(input: Input): PushAmountTlv = PushAmountTlv(LightningCodecs.tu64(input).msat)
         }
     }
 }
