@@ -3,9 +3,9 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.6.21"
-    kotlin("plugin.serialization") version "1.6.21"
-    id("org.jetbrains.dokka") version "1.6.21"
+    kotlin("multiplatform") version "1.7.20"
+    kotlin("plugin.serialization") version "1.7.20"
+    id("org.jetbrains.dokka") version "1.7.10"
     `maven-publish`
 }
 
@@ -24,22 +24,30 @@ allprojects {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    val ktorVersion: String by extra { "2.0.3" }
-    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
+    // -- acinq
+    val bitcoinKmpVersion = "0.9.0"
     val secp256k1Version = "0.7.0"
-    val serializationVersion = "1.3.3"
-    val coroutineVersion = "1.6.3"
+    // -- ktor
+    val ktorVersion: String by extra { "2.1.2" }
+    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
+    // -- kotlinx
+    val serializationVersion = "1.4.0"
+    val coroutineVersion = "1.6.4"
+    val datetimeVersion = "0.4.0"
+    // -- logging
+    val kodeinLogVersion = "0.13.0"
+    val slf4jVersion = "1.7.36"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.9.0")
+            api("fr.acinq.bitcoin:bitcoin-kmp:$bitcoinKmpVersion")
             api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
-            api("org.kodein.log:kodein-log:0.13.0")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-            api("org.jetbrains.kotlinx:kotlinx-datetime:0.3.2")
+            api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
+            api("org.kodein.log:kodein-log:$kodeinLogVersion")
         }
     }
     val commonTest by sourceSets.getting {
@@ -56,14 +64,11 @@ kotlin {
     }
 
     jvm {
-        compilations.all {
-            kotlinOptions.jvmTarget = "1.8"
-        }
         compilations["main"].defaultSourceSet.dependencies {
             api(ktor("client-okhttp"))
             api(ktor("network"))
             api(ktor("network-tls"))
-            implementation("org.slf4j:slf4j-api:1.7.36")
+            implementation("org.slf4j:slf4j-api:$slf4jVersion")
             api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
         compilations["test"].defaultSourceSet.dependencies {
@@ -76,7 +81,7 @@ kotlin {
             implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm-$target:$secp256k1Version")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-            implementation("ch.qos.logback:logback-classic:1.2.3")
+            implementation("ch.qos.logback:logback-classic:1.4.1")
             implementation(ktor("server-netty"))
             implementation(ktor("serialization"))
             implementation(ktor("server-status-pages"))
@@ -132,7 +137,6 @@ kotlin {
     }
 
     sourceSets.all {
-        languageSettings.optIn("kotlin.RequiresOptIn")
         languageSettings.optIn("kotlin.ExperimentalStdlibApi")
     }
 
