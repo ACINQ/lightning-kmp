@@ -295,6 +295,8 @@ tasks.withType<AbstractTestTask> {
 if (currentOs.isLinux) {
     val linuxTest by tasks.getting(KotlinNativeTest::class) {
         filter.excludeTestsMatching("*IntegrationTest")
+        filter.excludeTestsMatching("*ElectrumClientTest")
+        filter.excludeTestsMatching("*ElectrumMiniWalletTest")
     }
 }
 

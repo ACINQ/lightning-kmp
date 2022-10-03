@@ -20,7 +20,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
-class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
+class ElectrumMiniWalletTest : LightningTestSuite() {
 
     private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
         val client =
