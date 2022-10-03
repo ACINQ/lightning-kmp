@@ -8,15 +8,14 @@ import fr.acinq.lightning.InvoiceDefaultRoutingFees
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeUri
+import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
+import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.OutgoingPayment
-import fr.acinq.lightning.io.BytesReceived
-import fr.acinq.lightning.io.OpenChannel
-import fr.acinq.lightning.io.ReceivePayment
-import fr.acinq.lightning.io.SendPaymentNormal
+import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.tests.TestConstants
@@ -27,11 +26,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
-
+import kotlin.test.*
 
 class PeerTest : LightningTestSuite() {
 
@@ -54,7 +49,7 @@ class PeerTest : LightningTestSuite() {
         randomKey().publicKey(),
         randomKey().publicKey(),
         0.toByte(),
-        TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)))
+        TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)))
     )
 
     @Test
@@ -117,12 +112,13 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(300_000.sat)
-        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve))
+        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
         val accept = bob2alice.expect<AcceptDualFundedChannel>()
         assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
+        assertTrue(accept.minimumDepth > 0)
         alice.forward(accept)
         val txAddInput = alice2bob.expect<TxAddInput>()
         assertNotEquals(txAddInput.channelId, open.temporaryChannelId) // we now have the final channel_id
@@ -141,12 +137,72 @@ class PeerTest : LightningTestSuite() {
         bob.forward(commitSigAlice)
         val txSigsBob = bob2alice.expect<TxSignatures>()
         alice.forward(txSigsBob)
-        val fundingLockedAlice = alice2bob.expect<FundingLocked>()
         val txSigsAlice = alice2bob.expect<TxSignatures>()
         bob.forward(txSigsAlice)
-        val fundingLockedBob = bob2alice.expect<FundingLocked>()
-        alice.forward(fundingLockedBob)
-        bob.forward(fundingLockedAlice)
+        val (channelId, aliceState) = alice.expectState<WaitForFundingConfirmed>()
+        assertEquals(channelId, txAddInput.channelId)
+        bob.expectState<WaitForFundingConfirmed>()
+        val fundingTx = aliceState.fundingTx.signedTx
+        assertNotNull(fundingTx)
+
+        alice.send(WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, fundingTx)))
+        val channelReadyAlice = alice2bob.expect<ChannelReady>()
+        bob.send(WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, fundingTx)))
+        val channelReadyBob = bob2alice.expect<ChannelReady>()
+        alice.forward(channelReadyBob)
+        bob.forward(channelReadyAlice)
+        alice.expectState<Normal>()
+        assertEquals(alice.channels.size, 1)
+        assertTrue(alice.channels.containsKey(channelId))
+        bob.expectState<Normal>()
+        assertEquals(bob.channels.size, 1)
+        assertTrue(bob.channels.containsKey(channelId))
+    }
+
+    @Test
+    fun `open channel -- zero-conf`() = runSuspendTest {
+        val nodeParams = Pair(
+            TestConstants.Alice.nodeParams.copy(zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId)),
+            TestConstants.Bob.nodeParams.copy(zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId))
+        )
+        val walletParams = Pair(
+            TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735)),
+            TestConstants.Bob.walletParams.copy(trampolineNode = NodeUri(TestConstants.Alice.nodeParams.nodeId, "alice.com", 9735))
+        )
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+
+        val wallet = createWallet(300_000.sat)
+        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+
+        val open = alice2bob.expect<OpenDualFundedChannel>()
+        bob.forward(open)
+        val accept = bob2alice.expect<AcceptDualFundedChannel>()
+        assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
+        assertEquals(0, accept.minimumDepth)
+        alice.forward(accept)
+        val txAddInput = alice2bob.expect<TxAddInput>()
+        assertNotEquals(txAddInput.channelId, open.temporaryChannelId) // we now have the final channel_id
+        bob.forward(txAddInput)
+        val txCompleteBob = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob)
+        val txAddOutput = alice2bob.expect<TxAddOutput>()
+        bob.forward(txAddOutput)
+        bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob)
+        val txCompleteAlice = alice2bob.expect<TxComplete>()
+        bob.forward(txCompleteAlice)
+        val commitSigBob = bob2alice.expect<CommitSig>()
+        alice.forward(commitSigBob)
+        val commitSigAlice = alice2bob.expect<CommitSig>()
+        bob.forward(commitSigAlice)
+        val txSigsBob = bob2alice.expect<TxSignatures>()
+        alice.forward(txSigsBob)
+        val channelReadyAlice = alice2bob.expect<ChannelReady>()
+        val txSigsAlice = alice2bob.expect<TxSignatures>()
+        bob.forward(txSigsAlice)
+        val channelReadyBob = bob2alice.expect<ChannelReady>()
+        alice.forward(channelReadyBob)
+        bob.forward(channelReadyAlice)
         alice.expectState<Normal>()
         assertEquals(alice.channels.size, 1)
         assertTrue(alice.channels.containsKey(txAddInput.channelId))

@@ -154,7 +154,7 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
-    /** This feature bit should be activated when a node accepts unconfirmed channels (will set min_depth to 0 in accept_channel). */
+    /** DEPRECATED: this feature bit should not be used, it is only kept for serialization backwards-compatibility. */
     @Serializable
     object ZeroConfChannels : Feature() {
         override val rfcName get() = "zero_conf_channels"

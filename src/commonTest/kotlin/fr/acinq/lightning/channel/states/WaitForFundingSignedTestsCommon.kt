@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
@@ -47,21 +48,21 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- zero conf`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
-            assertIs<WaitForFundingLocked>(alice1)
+            assertIs<WaitForChannelReady>(alice1)
             assertEquals(actionsAlice1.size, 3)
-            actionsAlice1.hasOutgoingMessage<FundingLocked>()
+            assertEquals(actionsAlice1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(alice.staticParams.nodeParams.nodeId))
             assertEquals(actionsAlice1.findWatch<WatchSpent>().txId, alice1.commitments.fundingTxId)
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
-            assertIs<WaitForFundingLocked>(bob1)
+            assertIs<WaitForChannelReady>(bob1)
             assertEquals(actionsBob1.size, 5)
             actionsBob1.hasOutgoingMessage<TxSignatures>()
-            actionsBob1.hasOutgoingMessage<FundingLocked>()
+            assertEquals(actionsBob1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId))
             assertEquals(actionsBob1.findWatch<WatchSpent>().txId, bob1.commitments.fundingTxId)
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushAmount, null))
@@ -197,9 +198,10 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            zeroConf: Boolean = false,
             channelOrigin: ChannelOrigin? = null
         ): Fixture {
-            val (alice, bob, inputAlice) = WaitForFundingCreatedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, channelOrigin)
+            val (alice, bob, inputAlice) = WaitForFundingCreatedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf, channelOrigin)
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
             // Bob's message will either be tx_add_input or tx_complete depending on whether Bob contributes or not.
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<InteractiveTxMessage>()))

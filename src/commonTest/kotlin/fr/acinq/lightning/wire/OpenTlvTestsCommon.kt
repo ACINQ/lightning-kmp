@@ -20,7 +20,7 @@ class OpenTlvTestsCommon : LightningTestSuite() {
             Pair(ChannelType.SupportedChannelType.Standard, Hex.decode("0100")),
             Pair(ChannelType.SupportedChannelType.StaticRemoteKey, Hex.decode("01021000")),
             Pair(ChannelType.SupportedChannelType.AnchorOutputs, Hex.decode("0103101000")),
-            Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, Hex.decode("01110500000000000000000000000000141000")),
+            Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, Hex.decode("01110100000000000000000000000000101000")),
         )
 
         @Suppress("UNCHECKED_CAST")

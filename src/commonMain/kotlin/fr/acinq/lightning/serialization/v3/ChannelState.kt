@@ -378,7 +378,7 @@ sealed class ChannelState {
             is fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed -> WaitForFundingConfirmed(from)
             is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed2(from)
             is fr.acinq.lightning.channel.LegacyWaitForFundingLocked -> WaitForFundingLocked(from)
-            is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked2(from)
+            is fr.acinq.lightning.channel.WaitForChannelReady -> WaitForChannelReady(from)
             is fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(from)
             is fr.acinq.lightning.channel.Offline -> Offline(from)
             is fr.acinq.lightning.channel.Syncing -> Syncing(from)
@@ -399,7 +399,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             is fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed -> WaitForFundingConfirmed(from)
             is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed2(from)
             is fr.acinq.lightning.channel.LegacyWaitForFundingLocked -> WaitForFundingLocked(from)
-            is fr.acinq.lightning.channel.WaitForFundingLocked -> WaitForFundingLocked2(from)
+            is fr.acinq.lightning.channel.WaitForChannelReady -> WaitForChannelReady(from)
             is fr.acinq.lightning.channel.Normal -> Normal(from)
             is fr.acinq.lightning.channel.ShuttingDown -> ShuttingDown(from)
             is fr.acinq.lightning.channel.Negotiating -> Negotiating(from)
@@ -738,7 +738,7 @@ data class WaitForFundingConfirmed2(
     val fundingTx: SignedSharedTransaction,
     val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
     val waitingSinceBlock: Long,
-    val deferred: FundingLocked?,
+    val deferred: ChannelReady?,
 ) : ChannelStateWithCommitments() {
     constructor(from: fr.acinq.lightning.channel.WaitForFundingConfirmed) : this(
         StaticParams(from.staticParams),
@@ -802,7 +802,7 @@ data class WaitForFundingLocked(
 }
 
 @Serializable
-data class WaitForFundingLocked2(
+data class WaitForChannelReady(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -810,9 +810,9 @@ data class WaitForFundingLocked2(
     val fundingParams: InteractiveTxParams,
     val fundingTx: SignedSharedTransaction,
     val shortChannelId: ShortChannelId,
-    val lastSent: FundingLocked
+    val lastSent: ChannelReady
 ) : ChannelStateWithCommitments() {
-    constructor(from: fr.acinq.lightning.channel.WaitForFundingLocked) : this(
+    constructor(from: fr.acinq.lightning.channel.WaitForChannelReady) : this(
         StaticParams(from.staticParams),
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
@@ -823,7 +823,7 @@ data class WaitForFundingLocked2(
         from.lastSent
     )
 
-    override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.WaitForFundingLocked(
+    override fun export(nodeParams: NodeParams) = fr.acinq.lightning.channel.WaitForChannelReady(
         staticParams.export(nodeParams),
         currentTip,
         currentOnChainFeerates.export(),

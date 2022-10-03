@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
@@ -36,11 +35,11 @@ data class WaitForOpenChannel(
                 when (event.message) {
                     is OpenDualFundedChannel -> {
                         val open = event.message
-                        when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open, localParams.features, Features(remoteInit.features))) {
+                        when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open, localParams.features)) {
                             is Either.Right -> {
                                 val channelFeatures = res.value
                                 val channelOrigin = open.tlvStream.records.filterIsInstance<ChannelTlv.ChannelOriginTlv>().firstOrNull()?.channelOrigin
-                                val minimumDepth = if (channelFeatures.hasFeature(Feature.ZeroConfChannels)) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
+                                val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val accept = AcceptDualFundedChannel(
                                     temporaryChannelId = open.temporaryChannelId,
                                     fundingAmount = fundingAmount,

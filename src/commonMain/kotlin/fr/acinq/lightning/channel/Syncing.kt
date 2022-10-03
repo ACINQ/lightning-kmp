@@ -11,9 +11,9 @@ import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.FundingLocked
 
 /**
  * waitForTheirReestablishMessage == true means that we want to wait until we've received their channel_reestablish message before
@@ -84,11 +84,11 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                     Pair(state, actions)
                 }
-                state is WaitForFundingLocked || state is LegacyWaitForFundingLocked -> {
-                    logger.debug { "c:$channelId re-sending fundingLocked" }
+                state is WaitForChannelReady || state is LegacyWaitForFundingLocked -> {
+                    logger.debug { "c:$channelId re-sending channel_ready" }
                     val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, 1)
-                    val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
-                    val actions = listOf(ChannelAction.Message.Send(fundingLocked))
+                    val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
+                    val actions = listOf(ChannelAction.Message.Send(channelReady))
                     Pair(state, actions)
                 }
                 state is Normal -> {
@@ -140,10 +140,10 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             val actions = ArrayList<ChannelAction>()
                             if (event.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommit.index == 0L) {
                                 // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
-                                logger.debug { "c:$channelId re-sending fundingLocked" }
+                                logger.debug { "c:$channelId re-sending channel_ready" }
                                 val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, 1)
-                                val fundingLocked = FundingLocked(state.commitments.channelId, nextPerCommitmentPoint)
-                                actions.add(ChannelAction.Message.Send(fundingLocked))
+                                val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
+                                actions.add(ChannelAction.Message.Send(channelReady))
                             }
 
                             try {

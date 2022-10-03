@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingLocked
 
@@ -30,7 +31,7 @@ data class LegacyWaitForFundingLocked(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is ChannelEvent.MessageReceived -> when (event.message) {
-                is FundingLocked -> {
+                is ChannelReady -> {
                     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                     val watchConfirmed = WatchConfirmed(
                         this.channelId,

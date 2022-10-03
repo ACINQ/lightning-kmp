@@ -71,17 +71,17 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         assertEquals(open.pushAmount, TestConstants.pushAmount)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         assertIs<WaitForFundingCreated>(bob1)
-        assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+        assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
     }
 
     @Test
     fun `recv OpenChannel -- zero conf -- zero reserve`() {
-        val (_, bob, open) = TestsHelper.init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (_, bob, open) = TestsHelper.init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         assertIs<WaitForFundingCreated>(bob1)
         assertTrue(bob1.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
-        assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
+        assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
         val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         assertEquals(0, accept.minimumDepth)
     }
@@ -102,7 +102,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val open1 = open.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey))))
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, ChannelType.SupportedChannelType.StaticRemoteKey).message))
+        assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, ChannelType.SupportedChannelType.StaticRemoteKey).message))
         assertIs<Aborted>(bob1)
     }
 

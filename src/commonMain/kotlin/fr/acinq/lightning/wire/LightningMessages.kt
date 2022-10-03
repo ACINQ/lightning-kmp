@@ -52,7 +52,7 @@ interface LightningMessage {
                 Pong.type -> Pong.read(stream)
                 OpenDualFundedChannel.type -> OpenDualFundedChannel.read(stream)
                 AcceptDualFundedChannel.type -> AcceptDualFundedChannel.read(stream)
-                FundingLocked.type -> FundingLocked.read(stream)
+                ChannelReady.type -> ChannelReady.read(stream)
                 TxAddInput.type -> TxAddInput.read(stream)
                 TxAddOutput.type -> TxAddOutput.read(stream)
                 TxRemoveInput.type -> TxRemoveInput.read(stream)
@@ -781,10 +781,11 @@ data class FundingSigned(
     }
 }
 
+// DEPRECATED: use ChannelReady instead, but necessary for serialization backwards-compatibility.
 @Serializable
 data class FundingLocked(
     @Contextual override val channelId: ByteVector32,
-    @Contextual val nextPerCommitmentPoint: PublicKey
+    @Contextual val nextPerCommitmentPoint: PublicKey,
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = FundingLocked.type
 
@@ -796,12 +797,39 @@ data class FundingLocked(
     companion object : LightningMessageReader<FundingLocked> {
         const val type: Long = 36
 
-        override fun read(input: Input): FundingLocked {
-            return FundingLocked(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                PublicKey(LightningCodecs.bytes(input, 33))
-            )
-        }
+        override fun read(input: Input) = FundingLocked(
+            ByteVector32(LightningCodecs.bytes(input, 32)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+        )
+    }
+}
+
+@Serializable
+data class ChannelReady(
+    @Contextual override val channelId: ByteVector32,
+    @Contextual val nextPerCommitmentPoint: PublicKey,
+    val tlvStream: TlvStream<ChannelReadyTlv> = TlvStream.empty()
+) : ChannelMessage, HasChannelId {
+    override val type: Long get() = ChannelReady.type
+    val alias: ShortChannelId? = tlvStream.get<ChannelReadyTlv.ShortChannelIdTlv>()?.alias
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeBytes(nextPerCommitmentPoint.value, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<ChannelReady> {
+        const val type: Long = 36
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(ChannelReadyTlv.ShortChannelIdTlv.tag to ChannelReadyTlv.ShortChannelIdTlv.Companion as TlvValueReader<ChannelReadyTlv>)
+
+        override fun read(input: Input) = ChannelReady(
+            ByteVector32(LightningCodecs.bytes(input, 32)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
+            TlvStreamSerializer(false, readers).read(input)
+        )
     }
 }
 

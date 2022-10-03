@@ -15,13 +15,8 @@ import kotlinx.serialization.Serializable
 data class ChannelFeatures(val features: Set<Feature>) {
 
     val channelType: ChannelType.SupportedChannelType = when {
-        features.contains(Feature.AnchorOutputs) -> {
-            if (features.contains(Feature.ZeroConfChannels) && features.contains(Feature.ZeroReserveChannels)) {
-                ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve
-            } else {
-                ChannelType.SupportedChannelType.AnchorOutputs
-            }
-        }
+        features.contains(Feature.AnchorOutputs) && features.contains(Feature.ZeroReserveChannels) -> ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
+        features.contains(Feature.AnchorOutputs) -> ChannelType.SupportedChannelType.AnchorOutputs
         features.contains(Feature.StaticRemoteKey) -> ChannelType.SupportedChannelType.StaticRemoteKey
         else -> ChannelType.SupportedChannelType.Standard
     }
@@ -65,9 +60,9 @@ sealed class ChannelType {
         }
 
         @Serializable
-        object AnchorOutputsZeroConfZeroReserve : SupportedChannelType() {
-            override val name: String get() = "anchor_outputs_zero_conf_zero_reserve"
-            override val features: Set<Feature> get() = setOf(Feature.Wumbo, Feature.ZeroReserveChannels, Feature.ZeroConfChannels, Feature.StaticRemoteKey, Feature.AnchorOutputs)
+        object AnchorOutputsZeroReserve : SupportedChannelType() {
+            override val name: String get() = "anchor_outputs_zero_reserve"
+            override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)
         }
 
     }
@@ -82,17 +77,13 @@ sealed class ChannelType {
 
         // NB: Bolt 2: features must exactly match in order to identify a channel type.
         fun fromFeatures(features: Features): ChannelType = when (features) {
-            Features(
-                Feature.StaticRemoteKey to FeatureSupport.Mandatory,
-                Feature.AnchorOutputs to FeatureSupport.Mandatory,
-                Feature.Wumbo to FeatureSupport.Mandatory,
-                Feature.ZeroConfChannels to FeatureSupport.Mandatory,
-                Feature.ZeroReserveChannels to FeatureSupport.Mandatory
-            ) -> SupportedChannelType.AnchorOutputsZeroConfZeroReserve
+            // @formatter:off
+            Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputsZeroReserve
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputs
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory) -> SupportedChannelType.StaticRemoteKey
             Features.empty -> SupportedChannelType.Standard
             else -> UnsupportedChannelType(features)
+            // @formatter:on
         }
 
     }

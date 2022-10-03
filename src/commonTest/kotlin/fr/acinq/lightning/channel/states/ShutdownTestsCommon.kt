@@ -38,17 +38,17 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(add))
         assertTrue(bob1 is ShuttingDown)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
-        assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo)))
+        assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
     }
 
     @Test
     fun `recv CMD_ADD_HTLC -- zero-reserve`() {
-        val (_, bob) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve)
+        val (_, bob) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(add))
         assertTrue(bob1 is ShuttingDown)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
-        assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroConfChannels, Feature.ZeroReserveChannels)))
+        assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
     }
 
     @Test

@@ -12,8 +12,8 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.processEx
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
-import fr.acinq.lightning.wire.FundingLocked
 import fr.acinq.lightning.wire.Init
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
@@ -60,7 +60,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         val (state4, actions4) = state3.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(state.channelId, watchConfirmed.event, 1105, 3, fundingTx)))
         assertIs<LegacyWaitForFundingLocked>(state4)
         assertEquals(actions4.size, 2)
-        actions4.hasOutgoingMessage<FundingLocked>()
+        actions4.hasOutgoingMessage<ChannelReady>()
         actions4.has<ChannelAction.Storage.StoreState>()
     }
 }

@@ -72,6 +72,7 @@ data class WalletParams(
  * @param minFundingSatoshis minimum channel size.
  * @param maxFundingSatoshis maximum channel size.
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
+ * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param enableTrampolinePayment enable trampoline payments.
  */
 data class NodeParams(
@@ -109,6 +110,7 @@ data class NodeParams(
     val minFundingSatoshis: Satoshi,
     val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
+    val zeroConfPeers: Set<PublicKey>,
     val enableTrampolinePayment: Boolean,
 ) {
     val nodePrivateKey get() = keyManager.nodeKey.privateKey
@@ -119,6 +121,7 @@ data class NodeParams(
         require(features.hasFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)) { "${Feature.PaymentSecret.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.ChannelType, FeatureSupport.Mandatory)) { "${Feature.ChannelType.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.DualFunding, FeatureSupport.Mandatory)) { "${Feature.DualFunding.rfcName} should be mandatory" }
+        require(!features.hasFeature(Feature.ZeroConfChannels)) { "${Feature.ZeroConfChannels.rfcName} has been deprecated: use the zeroConfPeers whitelist instead" }
         Features.validateFeatureGraph(features)
     }
 }

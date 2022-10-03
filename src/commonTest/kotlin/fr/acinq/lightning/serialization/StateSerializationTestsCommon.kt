@@ -10,7 +10,6 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.wire.CommitSig
 import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.secp256k1.Hex
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlin.math.max
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,7 +65,7 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         val state = Serialization.deserialize(bin, TestConstants.Alice.nodeParams)
         assertTrue(state is Normal)
         assertEquals(state.commitments.channelConfig, ChannelConfig.standard)
-        assertEquals(state.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.Wumbo, Feature.ZeroReserveChannels, Feature.ZeroConfChannels)))
+        assertEquals(state.commitments.channelFeatures, ChannelFeatures(setOf(Feature.Wumbo, Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.ZeroConfChannels)))
     }
 
     @Test

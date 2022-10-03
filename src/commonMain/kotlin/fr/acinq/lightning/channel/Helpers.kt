@@ -52,11 +52,11 @@ object Helpers {
         }
 
     /** Called by the non-initiator. */
-    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel, localFeatures: Features, remoteFeatures: Features): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel, localFeatures: Features): Either<ChannelException, ChannelFeatures> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
-        if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve).contains(channelType)) {
-            return Either.Left(InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroConfZeroReserve, channelType))
+        if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve).contains(channelType)) {
+            return Either.Left(InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, channelType))
         }
 
         // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
@@ -106,14 +106,7 @@ object Helpers {
             return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.commitmentFeerate))
         }
 
-        val channelFeatures = ChannelFeatures(
-            buildSet {
-                addAll(channelType.features)
-                if (Features.canUseFeature(localFeatures, remoteFeatures, Feature.Wumbo)) add(Feature.Wumbo)
-            }
-        )
-
-        return Either.Right(channelFeatures)
+        return Either.Right(ChannelFeatures(channelType.features))
     }
 
     /** Called by the initiator. */
@@ -144,14 +137,7 @@ object Helpers {
             return Either.Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
         }
 
-        val channelFeatures = ChannelFeatures(
-            buildSet {
-                addAll(init.channelType.features)
-                if (Features.canUseFeature(init.localParams.features, Features(init.remoteInit.features), Feature.Wumbo)) add(Feature.Wumbo)
-            }
-        )
-
-        return Either.Right(channelFeatures)
+        return Either.Right(ChannelFeatures(init.channelType.features))
     }
 
     /**
