@@ -4,6 +4,7 @@ listOf("iphoneos", "iphonesimulator").forEach { sdk ->
 
         commandLine(
             "xcodebuild",
+            "-quiet",
             "-project", "PhoenixCrypto.xcodeproj",
             "-target", "PhoenixCrypto",
             "-sdk", sdk

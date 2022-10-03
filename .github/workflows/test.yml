@@ -63,5 +63,5 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: ./gradlew build -PintegrationTests=include
       - name: Check without integration
-        if: matrix.os != 'ubuntu-latest'
-        run: ./gradlew build
+        if: matrix.os == 'macOS-latest'
+        run: ./gradlew build -x jvmTest
