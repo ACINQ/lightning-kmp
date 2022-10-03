@@ -606,9 +606,9 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val fundingScript = Script.write(Script.pay2wsh(Script.write(Script.createMultiSigMofN(2, listOf(randomKey().publicKey(), randomKey().publicKey()))))).byteVector()
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingAmountA, fundingAmountB, fundingScript, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingAmountB, fundingAmountA, fundingScript, lockTime, dustLimit, targetFeerate)
-            val contributionsA = FundingContributions.create(fundingParamsA, walletA.spendable(), randomKey().publicKey())
+            val contributionsA = FundingContributions.create(fundingParamsA, walletA.spendableUtxos, randomKey().publicKey())
             assertNotNull(contributionsA.right)
-            val contributionsB = FundingContributions.create(fundingParamsB, walletB.spendable(), randomKey().publicKey())
+            val contributionsB = FundingContributions.create(fundingParamsB, walletB.spendableUtxos, randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, fundingParamsA, contributionsA.right!!, fundingParamsB, contributionsB.right!!)
         }

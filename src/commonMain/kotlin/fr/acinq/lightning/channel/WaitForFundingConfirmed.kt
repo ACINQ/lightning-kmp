@@ -93,7 +93,7 @@ data class WaitForFundingConfirmed(
                                 fundingParams.dustLimit,
                                 event.message.feerate
                             )
-                            when (val contributions = FundingContributions.create(fundingParams, wallet.spendable())) {
+                            when (val contributions = FundingContributions.create(fundingParams, wallet.spendableUtxos)) {
                                 is Either.Left -> {
                                     logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
                                     Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -121,7 +121,7 @@ data class WaitForFundingConfirmed(
                         fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.spendable())) {
+                    when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.spendableUtxos)) {
                         is Either.Left -> {
                             logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
                             Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))

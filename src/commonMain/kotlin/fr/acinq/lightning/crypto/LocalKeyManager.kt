@@ -45,14 +45,14 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
 
     private fun shaSeed(channelKeyPath: List<Long>) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
 
+    override fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey {
+        val path = bip84BasePath(chainHash) + hardened(account) + 0 + addressIndex
+        return derivePrivateKey(master, path).privateKey
+    }
+
     override fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray> {
-        val path = when (chainHash) {
-            Block.LivenetGenesisBlock.hash -> "m/84'/0'/0'/0/0"
-            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> "m/84'/1'/0'/0/0"
-            else -> throw IllegalArgumentException("invalid chain hash $chainHash")
-        }
-        val priv = derivePrivateKey(master, path)
-        val pub = priv.publicKey
+        val priv = bip84PrivateKey(0, 0)
+        val pub = priv.publicKey()
         val script = Script.pay2wpkh(pub)
         return Pair(pub, Script.write(script))
     }
@@ -92,7 +92,7 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
             recoveredChannelKeys.htlcKey,
             recoveredChannelKeys.revocationKey,
             recoveredChannelKeys.shaSeed
-       )
+        )
     }
 
     override fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys {
@@ -141,6 +141,12 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
         fun nodeKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
             Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(48), hardened(0))
             Block.LivenetGenesisBlock.hash -> listOf(hardened(50), hardened(0))
+            else -> throw IllegalArgumentException("unknown chain hash $chainHash")
+        }
+
+        fun bip84BasePath(chainHash: ByteVector32) = when (chainHash) {
+            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> listOf(hardened(84), hardened(1))
+            Block.LivenetGenesisBlock.hash -> listOf(hardened(84), hardened(0))
             else -> throw IllegalArgumentException("unknown chain hash $chainHash")
         }
     }
