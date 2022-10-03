@@ -69,7 +69,6 @@ kotlin {
             api(ktor("network"))
             api(ktor("network-tls"))
             implementation("org.slf4j:slf4j-api:$slf4jVersion")
-            api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
         compilations["test"].defaultSourceSet.dependencies {
             val target = when {
@@ -88,6 +87,7 @@ kotlin {
             implementation(ktor("server-content-negotiation"))
             implementation(ktor("serialization-kotlinx-json"))
             implementation("com.typesafe:config:1.4.1")
+            api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
     }
 
