@@ -10,10 +10,7 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
-import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.FundingCreated
-import fr.acinq.lightning.wire.FundingLocked
-import fr.acinq.lightning.wire.FundingSigned
+import fr.acinq.lightning.wire.*
 
 /**
  * We changed the channel funding flow to use dual funding, and removed the ability to open legacy channels.
@@ -35,7 +32,7 @@ data class LegacyWaitForFundingConfirmed(
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when (event) {
             is ChannelEvent.MessageReceived -> when (event.message) {
-                is FundingLocked -> Pair(this.copy(deferred = event.message), listOf())
+                is ChannelReady -> Pair(this.copy(deferred = FundingLocked(event.message.channelId, event.message.nextPerCommitmentPoint)), listOf())
                 is Error -> handleRemoteError(event.message)
                 else -> Pair(this, listOf())
             }
@@ -50,16 +47,16 @@ data class LegacyWaitForFundingConfirmed(
                             return handleLocalError(event, InvalidCommitmentSignature(channelId, event.watch.tx.txid))
                         }
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)
-                        val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
+                        val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint)
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
                         val blockHeight = event.watch.blockHeight
                         val txIndex = event.watch.txIndex
                         val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
-                        val nextState = LegacyWaitForFundingLocked(staticParams, currentTip, currentOnChainFeerates, commitments, shortChannelId, fundingLocked)
+                        val nextState = LegacyWaitForFundingLocked(staticParams, currentTip, currentOnChainFeerates, commitments, shortChannelId, FundingLocked(commitments.channelId, nextPerCommitmentPoint))
                         val actions = listOf(
-                            ChannelAction.Message.Send(fundingLocked),
+                            ChannelAction.Message.Send(channelReady),
                             ChannelAction.Storage.StoreState(nextState)
                         )
                         if (deferred != null) {

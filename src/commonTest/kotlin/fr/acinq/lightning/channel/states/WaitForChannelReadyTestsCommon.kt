@@ -11,26 +11,26 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.FundingLocked
 import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.Warning
 import kotlin.test.*
 
-class WaitForFundingLockedTestsCommon : LightningTestSuite() {
+class WaitForChannelReadyTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- zero conf`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(bob.fundingTx.localSigs), minVersion = 3)
-        assertIs<WaitForFundingLocked>(alice1)
+        assertIs<WaitForChannelReady>(alice1)
         assertEquals(actionsAlice1.size, 3)
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
         assertEquals(alice.commitments.fundingTxId, fundingTx.txid)
         assertEquals(alice.fundingTx.localSigs, actionsAlice1.findOutgoingMessage())
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(alice.fundingTx.localSigs), minVersion = 3)
-        assertIs<WaitForFundingLocked>(bob1)
+        assertIs<WaitForChannelReady>(bob1)
         assertEquals(actionsBob1.size, 2)
         assertEquals(actionsBob1.find<ChannelAction.Blockchain.PublishTx>().tx, fundingTx)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
@@ -66,14 +66,14 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv FundingLocked`() {
-        val (alice, fundingLockedAlice, bob, fundingLockedBob) = init()
-        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(fundingLockedBob), minVersion = 3)
+    fun `recv ChannelReady`() {
+        val (alice, channelReadyAlice, bob, channelReadyBob) = init()
+        val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(channelReadyBob), minVersion = 3)
         assertIs<Normal>(alice1)
         assertEquals(2, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
-        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(fundingLockedAlice), minVersion = 3)
+        val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(channelReadyAlice), minVersion = 3)
         assertIs<Normal>(bob1)
         assertEquals(2, actionsBob1.size)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
@@ -164,7 +164,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        data class Fixture(val alice: WaitForFundingLocked, val fundingLockedAlice: FundingLocked, val bob: WaitForFundingLocked, val fundingLockedBob: FundingLocked)
+        data class Fixture(val alice: WaitForChannelReady, val channelReadyAlice: ChannelReady, val bob: WaitForChannelReady, val channelReadyBob: ChannelReady)
 
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
@@ -179,14 +179,14 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
             return if (zeroConf) {
                 val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob), minVersion = 3)
-                assertIs<WaitForFundingLocked>(alice1)
+                assertIs<WaitForChannelReady>(alice1)
                 assertEquals(actionsAlice1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
-                val fundingLockedAlice = actionsAlice1.findOutgoingMessage<FundingLocked>()
+                val channelReadyAlice = actionsAlice1.findOutgoingMessage<ChannelReady>()
                 val (bob1, actionsBob1) = bob.processEx(ChannelEvent.MessageReceived(commitAlice), minVersion = 3)
-                assertIs<WaitForFundingLocked>(bob1)
+                assertIs<WaitForChannelReady>(bob1)
                 assertEquals(actionsBob1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
-                val fundingLockedBob = actionsBob1.findOutgoingMessage<FundingLocked>()
-                Fixture(alice1, fundingLockedAlice, bob1, fundingLockedBob)
+                val channelReadyBob = actionsBob1.findOutgoingMessage<ChannelReady>()
+                Fixture(alice1, channelReadyAlice, bob1, channelReadyBob)
             } else {
                 val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount)
                 val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
@@ -194,12 +194,12 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
                 val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
                 val (bob1, _) = bob.processEx(ChannelEvent.MessageReceived(txSigsAlice), minVersion = 3)
                 val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
-                assertIs<WaitForFundingLocked>(alice2)
-                val fundingLockedAlice = actionsAlice2.findOutgoingMessage<FundingLocked>()
+                assertIs<WaitForChannelReady>(alice2)
+                val channelReadyAlice = actionsAlice2.findOutgoingMessage<ChannelReady>()
                 val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
-                assertIs<WaitForFundingLocked>(bob2)
-                val fundingLockedBob = actionsBob2.findOutgoingMessage<FundingLocked>()
-                Fixture(alice2, fundingLockedAlice, bob2, fundingLockedBob)
+                assertIs<WaitForChannelReady>(bob2)
+                val channelReadyBob = actionsBob2.findOutgoingMessage<ChannelReady>()
+                Fixture(alice2, channelReadyAlice, bob2, channelReadyBob)
             }
         }
     }

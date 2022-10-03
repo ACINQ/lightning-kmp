@@ -57,13 +57,13 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice3, actions2) = alice2.processEx(ChannelEvent.MessageReceived(channelReestablishB))
         assertEquals(alice, alice3)
         assertEquals(2, actions2.size)
-        actions2.hasOutgoingMessage<FundingLocked>()
+        actions2.hasOutgoingMessage<ChannelReady>()
         actions2.hasWatch<WatchConfirmed>()
 
         val (bob3, actions3) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishA))
         assertEquals(bob, bob3)
         assertEquals(2, actions3.size)
-        actions3.hasOutgoingMessage<FundingLocked>()
+        actions3.hasOutgoingMessage<ChannelReady>()
         actions3.hasWatch<WatchConfirmed>()
     }
 
@@ -111,14 +111,14 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
 
         val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.MessageReceived(channelReestablishB))
-        // alice sends FundingLocked again
-        actionsAlice3.hasOutgoingMessage<FundingLocked>()
+        // alice sends ChannelReady again
+        actionsAlice3.hasOutgoingMessage<ChannelReady>()
         // alice re-sends the update and the sig
         val add = actionsAlice3.hasOutgoingMessage<UpdateAddHtlc>()
         val sig = actionsAlice3.hasOutgoingMessage<CommitSig>()
 
         val (bob3, actionsBob3) = bob2.processEx(ChannelEvent.MessageReceived(channelReestablishA))
-        actionsBob3.hasOutgoingMessage<FundingLocked>() // bob sends FundingLocked again
+        actionsBob3.hasOutgoingMessage<ChannelReady>() // bob sends ChannelReady again
         assertNull(actionsBob3.findOutgoingMessageOpt<RevokeAndAck>()) // bob didn't receive the sig, so he cannot send a rev
 
         val (bob4, _) = bob3.processEx(ChannelEvent.MessageReceived(add))
@@ -191,7 +191,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.MessageReceived(channelReestablishB))
         // alice does not re-send messages bob already received
-        assertNull(actionsAlice3.findOutgoingMessageOpt<FundingLocked>())
+        assertNull(actionsAlice3.findOutgoingMessageOpt<ChannelReady>())
         assertNull(actionsAlice3.findOutgoingMessageOpt<UpdateAddHtlc>())
         assertNull(actionsAlice3.findOutgoingMessageOpt<CommitSig>())
 

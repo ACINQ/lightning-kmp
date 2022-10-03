@@ -9,7 +9,7 @@ import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.channel.states.WaitForFundingLockedTestsCommon
+import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -141,12 +141,12 @@ object TestsHelper {
         pushAmount: MilliSatoshi = TestConstants.pushAmount,
         zeroConf: Boolean = false,
     ): Triple<Normal, Normal, Transaction> {
-        val (alice, fundingLockedAlice, bob, fundingLockedBob) = WaitForFundingLockedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(fundingLockedBob))
+        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
+        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(channelReadyBob))
         assertIs<Normal>(alice1)
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(fundingLockedAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(channelReadyAlice))
         assertIs<Normal>(bob1)
         assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
@@ -432,7 +432,7 @@ object TestsHelper {
             is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is WaitForFundingLocked -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
+            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is Normal -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is ShuttingDown -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
             is Negotiating -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))

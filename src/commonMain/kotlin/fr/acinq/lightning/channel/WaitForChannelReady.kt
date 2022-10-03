@@ -12,7 +12,7 @@ import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
 /** The channel funding transaction was confirmed, we exchange funding_locked messages. */
-data class WaitForFundingLocked(
+data class WaitForChannelReady(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -20,7 +20,7 @@ data class WaitForFundingLocked(
     val fundingParams: InteractiveTxParams,
     val fundingTx: SignedSharedTransaction,
     val shortChannelId: ShortChannelId,
-    val lastSent: FundingLocked
+    val lastSent: ChannelReady
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -54,7 +54,7 @@ data class WaitForFundingLocked(
                 logger.info { "c:$channelId rejecting tx_init_rbf, we have already accepted the channel" }
                 Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, commitments.fundingTxId).message))))
             }
-            event is ChannelEvent.MessageReceived && event.message is FundingLocked -> {
+            event is ChannelEvent.MessageReceived && event.message is ChannelReady -> {
                 // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                 val watchConfirmed = WatchConfirmed(
                     this.channelId,

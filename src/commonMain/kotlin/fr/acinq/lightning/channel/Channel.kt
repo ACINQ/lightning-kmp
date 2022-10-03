@@ -161,7 +161,7 @@ sealed class ChannelState : LoggingContext {
                 else -> this
             }
             val actions1 = when {
-                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForFundingLocked) && !oldState.localParams.isInitiator -> {
+                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) && !oldState.localParams.isInitiator -> {
                     actions + ChannelAction.Storage.StoreIncomingAmount(oldState.pushAmount, oldState.channelOrigin)
                 }
                 // we only want to fire the PaymentSent event when we transition to Closing for the first time
@@ -224,7 +224,7 @@ sealed class ChannelState : LoggingContext {
     private fun updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
         // We don't add an encrypted backup while the funding tx is unconfirmed, as it contains potentially too much data.
         this is WaitForFundingConfirmed -> actions
-        this is WaitForFundingLocked -> actions
+        this is WaitForChannelReady -> actions
         this is ChannelStateWithCommitments && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
                 it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this)))

@@ -51,18 +51,18 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
-            assertIs<WaitForFundingLocked>(alice1)
+            assertIs<WaitForChannelReady>(alice1)
             assertEquals(actionsAlice1.size, 3)
-            assertEquals(actionsAlice1.hasOutgoingMessage<FundingLocked>().alias, ShortChannelId.peerId(alice.staticParams.nodeParams.nodeId))
+            assertEquals(actionsAlice1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(alice.staticParams.nodeParams.nodeId))
             assertEquals(actionsAlice1.findWatch<WatchSpent>().txId, alice1.commitments.fundingTxId)
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
-            assertIs<WaitForFundingLocked>(bob1)
+            assertIs<WaitForChannelReady>(bob1)
             assertEquals(actionsBob1.size, 5)
             actionsBob1.hasOutgoingMessage<TxSignatures>()
-            assertEquals(actionsBob1.hasOutgoingMessage<FundingLocked>().alias, ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId))
+            assertEquals(actionsBob1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId))
             assertEquals(actionsBob1.findWatch<WatchSpent>().txId, bob1.commitments.fundingTxId)
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.pushAmount, null))

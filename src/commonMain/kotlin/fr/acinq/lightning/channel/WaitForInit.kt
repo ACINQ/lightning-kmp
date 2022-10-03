@@ -134,7 +134,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 logger.info { "c:${event.state.channelId} restoring channel" }
                 // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
                 val fundingTx = when {
-                    event.state is WaitForFundingLocked && event.state.staticParams.useZeroConf -> event.state.fundingTx.signedTx
+                    event.state is WaitForChannelReady && event.state.staticParams.useZeroConf -> event.state.fundingTx.signedTx
                     else -> null
                 }
                 val watchSpent = WatchSpent(

@@ -122,9 +122,9 @@ sealed class ChannelTlv : Tlv {
 }
 
 @Serializable
-sealed class FundingLockedTlv : Tlv {
+sealed class ChannelReadyTlv : Tlv {
     @Serializable
-    data class ShortChannelIdTlv(val alias: ShortChannelId) : FundingLockedTlv() {
+    data class ShortChannelIdTlv(val alias: ShortChannelId) : ChannelReadyTlv() {
         override val tag: Long get() = ShortChannelIdTlv.tag
         override fun write(out: Output) = LightningCodecs.writeU64(alias.toLong(), out)
 

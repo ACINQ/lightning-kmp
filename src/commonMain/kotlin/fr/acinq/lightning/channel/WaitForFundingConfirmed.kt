@@ -21,7 +21,7 @@ data class WaitForFundingConfirmed(
     val fundingTx: SignedSharedTransaction,
     val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
-    val deferred: FundingLocked?,
+    val deferred: ChannelReady?,
     // We can have at most one ongoing RBF attempt.
     // It doesn't need to be persisted: if we disconnect before signing, the rbf attempt is discarded.
     val rbfStatus: RbfStatus = RbfStatus.None
@@ -246,7 +246,7 @@ data class WaitForFundingConfirmed(
                     Pair(this.copy(rbfStatus = RbfStatus.None), listOf())
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is FundingLocked -> Pair(this.copy(deferred = event.message), listOf())
+            event is ChannelEvent.MessageReceived && event.message is ChannelReady -> Pair(this.copy(deferred = event.message), listOf())
             event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)
             event is ChannelEvent.WatchReceived && event.watch is WatchEventConfirmed -> {
                 val allFundingTxs = listOf(Pair(fundingTx, commitments)) + previousFundingTxs
@@ -260,16 +260,16 @@ data class WaitForFundingConfirmed(
                         val (_, commitments) = confirmedTx
                         val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)
-                        val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
+                        val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
                         val shortChannelId = ShortChannelId(event.watch.blockHeight, event.watch.txIndex, commitments.commitInput.outPoint.index.toInt())
-                        val nextState = WaitForFundingLocked(staticParams, currentTip, currentOnChainFeerates, commitments, fundingParams, fundingTx, shortChannelId, fundingLocked)
+                        val nextState = WaitForChannelReady(staticParams, currentTip, currentOnChainFeerates, commitments, fundingParams, fundingTx, shortChannelId, channelReady)
                         val actions = buildList {
                             add(ChannelAction.Blockchain.SendWatch(watchSpent))
                             if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, event.watch.tx.txid).message)))
-                            add(ChannelAction.Message.Send(fundingLocked))
+                            add(ChannelAction.Message.Send(channelReady))
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
                         if (deferred != null) {

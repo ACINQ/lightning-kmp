@@ -20,13 +20,12 @@ import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
-import fr.acinq.lightning.wire.FundingLocked
 import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
@@ -76,14 +75,14 @@ public suspend fun newPeers(
         val bobInit = scope.launch {
             val bobChannelReestablish = bob2alice.expect<ChannelReestablish>()
             alice.forward(bobChannelReestablish)
-            val bobFundingLocked = bob2alice.expect<FundingLocked>()
-            alice.forward(bobFundingLocked)
+            val bobChannelReady = bob2alice.expect<ChannelReady>()
+            alice.forward(bobChannelReady)
         }
         val aliceInit = scope.launch {
             val aliceChannelReestablish = alice2bob.expect<ChannelReestablish>()
             bob.forward(aliceChannelReestablish)
-            val aliceFundingLocked = alice2bob.expect<FundingLocked>()
-            bob.forward(aliceFundingLocked)
+            val aliceChannelReady = alice2bob.expect<ChannelReady>()
+            bob.forward(aliceChannelReady)
         }
         bobInit.join()
         aliceInit.join()

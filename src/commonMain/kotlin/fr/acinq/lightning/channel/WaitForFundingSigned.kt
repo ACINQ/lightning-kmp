@@ -65,16 +65,16 @@ data class WaitForFundingSigned(
                             logger.info { "c:$channelId channel is using 0-conf, we won't wait for the funding tx to confirm" }
                             val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                             val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)
-                            val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint, TlvStream(listOf(FundingLockedTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
+                            val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
                             // We use part of the funding txid to create a dummy short channel id.
                             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
                             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).
                             val shortChannelId = ShortChannelId(0, Pack.int32BE(commitments.fundingTxId.slice(0, 16).toByteArray()).absoluteValue, commitments.commitInput.outPoint.index.toInt())
-                            val nextState = WaitForFundingLocked(staticParams, currentTip, currentOnChainFeerates, commitments, fundingParams, signedFundingTx, shortChannelId, fundingLocked)
+                            val nextState = WaitForChannelReady(staticParams, currentTip, currentOnChainFeerates, commitments, fundingParams, signedFundingTx, shortChannelId, channelReady)
                             val actions = buildList {
                                 add(ChannelAction.Blockchain.SendWatch(watchSpent))
                                 if (fundingParams.shouldSignFirst(localParams.nodeId, remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
-                                add(ChannelAction.Message.Send(fundingLocked))
+                                add(ChannelAction.Message.Send(channelReady))
                                 add(ChannelAction.Storage.StoreState(nextState))
                             }
                             Pair(nextState, actions)

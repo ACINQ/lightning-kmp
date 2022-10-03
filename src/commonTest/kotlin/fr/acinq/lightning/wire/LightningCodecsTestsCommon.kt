@@ -321,17 +321,17 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode funding_locked`() {
+    fun `encode - decode channel_ready`() {
         val testCases = listOf(
             // @formatter:off
-            FundingLocked(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca")) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca",
-            FundingLocked(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca"), TlvStream(listOf(FundingLockedTlv.ShortChannelIdTlv(ShortChannelId(1729))))) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca010800000000000006c1",
+            ChannelReady(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca")) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca",
+            ChannelReady(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca"), TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId(1729))))) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca010800000000000006c1",
             // @formatter:on
         )
-        testCases.forEach { (fundingLocked, bin) ->
+        testCases.forEach { (channelReady, bin) ->
             val decoded = LightningMessage.decode(Hex.decode(bin))
-            assertEquals(decoded, fundingLocked)
-            val encoded = LightningMessage.encode(fundingLocked)
+            assertEquals(decoded, channelReady)
+            val encoded = LightningMessage.encode(channelReady)
             assertEquals(Hex.encode(encoded), bin)
         }
     }
