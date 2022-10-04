@@ -640,6 +640,17 @@ class Peer(
                         logger.error { "n:$remoteNodeId connection error: ${msg.toAscii()}" }
                     }
 
+                    msg is PleaseOpenChannelRejected -> {
+                        when (val request = channelRequests[msg.requestId]) {
+                            is RequestChannelOpen -> {
+                                logger.error { "n:$remoteNodeId peer rejected channel with failure=${msg.failure} (request=$request)" }
+                                channelRequests = channelRequests - msg.requestId
+                            }
+
+                            else -> {}
+                        }
+                    }
+
                     msg is OpenDualFundedChannel && theirInit == null -> {
                         logger.error { "n:$remoteNodeId they sent open_channel before init" }
                     }
@@ -653,12 +664,14 @@ class Peer(
                             is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                 is RequestChannelOpen -> {
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                    val fundingFees = Transactions.weight2fee(msg.fundingFeerate, request.wallet.spendableUtxos.size * Transactions.p2wpkhInputWeight)
-                                    val fundingAmount = request.wallet.spendableBalance - fundingFees
+                                    val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.spendableUtxos.size * Transactions.p2wpkhInputWeight)
+                                    val fundingAmount = request.wallet.spendableBalance - fundingFee
                                     Triple(request.wallet, fundingAmount, origin.fee)
                                 }
+
                                 else -> Triple(WalletState.empty, 0.sat, 0.msat)
                             }
+
                             else -> Triple(WalletState.empty, 0.sat, 0.msat)
                         }
                         if (fundingAmount.toMilliSatoshi() < pushAmount) {

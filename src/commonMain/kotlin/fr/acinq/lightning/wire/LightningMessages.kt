@@ -1645,7 +1645,7 @@ data class PleaseOpenChannelRejected(
     val failure: PleaseOpenChannelFailure,
     val tlvs: TlvStream<PleaseOpenChannelRejectedTlv> = TlvStream.empty()
 ) : LightningMessage {
-    constructor(requestId: ByteVector32, failure: PleaseOpenChannelFailure, fees: MilliSatoshi) : this(requestId, failure, TlvStream(listOf(PleaseOpenChannelRejectedTlv.ExpectedFees(fees))))
+    val expectedFees: MilliSatoshi? = tlvs.get<PleaseOpenChannelRejectedTlv.ExpectedFees>()?.fees
 
     override val type: Long get() = PleaseOpenChannelRejected.type
 
