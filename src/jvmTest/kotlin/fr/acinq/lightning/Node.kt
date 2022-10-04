@@ -160,7 +160,6 @@ object Node {
                 Feature.ZeroReserveChannels to FeatureSupport.Optional,
                 Feature.WakeUpNotificationClient to FeatureSupport.Optional,
                 Feature.PayToOpenClient to FeatureSupport.Optional,
-                Feature.TrustedSwapInClient to FeatureSupport.Optional,
                 Feature.ChannelBackupClient to FeatureSupport.Optional,
             ),
             dustLimit = 546.sat,
