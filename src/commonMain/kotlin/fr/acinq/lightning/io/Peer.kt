@@ -520,6 +520,9 @@ class Peer(
                 }
 
                 action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
+
+                action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
+
                 else -> logger.warning { "n:$remoteNodeId c:$actualChannelId unhandled action: ${action::class}" }
             }
         }
@@ -644,6 +647,7 @@ class Peer(
                         when (val request = channelRequests[msg.requestId]) {
                             is RequestChannelOpen -> {
                                 logger.error { "n:$remoteNodeId peer rejected channel with failure=${msg.failure} (request=$request)" }
+                                nodeParams._nodeEvents.emit(SwapInEvents.Rejected(msg.requestId, msg.failure, msg.expectedFees))
                                 channelRequests = channelRequests - msg.requestId
                             }
 
@@ -666,6 +670,7 @@ class Peer(
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                     val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.spendableUtxos.size * Transactions.p2wpkhInputWeight)
                                     val fundingAmount = request.wallet.spendableBalance - fundingFee
+                                    nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, fundingFee, origin.fee))
                                     Triple(request.wallet, fundingAmount, origin.fee)
                                 }
 
@@ -836,6 +841,7 @@ class Peer(
                 )
                 logger.info { "n:$remoteNodeId sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
                 sendToPeer(pleaseOpenChannel)
+                nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
                 channelRequests = channelRequests + (pleaseOpenChannel.requestId to event)
             }
 

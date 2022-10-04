@@ -7,6 +7,9 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.toMilliSatoshi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.kodein.log.LoggerFactory
 
 data class NodeUri(val id: PublicKey, val host: String, val port: Int)
@@ -115,6 +118,9 @@ data class NodeParams(
 ) {
     val nodePrivateKey get() = keyManager.nodeKey.privateKey
     val nodeId get() = keyManager.nodeId
+
+    internal val _nodeEvents = MutableSharedFlow<NodeEvents>()
+    val nodeEvents: SharedFlow<NodeEvents> get() = _nodeEvents.asSharedFlow()
 
     init {
         require(features.hasFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)) { "${Feature.VariableLengthOnion.rfcName} should be mandatory" }

@@ -29,23 +29,25 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
             assertIs<WaitForFundingConfirmed>(alice1)
             // Alice contributed more than Bob, so Bob must send their signatures first.
-            assertEquals(actionsAlice1.size, 2)
+            assertEquals(actionsAlice1.size, 3)
             assertNull(actionsAlice1.findOutgoingMessageOpt<TxSignatures>())
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
             val watchConfirmed = actionsAlice1.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(alice1.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
+            actionsAlice1.has<ChannelAction.EmitEvent>()
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
             assertIs<WaitForFundingConfirmed>(bob1)
             // Bob contributed less than Alice, so Bob must send their signatures first.
-            assertEquals(actionsBob1.size, 4)
+            assertEquals(actionsBob1.size, 5)
             actionsBob1.hasOutgoingMessage<TxSignatures>()
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, 200_000_000.msat)
             assertEquals(actionsBob1.find<ChannelAction.Storage.StoreIncomingAmount>().amount, 200_000_000.msat)
             val watchConfirmed = actionsBob1.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(bob1.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
+            actionsBob1.has<ChannelAction.EmitEvent>()
         }
     }
 
@@ -79,11 +81,12 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (_, commitSigAlice, bob, _) = init(bobFundingAmount = 0.sat, alicePushAmount = TestConstants.alicePushAmount, bobPushAmount = 0.msat, channelOrigin = channelOrigin)
         val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
         assertIs<WaitForFundingConfirmed>(bob1)
-        assertEquals(actionsBob1.size, 4)
+        assertEquals(actionsBob1.size, 5)
         actionsBob1.hasOutgoingMessage<TxSignatures>()
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.alicePushAmount, setOf(), channelOrigin))
         actionsBob1.hasWatch<WatchConfirmed>()
+        actionsBob1.has<ChannelAction.EmitEvent>()
     }
 
     @Test
@@ -92,7 +95,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (_, commitSigAlice, bob, _) = init(alicePushAmount = 0.msat, channelOrigin = channelOrigin)
         val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
         assertIs<WaitForFundingConfirmed>(bob1)
-        assertEquals(actionsBob1.size, 4)
+        assertEquals(actionsBob1.size, 5)
         actionsBob1.hasOutgoingMessage<TxSignatures>()
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         val incomingPayment = actionsBob1.find<ChannelAction.Storage.StoreIncomingAmount>()
@@ -100,6 +103,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         assertEquals(incomingPayment.origin, channelOrigin)
         assertTrue(incomingPayment.localInputs.isNotEmpty())
         actionsBob1.hasWatch<WatchConfirmed>()
+        actionsBob1.has<ChannelAction.EmitEvent>()
     }
 
     @Test

@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
@@ -89,6 +90,7 @@ data class WaitForOpenChannel(
                                         logger.error { "c:$temporaryChannelId could not fund channel: ${fundingContributions.value}" }
                                         Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                     }
+
                                     is Either.Right -> {
                                         val interactiveTxSession = InteractiveTxSession(fundingParams, fundingContributions.value)
                                         val nextState = WaitForFundingCreated(
@@ -108,22 +110,31 @@ data class WaitForOpenChannel(
                                             channelFeatures,
                                             open.origin
                                         )
-                                        Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(accept)))
+                                        val actions = listOf(
+                                            channelIdAssigned,
+                                            ChannelAction.Message.Send(accept),
+                                            ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
+                                        )
+                                        Pair(nextState, actions)
                                     }
                                 }
                             }
+
                             is Either.Left -> {
                                 logger.error(res.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
                                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
                             }
                         }
                     }
+
                     is Error -> {
                         logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
                     }
+
                     else -> unhandled(event)
                 }
+
             event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
             event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())

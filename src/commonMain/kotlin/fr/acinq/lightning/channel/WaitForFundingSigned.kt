@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
@@ -100,6 +101,7 @@ data class WaitForFundingSigned(
                             val actions = buildList {
                                 add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
                                 add(ChannelAction.Storage.StoreState(nextState))
+                                add(ChannelAction.EmitEvent(ChannelEvents.Created(nextState)))
                                 if (fundingParams.shouldSignFirst(localParams.nodeId, remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
                             }
                             Pair(nextState, actions)

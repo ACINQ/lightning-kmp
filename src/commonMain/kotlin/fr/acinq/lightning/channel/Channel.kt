@@ -130,6 +130,8 @@ sealed class ChannelAction {
             data class Disconnected(val channelUpdate: ChannelUpdate) : Fail()
         }
     }
+
+    data class EmitEvent(val event: ChannelEvents) : ChannelAction()
 }
 
 /** Channel static parameters. */
