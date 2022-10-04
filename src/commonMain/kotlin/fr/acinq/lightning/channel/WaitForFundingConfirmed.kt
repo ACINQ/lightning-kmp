@@ -198,7 +198,7 @@ data class WaitForFundingConfirmed(
                 is RbfStatus.WaitForCommitSig -> {
                     val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                         keyManager, commitments.localParams, commitments.remoteParams,
-                        rbfStatus.fundingTx, wallet,
+                        rbfStatus.fundingTx,
                         rbfStatus.commitTx, event.message,
                         commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags, commitments.remoteCommit.remotePerCommitmentPoint
                     )

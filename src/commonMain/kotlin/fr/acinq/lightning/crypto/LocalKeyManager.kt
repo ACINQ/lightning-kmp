@@ -50,6 +50,10 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
         return derivePrivateKey(master, path).privateKey
     }
 
+    override fun bip84Address(account: Long, addressIndex: Long): String {
+        return Bitcoin.computeP2WpkhAddress(bip84PrivateKey(account, addressIndex).publicKey(), chainHash)
+    }
+
     override fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray> {
         val priv = bip84PrivateKey(0, 0)
         val pub = priv.publicKey()

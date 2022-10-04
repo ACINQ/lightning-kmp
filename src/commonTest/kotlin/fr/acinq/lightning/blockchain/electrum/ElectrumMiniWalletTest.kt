@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
@@ -40,7 +39,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
-        wallet.addWatchOnlyAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
+        wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
             .filter { it.addresses.size == 1 }
@@ -56,7 +55,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
-        wallet.addWatchOnlyAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
+        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
             .filter { it.addresses.size == 1 }
@@ -73,8 +72,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
-        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", randomKey())
-        wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV", randomKey())
+        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
+        wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV")
 
         val walletState = wallet.walletStateFlow
             .filter { it.parentTxs.size == 11 }
@@ -83,7 +82,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         // this has been checked on the blockchain
         assertEquals(4 + 6 + 1, walletState.utxos.size)
         assertEquals(72_000_000.sat + 30_000_000.sat + 2_000_000.sat, walletState.balance)
-        assertEquals(7, walletState.spendableUtxos.size)
+        assertEquals(11, walletState.spendableUtxos.size)
         // make sure txid is correct has electrum api is confusing
         walletState.parentTxs.forEach { assertEquals(it.key, it.value.txid) }
         assertContains(

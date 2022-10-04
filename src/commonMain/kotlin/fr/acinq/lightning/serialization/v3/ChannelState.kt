@@ -528,12 +528,11 @@ data class UnspentItem(@Serializable(with = ByteVector32KSerializer::class) val 
 @Serializable
 data class WalletState(
     val addresses: Map<String, List<UnspentItem>>,
-    val privateKeys: Map<String, @Serializable(with = PrivateKeyKSerializer::class) PrivateKey>,
     val parentTxs: Map<@Serializable(with = ByteVector32KSerializer::class) ByteVector32, @Serializable(with = TransactionKSerializer::class) Transaction>
 ) {
-    constructor(from: fr.acinq.lightning.blockchain.electrum.WalletState) : this(from.addresses.mapValues { it.value.map { item -> UnspentItem(item) } }, from.privateKeys, from.parentTxs)
+    constructor(from: fr.acinq.lightning.blockchain.electrum.WalletState) : this(from.addresses.mapValues { it.value.map { item -> UnspentItem(item) } }, from.parentTxs)
 
-    fun export() = fr.acinq.lightning.blockchain.electrum.WalletState(addresses.mapValues { it.value.map { item -> item.export() } }, privateKeys, parentTxs)
+    fun export() = fr.acinq.lightning.blockchain.electrum.WalletState(addresses.mapValues { it.value.map { item -> item.export() } }, parentTxs)
 }
 
 @Serializable

@@ -462,7 +462,6 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 val address = Bitcoin.computeP2WpkhAddress(priv.publicKey(), Block.RegtestGenesisBlock.hash)
                 val wallet = WalletState(
                     alice0.wallet.addresses + (address to listOf(UnspentItem(parentTx.txid, 0, 30_000, 0))),
-                    alice0.wallet.privateKeys + (address to priv),
                     alice0.wallet.parentTxs + (parentTx.txid to parentTx),
                 )
                 CMD_BUMP_FUNDING_FEE(fundingTx.feerate * 1.1, alice0.fundingParams.localAmount + 20_000.sat, wallet, fundingTx.tx.lockTime + 1)

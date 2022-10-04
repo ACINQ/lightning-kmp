@@ -30,7 +30,6 @@ class WalletStateUnitTest : LightningTestSuite() {
                 Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList(),
                 Bitcoin.computeP2WpkhAddress(randomKey().publicKey(), Block.TestnetGenesisBlock.hash) to emptyList()
             ),
-            privateKeys = mapOf(address1 to priv1),
             parentTxs = emptyMap()
         )
 
@@ -46,7 +45,7 @@ class WalletStateUnitTest : LightningTestSuite() {
             lockTime = 0
         )
 
-        val signedTx = walletState.sign(unsignedTx)
+        val signedTx = WalletState.sign(WalletState.singleKeyResolver(priv1), unsignedTx, walletState.parentTxs)
         Transaction.correctlySpends(signedTx, listOf(parentTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assertEquals(signedTx.txid, ByteVector32.fromValidHex("fe94ff363b534adb1b880cedbbfab4ebdf2d7b4752614071446cb1fb28658696"))
         // this tx was published on testnet

@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.blockchain.electrum.KeyResolver
 import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -18,9 +19,9 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `initiator contributes more than non-initiator`() {
         val targetFeerate = FeeratePerKw(5000.sat)
         val fundingA = 120_000.sat
-        val walletA = createWallet(listOf(50_000.sat, 35_000.sat, 60_000.sat))
+        val (keyResolverA, walletA) = createWallet(listOf(50_000.sat, 35_000.sat, 60_000.sat))
         val fundingB = 40_000.sat
-        val walletB = createWallet(listOf(100_000.sat))
+        val (keyResolverB, walletB) = createWallet(listOf(100_000.sat))
         val f = createFixture(fundingA, walletA, fundingB, walletB, targetFeerate, 660.sat, 42)
         assertEquals(f.fundingParamsA.fundingPubkeyScript, f.fundingParamsB.fundingPubkeyScript)
         assertEquals(f.fundingParamsA.fundingAmount, 160_000.sat)
@@ -67,20 +68,20 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
 
         // Bob sends signatures first as he contributed less than Alice.
-        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, walletB)
+        val signedTxB = sharedTxB.sharedTx.sign(keyResolverB, f.channelId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 1)
-        assertNull(sharedTxB.sharedTx.sign(f.channelId, walletB.copy(privateKeys = mapOf())))
+        assertNull(sharedTxB.sharedTx.sign(emptyKeyResolver(), f.channelId))
 
         // Alice detects invalid signatures from Bob.
-        assertNull(sharedTxA.sharedTx.sign(f.channelId, walletA)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
-        assertNull(sharedTxA.sharedTx.sign(f.channelId, walletA)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
-        assertNull(sharedTxA.sharedTx.sign(f.channelId, walletA)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig)))))
+        assertNull(sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
+        assertNull(sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
+        assertNull(sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig)))))
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, walletA)?.addRemoteSigs(signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs)
         assertNotNull(signedTxA)
-        assertNull(sharedTxA.sharedTx.sign(f.channelId, walletA.copy(privateKeys = mapOf())))
+        assertNull(sharedTxA.sharedTx.sign(emptyKeyResolver(), f.channelId))
         assertEquals(signedTxA.localSigs.witnesses.size, 3)
         val signedTx = signedTxA.signedTx
         assertEquals(signedTxA.localSigs.txId, signedTx.txid)
@@ -97,9 +98,9 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `initiator contributes less than non-initiator`() {
         val targetFeerate = FeeratePerKw(3000.sat)
         val fundingA = 10_000.sat
-        val walletA = createWallet(listOf(50_000.sat))
+        val (keyResolverA, walletA) = createWallet(listOf(50_000.sat))
         val fundingB = 50_000.sat
-        val walletB = createWallet(listOf(80_000.sat))
+        val (keyResolverB, walletB) = createWallet(listOf(80_000.sat))
         val f = createFixture(fundingA, walletA, fundingB, walletB, targetFeerate, 660.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 60_000.sat)
 
@@ -135,12 +136,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
 
         // Alice sends signatures first as she contributed less than Bob.
-        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, walletA)
+        val signedTxA = sharedTxA.sharedTx.sign(keyResolverA, f.channelId)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.witnesses.size, 1)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, walletB)?.addRemoteSigs(signedTxA.localSigs)
+        val signedTxB = sharedTxB.sharedTx.sign(keyResolverB, f.channelId)?.addRemoteSigs(signedTxA.localSigs)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 1)
         val signedTx = signedTxB.signedTx
@@ -158,7 +159,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `non-initiator does not contribute`() {
         val targetFeerate = FeeratePerKw(2500.sat)
         val fundingA = 150_000.sat
-        val walletA = createWallet(listOf(80_000.sat, 120_000.sat))
+        val (keyResolverA, walletA) = createWallet(listOf(80_000.sat, 120_000.sat))
         val f = createFixture(fundingA, walletA, 0.sat, WalletState.empty, targetFeerate, 330.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 150_000.sat)
 
@@ -198,12 +199,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 0.sat)
 
         // Bob sends signatures first as he did not contribute at all.
-        val signedTxB = sharedTxB.sharedTx.sign(f.channelId, WalletState.empty)
+        val signedTxB = sharedTxB.sharedTx.sign(emptyKeyResolver(), f.channelId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 0)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(f.channelId, walletA)?.addRemoteSigs(signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.witnesses.size, 2)
         val signedTx = signedTxA.signedTx
@@ -219,7 +220,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `remove input - output`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(150_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(2500.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(150_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(2500.sat), 330.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 100_000.sat)
 
         // In this flow we introduce dummy inputs/outputs from Bob to Alice that are then removed.
@@ -327,7 +328,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             TxOut(2500.sat, Script.pay2pkh(randomKey().publicKey())),
         )
         val previousTx = Transaction(2, listOf(), previousOutputs, 0)
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
             TxAddInput(f.channelId, 0, previousTx, 0, 0) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
             TxAddInput(f.channelId, 1, previousTx, 0, 0) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
@@ -349,7 +350,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invalid output`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val testCases = mapOf(
             TxAddOutput(f.channelId, 0, 25_000.sat, validScript) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
@@ -371,7 +372,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `remove unknown input - output`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
             TxRemoveOutput(f.channelId, 52) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 52),
             TxRemoveOutput(f.channelId, 53) to InteractiveTxSessionAction.UnknownSerialId(f.channelId, 53),
@@ -390,7 +391,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `too many protocol rounds`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         var (alice, _) = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA).send()
         (1..InteractiveTxSession.MAX_INPUTS_OUTPUTS_RECEIVED).forEach { i ->
@@ -404,7 +405,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `too many inputs`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         var (alice, _) = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA).send()
         (1..252).forEach { i ->
             // Alice --- tx_message --> Bob
@@ -420,7 +421,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `too many outputs`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         var (alice, _) = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA).send()
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         (1..252).forEach { i ->
@@ -438,7 +439,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `missing funding output`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
@@ -452,7 +453,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `multiple funding outputs`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
         val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
@@ -467,7 +468,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invalid funding amount`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
         val (bob1, _) = receiveMessage<TxComplete>(bob0, createTxAddInput(f.channelId, 0, 150_000.sat))
@@ -482,7 +483,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `total input amount too low`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         // Alice --- tx_add_input --> Bob
@@ -498,7 +499,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `minimum fee not met`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         // Alice --- tx_add_input --> Bob
@@ -515,7 +516,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `previous attempts not double-spent`() {
-        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)), 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val previousTx1 = Transaction(2, listOf(), listOf(TxOut(150_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val previousTx2 = Transaction(2, listOf(), listOf(TxOut(160_000.sat, Script.pay2wpkh(randomKey().publicKey())), TxOut(175_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
@@ -640,7 +641,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createWallet(amounts: List<Satoshi>): WalletState {
+        private fun createWallet(amounts: List<Satoshi>): Pair<KeyResolver, WalletState> {
             val privateKey = randomKey()
             val address = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), Block.RegtestGenesisBlock.hash)
             val utxos = amounts.map { amount ->
@@ -649,12 +650,14 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 0), parentTx)
             }
-            return WalletState(mapOf(address to utxos.map { it.first }), mapOf(address to privateKey), utxos.map { it.second.txid to it.second }.toMap())
+            return WalletState.singleKeyResolver(privateKey) to WalletState(mapOf(address to utxos.map { it.first }), utxos.map { it.second.txid to it.second }.toMap())
         }
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(amount, Script.pay2wpkh(randomKey().publicKey()))), 0)
             return TxAddInput(channelId, serialId, previousTx, 0, 0)
         }
+
+        fun emptyKeyResolver(): KeyResolver = { _: ByteVector -> null }
     }
 }

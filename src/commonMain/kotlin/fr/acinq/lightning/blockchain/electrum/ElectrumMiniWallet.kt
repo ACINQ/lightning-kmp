@@ -5,14 +5,18 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
+import fr.acinq.lightning.utils.toByteVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privateKeys: Map<String, PrivateKey>, val parentTxs: Map<ByteVector32, Transaction>) {
+data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
     val utxos: List<UnspentItem> = addresses.flatMap { it.value }
     val balance: Satoshi = utxos.sumOf { it.value }.sat
 
@@ -21,23 +25,26 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privat
         val amount = previousTx.txOut[outputIndex].amount
     }
 
-    val spendableUtxos: List<Utxo> = addresses
-        .filter { privateKeys.containsKey(it.key) }
-        .flatMap { it.value }
+    val spendableUtxos: List<Utxo> = utxos
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
     val spendableBalance = spendableUtxos.map { it.amount }.sum()
 
-    private val outPoint2Address = addresses.entries.flatMap { entry -> entry.value.map { it.outPoint to entry.key } }.toMap()
+    companion object {
+        val empty: WalletState = WalletState(emptyMap(), emptyMap())
 
-    /** Sign the inputs owned by this wallet (only works for P2WPKH scripts) */
-    fun sign(tx: Transaction): Transaction = tx.txIn.foldIndexed(tx) { index, wipTx, _ -> signInput(wipTx, index).first }
+        /** Sign the inputs owned by this wallet (only works for P2WPKH scripts) */
+        fun sign(privKeyResolver: KeyResolver, tx: Transaction, parentTxs: Map<ByteVector32, Transaction>): Transaction =
+            tx.txIn
+                .foldIndexed(tx) { index, wipTx, txIn ->
+                    val txOut = parentTxs[txIn.outPoint.txid]?.txOut?.getOrNull(txIn.outPoint.index.toInt())
+                    signInput(privKeyResolver, wipTx, index, txOut).first
+                }
 
-    fun signInput(tx: Transaction, index: Int): Pair<Transaction, ScriptWitness?> {
-        val txIn = tx.txIn[index]
-        val witness = outPoint2Address[txIn.outPoint]?.let { address ->
-            addresses[address]?.find { it.outPoint == txIn.outPoint }?.let { utxo ->
-                privateKeys[address]?.let { privateKey ->
+        fun signInput(privKeyResolver: KeyResolver, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
+            val witness = parentTxOut
+                ?.let { privKeyResolver(it.publicKeyScript) }
+                ?.let { privateKey ->
                     // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
                     // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
                     val publicKey = privateKey.publicKey()
@@ -47,30 +54,40 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privat
                         index,
                         pubKeyScript,
                         SigHash.SIGHASH_ALL,
-                        utxo.value.sat,
+                        parentTxOut.amount,
                         SigVersion.SIGVERSION_WITNESS_V0,
                         privateKey
                     )
                     Script.witnessPay2wpkh(publicKey, sig.byteVector())
                 }
+            return when (witness) {
+                is ScriptWitness -> Pair(tx.updateWitness(index, witness), witness)
+                else -> Pair(tx, null)
             }
         }
-        return when (witness) {
-            is ScriptWitness -> Pair(tx.updateWitness(index, witness), witness)
-            else -> Pair(tx, null)
-        }
-    }
 
-    companion object {
-        val empty: WalletState = WalletState(mapOf(), mapOf(), mapOf())
+        /**
+         * Guesses the private key corresponding to this script, assuming this is a p2wpkh owned by us.
+         */
+        fun script2PrivateKey(keyManager: KeyManager, publicKeyScript: ByteVector): PrivateKey? {
+            val priv = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
+            val script = Script.write(Script.pay2wpkh(priv.publicKey())).toByteVector()
+            return if (script == publicKeyScript) priv else null
+        }
+
+        fun keyManagerResolver(keyManager: KeyManager): KeyResolver = { b: ByteVector -> script2PrivateKey(keyManager, b) }
+
+        fun singleKeyResolver(privateKey: PrivateKey): KeyResolver = { _: ByteVector -> privateKey }
     }
 }
+
+typealias KeyResolver = (ByteVector) -> PrivateKey?
 
 private sealed interface WalletCommand {
     companion object {
         object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
-        data class AddAddress(val bitcoinAddress: String, val privateKey: PrivateKey?) : WalletCommand
+        data class AddAddress(val bitcoinAddress: String) : WalletCommand
     }
 }
 
@@ -87,7 +104,7 @@ class ElectrumMiniWallet(
     private val logger = loggerFactory.newLogger(this::class)
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -96,22 +113,10 @@ class ElectrumMiniWallet(
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
 
-    internal fun addAddress(bitcoinAddress: String, privateKey: PrivateKey? = null) {
+    fun addAddress(bitcoinAddress: String) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
         }
-    }
-
-    fun addPay2wpkhAddress(privateKey: PrivateKey): String {
-        val bitcoinAddress = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), chainHash)
-        launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
-        }
-        return bitcoinAddress
-    }
-
-    fun addWatchOnlyAddress(bitcoinAddress: String) {
-        addAddress(bitcoinAddress)
     }
 
     init {
@@ -174,9 +179,6 @@ class ElectrumMiniWallet(
                     is WalletCommand.Companion.AddAddress -> {
                         logger.info { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
-                        it.privateKey?.let { privateKey ->
-                            _walletStateFlow.value = _walletStateFlow.value.copy(privateKeys = _walletStateFlow.value.privateKeys + (it.bitcoinAddress to privateKey))
-                        }
                     }
                 }
             }

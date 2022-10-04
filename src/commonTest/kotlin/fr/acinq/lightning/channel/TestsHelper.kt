@@ -113,7 +113,7 @@ object TestsHelper {
             ChannelEvent.InitInitiator(
                 aliceFundingAmount,
                 alicePushAmount,
-                createWallet(aliceFundingAmount + 3500.sat),
+                    createWallet(aliceFundingAmount + 3500.sat).second,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -125,7 +125,7 @@ object TestsHelper {
             )
         )
         assertIs<WaitForAcceptChannel>(alice1)
-        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobFundingAmount + 1500.sat) else WalletState.empty
+        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobFundingAmount + 1500.sat).second else WalletState.empty
         val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<WaitForOpenChannel>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
@@ -304,11 +304,11 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun createWallet(amount: Satoshi): WalletState {
+    fun createWallet(amount: Satoshi): Pair<PrivateKey, WalletState> {
         val privKey = randomKey()
         val address = Bitcoin.computeP2WpkhAddress(privKey.publicKey(), Block.RegtestGenesisBlock.hash)
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, Script.pay2wpkh(privKey.publicKey()))), 0)
-        return WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 0))), mapOf(address to privKey), mapOf(parentTx.txid to parentTx))
+        return privKey to WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 0))), mapOf(parentTx.txid to parentTx))
     }
 
     fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {
