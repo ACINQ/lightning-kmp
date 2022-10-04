@@ -7,6 +7,7 @@ import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
 /** We wait for the channel funding transaction to confirm. */
@@ -17,7 +18,8 @@ data class WaitForFundingConfirmed(
     override val commitments: Commitments,
     val wallet: WalletState,
     val fundingParams: InteractiveTxParams,
-    val pushAmount: MilliSatoshi,
+    val localPushAmount: MilliSatoshi,
+    val remotePushAmount: MilliSatoshi,
     val fundingTx: SignedSharedTransaction,
     val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
@@ -75,6 +77,10 @@ data class WaitForFundingConfirmed(
                             logger.info { "c:$channelId rejecting rbf attempt: the new feerate must be at least $minNextFeerate (proposed=${event.message.feerate})" }
                             Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfFeerate(channelId, event.message.feerate, minNextFeerate).message))))
                         }
+                        event.message.fundingContribution.toMilliSatoshi() < remotePushAmount -> {
+                            logger.info { "c:$channelId rejecting rbf attempt: invalid amount pushed (fundingAmount=${event.message.fundingContribution}, pushAmount=$remotePushAmount)" }
+                            Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidPushAmount(channelId, remotePushAmount, event.message.fundingContribution.toMilliSatoshi()).message))))
+                        }
                         else -> {
                             logger.info { "c:$channelId our peer wants to raise the feerate of the funding transaction (previous=${fundingParams.targetFeerate} target=${event.message.feerate})" }
                             val fundingParams = InteractiveTxParams(
@@ -87,7 +93,7 @@ data class WaitForFundingConfirmed(
                                 fundingParams.dustLimit,
                                 event.message.feerate
                             )
-                            when (val contributions = FundingContributions.create(fundingParams, wallet.spendable())) {
+                            when (val contributions = FundingContributions.create(fundingParams, wallet.spendableUtxos)) {
                                 is Either.Left -> {
                                     logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
                                     Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -115,7 +121,7 @@ data class WaitForFundingConfirmed(
                         fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.spendable())) {
+                    when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.spendableUtxos)) {
                         is Either.Left -> {
                             logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
                             Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -153,7 +159,8 @@ data class WaitForFundingConfirmed(
                                 commitments.remoteParams,
                                 rbfSession1.fundingParams.localAmount,
                                 rbfSession1.fundingParams.remoteAmount,
-                                pushAmount,
+                                localPushAmount,
+                                remotePushAmount,
                                 commitments.localCommit.spec.feerate,
                                 interactiveTxAction.sharedTx.buildUnsignedTx().hash,
                                 interactiveTxAction.sharedOutputIndex,
@@ -215,7 +222,8 @@ data class WaitForFundingConfirmed(
                                 commitments1,
                                 wallet,
                                 rbfStatus.fundingParams,
-                                pushAmount,
+                                localPushAmount,
+                                remotePushAmount,
                                 signedFundingTx,
                                 listOf(Pair(fundingTx, commitments)) + previousFundingTxs,
                                 waitingSinceBlock,

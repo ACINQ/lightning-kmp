@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
@@ -58,7 +59,7 @@ data class WaitForAcceptChannel(
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                         val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, fundingPubkeyScript, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                        when (val fundingContributions = FundingContributions.create(fundingParams, init.wallet.spendable())) {
+                        when (val fundingContributions = FundingContributions.create(fundingParams, init.wallet.spendableUtxos)) {
                             is Either.Left -> {
                                 logger.error { "c:$channelId could not fund channel: ${fundingContributions.value}" }
                                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
@@ -77,6 +78,7 @@ data class WaitForAcceptChannel(
                                             init.wallet,
                                             interactiveTxSession,
                                             lastSent.pushAmount,
+                                            accept.pushAmount,
                                             lastSent.commitmentFeerate,
                                             accept.firstPerCommitmentPoint,
                                             lastSent.channelFlags,
@@ -84,7 +86,12 @@ data class WaitForAcceptChannel(
                                             channelFeatures,
                                             null
                                         )
-                                        Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(interactiveTxAction.msg)))
+                                        val actions = listOf(
+                                            channelIdAssigned,
+                                            ChannelAction.Message.Send(interactiveTxAction.msg),
+                                            ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
+                                        )
+                                        Pair(nextState, actions)
                                     }
                                     else -> {
                                         logger.error { "c:$channelId could not start interactive-tx session: $interactiveTxAction" }

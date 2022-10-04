@@ -212,6 +212,59 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
+    fun `swap funds into a channel`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+
+        val requestId = randomBytes32()
+        val walletBob = createWallet(260_000.sat)
+        bob.send(RequestChannelOpen(requestId, walletBob, 100))
+        val request = bob2alice.expect<PleaseOpenChannel>()
+        assertEquals(request.localFundingAmount, 260_000.sat)
+
+        // We have not implemented the LSP side, so we have to fake it here.
+        val openFees = 10_000_000.msat
+        val walletAlice = createWallet(50_000.sat)
+        alice.send(OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
+            tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve), ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, openFees))))
+        )
+        bob.forward(open)
+        val accept = bob2alice.expect<AcceptDualFundedChannel>()
+        assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
+        assertEquals(accept.pushAmount, openFees)
+        alice.forward(accept)
+
+        val txAddInputAlice = alice2bob.expect<TxAddInput>()
+        bob.forward(txAddInputAlice)
+        val txAddInputBob = bob2alice.expect<TxAddInput>()
+        alice.forward(txAddInputBob)
+        val txAddOutput = alice2bob.expect<TxAddOutput>()
+        bob.forward(txAddOutput)
+        val txCompleteBob = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob)
+        val txCompleteAlice = alice2bob.expect<TxComplete>()
+        bob.forward(txCompleteAlice)
+        val commitSigBob = bob2alice.expect<CommitSig>()
+        alice.forward(commitSigBob)
+        val commitSigAlice = alice2bob.expect<CommitSig>()
+        bob.forward(commitSigAlice)
+        val txSigsAlice = alice2bob.expect<TxSignatures>()
+        bob.forward(txSigsAlice)
+        val txSigsBob = bob2alice.expect<TxSignatures>()
+        alice.forward(txSigsBob)
+        val (_, aliceState) = alice.expectState<WaitForFundingConfirmed>()
+        assertEquals(aliceState.commitments.localCommit.spec.toLocal, 50_000_000.msat)
+        val (_, bobState) = bob.expectState<WaitForFundingConfirmed>()
+        // Bob has to deduce from its balance:
+        //  - the fees for the channel open (10 000 sat)
+        //  - the miner fees for his input(s) in the funding transaction
+        assertTrue(bobState.commitments.localCommit.spec.toLocal < 250_000_000.msat)
+        assertTrue(bobState.commitments.localCommit.spec.toLocal > 249_000_000.msat)
+    }
+
+    @Test
     fun `restore channel`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)

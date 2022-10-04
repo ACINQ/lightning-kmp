@@ -1,14 +1,13 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -22,13 +21,12 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val privat
         val amount = previousTx.txOut[outputIndex].amount
     }
 
-    fun spendable(): List<Utxo> {
-        return addresses
-            .filter { privateKeys.containsKey(it.key) }
-            .flatMap { it.value }
-            .filter { parentTxs.containsKey(it.txid) }
-            .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
-    }
+    val spendableUtxos: List<Utxo> = addresses
+        .filter { privateKeys.containsKey(it.key) }
+        .flatMap { it.value }
+        .filter { parentTxs.containsKey(it.txid) }
+        .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
+    val spendableBalance = spendableUtxos.map { it.amount }.sum()
 
     private val outPoint2Address = addresses.entries.flatMap { entry -> entry.value.map { it.outPoint to entry.key } }.toMap()
 
@@ -104,11 +102,12 @@ class ElectrumMiniWallet(
         }
     }
 
-    fun addPay2wpkhAddress(privateKey: PrivateKey) {
+    fun addPay2wpkhAddress(privateKey: PrivateKey): String {
+        val bitcoinAddress = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), chainHash)
         launch {
-            val bitcoinAddress = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), chainHash)
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, privateKey))
         }
+        return bitcoinAddress
     }
 
     fun addWatchOnlyAddress(bitcoinAddress: String) {
@@ -136,6 +135,7 @@ class ElectrumMiniWallet(
                         logger.info { "electrum connected" }
                         scriptHashes.values.forEach { subscribe(it) }
                     }
+
                     is WalletCommand.Companion.ElectrumNotification -> {
                         // NB: we ignore responses for unknown script_hashes (electrum client doesn't maintain a list of subscribers so we receive all subscriptions)
                         when (val msg = it.msg) {
@@ -147,6 +147,7 @@ class ElectrumMiniWallet(
                                     }
                                 }
                             }
+
                             is ScriptHashListUnspentResponse -> {
                                 scriptHashes[msg.scriptHash]?.let { address ->
                                     val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
@@ -159,14 +160,17 @@ class ElectrumMiniWallet(
                                     _walletStateFlow.value = walletState
                                 }
                             }
+
                             is GetTransactionResponse -> {
                                 val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
                                 logger.info { "received parent transaction with txid=${msg.tx.txid}" }
                                 _walletStateFlow.value = walletState
                             }
+
                             else -> {} // ignore other electrum msgs
                         }
                     }
+
                     is WalletCommand.Companion.AddAddress -> {
                         logger.info { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)

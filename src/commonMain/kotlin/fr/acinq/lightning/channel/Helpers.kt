@@ -120,6 +120,14 @@ object Helpers {
             return Either.Left(InvalidChannelType(accept.temporaryChannelId, open.channelType!!, accept.channelType!!))
         }
 
+        if (accept.fundingAmount > nodeParams.maxFundingSatoshis) {
+            return Either.Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
+        }
+
+        if (accept.pushAmount > accept.fundingAmount) {
+            return Either.Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi()))
+        }
+
         if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) {
             return Either.Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
         }
@@ -287,18 +295,20 @@ object Helpers {
             localParams: LocalParams,
             remoteParams: RemoteParams,
             localFundingAmount: Satoshi,
-            remoteFundingAmount: Satoshi, pushMsat: MilliSatoshi,
+            remoteFundingAmount: Satoshi,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
             commitTxFeerate: FeeratePerKw,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
         ): Either<ChannelException, FirstCommitTx> {
-            val toLocalMsat = if (localParams.isInitiator) localFundingAmount.toMilliSatoshi() - pushMsat else localFundingAmount.toMilliSatoshi() + pushMsat
-            val toRemoteMsat = if (localParams.isInitiator) remoteFundingAmount.toMilliSatoshi() + pushMsat else remoteFundingAmount.toMilliSatoshi() - pushMsat
+            val fundingAmount = localFundingAmount + remoteFundingAmount
+            val toLocalMsat = localFundingAmount.toMilliSatoshi() - localPushAmount + remotePushAmount
+            val toRemoteMsat = remoteFundingAmount.toMilliSatoshi() + localPushAmount - remotePushAmount
 
             val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
             val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
-            val fundingAmount = localFundingAmount + remoteFundingAmount
 
             if (!localParams.isInitiator) {
                 // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!

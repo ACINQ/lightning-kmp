@@ -15,7 +15,18 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
     override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
         return when {
             event is ChannelEvent.InitNonInitiator -> {
-                val nextState = WaitForOpenChannel(staticParams, currentTip, currentOnChainFeerates, event.temporaryChannelId, event.fundingAmount, event.wallet, event.localParams, event.channelConfig, event.remoteInit)
+                val nextState = WaitForOpenChannel(
+                    staticParams,
+                    currentTip,
+                    currentOnChainFeerates,
+                    event.temporaryChannelId,
+                    event.fundingAmount,
+                    event.pushAmount,
+                    event.wallet,
+                    event.localParams,
+                    event.channelConfig,
+                    event.remoteInit
+                )
                 Pair(nextState, listOf())
             }
             event is ChannelEvent.InitInitiator && isValidChannelType(event.channelType) -> {

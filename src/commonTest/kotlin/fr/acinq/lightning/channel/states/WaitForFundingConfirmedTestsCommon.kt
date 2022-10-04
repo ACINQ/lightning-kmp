@@ -233,7 +233,16 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw, alice.fundingParams.localAmount)), minVersion = 3)
         assertEquals(bob1, bob)
         assertEquals(actions1.size, 1)
-        actions1.hasOutgoingMessage<TxAbort>()
+        assertEquals(actions1.hasOutgoingMessage<TxAbort>().toAscii(), InvalidRbfFeerate(alice.channelId, TestConstants.feeratePerKw, TestConstants.feeratePerKw * 25 / 24).message)
+    }
+
+    @Test
+    fun `recv TxInitRbf -- invalid push amount`() {
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (bob1, actions1) = bob.processEx(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, TestConstants.feeratePerKw * 1.25, TestConstants.alicePushAmount.truncateToSatoshi() - 1.sat)), minVersion = 3)
+        assertEquals(bob1, bob)
+        assertEquals(actions1.size, 1)
+        assertEquals(actions1.hasOutgoingMessage<TxAbort>().toAscii(), InvalidPushAmount(alice.channelId, TestConstants.alicePushAmount, TestConstants.alicePushAmount - 1000.msat).message)
     }
 
     @Test
@@ -270,7 +279,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelReady -- no remote contribution`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         val channelReadyAlice = ChannelReady(alice.channelId, randomKey().publicKey())
         val channelReadyBob = ChannelReady(bob.channelId, randomKey().publicKey())
         val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(channelReadyBob), minVersion = 3)
@@ -383,7 +392,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CMD_FORCECLOSE -- nothing at stake`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE), minVersion = 3)
         assertIs<Aborted>(bob1)
         assertEquals(1, actions1.size)
@@ -427,9 +436,10 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
+            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         ): Triple<WaitForFundingConfirmed, WaitForFundingConfirmed, TxSignatures> {
-            val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf = false)
+            val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf = false)
             val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob), minVersion = 3)
             assertIs<WaitForFundingConfirmed>(alice1)
             assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)

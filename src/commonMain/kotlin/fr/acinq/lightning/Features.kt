@@ -194,7 +194,7 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
-    /** This feature bit should be activated when a node accepts channel creation via trusted swaps-in. */
+    /** DEPRECATED: this feature bit should not be used, it is only kept for serialization backwards-compatibility. */
     @Serializable
     object TrustedSwapInClient : Feature() {
         override val rfcName get() = "trusted_swap_in_client"
@@ -202,7 +202,7 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
-    /** This feature bit should be activated when a node supports opening channels in exchange for on-chain funds (swap-in). */
+    /** DEPRECATED: this feature bit should not be used, it is only kept for serialization backwards-compatibility. */
     @Serializable
     object TrustedSwapInProvider : Feature() {
         override val rfcName get() = "trusted_swap_in_provider"

@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.FeatureSupport
@@ -56,23 +57,29 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- without wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.Wumbo))
-        assertEquals(open.pushAmount, TestConstants.pushAmount)
+        assertEquals(open.pushAmount, TestConstants.alicePushAmount)
         assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         assertIs<WaitForFundingCreated>(bob1)
+        assertEquals(3, actions.size)
         assertTrue(bob1.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
         assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
+        actions.has<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(bob1), actions.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
     fun `recv OpenChannel -- wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 20_000_000.sat)
-        assertEquals(open.pushAmount, TestConstants.pushAmount)
+        assertEquals(open.pushAmount, TestConstants.alicePushAmount)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         assertIs<WaitForFundingCreated>(bob1)
+        assertEquals(3, actions.size)
         assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
+        actions.has<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(bob1), actions.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
@@ -80,10 +87,13 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (_, bob, open) = TestsHelper.init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         assertIs<WaitForFundingCreated>(bob1)
+        assertEquals(3, actions.size)
         assertTrue(bob1.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
         assertEquals(bob1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
         val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         assertEquals(0, accept.minimumDepth)
+        actions.has<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(bob1), actions.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
@@ -118,7 +128,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv OpenChannel -- funding too low`() {
-        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 100.sat, bobFundingAmount = 0.sat, pushAmount = 0.msat)
+        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 100.sat, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100.sat, bob.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
@@ -146,7 +156,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv OpenChannel -- invalid push_amount`() {
-        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = TestConstants.aliceFundingAmount, pushAmount = TestConstants.aliceFundingAmount.toMilliSatoshi() + 1.msat)
+        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = TestConstants.aliceFundingAmount, alicePushAmount = TestConstants.aliceFundingAmount.toMilliSatoshi() + 1.msat)
         assertEquals(open.pushAmount, TestConstants.aliceFundingAmount.toMilliSatoshi() + 1.msat)
         val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
         val error = actions.findOutgoingMessage<Error>()

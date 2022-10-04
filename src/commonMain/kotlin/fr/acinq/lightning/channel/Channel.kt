@@ -48,6 +48,7 @@ sealed class ChannelEvent {
     data class InitNonInitiator(
         val temporaryChannelId: ByteVector32,
         val fundingAmount: Satoshi,
+        val pushAmount: MilliSatoshi,
         val wallet: WalletState,
         val localParams: LocalParams,
         val channelConfig: ChannelConfig,
@@ -90,7 +91,7 @@ sealed class ChannelAction {
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
-        data class StoreIncomingAmount(val amount: MilliSatoshi, val origin: ChannelOrigin?) : Storage()
+        data class StoreIncomingAmount(val amount: MilliSatoshi, val localInputs: Set<OutPoint>, val origin: ChannelOrigin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
         data class StoreChannelClosed(val closingTxs: List<OutgoingPayment.ClosingTxPart>) : Storage()
     }
@@ -129,6 +130,8 @@ sealed class ChannelAction {
             data class Disconnected(val channelUpdate: ChannelUpdate) : Fail()
         }
     }
+
+    data class EmitEvent(val event: ChannelEvents) : ChannelAction()
 }
 
 /** Channel static parameters. */
@@ -161,8 +164,16 @@ sealed class ChannelState : LoggingContext {
                 else -> this
             }
             val actions1 = when {
-                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) && !oldState.localParams.isInitiator -> {
-                    actions + ChannelAction.Storage.StoreIncomingAmount(oldState.pushAmount, oldState.channelOrigin)
+                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
+                    val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
+                    when {
+                        !oldState.localParams.isInitiator -> {
+                            val amount = oldState.fundingParams.localAmount.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
+                            val localInputs = oldState.fundingTx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
+                            actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin) + channelCreated
+                        }
+                        else -> actions + channelCreated
+                    }
                 }
                 // we only want to fire the PaymentSent event when we transition to Closing for the first time
                 oldState is WaitForInit && newState is Closing -> actions

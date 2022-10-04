@@ -159,16 +159,16 @@ object Transactions {
      *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
      */
 
-    /**
-     * these values are specific to us and used to estimate fees
-     */
-    val claimP2WPKHOutputWeight = 438
-    val claimAnchorOutputWeight = 321
-    val claimHtlcDelayedWeight = 483
-    val claimHtlcSuccessWeight = 574
-    val claimHtlcTimeoutWeight = 548
-    val mainPenaltyWeight = 484
-    val htlcPenaltyWeight = 581 // based on spending an HTLC-Success output (would be 571 with HTLC-Timeout)
+    const val p2wpkhInputWeight = 275
+
+    // The following values are specific to lightning and used to estimate fees.
+    const val claimP2WPKHOutputWeight = 438
+    const val claimAnchorOutputWeight = 321
+    const val claimHtlcDelayedWeight = 483
+    const val claimHtlcSuccessWeight = 574
+    const val claimHtlcTimeoutWeight = 548
+    const val mainPenaltyWeight = 484
+    const val htlcPenaltyWeight = 581 // based on spending an HTLC-Success output (would be 571 with HTLC-Timeout)
 
     private fun weight2feeMsat(feerate: FeeratePerKw, weight: Int): MilliSatoshi = (feerate.toLong() * weight).msat
 

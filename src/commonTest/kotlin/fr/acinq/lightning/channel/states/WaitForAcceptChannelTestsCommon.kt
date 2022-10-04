@@ -3,14 +3,13 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.Features
-import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
@@ -21,8 +20,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init()
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(alice1), actions1.find<ChannelAction.EmitEvent>().event)
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
@@ -34,10 +34,11 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init(bobFundingAmount = 0.sat)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(ChannelEvents.Creating(alice1), actions1.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
@@ -46,8 +47,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(0, accept.minimumDepth)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(alice1), actions1.find<ChannelAction.EmitEvent>().event)
         actions1.findOutgoingMessage<TxAddInput>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
     }
@@ -71,6 +73,15 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv AcceptChannel -- funding too high`() {
+        val (alice, _, accept) = init(bobFundingAmount = 30_000_000.sat)
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(accept))
+        val error = actions.findOutgoingMessage<Error>()
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, 30_000_000.sat, alice.staticParams.nodeParams.minFundingSatoshis, alice.staticParams.nodeParams.maxFundingSatoshis).message))
+        assertIs<Aborted>(alice1)
+    }
+
+    @Test
     fun `recv AcceptChannel -- invalid max accepted htlcs`() {
         val (alice, _, accept) = init()
         // spec says max = 483
@@ -79,6 +90,16 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).message))
+    }
+
+    @Test
+    fun `recv AcceptChannel -- invalid push_amount`() {
+        val (alice, _, accept) = init(bobFundingAmount = TestConstants.bobFundingAmount, bobPushAmount = TestConstants.bobFundingAmount.toMilliSatoshi() + 1.msat)
+        assertEquals(accept.pushAmount, TestConstants.bobFundingAmount.toMilliSatoshi() + 1.msat)
+        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(accept))
+        val error = actions.findOutgoingMessage<Error>()
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidPushAmount(accept.temporaryChannelId, accept.fundingAmount.toMilliSatoshi() + 1.msat, accept.fundingAmount.toMilliSatoshi()).message))
+        assertIs<Aborted>(alice1)
     }
 
     @Test
@@ -139,18 +160,20 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            pushAmount: MilliSatoshi = TestConstants.pushAmount,
+            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
+            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             zeroConf: Boolean = false,
         ): Triple<WaitForAcceptChannel, WaitForFundingCreated, AcceptDualFundedChannel> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, pushAmount, zeroConf)
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
             assertEquals(open.fundingAmount, aliceFundingAmount)
-            assertEquals(open.pushAmount, TestConstants.pushAmount)
+            assertEquals(open.pushAmount, alicePushAmount)
             assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
             val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
             assertTrue(bob1 is WaitForFundingCreated)
             val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
             assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
             assertEquals(accept.fundingAmount, bobFundingAmount)
+            assertEquals(accept.pushAmount, bobPushAmount)
             assertEquals(accept.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
             when (zeroConf) {
                 true -> assertEquals(0, accept.minimumDepth)

@@ -6,6 +6,7 @@ import fr.acinq.lightning.channel.ChannelConfig
 import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.utils.toByteVector
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -165,5 +166,27 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         assertEquals(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, PrivateKey.fromHex("2f047edff3e96d16d726a265ddb95d61f695d34b1861f10f80c1758271b00523").publicKey())
         assertEquals(keyManager.htlcPoint(channelKeyPath).publicKey, PrivateKey.fromHex("3e740f7d7d214db23ca17b9586e22f004497dbef585781f5a864ed794ad695c6").publicKey())
         assertEquals(keyManager.commitmentSecret(channelKeyPath, 0).value, ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("a7968178e0472a53eb5a45bb86d8c4591509fbaeba1e223acc80cc28d37b4804"), 0xFFFFFFFFFFFFL))
+    }
+
+    @Test
+    fun `bip84 addresses`() {
+        // basic test taken from https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki
+        val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
+        val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
+        val keyManager = LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKey), "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d")
+        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
+    }
+
+    @Test
+    fun `bip84 addresses testnet`() {
+        // reference data was generated from electrum 4.1.5
+        val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
+        val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
+        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
+        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
+        assertEquals(keyManager.bip84PrivateKey(account = 1L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTzDRh9ERGCwhBCifcnDxboJELpZBaj6Q9Kk8wEGasmDfoocscAb")
+        assertEquals(keyManager.bip84PrivateKey(account = 1L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cN87m7GuPSomDU8CgedBeQgcN2AGix9CkW3FDrCfrnM5XGcRAKcc")
     }
 }

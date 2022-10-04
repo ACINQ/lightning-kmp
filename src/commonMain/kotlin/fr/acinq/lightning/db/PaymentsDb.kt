@@ -1,9 +1,6 @@
 package fr.acinq.lightning.db
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelException
@@ -142,13 +139,17 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
         object KeySend : Origin()
 
-        /** Swap-in works by sending an on-chain transaction to a swap server, which will pay us in exchange. We may not know the origin address. */
+        /** DEPRECATED: this is the legacy trusted swap-in, which we keep for backwards-compatibility (previous payments inside the DB). */
         data class SwapIn(val address: String?) : Origin()
+
+        /** Trust-less swap-in based on dual funding. */
+        data class DualSwapIn(val localInputs: Set<OutPoint>) : Origin()
 
         fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
             is Invoice -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
             is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
             is SwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
+            is DualSwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
         }
     }
 

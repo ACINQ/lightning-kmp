@@ -109,11 +109,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
      * - for unknown origin, the amount is handled as a swap-in coming from an unknown address.
      */
     suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingAmount) {
+        val fakePreimage = channelId.sha256()
         when (action.origin) {
             null -> {
                 // TODO: hacky, needs clean-up
                 logger.warning { "incoming amount with empty origin, we store only minimal information" }
-                val fakePreimage = channelId.sha256()
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.SwapIn(address = ""),
@@ -125,13 +125,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 // to update the channel id of the pay-to-open received-with parts with type new-channel.
                 db.updateNewChannelReceivedWithChannelId(action.origin.paymentHash, channelId)
             }
-            is ChannelOrigin.SwapInOrigin -> {
-                // swap-ins are push payments made with an on-chain tx, there is no related preimage so we make up one so it fits in our model
-                val fakePreimage = channelId.sha256()
+            is ChannelOrigin.PleaseOpenChannelOrigin -> {
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
-                    origin = IncomingPayment.Origin.SwapIn(address = action.origin.bitcoinAddress),
-                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, fees = action.origin.fee.toMilliSatoshi(), channelId = channelId))
+                    origin = IncomingPayment.Origin.DualSwapIn(action.localInputs),
+                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, fees = action.origin.fee, channelId = channelId))
                 )
             }
         }

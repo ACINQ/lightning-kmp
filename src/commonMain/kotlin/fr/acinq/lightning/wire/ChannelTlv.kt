@@ -1,8 +1,9 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.OutPoint
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.byteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
@@ -11,7 +12,9 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector32
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
@@ -73,11 +76,9 @@ sealed class ChannelTlv : Tlv {
                     LightningCodecs.writeBytes(channelOrigin.paymentHash, out)
                     LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
                 }
-                is ChannelOrigin.SwapInOrigin -> {
-                    LightningCodecs.writeU16(2, out)
-                    val addressBytes = channelOrigin.bitcoinAddress.encodeToByteArray()
-                    LightningCodecs.writeBigSize(addressBytes.size.toLong(), out)
-                    LightningCodecs.writeBytes(addressBytes, out)
+                is ChannelOrigin.PleaseOpenChannelOrigin -> {
+                    LightningCodecs.writeU16(4, out)
+                    LightningCodecs.writeBytes(channelOrigin.requestId, out)
                     LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
                 }
             }
@@ -89,16 +90,13 @@ sealed class ChannelTlv : Tlv {
             override fun read(input: Input): ChannelOriginTlv {
                 val origin = when (LightningCodecs.u16(input)) {
                     1 -> ChannelOrigin.PayToOpenOrigin(
-                        paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                        fee = Satoshi(LightningCodecs.u64(input))
+                        paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
+                        fee = LightningCodecs.u64(input).sat,
                     )
-                    2 -> {
-                        val len = LightningCodecs.bigSize(input)
-                        ChannelOrigin.SwapInOrigin(
-                            bitcoinAddress = LightningCodecs.bytes(input, len).decodeToString(),
-                            fee = Satoshi(LightningCodecs.u64(input))
-                        )
-                    }
+                    4 -> ChannelOrigin.PleaseOpenChannelOrigin(
+                        requestId = LightningCodecs.bytes(input, 32).byteVector32(),
+                        fee = LightningCodecs.u64(input).msat,
+                    )
                     else -> TODO("Unsupported channel origin discriminator")
                 }
                 return ChannelOriginTlv(origin)
@@ -216,6 +214,55 @@ sealed class ClosingSignedTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+@Serializable
+sealed class PleaseOpenChannelTlv : Tlv {
+    @Serializable
+    data class MaxFees(val basisPoints: Int) : PleaseOpenChannelTlv() {
+        override val tag: Long get() = MaxFees.tag
+        override fun write(out: Output) = LightningCodecs.writeTU16(basisPoints, out)
+
+        companion object : TlvValueReader<MaxFees> {
+            const val tag: Long = 1
+            override fun read(input: Input): MaxFees = MaxFees(LightningCodecs.tu16(input))
+        }
+    }
+
+    // NB: this is a temporary tlv that is only used to ensure a smooth migration to lightning-kmp for the android version of Phoenix.
+    @Serializable
+    data class GrandParents(val outpoints: List<@Contextual OutPoint>) : PleaseOpenChannelTlv() {
+        override val tag: Long get() = GrandParents.tag
+        override fun write(out: Output) {
+            outpoints.forEach { outpoint ->
+                LightningCodecs.writeBytes(outpoint.hash.toByteArray(), out)
+                LightningCodecs.writeU64(outpoint.index, out)
+            }
+        }
+
+        companion object : TlvValueReader<GrandParents> {
+            const val tag: Long = 561
+            override fun read(input: Input): GrandParents {
+                val count = input.availableBytes / 40
+                val outpoints = (0 until count).map { OutPoint(LightningCodecs.bytes(input, 32).toByteVector32(), LightningCodecs.u64(input)) }
+                return GrandParents(outpoints)
+            }
+        }
+    }
+}
+
+@Serializable
+sealed class PleaseOpenChannelRejectedTlv : Tlv {
+    @Serializable
+    data class ExpectedFees(@Contextual val fees: MilliSatoshi) : PleaseOpenChannelRejectedTlv() {
+        override val tag: Long get() = ExpectedFees.tag
+        override fun write(out: Output) = LightningCodecs.writeTU64(fees.toLong(), out)
+
+        companion object : TlvValueReader<ExpectedFees> {
+            const val tag: Long = 1
+            override fun read(input: Input): ExpectedFees = ExpectedFees(LightningCodecs.tu64(input).msat)
         }
     }
 }

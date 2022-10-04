@@ -14,6 +14,8 @@ interface KeyManager {
 
     val nodeId: PublicKey
 
+    fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey
+
     fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray>
 
     fun fundingPublicKey(keyPath: KeyPath): ExtendedPublicKey
