@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
@@ -34,7 +35,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
             val watchConfirmed = actionsAlice1.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(alice1.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
-            actionsAlice1.has<ChannelAction.EmitEvent>()
+            assertEquals(ChannelEvents.Created(alice1), actionsAlice1.find<ChannelAction.EmitEvent>().event)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
@@ -47,7 +48,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertEquals(actionsBob1.find<ChannelAction.Storage.StoreIncomingAmount>().amount, 200_000_000.msat)
             val watchConfirmed = actionsBob1.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(bob1.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
-            actionsBob1.has<ChannelAction.EmitEvent>()
+            assertEquals(ChannelEvents.Created(bob1), actionsBob1.find<ChannelAction.EmitEvent>().event)
         }
     }
 
@@ -57,21 +58,23 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(commitSigBob))
             assertIs<WaitForChannelReady>(alice1)
-            assertEquals(actionsAlice1.size, 3)
+            assertEquals(actionsAlice1.size, 4)
             assertEquals(actionsAlice1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(alice.staticParams.nodeParams.nodeId))
             assertEquals(actionsAlice1.findWatch<WatchSpent>().txId, alice1.commitments.fundingTxId)
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
+            assertEquals(ChannelEvents.Created(alice1), actionsAlice1.find<ChannelAction.EmitEvent>().event)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(commitSigAlice))
             assertIs<WaitForChannelReady>(bob1)
-            assertEquals(actionsBob1.size, 5)
+            assertEquals(actionsBob1.size, 6)
             actionsBob1.hasOutgoingMessage<TxSignatures>()
             assertEquals(actionsBob1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId))
             assertEquals(actionsBob1.findWatch<WatchSpent>().txId, bob1.commitments.fundingTxId)
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, 200_000_000.msat)
             assertEquals(actionsBob1.find<ChannelAction.Storage.StoreIncomingAmount>().amount, 200_000_000.msat)
+            assertEquals(ChannelEvents.Created(bob1), actionsBob1.find<ChannelAction.EmitEvent>().event)
         }
     }
 

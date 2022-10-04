@@ -2,7 +2,7 @@ package fr.acinq.lightning
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.lightning.channel.WaitForFundingConfirmed
+import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.WaitForFundingCreated
 import fr.acinq.lightning.wire.PleaseOpenChannel
 import fr.acinq.lightning.wire.PleaseOpenChannelFailure
@@ -17,5 +17,5 @@ sealed interface SwapInEvents : NodeEvents {
 
 sealed interface ChannelEvents : NodeEvents {
     data class Creating(val state: WaitForFundingCreated) : ChannelEvents
-    data class Created(val state: WaitForFundingConfirmed) : ChannelEvents
+    data class Created(val state: ChannelStateWithCommitments) : ChannelEvents
 }

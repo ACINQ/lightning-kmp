@@ -164,10 +164,16 @@ sealed class ChannelState : LoggingContext {
                 else -> this
             }
             val actions1 = when {
-                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) && !oldState.localParams.isInitiator -> {
-                    val amount = oldState.fundingParams.localAmount.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
-                    val localInputs = oldState.fundingTx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
-                    actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin)
+                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
+                    val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
+                    when {
+                        !oldState.localParams.isInitiator -> {
+                            val amount = oldState.fundingParams.localAmount.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
+                            val localInputs = oldState.fundingTx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
+                            actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin) + channelCreated
+                        }
+                        else -> actions + channelCreated
+                    }
                 }
                 // we only want to fire the PaymentSent event when we transition to Closing for the first time
                 oldState is WaitForInit && newState is Closing -> actions

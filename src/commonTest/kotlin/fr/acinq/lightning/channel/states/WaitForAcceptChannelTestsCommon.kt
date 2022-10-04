@@ -3,10 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.Features
-import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -23,8 +20,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init()
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(alice1), actions1.find<ChannelAction.EmitEvent>().event)
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
@@ -36,10 +34,11 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init(bobFundingAmount = 0.sat)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(ChannelEvents.Creating(alice1), actions1.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
@@ -48,8 +47,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(0, accept.minimumDepth)
         val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
-        assertEquals(2, actions1.size)
+        assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
+        assertEquals(ChannelEvents.Creating(alice1), actions1.find<ChannelAction.EmitEvent>().event)
         actions1.findOutgoingMessage<TxAddInput>()
         assertEquals(alice1.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
     }

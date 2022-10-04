@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
@@ -85,7 +86,12 @@ data class WaitForAcceptChannel(
                                             channelFeatures,
                                             null
                                         )
-                                        Pair(nextState, listOf(channelIdAssigned, ChannelAction.Message.Send(interactiveTxAction.msg)))
+                                        val actions = listOf(
+                                            channelIdAssigned,
+                                            ChannelAction.Message.Send(interactiveTxAction.msg),
+                                            ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
+                                        )
+                                        Pair(nextState, actions)
                                     }
                                     else -> {
                                         logger.error { "c:$channelId could not start interactive-tx session: $interactiveTxAction" }
