@@ -24,10 +24,10 @@ class ElectrumClientStateTest : LightningTestSuite() {
 
     @Test
     fun `ClientClosed state`() {
-        ClientClosed.process(Connected, logger).let { (newState, actions) ->
+        ClientClosed.process(ElectrumClientCommand.Connected, logger).let { (newState, actions) ->
             assertEquals(WaitingForVersion, newState)
             assertEquals(1, actions.size)
-            assertTrue(actions[0] is SendRequest)
+            assertTrue(actions[0] is ElectrumClientAction.SendRequest)
         }
     }
 
@@ -36,13 +36,13 @@ class ElectrumClientStateTest : LightningTestSuite() {
         listOf(
             WaitingForVersion, WaitingForTip, ClientRunning(0, testBlockHeader), ClientClosed
         ).forEach { state ->
-            state.process(Disconnected, logger).let { (nextState, actions) ->
+            state.process(ElectrumClientCommand.Disconnected, logger).let { (nextState, actions) ->
                 assertEquals(ClientClosed, nextState)
                 assertTrue(actions.isEmpty())
             }
 
             if (state !is ClientRunning)
-                state.process(AskForHeader, logger).let { (nextState, actions) ->
+                state.process(ElectrumClientCommand.AskForHeader, logger).let { (nextState, actions) ->
                     assertEquals(state, nextState)
                     assertTrue(actions.isEmpty())
                 }
