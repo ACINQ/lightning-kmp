@@ -521,8 +521,6 @@ data class WaitForFundingCreated(
 @Serializable
 data class UnspentItem(@Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, val outputIndex: Int, val value: Long, val blockHeight: Long) {
     constructor(from: fr.acinq.lightning.blockchain.electrum.UnspentItem) : this(from.txid, from.outputIndex, from.value, from.blockHeight)
-
-    fun export() = fr.acinq.lightning.blockchain.electrum.UnspentItem(txid, outputIndex, value, blockHeight)
 }
 
 @Serializable
@@ -531,8 +529,6 @@ data class WalletState(
     val parentTxs: Map<@Serializable(with = ByteVector32KSerializer::class) ByteVector32, @Serializable(with = TransactionKSerializer::class) Transaction>
 ) {
     constructor(from: fr.acinq.lightning.blockchain.electrum.WalletState) : this(from.addresses.mapValues { it.value.map { item -> UnspentItem(item) } }, from.parentTxs)
-
-    fun export() = fr.acinq.lightning.blockchain.electrum.WalletState(addresses.mapValues { it.value.map { item -> item.export() } }, parentTxs)
 }
 
 @Serializable
@@ -735,7 +731,6 @@ data class WaitForFundingConfirmed2(
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    val wallet: WalletState,
     val fundingParams: InteractiveTxParams,
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
@@ -749,7 +744,6 @@ data class WaitForFundingConfirmed2(
         from.currentTip,
         OnChainFeerates(from.currentOnChainFeerates),
         Commitments(from.commitments),
-        WalletState(from.wallet),
         InteractiveTxParams(from.fundingParams),
         from.localPushAmount,
         from.remotePushAmount,
@@ -764,7 +758,6 @@ data class WaitForFundingConfirmed2(
         currentTip,
         currentOnChainFeerates.export(),
         commitments.export(nodeParams),
-        wallet.export(),
         fundingParams.export(),
         localPushAmount,
         remotePushAmount,

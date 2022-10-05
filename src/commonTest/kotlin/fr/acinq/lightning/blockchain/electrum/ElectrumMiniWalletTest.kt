@@ -96,13 +96,17 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
 
         assertEquals(
             expected = setOf(
-                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32.fromValidHex("71b3dbaca67e9f9189dad3617138c19725ab541ef0b49c05a94913e9f28e3f4e") to 0, 5_000_000.sat),
-                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32.fromValidHex("21d2eb195736af2a40d42107e6abd59c97eb6cffd4a5a7a7709e86590ae61987") to 0, 5_000_000.sat),
-                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32.fromValidHex("74d681e0e03bafa802c8aa084379aa98d9fcd632ddc2ed9782b586ec87451f20") to 1, 5_000_000.sat),
-                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32.fromValidHex("563ea83f9641d37a36f9294d172fdb4fb86c19b0e9cac45e0b27610331138775") to 0, 5_000_000.sat),
-                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32.fromValidHex("971af80218684017722429be08548d1f30a2f1f220abc064380cbca5cabf7623") to 1, 5_000_000.sat),
-                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32.fromValidHex("b1ec9c44009147f3cee26caba45abec2610c74df9751fad14074119b5314da21") to 0, 5_000_000.sat),
-                Triple("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV", ByteVector32.fromValidHex("602839d82ac6c9aafd1a20fff5b23e11a99271e7cc238d2e48b352219b2b87ab") to 1, 2_000_000.sat),
+                Triple("16MmJT8VqW465GEyckWae547jKVfMB14P8", ByteVector32("c1e943938e0bf2e9e6feefe22af0466514a58e9f7ed0f7ada6fd8e6dbeca0742") to 1, 39_000_000.sat),
+                Triple("16MmJT8VqW465GEyckWae547jKVfMB14P8", ByteVector32("2cf392ecf573a638f01f72c276c3b097d05eb58f39e165eacc91b8a8df09fbd8") to 0, 12_000_000.sat),
+                Triple("16MmJT8VqW465GEyckWae547jKVfMB14P8", ByteVector32("149a098d6261b7f9359a572d797c4a41b62378836a14093912618b15644ba402") to 1, 11_000_000.sat),
+                Triple("16MmJT8VqW465GEyckWae547jKVfMB14P8", ByteVector32("2dd9cb7bcebb74b02efc85570a462f22a54a613235bee11d0a2c791342a26007") to 1, 10_000_000.sat),
+                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("71b3dbaca67e9f9189dad3617138c19725ab541ef0b49c05a94913e9f28e3f4e") to 0, 5_000_000.sat),
+                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("21d2eb195736af2a40d42107e6abd59c97eb6cffd4a5a7a7709e86590ae61987") to 0, 5_000_000.sat),
+                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("74d681e0e03bafa802c8aa084379aa98d9fcd632ddc2ed9782b586ec87451f20") to 1, 5_000_000.sat),
+                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("563ea83f9641d37a36f9294d172fdb4fb86c19b0e9cac45e0b27610331138775") to 0, 5_000_000.sat),
+                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("971af80218684017722429be08548d1f30a2f1f220abc064380cbca5cabf7623") to 1, 5_000_000.sat),
+                Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("b1ec9c44009147f3cee26caba45abec2610c74df9751fad14074119b5314da21") to 0, 5_000_000.sat),
+                Triple("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV", ByteVector32("602839d82ac6c9aafd1a20fff5b23e11a99271e7cc238d2e48b352219b2b87ab") to 1, 2_000_000.sat),
             ),
             actual = walletState.spendableUtxos.map {
                 val txOut = it.previousTx.txOut[it.outputIndex]

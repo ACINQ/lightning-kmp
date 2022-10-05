@@ -88,7 +88,6 @@ data class WaitForFundingSigned(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
-                                wallet,
                                 fundingParams,
                                 localPushAmount,
                                 remotePushAmount,

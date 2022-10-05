@@ -3,13 +3,13 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
+import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -113,7 +113,7 @@ object TestsHelper {
             ChannelEvent.InitInitiator(
                 aliceFundingAmount,
                 alicePushAmount,
-                    createWallet(aliceFundingAmount + 3500.sat).second,
+                createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
@@ -125,7 +125,7 @@ object TestsHelper {
             )
         )
         assertIs<WaitForAcceptChannel>(alice1)
-        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobFundingAmount + 1500.sat).second else WalletState.empty
+        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else WalletState.empty
         val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<WaitForOpenChannel>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
@@ -304,8 +304,8 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun createWallet(amount: Satoshi): Pair<PrivateKey, WalletState> {
-        val privKey = randomKey()
+    fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, WalletState> {
+        val privKey = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
         val address = Bitcoin.computeP2WpkhAddress(privKey.publicKey(), Block.RegtestGenesisBlock.hash)
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, Script.pay2wpkh(privKey.publicKey()))), 0)
         return privKey to WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 0))), mapOf(parentTx.txid to parentTx))

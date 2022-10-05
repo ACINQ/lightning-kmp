@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
-import fr.acinq.lightning.blockchain.electrum.KeyResolver
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
@@ -154,12 +153,12 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
         return Transaction(2, inputs, outputs, lockTime)
     }
 
-    fun sign(keyResolver: KeyResolver, channelId: ByteVector32): PartiallySignedSharedTransaction? {
+    fun sign(keyManager: KeyManager, channelId: ByteVector32): PartiallySignedSharedTransaction? {
         val unsignedTx = buildUnsignedTx()
         val localSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
             localInputs
                 .find { txIn.outPoint == OutPoint(it.previousTx, it.previousTxOutput) }
-                ?.let { input -> WalletState.signInput(keyResolver, unsignedTx, i, input.previousTx.txOut[input.previousTxOutput.toInt()]).second }
+                ?.let { input -> WalletState.signInput(keyManager, unsignedTx, i, input.previousTx.txOut[input.previousTxOutput.toInt()]).second }
         }.filterNotNull()
         return when (localSigs.size) {
             localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx.txid, localSigs))

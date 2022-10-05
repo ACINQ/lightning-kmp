@@ -1,12 +1,14 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.electrum.KeyResolver
 import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
@@ -19,9 +21,9 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `initiator contributes more than non-initiator`() {
         val targetFeerate = FeeratePerKw(5000.sat)
         val fundingA = 120_000.sat
-        val (keyResolverA, walletA) = createWallet(listOf(50_000.sat, 35_000.sat, 60_000.sat))
+        val (keyManagerA, walletA) = createWallet(listOf(50_000.sat, 35_000.sat, 60_000.sat))
         val fundingB = 40_000.sat
-        val (keyResolverB, walletB) = createWallet(listOf(100_000.sat))
+        val (keyManagerB, walletB) = createWallet(listOf(100_000.sat))
         val f = createFixture(fundingA, walletA, fundingB, walletB, targetFeerate, 660.sat, 42)
         assertEquals(f.fundingParamsA.fundingPubkeyScript, f.fundingParamsB.fundingPubkeyScript)
         assertEquals(f.fundingParamsA.fundingAmount, 160_000.sat)
@@ -68,20 +70,20 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
 
         // Bob sends signatures first as he contributed less than Alice.
-        val signedTxB = sharedTxB.sharedTx.sign(keyResolverB, f.channelId)
+        val signedTxB = sharedTxB.sharedTx.sign(keyManagerB, f.channelId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 1)
-        assertNull(sharedTxB.sharedTx.sign(emptyKeyResolver(), f.channelId))
+        assertNull(sharedTxB.sharedTx.sign(keyManagerA, f.channelId))
 
         // Alice detects invalid signatures from Bob.
-        assertNull(sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
-        assertNull(sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
-        assertNull(sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig)))))
+        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
+        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
+        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig)))))
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs)
         assertNotNull(signedTxA)
-        assertNull(sharedTxA.sharedTx.sign(emptyKeyResolver(), f.channelId))
+        assertNull(sharedTxA.sharedTx.sign(keyManagerB, f.channelId))
         assertEquals(signedTxA.localSigs.witnesses.size, 3)
         val signedTx = signedTxA.signedTx
         assertEquals(signedTxA.localSigs.txId, signedTx.txid)
@@ -98,7 +100,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `initiator contributes less than non-initiator`() {
         val targetFeerate = FeeratePerKw(3000.sat)
         val fundingA = 10_000.sat
-        val (keyResolverA, walletA) = createWallet(listOf(50_000.sat))
+        val (keyManagerA, walletA) = createWallet(listOf(50_000.sat))
         val fundingB = 50_000.sat
         val (keyResolverB, walletB) = createWallet(listOf(80_000.sat))
         val f = createFixture(fundingA, walletA, fundingB, walletB, targetFeerate, 660.sat, 0)
@@ -136,7 +138,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxB.sharedTx.localFees(f.fundingParamsB) < sharedTxA.sharedTx.localFees(f.fundingParamsA))
 
         // Alice sends signatures first as she contributed less than Bob.
-        val signedTxA = sharedTxA.sharedTx.sign(keyResolverA, f.channelId)
+        val signedTxA = sharedTxA.sharedTx.sign(keyManagerA, f.channelId)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.witnesses.size, 1)
 
@@ -159,7 +161,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `non-initiator does not contribute`() {
         val targetFeerate = FeeratePerKw(2500.sat)
         val fundingA = 150_000.sat
-        val (keyResolverA, walletA) = createWallet(listOf(80_000.sat, 120_000.sat))
+        val (keyManagerA, walletA) = createWallet(listOf(80_000.sat, 120_000.sat))
         val f = createFixture(fundingA, walletA, 0.sat, WalletState.empty, targetFeerate, 330.sat, 0)
         assertEquals(f.fundingParamsA.fundingAmount, 150_000.sat)
 
@@ -199,12 +201,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 0.sat)
 
         // Bob sends signatures first as he did not contribute at all.
-        val signedTxB = sharedTxB.sharedTx.sign(emptyKeyResolver(), f.channelId)
+        val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes(64).byteVector(), Block.RegtestGenesisBlock.hash), f.channelId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 0)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(keyResolverA, f.channelId)?.addRemoteSigs(signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.witnesses.size, 2)
         val signedTx = signedTxA.signedTx
@@ -641,23 +643,22 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createWallet(amounts: List<Satoshi>): Pair<KeyResolver, WalletState> {
-            val privateKey = randomKey()
-            val address = Bitcoin.computeP2WpkhAddress(privateKey.publicKey(), Block.RegtestGenesisBlock.hash)
+        private fun createWallet(amounts: List<Satoshi>): Pair<KeyManager, WalletState> {
+            val keyManager = LocalKeyManager(randomBytes(64).byteVector(), Block.RegtestGenesisBlock.hash)
+            val privateKey = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
+            val address = keyManager.bip84Address(account = 1, addressIndex = 0)
             val utxos = amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, Script.pay2wpkh(privateKey.publicKey())), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 0), parentTx)
             }
-            return WalletState.singleKeyResolver(privateKey) to WalletState(mapOf(address to utxos.map { it.first }), utxos.map { it.second.txid to it.second }.toMap())
+            return Pair(keyManager, WalletState(mapOf(address to utxos.map { it.first }), utxos.map { it.second.txid to it.second }.toMap()))
         }
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(amount, Script.pay2wpkh(randomKey().publicKey()))), 0)
             return TxAddInput(channelId, serialId, previousTx, 0, 0)
         }
-
-        fun emptyKeyResolver(): KeyResolver = { _: ByteVector -> null }
     }
 }

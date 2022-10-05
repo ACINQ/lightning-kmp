@@ -11,7 +11,6 @@ interface KeyManager {
     /** The node key that the same seed would have produced on the legacy eclair-based Phoenix implementation on Android. Useful to automate the migration. */
     val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey
     val nodeKey: DeterministicWallet.ExtendedPrivateKey
-
     val nodeId: PublicKey
 
     fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey

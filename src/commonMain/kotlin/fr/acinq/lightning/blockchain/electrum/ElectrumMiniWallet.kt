@@ -28,22 +28,15 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     val spendableUtxos: List<Utxo> = utxos
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
-    val spendableBalance = spendableUtxos.map { it.amount }.sum()
+    val spendableBalance: Satoshi = spendableUtxos.map { it.amount }.sum()
 
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
 
-        /** Sign the inputs owned by this wallet (only works for P2WPKH scripts) */
-        fun sign(privKeyResolver: KeyResolver, tx: Transaction, parentTxs: Map<ByteVector32, Transaction>): Transaction =
-            tx.txIn
-                .foldIndexed(tx) { index, wipTx, txIn ->
-                    val txOut = parentTxs[txIn.outPoint.txid]?.txOut?.getOrNull(txIn.outPoint.index.toInt())
-                    signInput(privKeyResolver, wipTx, index, txOut).first
-                }
-
-        fun signInput(privKeyResolver: KeyResolver, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
+        /** Sign the given input if we have the corresponding private key (only works for P2WPKH scripts). */
+        fun signInput(keyManager: KeyManager, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
             val witness = parentTxOut
-                ?.let { privKeyResolver(it.publicKeyScript) }
+                ?.let { script2PrivateKey(keyManager, it.publicKeyScript) }
                 ?.let { privateKey ->
                     // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
                     // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
@@ -66,22 +59,14 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
             }
         }
 
-        /**
-         * Guesses the private key corresponding to this script, assuming this is a p2wpkh owned by us.
-         */
-        fun script2PrivateKey(keyManager: KeyManager, publicKeyScript: ByteVector): PrivateKey? {
+        /** Find the private key corresponding to this script, assuming this is a p2wpkh owned by us. */
+        private fun script2PrivateKey(keyManager: KeyManager, publicKeyScript: ByteVector): PrivateKey? {
             val priv = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
             val script = Script.write(Script.pay2wpkh(priv.publicKey())).toByteVector()
             return if (script == publicKeyScript) priv else null
         }
-
-        fun keyManagerResolver(keyManager: KeyManager): KeyResolver = { b: ByteVector -> script2PrivateKey(keyManager, b) }
-
-        fun singleKeyResolver(privateKey: PrivateKey): KeyResolver = { _: ByteVector -> privateKey }
     }
 }
-
-typealias KeyResolver = (ByteVector) -> PrivateKey?
 
 private sealed interface WalletCommand {
     companion object {
@@ -132,7 +117,6 @@ class ElectrumMiniWallet(
                 .filterIsInstance<ElectrumResponse>()
                 .collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
         }
-
         launch {
             mailbox.consumeAsFlow().collect {
                 when (it) {
@@ -140,7 +124,6 @@ class ElectrumMiniWallet(
                         logger.info { "electrum connected" }
                         scriptHashes.values.forEach { subscribe(it) }
                     }
-
                     is WalletCommand.Companion.ElectrumNotification -> {
                         // NB: we ignore responses for unknown script_hashes (electrum client doesn't maintain a list of subscribers so we receive all subscriptions)
                         when (val msg = it.msg) {
@@ -152,7 +135,6 @@ class ElectrumMiniWallet(
                                     }
                                 }
                             }
-
                             is ScriptHashListUnspentResponse -> {
                                 scriptHashes[msg.scriptHash]?.let { address ->
                                     val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
@@ -165,17 +147,14 @@ class ElectrumMiniWallet(
                                     _walletStateFlow.value = walletState
                                 }
                             }
-
                             is GetTransactionResponse -> {
                                 val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
                                 logger.info { "received parent transaction with txid=${msg.tx.txid}" }
                                 _walletStateFlow.value = walletState
                             }
-
                             else -> {} // ignore other electrum msgs
                         }
                     }
-
                     is WalletCommand.Companion.AddAddress -> {
                         logger.info { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
