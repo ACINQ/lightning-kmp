@@ -15,23 +15,23 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
     val channelId = state.channelId
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "c:$channelId offline processing ${event::class}" }
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "c:$channelId offline processing ${cmd::class}" }
         return when {
-            event is ChannelEvent.Connected -> {
+            cmd is ChannelCommand.Connected -> {
                 when {
                     state is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
                         // there isn't much to do except asking them again to publish their current commitment by sending an error
                         val exc = PleasePublishYourCommitment(channelId)
                         val error = Error(channelId, exc.message)
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
                         Pair(nextState, listOf(ChannelAction.Message.Send(error)))
                     }
                     staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> {
                         // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
                         logger.info { "c:$channelId syncing ${state::class}, waiting fo their channelReestablish message" }
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
                         Pair(Syncing(nextState, true), listOf())
                     }
                     else -> {
@@ -45,22 +45,22 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
                         ).withChannelData(state.commitments.remoteChannelData)
                         logger.info { "c:$channelId syncing ${state::class}" }
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(event.localInit, event.remoteInit))
+                        val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
                 }
             }
-            event is ChannelEvent.WatchReceived && event.watch is WatchEventConfirmed -> {
-                if (event.watch.event is BITCOIN_FUNDING_DEPTHOK || event.watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
-                    val watchSpent = WatchSpent(channelId, event.watch.tx, state.commitments.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
+            cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventConfirmed -> {
+                if (cmd.watch.event is BITCOIN_FUNDING_DEPTHOK || cmd.watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
+                    val watchSpent = WatchSpent(channelId, cmd.watch.tx, state.commitments.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
                     val nextState = when {
-                        state is WaitForFundingConfirmed && event.watch.tx.txid == state.commitments.fundingTxId -> {
-                            logger.info { "c:$channelId was confirmed while offline at blockHeight=${event.watch.blockHeight} txIndex=${event.watch.txIndex} with funding txid=${event.watch.tx.txid}" }
+                        state is WaitForFundingConfirmed && cmd.watch.tx.txid == state.commitments.fundingTxId -> {
+                            logger.info { "c:$channelId was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
                             state.copy(previousFundingTxs = listOf())
                         }
-                        state is WaitForFundingConfirmed && state.previousFundingTxs.find { event.watch.tx.txid == it.second.fundingTxId } != null -> {
-                            val (fundingTx, commitments) = state.previousFundingTxs.first { event.watch.tx.txid == it.second.fundingTxId }
-                            logger.info { "c:$channelId was confirmed while offline at blockHeight=${event.watch.blockHeight} txIndex=${event.watch.txIndex} with a previous funding txid=${event.watch.tx.txid}" }
+                        state is WaitForFundingConfirmed && state.previousFundingTxs.find { cmd.watch.tx.txid == it.second.fundingTxId } != null -> {
+                            val (fundingTx, commitments) = state.previousFundingTxs.first { cmd.watch.tx.txid == it.second.fundingTxId }
+                            logger.info { "c:$channelId was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with a previous funding txid=${cmd.watch.tx.txid}" }
                             state.copy(fundingTx = fundingTx, commitments = commitments, previousFundingTxs = listOf())
                         }
                         else -> state
@@ -70,10 +70,10 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     Pair(this, listOf())
                 }
             }
-            event is ChannelEvent.WatchReceived && event.watch is WatchEventSpent -> when {
-                state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == event.watch.tx.txid } -> {
-                    logger.info { "c:$channelId closing tx published: closingTxId=${event.watch.tx.txid}" }
-                    val closingTx = state.getMutualClosePublished(event.watch.tx)
+            cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventSpent -> when {
+                state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == cmd.watch.tx.txid } -> {
+                    logger.info { "c:$channelId closing tx published: closingTxId=${cmd.watch.tx.txid}" }
+                    val closingTx = state.getMutualClosePublished(cmd.watch.tx)
                     val nextState = Closing(
                         staticParams,
                         currentTip,
@@ -87,17 +87,17 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
-                        ChannelAction.Blockchain.PublishTx(event.watch.tx),
-                        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, event.watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(event.watch.tx)))
+                        ChannelAction.Blockchain.PublishTx(cmd.watch.tx),
+                        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, cmd.watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(cmd.watch.tx)))
                     )
                     Pair(nextState, actions)
                 }
-                event.watch.tx.txid == state.commitments.remoteCommit.txid -> state.handleRemoteSpentCurrent(event.watch.tx)
-                event.watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.handleRemoteSpentNext(event.watch.tx)
-                state is WaitForRemotePublishFutureCommitment -> state.handleRemoteSpentFuture(event.watch.tx)
-                else -> state.handleRemoteSpentOther(event.watch.tx)
+                cmd.watch.tx.txid == state.commitments.remoteCommit.txid -> state.handleRemoteSpentCurrent(cmd.watch.tx)
+                cmd.watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.handleRemoteSpentNext(cmd.watch.tx)
+                state is WaitForRemotePublishFutureCommitment -> state.handleRemoteSpentFuture(cmd.watch.tx)
+                else -> state.handleRemoteSpentOther(cmd.watch.tx)
             }
-            event is ChannelEvent.CheckHtlcTimeout -> {
+            cmd is ChannelCommand.CheckHtlcTimeout -> {
                 val (newState, actions) = state.checkHtlcTimeout()
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -105,16 +105,16 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            event is ChannelEvent.NewBlock -> {
-                val (newState, actions) = state.process(event)
+            cmd is ChannelCommand.NewBlock -> {
+                val (newState, actions) = state.process(cmd)
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_FORCECLOSE -> {
-                val (newState, actions) = state.process(event)
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
+                val (newState, actions) = state.process(cmd)
                 when (newState) {
                     // NB: it doesn't make sense to try to send outgoing messages if we're offline.
                     is Closing -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })
@@ -122,12 +122,12 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            else -> unhandled(event)
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
-        return Pair(this, listOf(ChannelAction.ProcessLocalError(t, event)))
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        return Pair(this, listOf(ChannelAction.ProcessLocalError(t, cmd)))
     }
 }

@@ -33,12 +33,12 @@ data class WaitForOpenChannel(
     val channelConfig: ChannelConfig,
     val remoteInit: Init
 ) : ChannelState() {
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived ->
-                when (event.message) {
+            cmd is ChannelCommand.MessageReceived ->
+                when (cmd.message) {
                     is OpenDualFundedChannel -> {
-                        val open = event.message
+                        val open = cmd.message
                         when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open, localParams.features)) {
                             is Either.Right -> {
                                 val channelFeatures = res.value
@@ -119,28 +119,28 @@ data class WaitForOpenChannel(
                                 }
                             }
                             is Either.Left -> {
-                                logger.error(res.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
+                                logger.error(res.value) { "c:$temporaryChannelId invalid ${cmd.message::class} in state ${this::class}" }
                                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
                             }
                         }
                     }
                     is Error -> {
-                        logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                        logger.error { "c:$temporaryChannelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
                     }
-                    else -> unhandled(event)
+                    else -> unhandled(cmd)
                 }
 
-            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
-            event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
-            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            else -> unhandled(event)
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
+            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$temporaryChannelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }

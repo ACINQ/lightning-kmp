@@ -18,32 +18,32 @@ data class ShuttingDown(
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when (event) {
-            is ChannelEvent.MessageReceived -> {
-                when (event.message) {
-                    is UpdateFulfillHtlc -> when (val result = commitments.receiveFulfill(event.message)) {
-                        is Either.Left -> handleLocalError(event, result.value)
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+        return when (cmd) {
+            is ChannelCommand.MessageReceived -> {
+                when (cmd.message) {
+                    is UpdateFulfillHtlc -> when (val result = commitments.receiveFulfill(cmd.message)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {
                             val (commitments1, paymentId, add) = result.value
-                            val htlcResult = ChannelAction.HtlcResult.Fulfill.RemoteFulfill(event.message)
+                            val htlcResult = ChannelAction.HtlcResult.Fulfill.RemoteFulfill(cmd.message)
                             Pair(this.copy(commitments = commitments1), listOf(ChannelAction.ProcessCmdRes.AddSettledFulfill(paymentId, add, htlcResult)))
                         }
                     }
-                    is UpdateFailHtlc -> when (val result = commitments.receiveFail(event.message)) {
-                        is Either.Left -> handleLocalError(event, result.value)
+                    is UpdateFailHtlc -> when (val result = commitments.receiveFail(cmd.message)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFailMalformedHtlc -> when (val result = commitments.receiveFailMalformed(event.message)) {
-                        is Either.Left -> handleLocalError(event, result.value)
+                    is UpdateFailMalformedHtlc -> when (val result = commitments.receiveFailMalformed(cmd.message)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(event.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
-                        is Either.Left -> handleLocalError(event, result.value)
+                    is UpdateFee -> when (val result = commitments.receiveFee(cmd.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when (val result = commitments.receiveCommit(event.message, keyManager, logger)) {
-                        is Either.Left -> handleLocalError(event, result.value)
+                    is CommitSig -> when (val result = commitments.receiveCommit(cmd.message, keyManager, logger)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {
                             val (commitments1, revocation) = result.value
                             when {
@@ -90,8 +90,8 @@ data class ShuttingDown(
                             }
                         }
                     }
-                    is RevokeAndAck -> when (val result = commitments.receiveRevocation(event.message)) {
-                        is Either.Left -> handleLocalError(event, result.value)
+                    is RevokeAndAck -> when (val result = commitments.receiveRevocation(cmd.message)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {
                             val (commitments1, actions) = result.value
                             val actions1 = actions.toMutableList()
@@ -135,27 +135,27 @@ data class ShuttingDown(
                         }
                     }
                     is Error -> {
-                        handleRemoteError(event.message)
+                        handleRemoteError(cmd.message)
                     }
-                    else -> unhandled(event)
+                    else -> unhandled(cmd)
                 }
             }
-            is ChannelEvent.ExecuteCommand -> when {
-                event.command is CMD_ADD_HTLC -> {
+            is ChannelCommand.ExecuteCommand -> when {
+                cmd.command is CMD_ADD_HTLC -> {
                     logger.info { "c:$channelId rejecting htlc request in state=${this::class}" }
                     // we don't provide a channel_update: this will be a permanent channel failure
-                    handleCommandError(event.command, ChannelUnavailable(channelId))
+                    handleCommandError(cmd.command, ChannelUnavailable(channelId))
                 }
-                event.command is CMD_SIGN && !commitments.localHasChanges() -> {
+                cmd.command is CMD_SIGN && !commitments.localHasChanges() -> {
                     logger.debug { "c:$channelId ignoring CMD_SIGN (nothing to sign)" }
                     Pair(this, listOf())
                 }
-                event.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
+                cmd.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
                     logger.debug { "c:$channelId already in the process of signing, will sign again as soon as possible" }
                     Pair(this.copy(commitments = this.commitments.copy(remoteNextCommitInfo = Either.Left(this.commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))), listOf())
                 }
-                event.command is CMD_SIGN -> when (val result = commitments.sendCommit(keyManager, logger)) {
-                    is Either.Left -> handleCommandError(event.command, result.value)
+                cmd.command is CMD_SIGN -> when (val result = commitments.sendCommit(keyManager, logger)) {
+                    is Either.Left -> handleCommandError(cmd.command, result.value)
                     is Either.Right -> {
                         val commitments1 = result.value.first
                         val nextRemoteCommit = commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit
@@ -176,32 +176,32 @@ data class ShuttingDown(
                         Pair(nextState, actions)
                     }
                 }
-                event.command is CMD_FULFILL_HTLC -> handleCommandResult(event.command, commitments.sendFulfill(event.command), event.command.commit)
-                event.command is CMD_FAIL_HTLC -> handleCommandResult(event.command, commitments.sendFail(event.command, staticParams.nodeParams.nodePrivateKey), event.command.commit)
-                event.command is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(event.command, commitments.sendFailMalformed(event.command), event.command.commit)
-                event.command is CMD_UPDATE_FEE -> handleCommandResult(event.command, commitments.sendFee(event.command), event.command.commit)
-                event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
-                event.command is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
-                else -> unhandled(event)
+                cmd.command is CMD_FULFILL_HTLC -> handleCommandResult(cmd.command, commitments.sendFulfill(cmd.command), cmd.command.commit)
+                cmd.command is CMD_FAIL_HTLC -> handleCommandResult(cmd.command, commitments.sendFail(cmd.command, staticParams.nodeParams.nodePrivateKey), cmd.command.commit)
+                cmd.command is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(cmd.command, commitments.sendFailMalformed(cmd.command), cmd.command.commit)
+                cmd.command is CMD_UPDATE_FEE -> handleCommandResult(cmd.command, commitments.sendFee(cmd.command), cmd.command.commit)
+                cmd.command is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
+                cmd.command is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+                else -> unhandled(cmd)
             }
-            is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
+            is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventSpent -> when (watch.tx.txid) {
                     commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
                     commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> handleRemoteSpentNext(watch.tx)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
-                else -> unhandled(event)
+                else -> unhandled(cmd)
             }
-            is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
-            else -> unhandled(event)
+            is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
     }

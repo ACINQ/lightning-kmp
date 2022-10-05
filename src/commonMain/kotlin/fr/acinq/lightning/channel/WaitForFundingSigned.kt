@@ -44,17 +44,17 @@ data class WaitForFundingSigned(
 ) : ChannelState() {
     val channelId: ByteVector32 = fundingParams.channelId
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is CommitSig -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> {
                 val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                     keyManager, localParams, remoteParams,
                     fundingTx,
-                    firstCommitTx, event.message,
+                    firstCommitTx, cmd.message,
                     channelConfig, channelFeatures, channelFlags, remoteFirstPerCommitmentPoint
                 )
                 when (firstCommitmentsRes) {
-                    Helpers.Funding.InvalidRemoteCommitSig -> handleLocalError(event, InvalidCommitmentSignature(channelId, firstCommitTx.localCommitTx.tx.txid))
+                    Helpers.Funding.InvalidRemoteCommitSig -> handleLocalError(cmd, InvalidCommitmentSignature(channelId, firstCommitTx.localCommitTx.tx.txid))
                     Helpers.Funding.FundingSigFailure -> {
                         logger.warning { "c:$channelId could not sign funding tx" }
                         Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
@@ -106,37 +106,37 @@ data class WaitForFundingSigned(
                     }
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is TxSignatures -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> {
                 logger.warning { "c:$channelId received tx_signatures before commit_sig, aborting" }
-                handleLocalError(event, UnexpectedFundingSignatures(channelId))
+                handleLocalError(cmd, UnexpectedFundingSignatures(channelId))
             }
-            event is ChannelEvent.MessageReceived && event.message is TxInitRbf -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
                 logger.info { "c:$channelId ignoring unexpected tx_init_rbf message" }
                 Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
-            event is ChannelEvent.MessageReceived && event.message is TxAckRbf -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> {
                 logger.info { "c:$channelId ignoring unexpected tx_ack_rbf message" }
                 Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
-            event is ChannelEvent.MessageReceived && event.message is TxAbort -> {
-                logger.warning { "c:$channelId our peer aborted the dual funding flow: ascii='${event.message.toAscii()}' bin=${event.message.data.toHex()}" }
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
+                logger.warning { "c:$channelId our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.MessageReceived && event.message is Error -> {
-                logger.error { "c:$channelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
+                logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> handleLocalError(event, ChannelFundingError(channelId))
-            event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
-            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            event is ChannelEvent.Disconnected -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
-            else -> unhandled(event)
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
+            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            cmd is ChannelCommand.Disconnected -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }

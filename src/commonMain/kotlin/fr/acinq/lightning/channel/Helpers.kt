@@ -109,7 +109,7 @@ object Helpers {
     }
 
     /** Called by the initiator. */
-    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelEvent.InitInitiator, open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelCommand.InitInitiator, open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): Either<ChannelException, ChannelFeatures> {
         require(open.channelType != null) { "we should have sent a channel type in open_channel" }
         if (accept.channelType == null) {
             // We only open channels to peers who support explicit channel type negotiation.

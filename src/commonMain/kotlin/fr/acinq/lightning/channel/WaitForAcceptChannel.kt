@@ -27,15 +27,15 @@ data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
-    val init: ChannelEvent.InitInitiator,
+    val init: ChannelCommand.InitInitiator,
     val lastSent: OpenDualFundedChannel
 ) : ChannelState() {
     private val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is AcceptDualFundedChannel -> {
-                val accept = event.message
+            cmd is ChannelCommand.MessageReceived && cmd.message is AcceptDualFundedChannel -> {
+                val accept = cmd.message
                 when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, accept)) {
                     is Either.Right -> {
                         val channelFeatures = res.value
@@ -102,25 +102,25 @@ data class WaitForAcceptChannel(
                         }
                     }
                     is Either.Left -> {
-                        logger.error(res.value) { "c:$temporaryChannelId invalid ${event.message::class} in state ${this::class}" }
+                        logger.error(res.value) { "c:$temporaryChannelId invalid ${cmd.message::class} in state ${this::class}" }
                         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId, res.value.message))))
                     }
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is Error -> {
-                logger.error { "c:$temporaryChannelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
+                logger.error { "c:$temporaryChannelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
-            event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
-            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            else -> unhandled(event)
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
+            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$temporaryChannelId error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$temporaryChannelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(init.temporaryChannelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }

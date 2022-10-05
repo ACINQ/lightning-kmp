@@ -64,10 +64,10 @@ data class Closing(
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        return when (event) {
-            is ChannelEvent.WatchReceived -> {
-                val watch = event.watch
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+        return when (cmd) {
+            is ChannelCommand.WatchReceived -> {
+                val watch = cmd.watch
                 when {
                     watch is WatchEventConfirmed && watch.event is BITCOIN_FUNDING_DEPTHOK -> {
                         when (val commitments1 = alternativeCommitments.find { it.fundingTxId == watch.tx.txid }) {
@@ -247,13 +247,13 @@ data class Closing(
                         }
                         Pair(nextState, actions)
                     }
-                    else -> unhandled(event)
+                    else -> unhandled(cmd)
                 }
             }
-            is ChannelEvent.GetHtlcInfosResponse -> {
-                val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == event.revokedCommitTxId }
+            is ChannelCommand.GetHtlcInfosResponse -> {
+                val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == cmd.revokedCommitTxId }
                 if (index >= 0) {
-                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(keyManager, commitments, revokedCommitPublished[index], currentOnChainFeerates, event.htlcInfos)
+                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(keyManager, commitments, revokedCommitPublished[index], currentOnChainFeerates, cmd.htlcInfos)
                     val nextState = copy(revokedCommitPublished = revokedCommitPublished.updated(index, revokedCommitPublished1))
                     val actions = buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
@@ -261,11 +261,11 @@ data class Closing(
                     }
                     Pair(nextState, actions)
                 } else {
-                    logger.warning { "c:$channelId cannot find revoked commit with txid=${event.revokedCommitTxId}" }
+                    logger.warning { "c:$channelId cannot find revoked commit with txid=${cmd.revokedCommitTxId}" }
                     Pair(this, listOf())
                 }
             }
-            is ChannelEvent.MessageReceived -> when (event.message) {
+            is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReestablish -> {
                     // they haven't detected that we were closing and are trying to reestablish a connection
                     // we give them one of the published txs as a hint
@@ -275,20 +275,20 @@ data class Closing(
                     Pair(this, listOf(ChannelAction.Message.Send(error)))
                 }
                 is Error -> {
-                    logger.error { "c:$channelId peer sent error: ascii=${event.message.toAscii()} bin=${event.message.data.toHex()}" }
+                    logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                     // nothing to do, there is already a spending tx published
                     Pair(this, listOf())
                 }
-                else -> unhandled(event)
+                else -> unhandled(cmd)
             }
-            is ChannelEvent.ExecuteCommand -> when (event.command) {
-                is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
+            is ChannelCommand.ExecuteCommand -> when (cmd.command) {
+                is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
                 is CMD_ADD_HTLC -> {
                     logger.info { "c:$channelId rejecting htlc request in state=${this::class}" }
                     // we don't provide a channel_update: this will be a permanent channel failure
-                    handleCommandError(event.command, ChannelUnavailable(channelId))
+                    handleCommandError(cmd.command, ChannelUnavailable(channelId))
                 }
-                is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(event.command)) {
+                is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(cmd.command)) {
                     is Either.Right -> {
                         logger.info { "c:$channelId got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
                         val commitments1 = result.value.first
@@ -320,20 +320,20 @@ data class Closing(
                         }
                         Pair(nextState, actions)
                     }
-                    is Either.Left -> handleCommandError(event.command, result.value)
+                    is Either.Left -> handleCommandError(cmd.command, result.value)
                 }
-                else -> unhandled(event)
+                else -> unhandled(cmd)
             }
-            is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
-            else -> unhandled(event)
+            is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error processing ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$channelId error processing ${cmd::class} in state ${this::class}" }
         return localCommitPublished?.let {
             // we're already trying to claim our commitment, there's nothing more we can do
             Pair(this, listOf())

@@ -23,14 +23,14 @@ import kotlin.time.Duration.Companion.seconds
 
 
 /*
-    Events
+    Commands
  */
-internal sealed class ClientEvent
-internal object Connected : ClientEvent()
-internal object Disconnected : ClientEvent()
-internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientEvent()
-internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest) : ClientEvent()
-internal object AskForHeader : ClientEvent()
+internal sealed class ClientCommand
+internal object Connected : ClientCommand()
+internal object Disconnected : ClientCommand()
+internal data class ReceivedResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ClientCommand()
+internal data class SendElectrumApiCall(val electrumRequest: ElectrumRequest) : ClientCommand()
+internal object AskForHeader : ClientCommand()
 
 /*
     Actions
@@ -53,13 +53,13 @@ internal data class BroadcastStatus(val connection: Connection) : ElectrumClient
  *
  */
 internal sealed class ClientState {
-    abstract fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>>
+    abstract fun process(cmd: ClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>>
 }
 
 internal object WaitingForVersion : ClientState() {
-    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when {
-        event is ReceivedResponse && event.response is Either.Right -> {
-            when (parseJsonResponse(version, event.response.value)) {
+    override fun process(cmd: ClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when {
+        cmd is ReceivedResponse && cmd.response is Either.Right -> {
+            when (parseJsonResponse(version, cmd.response.value)) {
                 is ServerVersionResponse -> newState {
                     state = WaitingForTip
                     actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
@@ -71,15 +71,15 @@ internal object WaitingForVersion : ClientState() {
                 else -> returnState() // TODO handle error?
             }
         }
-        else -> unhandled(event, logger)
+        else -> unhandled(cmd, logger)
     }
 }
 
 internal object WaitingForTip : ClientState() {
-    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
-        when (event) {
+    override fun process(cmd: ClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
+        when (cmd) {
             is ReceivedResponse -> {
-                when (val rpcResponse = event.response) {
+                when (val rpcResponse = cmd.response) {
                     is Either.Right ->
                         when (val response = parseJsonResponse(HeaderSubscription, rpcResponse.value)) {
                             is HeaderSubscriptionResponse -> newState {
@@ -91,7 +91,7 @@ internal object WaitingForTip : ClientState() {
                     else -> returnState()
                 }
             }
-            else -> unhandled(event, logger)
+            else -> unhandled(cmd, logger)
         }
 }
 
@@ -102,10 +102,10 @@ internal data class ClientRunning(
     val responseTimestamps: MutableMap<Int, Long?> = mutableMapOf()
 ) : ClientState() {
 
-    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when (event) {
+    override fun process(cmd: ClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when (cmd) {
         is AskForHeader -> returnState(SendHeader(height, tip))
-        is SendElectrumApiCall -> returnState(sendRequest(event.electrumRequest))
-        is ReceivedResponse -> when (val response = event.response) {
+        is SendElectrumApiCall -> returnState(sendRequest(cmd.electrumRequest))
+        is ReceivedResponse -> when (val response = cmd.response) {
             is Either.Left -> when (val electrumResponse = response.value) {
                 is HeaderSubscriptionResponse -> newState {
                     state = copy(height = electrumResponse.blockHeight, tip = electrumResponse.header)
@@ -125,7 +125,7 @@ internal data class ClientRunning(
                 } ?: returnState()
             }
         }
-        else -> unhandled(event, logger)
+        else -> unhandled(cmd, logger)
     }
 
     private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
@@ -137,17 +137,17 @@ internal data class ClientRunning(
 }
 
 internal object ClientClosed : ClientState() {
-    override fun process(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
-        when (event) {
+    override fun process(cmd: ClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
+        when (cmd) {
             Connected -> newState {
                 state = WaitingForVersion
                 actions = listOf(SendRequest(version.asJsonRPCRequest()))
             }
-            else -> unhandled(event, logger)
+            else -> unhandled(cmd, logger)
         }
 }
 
-private fun ClientState.unhandled(event: ClientEvent, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
+private fun ClientState.unhandled(event: ClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
         Disconnected -> ClientClosed to emptyList()
         AskForHeader -> returnState() // TODO something else ?
@@ -192,7 +192,7 @@ class ElectrumClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     // channel to send and receive request/responses with the server
-    private val eventChannel: Channel<ClientEvent> = Channel(BUFFERED)
+    private val eventChannel: Channel<ClientCommand> = Channel(BUFFERED)
     private var output: Channel<ByteArray> = Channel(BUFFERED)
 
     // connection status to the server

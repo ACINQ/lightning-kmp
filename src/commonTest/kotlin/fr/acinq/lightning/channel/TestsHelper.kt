@@ -110,7 +110,7 @@ object TestsHelper {
         val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
         val bobInit = Init(bobFeatures.toByteArray().toByteVector())
         val (alice1, actionsAlice1) = alice.process(
-            ChannelEvent.InitInitiator(
+            ChannelCommand.InitInitiator(
                 aliceFundingAmount,
                 alicePushAmount,
                 createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
@@ -126,7 +126,7 @@ object TestsHelper {
         )
         assertIs<WaitForAcceptChannel>(alice1)
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else WalletState.empty
-        val (bob1, _) = bob.process(ChannelEvent.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val (bob1, _) = bob.process(ChannelCommand.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<WaitForOpenChannel>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -144,11 +144,11 @@ object TestsHelper {
         zeroConf: Boolean = false,
     ): Triple<Normal, Normal, Transaction> {
         val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(channelReadyBob))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<Normal>(alice1)
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(channelReadyAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(channelReadyAlice))
         assertIs<Normal>(bob1)
         assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
@@ -156,34 +156,34 @@ object TestsHelper {
     }
 
     fun mutualCloseAlice(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
         assertTrue(alice1 is Normal)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingSigned>())
 
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(shutdownAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
         assertTrue(bob1 is Negotiating)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
 
-        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(shutdownBob))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
         assertTrue(alice2 is Negotiating)
         val closingSignedAlice = actionsAlice2.findOutgoingMessage<ClosingSigned>()
         return Triple(alice2, bob1, closingSignedAlice)
     }
 
     fun mutualCloseBob(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
         assertTrue(bob1 is Normal)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
 
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(shutdownBob))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(shutdownBob))
         assertTrue(alice1 is Negotiating)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         val closingSignedAlice = actionsAlice1.findOutgoingMessage<ClosingSigned>()
 
-        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(shutdownAlice))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(shutdownAlice))
         assertTrue(bob2 is Negotiating)
         assertNull(actionsBob2.findOutgoingMessageOpt<ClosingSigned>())
         return Triple(alice1, bob2, closingSignedAlice)
@@ -194,7 +194,7 @@ object TestsHelper {
         assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.commitments.channelFeatures.channelType)
         // an error occurs and s publishes their commit tx
         val commitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
-        val (s1, actions1) = s.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertTrue(s1 is Closing)
         actions1.has<ChannelAction.Storage.StoreState>()
         actions1.has<ChannelAction.Storage.StoreChannelClosing>()
@@ -237,7 +237,7 @@ object TestsHelper {
         assertTrue(s is ChannelStateWithCommitments)
         assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.commitments.channelFeatures.channelType)
         // we make s believe r unilaterally closed the channel
-        val (s1, actions1) = s.process(ChannelEvent.WatchReceived(WatchEventSpent(s.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
+        val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
         assertTrue(s1 is Closing)
 
         if (s !is Closing) {
@@ -282,11 +282,11 @@ object TestsHelper {
     }
 
     fun signAndRevack(alice: ChannelState, bob: ChannelState): Pair<ChannelState, ChannelState> {
-        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions1.findOutgoingMessage<CommitSig>()
-        val (bob1, actions2) = bob.process(ChannelEvent.MessageReceived(commitSig))
+        val (bob1, actions2) = bob.process(ChannelCommand.MessageReceived(commitSig))
         val revack = actions2.findOutgoingMessage<RevokeAndAck>()
-        val (alice2, _) = alice1.process(ChannelEvent.MessageReceived(revack))
+        val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(revack))
         return Pair(alice2, bob1)
     }
 
@@ -319,10 +319,10 @@ object TestsHelper {
     }
 
     fun addHtlc(cmdAdd: CMD_ADD_HTLC, payer: ChannelState, payee: ChannelState): Triple<ChannelState, ChannelState, UpdateAddHtlc> {
-        val (sender0, senderActions0) = payer.process(ChannelEvent.ExecuteCommand(cmdAdd))
+        val (sender0, senderActions0) = payer.process(ChannelCommand.ExecuteCommand(cmdAdd))
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
-        val (receiver0, _) = payee.process(ChannelEvent.MessageReceived(htlc))
+        val (receiver0, _) = payee.process(ChannelCommand.MessageReceived(htlc))
         assertTrue(receiver0 is ChannelStateWithCommitments)
         assertTrue(receiver0.commitments.remoteChanges.proposed.contains(htlc))
 
@@ -330,10 +330,10 @@ object TestsHelper {
     }
 
     fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, payer: ChannelState, payee: ChannelState): Pair<ChannelState, ChannelState> {
-        val (payee0, payeeActions0) = payee.process(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
+        val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
         val fulfillHtlc = payeeActions0.findOutgoingMessage<UpdateFulfillHtlc>()
 
-        val (payer0, _) = payer.process(ChannelEvent.MessageReceived(fulfillHtlc))
+        val (payer0, _) = payer.process(ChannelCommand.MessageReceived(fulfillHtlc))
         assertTrue(payer0 is ChannelStateWithCommitments)
         assertTrue(payer0.commitments.remoteChanges.proposed.contains(fulfillHtlc))
 
@@ -341,10 +341,10 @@ object TestsHelper {
     }
 
     fun failHtlc(id: Long, payer: ChannelState, payee: ChannelState): Pair<ChannelState, ChannelState> {
-        val (payee0, payeeActions0) = payee.process(ChannelEvent.ExecuteCommand(CMD_FAIL_HTLC(id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure))))
+        val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure))))
         val failHtlc = payeeActions0.findOutgoingMessage<UpdateFailHtlc>()
 
-        val (payer0, _) = payer.process(ChannelEvent.MessageReceived(failHtlc))
+        val (payer0, _) = payer.process(ChannelCommand.MessageReceived(failHtlc))
         assertTrue(payer0 is ChannelStateWithCommitments)
         assertTrue(payer0.commitments.remoteChanges.proposed.contains(failHtlc))
 
@@ -362,29 +362,29 @@ object TestsHelper {
         val rCommitIndex = nodeB.commitments.localCommit.index
         val rHasChanges = nodeB.commitments.localHasChanges()
 
-        val (sender0, sActions0) = nodeA.process(ChannelEvent.ExecuteCommand(CMD_SIGN))
+        val (sender0, sActions0) = nodeA.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
 
-        val (receiver0, rActions0) = nodeB.process(ChannelEvent.MessageReceived(commitSig0))
+        val (receiver0, rActions0) = nodeB.process(ChannelCommand.MessageReceived(commitSig0))
         val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
         val commandSign0 = rActions0.findCommand<CMD_SIGN>()
 
-        val (sender1, _) = sender0.process(ChannelEvent.MessageReceived(revokeAndAck0))
-        val (receiver1, rActions1) = receiver0.process(ChannelEvent.ExecuteCommand(commandSign0))
+        val (sender1, _) = sender0.process(ChannelCommand.MessageReceived(revokeAndAck0))
+        val (receiver1, rActions1) = receiver0.process(ChannelCommand.ExecuteCommand(commandSign0))
         val commitSig1 = rActions1.findOutgoingMessage<CommitSig>()
 
-        val (sender2, sActions2) = sender1.process(ChannelEvent.MessageReceived(commitSig1))
+        val (sender2, sActions2) = sender1.process(ChannelCommand.MessageReceived(commitSig1))
         val revokeAndAck1 = sActions2.findOutgoingMessage<RevokeAndAck>()
-        val (receiver2, _) = receiver1.process(ChannelEvent.MessageReceived(revokeAndAck1))
+        val (receiver2, _) = receiver1.process(ChannelCommand.MessageReceived(revokeAndAck1))
 
         if (rHasChanges) {
             val commandSign1 = sActions2.findCommand<CMD_SIGN>()
-            val (sender3, sActions3) = sender2.process(ChannelEvent.ExecuteCommand(commandSign1))
+            val (sender3, sActions3) = sender2.process(ChannelCommand.ExecuteCommand(commandSign1))
             val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
 
-            val (receiver3, rActions3) = receiver2.process(ChannelEvent.MessageReceived(commitSig2))
+            val (receiver3, rActions3) = receiver2.process(ChannelCommand.MessageReceived(commitSig2))
             val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
-            val (sender4, _) = sender3.process(ChannelEvent.MessageReceived(revokeAndAck2))
+            val (sender4, _) = sender3.process(ChannelCommand.MessageReceived(revokeAndAck2))
 
             sender4 as ChannelStateWithCommitments; receiver3 as ChannelStateWithCommitments
             assertEquals(sCommitIndex + 1, sender4.commitments.localCommit.index)
@@ -478,7 +478,7 @@ object TestsHelper {
     }
 
     // test-specific extension that allows for extra checks during tests
-    fun ChannelState.processEx(event: ChannelEvent, minVersion: Int = 1): Pair<ChannelState, List<ChannelAction>> {
+    fun ChannelState.processEx(event: ChannelCommand, minVersion: Int = 1): Pair<ChannelState, List<ChannelAction>> {
         val result = this.process(event)
         checkSerialization(result.second, minVersion)
         return result

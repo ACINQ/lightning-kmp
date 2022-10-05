@@ -28,7 +28,7 @@ import org.kodein.log.newLogger
  */
 
 /** Channel Events (inputs to be fed to the state machine). */
-sealed class ChannelEvent {
+sealed class ChannelCommand {
     data class InitInitiator(
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
@@ -41,7 +41,7 @@ sealed class ChannelEvent {
         val channelConfig: ChannelConfig,
         val channelType: ChannelType.SupportedChannelType,
         val channelOrigin: ChannelOrigin? = null
-    ) : ChannelEvent() {
+    ) : ChannelCommand() {
         val temporaryChannelId: ByteVector32 = localParams.channelKeys.temporaryChannelId
     }
 
@@ -53,24 +53,24 @@ sealed class ChannelEvent {
         val localParams: LocalParams,
         val channelConfig: ChannelConfig,
         val remoteInit: Init
-    ) : ChannelEvent()
+    ) : ChannelCommand()
 
-    data class Restore(val state: ChannelState) : ChannelEvent()
-    object CheckHtlcTimeout : ChannelEvent()
-    data class MessageReceived(val message: LightningMessage) : ChannelEvent()
-    data class WatchReceived(val watch: WatchEvent) : ChannelEvent()
-    data class ExecuteCommand(val command: Command) : ChannelEvent()
-    data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelEvent()
-    data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelEvent()
-    data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelEvent()
-    object Disconnected : ChannelEvent()
-    data class Connected(val localInit: Init, val remoteInit: Init) : ChannelEvent()
+    data class Restore(val state: ChannelState) : ChannelCommand()
+    object CheckHtlcTimeout : ChannelCommand()
+    data class MessageReceived(val message: LightningMessage) : ChannelCommand()
+    data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
+    data class ExecuteCommand(val command: Command) : ChannelCommand()
+    data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelCommand()
+    data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelCommand()
+    data class SetOnChainFeerates(val feerates: OnChainFeerates) : ChannelCommand()
+    object Disconnected : ChannelCommand()
+    data class Connected(val localInit: Init, val remoteInit: Init) : ChannelCommand()
 }
 
 /** Channel Actions (outputs produced by the state machine). */
 sealed class ChannelAction {
 
-    data class ProcessLocalError(val error: Throwable, val trigger: ChannelEvent) : ChannelAction()
+    data class ProcessLocalError(val error: Throwable, val trigger: ChannelCommand) : ChannelAction()
 
     sealed class Message : ChannelAction() {
         data class Send(val message: LightningMessage) : Message()
@@ -150,14 +150,14 @@ sealed class ChannelState : LoggingContext {
     override val logger: Logger get() = staticParams.nodeParams.loggerFactory.newLogger(this::class)
 
     /**
-     * @param event input event (for example, a message was received, a command was sent by the GUI/API, etc)
+     * @param cmd input event (for example, a message was received, a command was sent by the GUI/API, etc)
      * @return a (new state, list of actions) pair
      */
-    abstract fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>>
+    abstract fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>>
 
-    fun process(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    fun process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return try {
-            val (newState, actions) = processInternal(event)
+            val (newState, actions) = processInternal(cmd)
             val oldState = when (this) {
                 is Offline -> this.state
                 is Syncing -> this.state
@@ -220,14 +220,14 @@ sealed class ChannelState : LoggingContext {
             val actions2 = newState.updateActions(actions1)
             Pair(newState, actions2)
         } catch (t: Throwable) {
-            handleLocalError(event, t)
+            handleLocalError(cmd, t)
         }
     }
 
-    abstract fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>>
+    abstract fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
-    internal fun unhandled(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled event ${event::class} in state ${this::class}" }
+    internal fun unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "unhandled event ${cmd::class} in state ${this::class}" }
         return Pair(this, listOf())
     }
 

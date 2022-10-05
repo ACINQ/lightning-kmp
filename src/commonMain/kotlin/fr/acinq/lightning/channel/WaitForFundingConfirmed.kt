@@ -28,14 +28,14 @@ data class WaitForFundingConfirmed(
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is TxSignatures -> when (fundingTx) {
-                is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(event.message)) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (fundingTx) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(cmd.message)) {
                     null -> {
-                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${event.message.txId}" }
+                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
-                        Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, event.message.txId).message))))
+                        Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
                     else -> {
                         logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
@@ -60,7 +60,7 @@ data class WaitForFundingConfirmed(
                     }
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is TxInitRbf -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
                 if (isInitiator) {
                     logger.info { "c:$channelId rejecting tx_init_rbf, we're the initiator, not them!" }
                     Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfNonInitiator(channelId).message))))
@@ -71,25 +71,25 @@ data class WaitForFundingConfirmed(
                             logger.info { "c:$channelId rejecting rbf attempt: the current rbf attempt must be completed or aborted first" }
                             Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfAlreadyInProgress(channelId).message))))
                         }
-                        event.message.feerate < minNextFeerate -> {
-                            logger.info { "c:$channelId rejecting rbf attempt: the new feerate must be at least $minNextFeerate (proposed=${event.message.feerate})" }
-                            Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfFeerate(channelId, event.message.feerate, minNextFeerate).message))))
+                        cmd.message.feerate < minNextFeerate -> {
+                            logger.info { "c:$channelId rejecting rbf attempt: the new feerate must be at least $minNextFeerate (proposed=${cmd.message.feerate})" }
+                            Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfFeerate(channelId, cmd.message.feerate, minNextFeerate).message))))
                         }
-                        event.message.fundingContribution.toMilliSatoshi() < remotePushAmount -> {
-                            logger.info { "c:$channelId rejecting rbf attempt: invalid amount pushed (fundingAmount=${event.message.fundingContribution}, pushAmount=$remotePushAmount)" }
-                            Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidPushAmount(channelId, remotePushAmount, event.message.fundingContribution.toMilliSatoshi()).message))))
+                        cmd.message.fundingContribution.toMilliSatoshi() < remotePushAmount -> {
+                            logger.info { "c:$channelId rejecting rbf attempt: invalid amount pushed (fundingAmount=${cmd.message.fundingContribution}, pushAmount=$remotePushAmount)" }
+                            Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidPushAmount(channelId, remotePushAmount, cmd.message.fundingContribution.toMilliSatoshi()).message))))
                         }
                         else -> {
-                            logger.info { "c:$channelId our peer wants to raise the feerate of the funding transaction (previous=${fundingParams.targetFeerate} target=${event.message.feerate})" }
+                            logger.info { "c:$channelId our peer wants to raise the feerate of the funding transaction (previous=${fundingParams.targetFeerate} target=${cmd.message.feerate})" }
                             val fundingParams = InteractiveTxParams(
                                 channelId,
                                 isInitiator,
                                 fundingParams.localAmount, // we don't change our funding contribution
-                                event.message.fundingContribution,
+                                cmd.message.fundingContribution,
                                 fundingParams.fundingPubkeyScript,
-                                event.message.lockTime,
+                                cmd.message.lockTime,
                                 fundingParams.dustLimit,
-                                event.message.feerate
+                                cmd.message.feerate
                             )
                             val toSend = buildList<Either<TxAddInput, TxAddOutput>> {
                                 addAll(fundingTx.tx.localInputs.map { Either.Left(it) })
@@ -102,14 +102,14 @@ data class WaitForFundingConfirmed(
                     }
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is TxAckRbf -> when (rbfStatus) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> when (rbfStatus) {
                 is RbfStatus.RbfRequested -> {
-                    logger.info { "c:$channelId our peer accepted our rbf attempt and will contribute ${event.message.fundingContribution} to the funding transaction" }
+                    logger.info { "c:$channelId our peer accepted our rbf attempt and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                     val fundingParams = InteractiveTxParams(
                         channelId,
                         isInitiator,
                         rbfStatus.command.fundingAmount,
-                        event.message.fundingContribution,
+                        cmd.message.fundingContribution,
                         fundingParams.fundingPubkeyScript,
                         rbfStatus.command.lockTime,
                         fundingParams.dustLimit,
@@ -137,12 +137,12 @@ data class WaitForFundingConfirmed(
                 }
                 else -> {
                     logger.info { "c:$channelId ignoring unexpected tx_ack_rbf" }
-                    Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, event.message).message))))
+                    Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message))))
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is InteractiveTxConstructionMessage -> when (rbfStatus) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is InteractiveTxConstructionMessage -> when (rbfStatus) {
                 is RbfStatus.InProgress -> {
-                    val (rbfSession1, interactiveTxAction) = rbfStatus.rbfSession.receive(event.message)
+                    val (rbfSession1, interactiveTxAction) = rbfStatus.rbfSession.receive(cmd.message)
                     when (interactiveTxAction) {
                         is InteractiveTxSessionAction.SendMessage -> Pair(this.copy(rbfStatus = rbfStatus.copy(rbfSession1)), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                         is InteractiveTxSessionAction.SignSharedTx -> {
@@ -184,16 +184,16 @@ data class WaitForFundingConfirmed(
                     }
                 }
                 else -> {
-                    logger.info { "c:$channelId ignoring unexpected interactive-tx message: ${event.message::class}" }
-                    Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, event.message).message))))
+                    logger.info { "c:$channelId ignoring unexpected interactive-tx message: ${cmd.message::class}" }
+                    Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message))))
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is CommitSig -> when (rbfStatus) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> when (rbfStatus) {
                 is RbfStatus.WaitForCommitSig -> {
                     val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                         keyManager, commitments.localParams, commitments.remoteParams,
                         rbfStatus.fundingTx,
-                        rbfStatus.commitTx, event.message,
+                        rbfStatus.commitTx, cmd.message,
                         commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags, commitments.remoteCommit.remotePerCommitmentPoint
                     )
                     when (firstCommitmentsRes) {
@@ -237,27 +237,27 @@ data class WaitForFundingConfirmed(
                     Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedCommitSig(channelId).message))))
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is TxAbort -> when (rbfStatus) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> when (rbfStatus) {
                 RbfStatus.None -> {
                     logger.info { "c:$channelId ignoring unexpected tx_abort message" }
-                    Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, event.message).message))))
+                    Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message))))
                 }
                 else -> {
-                    logger.info { "c:$channelId our peer aborted the rbf attempt: ascii='${event.message.toAscii()}' bin=${event.message.data.toHex()}" }
+                    logger.info { "c:$channelId our peer aborted the rbf attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
                     Pair(this.copy(rbfStatus = RbfStatus.None), listOf())
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is ChannelReady -> Pair(this.copy(deferred = event.message), listOf())
-            event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)
-            event is ChannelEvent.WatchReceived && event.watch is WatchEventConfirmed -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is ChannelReady -> Pair(this.copy(deferred = cmd.message), listOf())
+            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
+            cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventConfirmed -> {
                 val allFundingTxs = listOf(Pair(fundingTx, commitments)) + previousFundingTxs
-                when (val confirmedTx = allFundingTxs.find { it.second.fundingTxId == event.watch.tx.txid }) {
+                when (val confirmedTx = allFundingTxs.find { it.second.fundingTxId == cmd.watch.tx.txid }) {
                     null -> {
-                        logger.error { "c:$channelId internal error: the funding tx that confirmed doesn't match any of our funding txs: ${event.watch.tx}" }
+                        logger.error { "c:$channelId internal error: the funding tx that confirmed doesn't match any of our funding txs: ${cmd.watch.tx}" }
                         Pair(this, listOf())
                     }
                     else -> {
-                        logger.info { "c:$channelId was confirmed at blockHeight=${event.watch.blockHeight} txIndex=${event.watch.txIndex} with funding txid=${event.watch.tx.txid}" }
+                        logger.info { "c:$channelId was confirmed at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
                         val (_, commitments) = confirmedTx
                         val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys.shaSeed, 1)
@@ -265,17 +265,17 @@ data class WaitForFundingConfirmed(
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
-                        val shortChannelId = ShortChannelId(event.watch.blockHeight, event.watch.txIndex, commitments.commitInput.outPoint.index.toInt())
+                        val shortChannelId = ShortChannelId(cmd.watch.blockHeight, cmd.watch.txIndex, commitments.commitInput.outPoint.index.toInt())
                         val nextState = WaitForChannelReady(staticParams, currentTip, currentOnChainFeerates, commitments, fundingParams, fundingTx, shortChannelId, channelReady)
                         val actions = buildList {
                             add(ChannelAction.Blockchain.SendWatch(watchSpent))
-                            if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, event.watch.tx.txid).message)))
+                            if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, cmd.watch.tx.txid).message)))
                             add(ChannelAction.Message.Send(channelReady))
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
                         if (deferred != null) {
                             logger.info { "c:$channelId funding_locked has already been received" }
-                            val (nextState1, actions1) = nextState.process(ChannelEvent.MessageReceived(deferred))
+                            val (nextState1, actions1) = nextState.process(ChannelCommand.MessageReceived(deferred))
                             Pair(nextState1, actions + actions1)
                         } else {
                             Pair(nextState, actions)
@@ -283,7 +283,7 @@ data class WaitForFundingConfirmed(
                     }
                 }
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_BUMP_FUNDING_FEE -> when {
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_BUMP_FUNDING_FEE -> when {
                 !fundingParams.isInitiator -> {
                     logger.warning { "c:$channelId cannot initiate rbf, we're not the initiator" }
                     Pair(this, listOf())
@@ -293,23 +293,23 @@ data class WaitForFundingConfirmed(
                     Pair(this, listOf())
                 }
                 else -> {
-                    logger.info { "c:$channelId initiating rbf (current feerate = ${fundingParams.targetFeerate}, next feerate = ${event.command.targetFeerate})" }
-                    val txInitRbf = TxInitRbf(channelId, event.command.lockTime, event.command.targetFeerate, event.command.fundingAmount)
-                    Pair(this.copy(rbfStatus = RbfStatus.RbfRequested(event.command)), listOf(ChannelAction.Message.Send(txInitRbf)))
+                    logger.info { "c:$channelId initiating rbf (current feerate = ${fundingParams.targetFeerate}, next feerate = ${cmd.command.targetFeerate})" }
+                    val txInitRbf = TxInitRbf(channelId, cmd.command.lockTime, cmd.command.targetFeerate, cmd.command.fundingAmount)
+                    Pair(this.copy(rbfStatus = RbfStatus.RbfRequested(cmd.command)), listOf(ChannelAction.Message.Send(txInitRbf)))
                 }
             }
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
-            event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
-            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            event is ChannelEvent.Disconnected -> Pair(Offline(this.copy(rbfStatus = RbfStatus.None)), listOf())
-            else -> unhandled(event)
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
+            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            cmd is ChannelCommand.Disconnected -> Pair(Offline(this.copy(rbfStatus = RbfStatus.None)), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
             nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))

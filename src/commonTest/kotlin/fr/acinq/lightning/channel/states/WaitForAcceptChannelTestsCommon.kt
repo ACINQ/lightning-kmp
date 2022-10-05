@@ -18,7 +18,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel`() {
         val (alice, _, accept) = init()
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
@@ -32,7 +32,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- without non-initiator contribution`() {
         val (alice, _, accept) = init(bobFundingAmount = 0.sat)
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
@@ -45,7 +45,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     fun `recv AcceptChannel -- zero conf`() {
         val (alice, _, accept) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         assertEquals(0, accept.minimumDepth)
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept))
         assertIs<WaitForFundingCreated>(alice1)
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
@@ -57,7 +57,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- missing channel type`() {
         val (alice, _, accept) = init()
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(tlvStream = TlvStream(listOf()))))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(listOf()))))
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, MissingChannelType(accept.temporaryChannelId).message))
@@ -66,7 +66,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- invalid channel type`() {
         val (alice, _, accept) = init()
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.Standard))))))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.Standard))))))
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidChannelType(accept.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.Standard).message))
@@ -75,7 +75,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- funding too high`() {
         val (alice, _, accept) = init(bobFundingAmount = 30_000_000.sat)
-        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(accept))
+        val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, 30_000_000.sat, alice.staticParams.nodeParams.minFundingSatoshis, alice.staticParams.nodeParams.maxFundingSatoshis).message))
         assertIs<Aborted>(alice1)
@@ -86,7 +86,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init()
         // spec says max = 483
         val invalidMaxAcceptedHtlcs = 484
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)))
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).message))
@@ -96,7 +96,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     fun `recv AcceptChannel -- invalid push_amount`() {
         val (alice, _, accept) = init(bobFundingAmount = TestConstants.bobFundingAmount, bobPushAmount = TestConstants.bobFundingAmount.toMilliSatoshi() + 1.msat)
         assertEquals(accept.pushAmount, TestConstants.bobFundingAmount.toMilliSatoshi() + 1.msat)
-        val (alice1, actions) = alice.process(ChannelEvent.MessageReceived(accept))
+        val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidPushAmount(accept.temporaryChannelId, accept.fundingAmount.toMilliSatoshi() + 1.msat, accept.fundingAmount.toMilliSatoshi()).message))
         assertIs<Aborted>(alice1)
@@ -109,7 +109,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val lowDustLimitSatoshis = 353.sat
         // but we only enforce it on mainnet
         val aliceMainnet = alice.copy(staticParams = alice.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash)))
-        val (alice1, actions1) = aliceMainnet.process(ChannelEvent.MessageReceived(accept.copy(dustLimit = lowDustLimitSatoshis)))
+        val (alice1, actions1) = aliceMainnet.process(ChannelCommand.MessageReceived(accept.copy(dustLimit = lowDustLimitSatoshis)))
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUST_LIMIT).message))
@@ -120,7 +120,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init()
         // we don't want their dust limit to be too high
         val highDustLimitSatoshis = 2000.sat
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(dustLimit = highDustLimitSatoshis)))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(dustLimit = highDustLimitSatoshis)))
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, highDustLimitSatoshis, alice.staticParams.nodeParams.maxRemoteDustLimit).message))
@@ -130,7 +130,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     fun `recv AcceptChannel -- to_self_delay too high`() {
         val (alice, _, accept) = init()
         val delayTooHigh = CltvExpiryDelta(10_000)
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(accept.copy(toSelfDelay = delayTooHigh)))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(toSelfDelay = delayTooHigh)))
         assertIs<Aborted>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, alice.staticParams.nodeParams.maxToLocalDelayBlocks).message))
@@ -139,7 +139,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv Error`() {
         val (alice, _, _) = init()
-        val (alice1, actions1) = alice.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<Aborted>(alice1)
         assertTrue(actions1.isEmpty())
     }
@@ -147,7 +147,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CMD_CLOSE`() {
         val (alice, _, _) = init()
-        val (alice1, actions1) = alice.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
+        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
         assertIs<Aborted>(alice1)
         assertTrue(actions1.isEmpty())
     }
@@ -168,7 +168,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             assertEquals(open.fundingAmount, aliceFundingAmount)
             assertEquals(open.pushAmount, alicePushAmount)
             assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
-            val (bob1, actions) = bob.process(ChannelEvent.MessageReceived(open))
+            val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
             assertTrue(bob1 is WaitForFundingCreated)
             val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
             assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
