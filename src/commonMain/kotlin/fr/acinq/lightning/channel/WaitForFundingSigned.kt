@@ -49,7 +49,7 @@ data class WaitForFundingSigned(
             event is ChannelEvent.MessageReceived && event.message is CommitSig -> {
                 val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                     keyManager, localParams, remoteParams,
-                    fundingTx, wallet,
+                    fundingTx,
                     firstCommitTx, event.message,
                     channelConfig, channelFeatures, channelFlags, remoteFirstPerCommitmentPoint
                 )
@@ -88,7 +88,6 @@ data class WaitForFundingSigned(
                                 currentTip,
                                 currentOnChainFeerates,
                                 commitments,
-                                wallet,
                                 fundingParams,
                                 localPushAmount,
                                 remotePushAmount,

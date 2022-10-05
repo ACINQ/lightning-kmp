@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -16,7 +15,6 @@ data class WaitForFundingConfirmed(
     override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    val wallet: WalletState,
     val fundingParams: InteractiveTxParams,
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
@@ -93,17 +91,13 @@ data class WaitForFundingConfirmed(
                                 fundingParams.dustLimit,
                                 event.message.feerate
                             )
-                            when (val contributions = FundingContributions.create(fundingParams, wallet.spendableUtxos)) {
-                                is Either.Left -> {
-                                    logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
-                                    Pair(this.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
-                                }
-                                is Either.Right -> {
-                                    val session = InteractiveTxSession(fundingParams, contributions.value, previousFundingTxs.map { it.first })
-                                    val nextState = this.copy(rbfStatus = RbfStatus.InProgress(session))
-                                    Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localAmount))))
-                                }
+                            val toSend = buildList<Either<TxAddInput, TxAddOutput>> {
+                                addAll(fundingTx.tx.localInputs.map { Either.Left(it) })
+                                addAll(fundingTx.tx.localOutputs.map { Either.Right(it) })
                             }
+                            val session = InteractiveTxSession(fundingParams, toSend, previousFundingTxs.map { it.first })
+                            val nextState = this.copy(rbfStatus = RbfStatus.InProgress(session))
+                            Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localAmount))))
                         }
                     }
                 }
@@ -130,7 +124,7 @@ data class WaitForFundingConfirmed(
                             val (session, action) = InteractiveTxSession(fundingParams, contributions.value, previousFundingTxs.map { it.first }).send()
                             when (action) {
                                 is InteractiveTxSessionAction.SendMessage -> {
-                                    val nextState = this.copy(rbfStatus = RbfStatus.InProgress(session), wallet = rbfStatus.command.wallet)
+                                    val nextState = this.copy(rbfStatus = RbfStatus.InProgress(session))
                                     Pair(nextState, listOf(ChannelAction.Message.Send(action.msg)))
                                 }
                                 else -> {
@@ -198,7 +192,7 @@ data class WaitForFundingConfirmed(
                 is RbfStatus.WaitForCommitSig -> {
                     val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
                         keyManager, commitments.localParams, commitments.remoteParams,
-                        rbfStatus.fundingTx, wallet,
+                        rbfStatus.fundingTx,
                         rbfStatus.commitTx, event.message,
                         commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags, commitments.remoteCommit.remotePerCommitmentPoint
                     )
@@ -220,7 +214,6 @@ data class WaitForFundingConfirmed(
                             val nextState = WaitForFundingConfirmed(
                                 staticParams, currentTip, currentOnChainFeerates,
                                 commitments1,
-                                wallet,
                                 rbfStatus.fundingParams,
                                 localPushAmount,
                                 remotePushAmount,

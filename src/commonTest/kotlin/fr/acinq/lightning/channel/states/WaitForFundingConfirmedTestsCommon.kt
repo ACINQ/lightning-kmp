@@ -130,9 +130,9 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, txSigsBob, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTxId1 = alice.commitments.fundingTxId
-        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob, walletAlice)
         run {
             val (bob2, actionsBob2) = bob1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, alice.fundingTx.tx.buildUnsignedTx())), minVersion = 3)
             assertIs<WaitForChannelReady>(bob2)
@@ -185,8 +185,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart -- previous funding tx`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        val (alice, bob, txSigsBob, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob, walletAlice)
         val fundingTx1 = alice1.previousFundingTxs.first().first.signedTx!!
         val fundingTx2 = alice1.fundingTx.signedTx!!
         run {
@@ -218,8 +218,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxInitRbf`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        val (alice, bob, txSigsBob, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob, walletAlice)
         assertEquals(alice1.previousFundingTxs.size, 1)
         assertEquals(bob1.previousFundingTxs.size, 1)
         assertTrue(alice1.commitments.fundingTxId != alice.commitments.fundingTxId)
@@ -304,11 +304,11 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Error -- previous funding tx confirms`() {
-        val (alice, bob, txSigsBob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, txSigsBob, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val commitTxAlice1 = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val commitTxBob1 = bob.commitments.localCommit.publishableTxs.commitTx.tx
         val fundingTxId1 = alice.commitments.fundingTxId
-        val (alice1, bob1) = rbf(alice, bob, txSigsBob)
+        val (alice1, bob1) = rbf(alice, bob, txSigsBob, walletAlice)
         val commitTxAlice2 = alice1.commitments.localCommit.publishableTxs.commitTx.tx
         val commitTxBob2 = bob1.commitments.localCommit.publishableTxs.commitTx.tx
         val fundingTxId2 = alice1.commitments.fundingTxId
@@ -429,6 +429,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     companion object {
+        data class Fixture(val alice: WaitForFundingConfirmed, val bob: WaitForFundingConfirmed, val txSigsBob: TxSignatures, val walletAlice: WalletState)
+
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
@@ -438,7 +440,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
-        ): Triple<WaitForFundingConfirmed, WaitForFundingConfirmed, TxSignatures> {
+        ): Fixture {
             val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf = false)
             val (alice1, actionsAlice1) = alice.processEx(ChannelEvent.MessageReceived(commitBob), minVersion = 3)
             assertIs<WaitForFundingConfirmed>(alice1)
@@ -447,23 +449,22 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertIs<WaitForFundingConfirmed>(bob1)
             assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
             val txSigs = actionsBob1.findOutgoingMessage<TxSignatures>()
-            return Triple(alice1, bob1, txSigs)
+            return Fixture(alice1, bob1, txSigs, alice.wallet)
         }
 
-        fun rbf(alice: WaitForFundingConfirmed, bob: WaitForFundingConfirmed, txSigsBob: TxSignatures): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
+        fun rbf(alice: WaitForFundingConfirmed, bob: WaitForFundingConfirmed, txSigsBob: TxSignatures, walletAlice: WalletState): Pair<WaitForFundingConfirmed, WaitForFundingConfirmed> {
             val (alice0, _) = alice.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
             assertIs<WaitForFundingConfirmed>(alice0)
             val fundingTx = alice0.fundingTx
             assertIs<FullySignedSharedTransaction>(fundingTx)
             // Alice adds a new input that increases her contribution and covers the additional fees.
             val command = run {
-                val priv = randomKey()
+                val priv = alice.staticParams.nodeParams.keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
                 val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, Script.pay2wpkh(priv.publicKey()))), 0)
                 val address = Bitcoin.computeP2WpkhAddress(priv.publicKey(), Block.RegtestGenesisBlock.hash)
                 val wallet = WalletState(
-                    alice0.wallet.addresses + (address to listOf(UnspentItem(parentTx.txid, 0, 30_000, 0))),
-                    alice0.wallet.privateKeys + (address to priv),
-                    alice0.wallet.parentTxs + (parentTx.txid to parentTx),
+                    walletAlice.addresses + (address to (walletAlice.addresses[address] ?: listOf()) + UnspentItem(parentTx.txid, 0, 30_000, 0)),
+                    walletAlice.parentTxs + (parentTx.txid to parentTx),
                 )
                 CMD_BUMP_FUNDING_FEE(fundingTx.feerate * 1.1, alice0.fundingParams.localAmount + 20_000.sat, wallet, fundingTx.tx.lockTime + 1)
             }

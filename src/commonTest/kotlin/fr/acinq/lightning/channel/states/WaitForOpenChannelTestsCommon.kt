@@ -38,7 +38,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
                 ChannelEvent.InitInitiator(
                     TestConstants.aliceFundingAmount,
                     0.msat,
-                    createWallet(TestConstants.aliceFundingAmount + 50.sat),
+                    createWallet(TestConstants.Alice.nodeParams.keyManager, TestConstants.aliceFundingAmount + 50.sat).second,
                     FeeratePerKw.CommitmentFeerate,
                     TestConstants.feeratePerKw,
                     TestConstants.Alice.channelParams(),

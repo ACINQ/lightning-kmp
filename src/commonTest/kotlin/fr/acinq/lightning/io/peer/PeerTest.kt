@@ -111,7 +111,7 @@ class PeerTest : LightningTestSuite() {
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
-        val wallet = createWallet(300_000.sat)
+        val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
         alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
@@ -171,7 +171,7 @@ class PeerTest : LightningTestSuite() {
         )
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
-        val wallet = createWallet(300_000.sat)
+        val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
         alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
@@ -218,14 +218,14 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val requestId = randomBytes32()
-        val walletBob = createWallet(260_000.sat)
+        val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
         bob.send(RequestChannelOpen(requestId, walletBob, 100))
         val request = bob2alice.expect<PleaseOpenChannel>()
         assertEquals(request.localFundingAmount, 260_000.sat)
 
         // We have not implemented the LSP side, so we have to fake it here.
         val openFees = 10_000_000.msat
-        val walletAlice = createWallet(50_000.sat)
+        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         alice.send(OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve), ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, openFees))))
