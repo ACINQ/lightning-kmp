@@ -86,43 +86,46 @@ kotlin {
         }
     }
 
-    val nativeMain by sourceSets.creating { dependsOn(commonMain) }
-    val nativeTest by sourceSets.creating { dependsOn(commonTest) }
+    if (currentOs.isLinux || currentOs.isMacOsX) {
 
-    if (currentOs.isLinux) {
-        linuxX64("linux") {
-            compilations["main"].defaultSourceSet {
-                dependsOn(nativeMain)
-            }
-            compilations["test"].defaultSourceSet {
-                dependsOn(nativeTest)
-                dependencies {
-                    implementation(ktor("client-curl"))
+        val nativeMain by sourceSets.creating { dependsOn(commonMain) }
+        val nativeTest by sourceSets.creating { dependsOn(commonTest) }
+
+        if (currentOs.isLinux) {
+            linuxX64("linux") {
+                compilations["main"].defaultSourceSet {
+                    dependsOn(nativeMain)
+                }
+                compilations["test"].defaultSourceSet {
+                    dependsOn(nativeTest)
+                    dependencies {
+                        implementation(ktor("client-curl"))
+                    }
                 }
             }
         }
-    }
 
-    if (currentOs.isMacOsX) {
-        ios {
-            val platform = when (name) {
-                "iosX64" -> "iphonesimulator"
-                "iosArm64" -> "iphoneos"
-                else -> error("Unsupported target $name")
-            }
+        if (currentOs.isMacOsX) {
+            ios {
+                val platform = when (name) {
+                    "iosX64" -> "iphonesimulator"
+                    "iosArm64" -> "iphoneos"
+                    else -> error("Unsupported target $name")
+                }
 
-            compilations["main"].cinterops.create("PhoenixCrypto") {
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
-            }
-            compilations["main"].defaultSourceSet {
-                dependsOn(nativeMain)
-            }
-            compilations["test"].defaultSourceSet {
-                dependsOn(nativeTest)
-                dependencies {
-                    implementation(ktor("client-ios"))
+                compilations["main"].cinterops.create("PhoenixCrypto") {
+                    val interopTask = tasks[interopProcessingTaskName]
+                    interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                    includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                }
+                compilations["main"].defaultSourceSet {
+                    dependsOn(nativeMain)
+                }
+                compilations["test"].defaultSourceSet {
+                    dependsOn(nativeTest)
+                    dependencies {
+                        implementation(ktor("client-ios"))
+                    }
                 }
             }
         }
