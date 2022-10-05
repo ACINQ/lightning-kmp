@@ -266,12 +266,10 @@ data class InteractiveTxSession(
                     Pair(next, InteractiveTxSessionAction.SendMessage(txComplete))
                 }
             }
-
             is Either.Left -> {
                 val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = false)
                 Pair(next, InteractiveTxSessionAction.SendMessage(msg.value))
             }
-
             is Either.Right -> {
                 val next = copy(toSend = toSend.tail(), localOutputs = localOutputs + msg.value, txCompleteSent = false)
                 Pair(next, InteractiveTxSessionAction.SendMessage(msg.value))
@@ -300,7 +298,6 @@ data class InteractiveTxSession(
                     next.send()
                 }
             }
-
             is TxAddOutput -> {
                 if (outputsReceivedCount + 1 >= MAX_INPUTS_OUTPUTS_RECEIVED) {
                     Pair(this, InteractiveTxSessionAction.TooManyInteractiveTxRounds(message.channelId))
@@ -315,7 +312,6 @@ data class InteractiveTxSession(
                     next.send()
                 }
             }
-
             is TxRemoveInput -> {
                 val remoteInputs1 = remoteInputs.filterNot { i -> i.serialId == message.serialId }
                 if (remoteInputs.size != remoteInputs1.size) {
@@ -325,7 +321,6 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.UnknownSerialId(message.channelId, message.serialId))
                 }
             }
-
             is TxRemoveOutput -> {
                 val remoteOutputs1 = remoteOutputs.filterNot { i -> i.serialId == message.serialId }
                 if (remoteOutputs.size != remoteOutputs1.size) {
@@ -335,7 +330,6 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.UnknownSerialId(message.channelId, message.serialId))
                 }
             }
-
             is TxComplete -> {
                 val next = copy(txCompleteReceived = true)
                 if (next.isComplete) {

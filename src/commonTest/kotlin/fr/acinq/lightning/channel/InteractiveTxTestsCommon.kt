@@ -1,8 +1,8 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
@@ -201,7 +201,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.localFees(f.fundingParamsB), 0.sat)
 
         // Bob sends signatures first as he did not contribute at all.
-        val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes(64).byteVector(), Block.RegtestGenesisBlock.hash), f.channelId)
+        val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes64(), Block.RegtestGenesisBlock.hash), f.channelId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 0)
 
@@ -644,7 +644,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         }
 
         private fun createWallet(amounts: List<Satoshi>): Pair<KeyManager, WalletState> {
-            val keyManager = LocalKeyManager(randomBytes(64).byteVector(), Block.RegtestGenesisBlock.hash)
+            val keyManager = LocalKeyManager(randomBytes64(), Block.RegtestGenesisBlock.hash)
             val privateKey = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
             val address = keyManager.bip84Address(account = 1, addressIndex = 0)
             val utxos = amounts.map { amount ->
