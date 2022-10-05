@@ -102,9 +102,6 @@ data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
 data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerEvent()
 data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerListenerEvent()
 
-data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerListenerEvent()
-data class SendPhoenixAndroidLegacyMigrate(val newNodeId: PublicKey) : PeerEvent()
-
 /**
  * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
  * the events on those channels and processes the relevant actions. The dialogue with the peer is done in coroutines.
@@ -799,11 +796,6 @@ class Peer(
                         _eventsFlow.emit(SwapOutResponseEvent(msg))
                     }
 
-                    msg is PhoenixAndroidLegacyInfo -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
-                        _eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
-                    }
-
                     msg is OnionMessage -> {
                         logger.info { "n:$remoteNodeId received ${msg::class}" }
                         // TODO: process onion message
@@ -970,12 +962,6 @@ class Peer(
                     processActions(key, actions)
                     _channels = _channels + (key to state1)
                 }
-            }
-
-            event is SendPhoenixAndroidLegacyMigrate -> {
-                val msg = PhoenixAndroidLegacyMigrate(newNodeId = event.newNodeId)
-                logger.info { "n:$remoteNodeId sending migration signal ${msg::class}" }
-                sendToPeer(msg)
             }
         }
     }
