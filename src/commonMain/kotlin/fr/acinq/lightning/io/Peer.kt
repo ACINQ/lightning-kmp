@@ -56,7 +56,7 @@ object Disconnected : PeerCommand()
 
 sealed class PaymentCommand : PeerCommand()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: String, val expirySeconds: Long? = null, val result: CompletableDeferred<PaymentRequest>) : PaymentCommand()
-object CheckPaymentsTimeout : PaymentCommand()
+private object CheckPaymentsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 
 interface SendPayment {
