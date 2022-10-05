@@ -91,16 +91,16 @@ data class SendPaymentSwapOut(
 
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
-sealed class PeerListenerEvent
-data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerListenerEvent()
-data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerListenerEvent()
-data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerListenerEvent()
-data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerListenerEvent()
-data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerListenerEvent()
-data class ChannelClosing(val channelId: ByteVector32) : PeerListenerEvent()
+sealed class PeerEvent
+data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerEvent()
+data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
+data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
+data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
+data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerEvent()
+data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerCommand()
-data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerListenerEvent()
+data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerEvent()
 
 /**
  * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
@@ -162,8 +162,8 @@ class Peer(
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
-    private val _eventsFlow = MutableSharedFlow<PeerListenerEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    val eventsFlow: SharedFlow<PeerListenerEvent> get() = _eventsFlow.asSharedFlow()
+    private val _eventsFlow = MutableSharedFlow<PeerEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    val eventsFlow: SharedFlow<PeerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, walletParams, db.payments)
