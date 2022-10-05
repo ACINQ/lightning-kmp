@@ -12,9 +12,9 @@ import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.io.PayToOpenResponseEvent
-import fr.acinq.lightning.io.PeerEvent
-import fr.acinq.lightning.io.WrappedChannelEvent
+import fr.acinq.lightning.io.PayToOpenResponseCommand
+import fr.acinq.lightning.io.PeerCommand
+import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import org.kodein.log.newLogger
@@ -41,12 +41,12 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
 class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: IncomingPaymentsDb) {
 
     sealed class ProcessAddResult {
-        abstract val actions: List<PeerEvent>
+        abstract val actions: List<PeerCommand>
 
-        data class Accepted(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : ProcessAddResult()
-        data class Rejected(override val actions: List<PeerEvent>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
+        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : ProcessAddResult()
+        data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
         data class Pending(val incomingPayment: IncomingPayment) : ProcessAddResult() {
-            override val actions: List<PeerEvent> = listOf()
+            override val actions: List<PeerCommand> = listOf()
         }
     }
 
@@ -189,7 +189,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             val htlcsMapInDb = incomingPayment.received.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
                                 logger.info { "h:${paymentPart.paymentHash} accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
-                                val action = WrappedChannelEvent(paymentPart.htlc.channelId, ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(paymentPart.htlc.id, incomingPayment.preimage, true)))
+                                val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(paymentPart.htlc.id, incomingPayment.preimage, true)))
                                 ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.received)
                             } else {
                                 logger.info { "h:${paymentPart.paymentHash} rejecting htlc part for an invoice that has already been paid" }
@@ -258,17 +258,17 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                 when (part) {
                                     is HtlcPart -> {
                                         val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.preimage, true)
-                                        val channelEvent = ChannelEvent.ExecuteCommand(cmd)
-                                        WrappedChannelEvent(
+                                        val channelCommand = ChannelCommand.ExecuteCommand(cmd)
+                                        WrappedChannelCommand(
                                             channelId = part.htlc.channelId,
-                                            channelEvent = channelEvent
+                                            channelCommand = channelCommand
                                         ) to IncomingPayment.ReceivedWith.LightningPayment(
                                             amount = part.amount,
                                             htlcId = part.htlc.id,
                                             channelId = part.htlc.channelId
                                         )
                                     }
-                                    is PayToOpenPart -> PayToOpenResponseEvent(
+                                    is PayToOpenPart -> PayToOpenResponseCommand(
                                         PayToOpenResponse(
                                             chainHash = part.payToOpenRequest.chainHash,
                                             paymentHash = paymentPart.paymentHash,
@@ -358,8 +358,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    fun checkPaymentsTimeout(currentTimestampSeconds: Long): List<PeerEvent> {
-        val actions = mutableListOf<PeerEvent>()
+    fun checkPaymentsTimeout(currentTimestampSeconds: Long): List<PeerCommand> {
+        val actions = mutableListOf<PeerCommand>()
         val keysToRemove = mutableSetOf<ByteVector32>()
 
         // BOLT 04:
@@ -434,22 +434,22 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             return ProcessAddResult.Rejected(listOf(rejectedAction), incomingPayment)
         }
 
-        private fun actionForFailureMessage(msg: FailureMessage, htlc: UpdateAddHtlc, commit: Boolean = true): WrappedChannelEvent {
+        private fun actionForFailureMessage(msg: FailureMessage, htlc: UpdateAddHtlc, commit: Boolean = true): WrappedChannelCommand {
             val cmd: Command = when (msg) {
                 is BadOnion -> CMD_FAIL_MALFORMED_HTLC(htlc.id, msg.onionHash, msg.code, commit)
                 else -> CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(msg), commit)
             }
-            val channelEvent = ChannelEvent.ExecuteCommand(cmd)
-            return WrappedChannelEvent(htlc.channelId, channelEvent)
+            val channelCommand = ChannelCommand.ExecuteCommand(cmd)
+            return WrappedChannelCommand(htlc.channelId, channelCommand)
         }
 
-        private fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseEvent {
+        private fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseCommand {
             val reason = CMD_FAIL_HTLC.Reason.Failure(failure)
             val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
                 is Either.Right -> result.value
                 is Either.Left -> null
             }
-            return PayToOpenResponseEvent(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
+            return PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
         }
 
         private fun minFinalCltvExpiry(paymentRequest: PaymentRequest, currentBlockHeight: Int): CltvExpiry {

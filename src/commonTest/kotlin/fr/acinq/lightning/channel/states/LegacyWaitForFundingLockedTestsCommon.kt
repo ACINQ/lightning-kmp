@@ -33,7 +33,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         assertIs<LegacyWaitForFundingLocked>(state)
         val fundingTx = Transaction.read("020000000100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0140420f0000000000220020f9aafa9be1212d0d373760c279f3817f9be707d674cae5f38bb31c1fd85c202900000000")
         assertEquals(state.commitments.fundingTxId, fundingTx.txid)
-        val (state1, actions1) = WaitForInit(state.staticParams, state.currentTip, state.currentOnChainFeerates).processEx(ChannelEvent.Restore(state))
+        val (state1, actions1) = WaitForInit(state.staticParams, state.currentTip, state.currentOnChainFeerates).processEx(ChannelCommand.Restore(state))
         assertIs<Offline>(state1)
         assertEquals(actions1.size, 1)
         val watchSpent = actions1.findWatch<WatchSpent>()
@@ -42,7 +42,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         // Reconnect to our peer.
         val localInit = Init(state.commitments.localParams.features.toByteArray().byteVector())
         val remoteInit = Init(state.commitments.remoteParams.features.toByteArray().byteVector())
-        val (state2, actions2) = state1.processEx(ChannelEvent.Connected(localInit, remoteInit))
+        val (state2, actions2) = state1.processEx(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(state2)
         assertTrue(actions2.isEmpty())
         val channelReestablish = ChannelReestablish(
@@ -52,13 +52,13 @@ class LegacyWaitForFundingLockedTestsCommon {
             PrivateKey(ByteVector32.Zeroes),
             randomKey().publicKey()
         )
-        val (state3, actions3) = state2.processEx(ChannelEvent.MessageReceived(channelReestablish))
+        val (state3, actions3) = state2.processEx(ChannelCommand.MessageReceived(channelReestablish))
         assertEquals(state, state3)
         assertEquals(actions3.size, 2)
         actions3.hasOutgoingMessage<ChannelReestablish>()
         actions3.hasOutgoingMessage<ChannelReady>()
         // Our peer sends us funding_locked.
-        val (state4, actions4) = state3.processEx(ChannelEvent.MessageReceived(ChannelReady(state.channelId, randomKey().publicKey())))
+        val (state4, actions4) = state3.processEx(ChannelCommand.MessageReceived(ChannelReady(state.channelId, randomKey().publicKey())))
         assertIs<Normal>(state4)
         assertEquals(actions4.size, 2)
         val watchConfirmed = actions4.hasWatch<WatchConfirmed>()

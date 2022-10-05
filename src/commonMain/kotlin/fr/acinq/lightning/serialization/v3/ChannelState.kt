@@ -569,7 +569,7 @@ data class InitInitiator(
     val channelConfig: ChannelConfig,
     val channelType: ChannelType,
 ) {
-    constructor(from: fr.acinq.lightning.channel.ChannelEvent.InitInitiator) : this(
+    constructor(from: fr.acinq.lightning.channel.ChannelCommand.InitInitiator) : this(
         from.fundingAmount,
         from.pushAmount,
         WalletState(from.wallet),

@@ -25,7 +25,7 @@ class CompatibilityTestsCommon {
         // generate test data
         val (alice, bob, fundingTx) = run {
             val (alice0, bob0, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
-            val (alice1, actions1) = alice0.processEx(ChannelEvent.MessageReceived(txSigsBob), minVersion = 3)
+            val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(txSigsBob), minVersion = 3)
             assertIs<WaitForFundingConfirmed>(alice1)
             val fundingTx = actions1.find<ChannelAction.Blockchain.PublishTx>().tx
             Triple(alice1, bob0, fundingTx)
@@ -34,20 +34,20 @@ class CompatibilityTestsCommon {
         val bin = Serialization.encrypt(TestConstants.Bob.nodeParams.nodePrivateKey, bob)
         println("wait_for_funding_confirmed: ${bin.data}")
 
-        val (bob1, actionsBob) = bob.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
+        val (bob1, actionsBob) = bob.processEx(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
         val channelReady = actionsBob.findOutgoingMessage<ChannelReady>()
         assertTrue(bob1 is WaitForChannelReady)
 
         val bin1 = Serialization.encrypt(TestConstants.Bob.nodeParams.nodePrivateKey, bob1)
         println("wait_for_channel_ready: ${bin1.data}")
 
-        val (alice1, actionsAlice) = alice.processEx(ChannelEvent.MessageReceived(channelReady), minVersion = 3)
+        val (alice1, actionsAlice) = alice.processEx(ChannelCommand.MessageReceived(channelReady), minVersion = 3)
         assertTrue(alice1 is WaitForFundingConfirmed && alice1.deferred == channelReady)
 
         assertTrue(actionsAlice.isEmpty()) // alice waits until she sees on-chain confirmations herself
-        val (alice2, actionsAlice2) = alice1.processEx(ChannelEvent.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 0, 42, fundingTx)), minVersion = 3)
+        val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 0, 42, fundingTx)), minVersion = 3)
         val channelReadyAlice = actionsAlice2.findOutgoingMessage<ChannelReady>()
-        val (bob2, _) = bob1.processEx(ChannelEvent.MessageReceived(channelReadyAlice), minVersion = 3)
+        val (bob2, _) = bob1.processEx(ChannelCommand.MessageReceived(channelReadyAlice), minVersion = 3)
         assertTrue(bob2 is Normal)
 
         val bin2 = Serialization.encrypt(TestConstants.Bob.nodeParams.nodePrivateKey, bob2)
@@ -67,15 +67,15 @@ class CompatibilityTestsCommon {
             TestConstants.emptyOnionPacket,
             UUID.randomUUID()
         )
-        val (alice3, actionsAlice3) = alice2.processEx(ChannelEvent.ExecuteCommand(add1), minVersion = 3)
-        val (_, actionsAlice4) = alice3.processEx(ChannelEvent.ExecuteCommand(add2), minVersion = 3)
+        val (alice3, actionsAlice3) = alice2.processEx(ChannelCommand.ExecuteCommand(add1), minVersion = 3)
+        val (_, actionsAlice4) = alice3.processEx(ChannelCommand.ExecuteCommand(add2), minVersion = 3)
         val htlc1 = actionsAlice3.findOutgoingMessage<UpdateAddHtlc>()
         val htlc2 = actionsAlice4.findOutgoingMessage<UpdateAddHtlc>()
 
-        val (bob3, _) = bob2.processEx(ChannelEvent.MessageReceived(htlc1), minVersion = 3)
-        val (bob4, _) = bob3.processEx(ChannelEvent.MessageReceived(htlc2), minVersion = 3)
-        val (bob5, _) = bob4.processEx(ChannelEvent.ExecuteCommand(add1), minVersion = 3)
-        val (bob6, _) = bob5.processEx(ChannelEvent.ExecuteCommand(add2), minVersion = 3)
+        val (bob3, _) = bob2.processEx(ChannelCommand.MessageReceived(htlc1), minVersion = 3)
+        val (bob4, _) = bob3.processEx(ChannelCommand.MessageReceived(htlc2), minVersion = 3)
+        val (bob5, _) = bob4.processEx(ChannelCommand.ExecuteCommand(add1), minVersion = 3)
+        val (bob6, _) = bob5.processEx(ChannelCommand.ExecuteCommand(add2), minVersion = 3)
         assertTrue(bob6 is Normal)
 
         val bin3 = Serialization.encrypt(TestConstants.Bob.nodeParams.nodePrivateKey, bob6)

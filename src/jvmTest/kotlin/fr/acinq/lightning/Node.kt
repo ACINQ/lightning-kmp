@@ -8,7 +8,7 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.channel.CMD_CLOSE
-import fr.acinq.lightning.channel.ChannelEvent
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.InMemoryPaymentsDb
@@ -270,7 +270,7 @@ object Node {
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        peer.send(WrappedChannelEvent(channelId, ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null))))
+                        peer.send(WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null))))
                         call.respond(CloseChannelResponse("pending"))
                     }
                 }

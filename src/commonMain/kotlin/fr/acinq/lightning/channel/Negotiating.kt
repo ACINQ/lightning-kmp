@@ -35,13 +35,13 @@ data class Negotiating(
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is ClosingSigned -> {
-                val remoteClosingFee = event.message.feeSatoshis
+            cmd is ChannelCommand.MessageReceived && cmd.message is ClosingSigned -> {
+                val remoteClosingFee = cmd.message.feeSatoshis
                 logger.info { "c:$channelId received closing fee=$remoteClosingFee" }
-                when (val result = Helpers.Closing.checkClosingSignature(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), event.message.feeSatoshis, event.message.signature)) {
-                    is Either.Left -> handleLocalError(event, result.value)
+                when (val result = Helpers.Closing.checkClosingSignature(keyManager, commitments, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
+                    is Either.Left -> handleLocalError(cmd, result.value)
                     is Either.Right -> {
                         val (signedClosingTx, closingSignedRemoteFees) = result.value
                         val lastLocalClosingSigned = closingTxProposed.last().lastOrNull()?.localClosingSigned
@@ -64,7 +64,7 @@ data class Negotiating(
                                 completeMutualClose(signedClosingTx, closingSignedRemoteFees)
                             }
                             else -> {
-                                val theirFeeRange = event.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
+                                val theirFeeRange = cmd.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
                                 val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
                                 when {
                                     theirFeeRange != null && !commitments.localParams.isInitiator -> {
@@ -94,7 +94,7 @@ data class Negotiating(
                                                 closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                                             )
                                             val nextState = this.copy(
-                                                commitments = commitments.copy(remoteChannelData = event.message.channelData),
+                                                commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
                                                 closingTxProposed = closingProposed1,
                                                 bestUnpublishedClosingTx = signedClosingTx
                                             )
@@ -126,7 +126,7 @@ data class Negotiating(
                                                     closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                                                 )
                                                 val nextState = this.copy(
-                                                    commitments = commitments.copy(remoteChannelData = event.message.channelData),
+                                                    commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
                                                     closingTxProposed = closingProposed1,
                                                     bestUnpublishedClosingTx = signedClosingTx
                                                 )
@@ -141,8 +141,8 @@ data class Negotiating(
                     }
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)
-            event is ChannelEvent.WatchReceived -> when (val watch = event.watch) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
+            cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventSpent -> when {
                     watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                         // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
@@ -170,15 +170,15 @@ data class Negotiating(
                     watch.tx.txid == commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> handleRemoteSpentNext(watch.tx)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
-                else -> unhandled(event)
+                else -> unhandled(cmd)
             }
-            event is ChannelEvent.CheckHtlcTimeout -> checkHtlcTimeout()
-            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_ADD_HTLC -> handleCommandError(event.command, ChannelUnavailable(channelId))
-            event is ChannelEvent.ExecuteCommand && event.command is CMD_CLOSE -> handleCommandError(event.command, ClosingAlreadyInProgress(channelId))
-            else -> unhandled(event)
+            cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
+            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            cmd is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_ADD_HTLC -> handleCommandError(cmd.command, ChannelUnavailable(channelId))
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
+            else -> unhandled(cmd)
         }
     }
 
@@ -210,8 +210,8 @@ data class Negotiating(
         return Pair(nextState, actions)
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
             nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))

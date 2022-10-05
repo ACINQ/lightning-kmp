@@ -24,14 +24,14 @@ data class WaitForChannelReady(
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.MessageReceived && event.message is TxSignatures -> when (fundingTx) {
-                is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(event.message)) {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (fundingTx) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(cmd.message)) {
                     null -> {
-                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${event.message.txId}" }
+                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
-                        Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, event.message.txId).message))))
+                        Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
                     else -> {
                         logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
@@ -50,11 +50,11 @@ data class WaitForChannelReady(
                     Pair(this, listOf())
                 }
             }
-            event is ChannelEvent.MessageReceived && event.message is TxInitRbf -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
                 logger.info { "c:$channelId rejecting tx_init_rbf, we have already accepted the channel" }
                 Pair(this, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, commitments.fundingTxId).message))))
             }
-            event is ChannelEvent.MessageReceived && event.message is ChannelReady -> {
+            cmd is ChannelCommand.MessageReceived && cmd.message is ChannelReady -> {
                 // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                 val watchConfirmed = WatchConfirmed(
                     this.channelId,
@@ -80,7 +80,7 @@ data class WaitForChannelReady(
                     staticParams,
                     currentTip,
                     currentOnChainFeerates,
-                    commitments.copy(remoteNextCommitInfo = Either.Right(event.message.nextPerCommitmentPoint)),
+                    commitments.copy(remoteNextCommitInfo = Either.Right(cmd.message.nextPerCommitmentPoint)),
                     shortChannelId,
                     buried = false,
                     null,
@@ -96,26 +96,26 @@ data class WaitForChannelReady(
                 )
                 Pair(nextState, actions)
             }
-            event is ChannelEvent.MessageReceived && event.message is Error -> handleRemoteError(event.message)
-            event is ChannelEvent.WatchReceived && event.watch is WatchEventSpent -> when (event.watch.tx.txid) {
-                commitments.remoteCommit.txid -> handleRemoteSpentCurrent(event.watch.tx)
-                else -> handleRemoteSpentOther(event.watch.tx)
+            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
+            cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventSpent -> when (cmd.watch.tx.txid) {
+                commitments.remoteCommit.txid -> handleRemoteSpentCurrent(cmd.watch.tx)
+                else -> handleRemoteSpentOther(cmd.watch.tx)
             }
-            event is ChannelEvent.ExecuteCommand -> when (event.command) {
-                is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(event.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> handleLocalError(event, ForcedLocalCommit(channelId))
-                else -> unhandled(event)
+            cmd is ChannelCommand.ExecuteCommand -> when (cmd.command) {
+                is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
+                is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+                else -> unhandled(cmd)
             }
-            event is ChannelEvent.CheckHtlcTimeout -> Pair(this, listOf())
-            event is ChannelEvent.NewBlock -> Pair(this.copy(currentTip = Pair(event.height, event.Header)), listOf())
-            event is ChannelEvent.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = event.feerates), listOf())
-            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
-            else -> unhandled(event)
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
+            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
+            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            cmd is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
             nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))

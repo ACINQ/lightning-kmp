@@ -18,16 +18,16 @@ data class WaitForRemotePublishFutureCommitment(
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(event: ChannelEvent): Pair<ChannelState, List<ChannelAction>> {
+    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
-            event is ChannelEvent.WatchReceived && event.watch is WatchEventSpent && event.watch.event is BITCOIN_FUNDING_SPENT -> handleRemoteSpentFuture(event.watch.tx)
-            event is ChannelEvent.Disconnected -> Pair(Offline(this), listOf())
-            else -> unhandled(event)
+            cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventSpent && cmd.watch.event is BITCOIN_FUNDING_SPENT -> handleRemoteSpentFuture(cmd.watch.tx)
+            cmd is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(event: ChannelEvent, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:${commitments.channelId} error on event ${event::class} in state ${this::class}" }
+    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "c:${commitments.channelId} error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
     }

@@ -11,7 +11,7 @@ import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.io.SendPaymentNormal
 import fr.acinq.lightning.io.SendPaymentSwapOut
-import fr.acinq.lightning.io.WrappedChannelEvent
+import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.*
@@ -26,7 +26,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     interface ProcessFulfillResult
 
     /** A payment attempt has been made: we provide information about the fees we're paying, which may increase as we re-try our payment. */
-    data class Progress(val request: SendPayment, val fees: MilliSatoshi, val actions: List<WrappedChannelEvent>) : SendPaymentResult, ProcessFailureResult
+    data class Progress(val request: SendPayment, val fees: MilliSatoshi, val actions: List<WrappedChannelCommand>) : SendPaymentResult, ProcessFailureResult
 
     /** The payment could not be sent. */
     data class Failure(val request: SendPayment, val failure: OutgoingPaymentFailure) : SendPaymentResult, ProcessFailureResult
@@ -88,7 +88,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    private fun createChildPayments(request: SendPayment, routes: List<RouteCalculation.Route>, trampolinePayload: PaymentAttempt.TrampolinePayload): List<Triple<OutgoingPayment.LightningPart, SharedSecrets, WrappedChannelEvent>> {
+    private fun createChildPayments(request: SendPayment, routes: List<RouteCalculation.Route>, trampolinePayload: PaymentAttempt.TrampolinePayload): List<Triple<OutgoingPayment.LightningPart, SharedSecrets, WrappedChannelCommand>> {
         val childPayments = routes.map { createOutgoingPart(request, it, trampolinePayload) }
         childToParentId.putAll(childPayments.map { it.first.id to request.paymentId })
         childPayments.forEach { logger.info { "h:${request.paymentHash} p:${request.paymentId} i:${it.first.id} sending ${it.first.amount} to channel ${it.third.channelId}" } }
@@ -311,7 +311,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    private fun createOutgoingPart(request: SendPayment, route: RouteCalculation.Route, trampolinePayload: PaymentAttempt.TrampolinePayload): Triple<OutgoingPayment.LightningPart, SharedSecrets, WrappedChannelEvent> {
+    private fun createOutgoingPart(request: SendPayment, route: RouteCalculation.Route, trampolinePayload: PaymentAttempt.TrampolinePayload): Triple<OutgoingPayment.LightningPart, SharedSecrets, WrappedChannelCommand> {
         val childId = UUID.randomUUID()
         val outgoingPayment = OutgoingPayment.LightningPart(
             id = childId,
@@ -321,7 +321,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         )
         val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
         val (add, secrets) = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
-        return Triple(outgoingPayment, secrets, WrappedChannelEvent(route.channel.channelId, ChannelEvent.ExecuteCommand(add)))
+        return Triple(outgoingPayment, secrets, WrappedChannelCommand(route.channel.channelId, ChannelCommand.ExecuteCommand(add)))
     }
 
     private fun createTrampolinePayload(request: SendPayment, fees: TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {

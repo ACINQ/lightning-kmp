@@ -40,15 +40,15 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `complete interactive-tx protocol`() {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         // Alice ---- tx_add_input ----> Bob
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
         // Alice <--- tx_complete ----- Bob
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<TxComplete>()))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxComplete>()))
         // Alice ---- tx_add_output ----> Bob
-        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
         // Alice <--- tx_complete ----- Bob
-        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
         // Alice ---- tx_complete ----> Bob
-        val (bob3, actionsBob3) = bob2.process(ChannelEvent.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
         val commitSigAlice = actionsAlice2.findOutgoingMessage<CommitSig>()
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
@@ -67,15 +67,15 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `complete interactive-tx protocol -- with non-initiator contributions`() {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         // Alice ---- tx_add_input ----> Bob
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
         // Alice <--- tx_add_input ----- Bob
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<TxAddInput>()))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxAddInput>()))
         // Alice ---- tx_add_output ----> Bob
-        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
         // Alice <--- tx_complete ----- Bob
-        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
         // Alice ---- tx_complete ----> Bob
-        val (bob3, actionsBob3) = bob2.process(ChannelEvent.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
         val commitSigAlice = actionsAlice2.findOutgoingMessage<CommitSig>()
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
@@ -90,15 +90,15 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `complete interactive-tx protocol -- zero conf -- zero reserve`() {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, alicePushAmount = 0.msat, zeroConf = true)
         // Alice ---- tx_add_input ----> Bob
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
         // Alice <--- tx_add_input ----- Bob
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<TxAddInput>()))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxAddInput>()))
         // Alice ---- tx_add_output ----> Bob
-        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
         // Alice <--- tx_complete ----- Bob
-        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
         // Alice ---- tx_complete ----> Bob
-        val (bob3, actionsBob3) = bob2.process(ChannelEvent.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
         val commitSigAlice = actionsAlice2.findOutgoingMessage<CommitSig>()
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
@@ -113,16 +113,16 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `complete interactive-tx protocol -- initiator can't pay fees`() {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, aliceFundingAmount = 1_000_100.sat, bobFundingAmount = 0.sat, alicePushAmount = 1_000_000.sat.toMilliSatoshi())
         // Alice ---- tx_add_input ----> Bob
-        val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
         // Alice <--- tx_complete ----- Bob
-        val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(actionsBob1.findOutgoingMessage<TxComplete>()))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxComplete>()))
         // Alice ---- tx_add_output ----> Bob
-        val (bob2, actionsBob2) = bob1.process(ChannelEvent.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
         // Alice <--- tx_complete ----- Bob
-        val (alice2, actionsAlice2) = alice1.process(ChannelEvent.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
         assertIs<WaitForFundingSigned>(alice2)
         // Alice ---- tx_complete ----> Bob
-        val (bob3, actionsBob3) = bob2.process(ChannelEvent.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
         actionsBob3.hasOutgoingMessage<Error>()
         assertIs<Aborted>(bob3)
     }
@@ -132,14 +132,14 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val (_, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
             // Invalid serial_id.
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(inputAlice.copy(serialId = 1)))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice.copy(serialId = 1)))
             actionsBob1.hasOutgoingMessage<Error>()
             assertIs<Aborted>(bob1)
         }
         run {
             // Below dust.
             val txAddOutput = TxAddOutput(inputAlice.channelId, 2, 100.sat, Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector())
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(txAddOutput))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txAddOutput))
             actionsBob1.hasOutgoingMessage<Error>()
             assertIs<Aborted>(bob1)
         }
@@ -149,12 +149,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv CommitSig`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(CommitSig(alice.channelId, ByteVector64.Zeroes, listOf())))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(CommitSig(alice.channelId, ByteVector64.Zeroes, listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(alice.channelId).message)
             assertIs<Aborted>(alice1)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(CommitSig(bob.channelId, ByteVector64.Zeroes, listOf())))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(CommitSig(bob.channelId, ByteVector64.Zeroes, listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(bob.channelId).message)
             assertIs<Aborted>(bob1)
         }
@@ -164,12 +164,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv TxSignatures`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(TxSignatures(alice.channelId, randomBytes32(), listOf())))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, randomBytes32(), listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(alice.channelId).message)
             assertIs<Aborted>(alice1)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(TxSignatures(bob.channelId, randomBytes32(), listOf())))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxSignatures(bob.channelId, randomBytes32(), listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(bob.channelId).message)
             assertIs<Aborted>(bob1)
         }
@@ -179,12 +179,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv TxAbort`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(TxAbort(alice.channelId, "changed my mind")))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "changed my mind")))
             assertTrue(actionsAlice1.isEmpty())
             assertIs<Aborted>(alice1)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(TxAbort(bob.channelId, "changed my mind")))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxAbort(bob.channelId, "changed my mind")))
             assertTrue(actionsBob1.isEmpty())
             assertIs<Aborted>(bob1)
         }
@@ -194,13 +194,13 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv TxInitRbf`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(TxInitRbf(alice.channelId, 0, FeeratePerKw(7500.sat))))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxInitRbf(alice.channelId, 0, FeeratePerKw(7500.sat))))
             assertEquals(actionsAlice1.size, 1)
             assertEquals(actionsAlice1.findOutgoingMessage<Warning>().toAscii(), InvalidRbfAttempt(alice.channelId).message)
             assertEquals(alice, alice1)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(TxInitRbf(bob.channelId, 0, FeeratePerKw(7500.sat))))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(bob.channelId, 0, FeeratePerKw(7500.sat))))
             assertEquals(actionsBob1.size, 1)
             assertEquals(actionsBob1.findOutgoingMessage<Warning>().toAscii(), InvalidRbfAttempt(bob.channelId).message)
             assertEquals(bob, bob1)
@@ -211,13 +211,13 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv TxAckRbf`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelEvent.MessageReceived(TxAckRbf(alice.channelId)))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxAckRbf(alice.channelId)))
             assertEquals(actionsAlice1.size, 1)
             assertEquals(actionsAlice1.findOutgoingMessage<Warning>().toAscii(), InvalidRbfAttempt(alice.channelId).message)
             assertEquals(alice, alice1)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelEvent.MessageReceived(TxAckRbf(bob.channelId)))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxAckRbf(bob.channelId)))
             assertEquals(actionsBob1.size, 1)
             assertEquals(actionsBob1.findOutgoingMessage<Warning>().toAscii(), InvalidRbfAttempt(bob.channelId).message)
             assertEquals(bob, bob1)
@@ -227,7 +227,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv Error`() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
-        val (bob1, actions1) = bob.process(ChannelEvent.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
+        val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<Aborted>(bob1)
         assertTrue(actions1.isEmpty())
     }
@@ -235,7 +235,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CMD_CLOSE`() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
-        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, null)))
+        val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
         assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ChannelFundingError(bob.channelId).message)
         assertIs<Aborted>(bob1)
     }
@@ -243,7 +243,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CMD_FORCECLOSE`() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
-        val (bob1, actions1) = bob.process(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+        val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
         assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ChannelFundingError(bob.channelId).message)
         assertIs<Aborted>(bob1)
     }
@@ -251,9 +251,9 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv Disconnected`() {
         val (_, bob, txAddInput) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
-        val (bob1, _) = bob.process(ChannelEvent.MessageReceived(txAddInput))
+        val (bob1, _) = bob.process(ChannelCommand.MessageReceived(txAddInput))
         assertIs<WaitForFundingCreated>(bob1)
-        val (bob2, actions2) = bob1.process(ChannelEvent.Disconnected)
+        val (bob2, actions2) = bob1.process(ChannelCommand.Disconnected)
         assertIs<Aborted>(bob2)
         assertTrue(actions2.isEmpty())
     }
@@ -272,10 +272,10 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             channelOrigin: ChannelOrigin? = null
         ): Triple<WaitForFundingCreated, WaitForFundingCreated, TxAddInput> {
             val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf, channelOrigin)
-            val (b1, actions) = b.process(ChannelEvent.MessageReceived(open))
+            val (b1, actions) = b.process(ChannelCommand.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
             assertIs<WaitForFundingCreated>(b1)
-            val (a1, actions2) = a.process(ChannelEvent.MessageReceived(accept))
+            val (a1, actions2) = a.process(ChannelCommand.MessageReceived(accept))
             val aliceInput = actions2.findOutgoingMessage<TxAddInput>()
             assertIs<WaitForFundingCreated>(a1)
             return Triple(a1, b1, aliceInput)

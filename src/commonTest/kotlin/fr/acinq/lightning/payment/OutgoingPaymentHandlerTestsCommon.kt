@@ -17,7 +17,7 @@ import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.io.SendPaymentNormal
 import fr.acinq.lightning.io.SendPaymentSwapOut
-import fr.acinq.lightning.io.WrappedChannelEvent
+import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
@@ -134,7 +134,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             val progress = result as OutgoingPaymentHandler.Progress
             assertEquals(1, result.actions.size)
-            val processResult = alice.process(progress.actions.first().channelEvent)
+            val processResult = alice.process(progress.actions.first().channelCommand)
             assertTrue { processResult.first is Normal }
             assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
             alice = processResult.first as Normal
@@ -155,7 +155,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             val progress = result1 as OutgoingPaymentHandler.Progress
             assertEquals(1, result1.actions.size)
-            val cmdAdd = progress.actions.first().channelEvent
+            val cmdAdd = progress.actions.first().channelCommand
             val processResult = alice.process(cmdAdd)
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
@@ -188,7 +188,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             val progress = result as OutgoingPaymentHandler.Progress
             assertEquals(1, result.actions.size)
-            val processResult = alice.process(progress.actions.first().channelEvent)
+            val processResult = alice.process(progress.actions.first().channelCommand)
             assertTrue { processResult.first is Normal }
             assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
             alice = processResult.first as Normal
@@ -209,7 +209,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             val progress = result1 as OutgoingPaymentHandler.Progress
             assertEquals(1, result1.actions.size)
-            val cmdAdd = progress.actions.first().channelEvent
+            val cmdAdd = progress.actions.first().channelCommand
             val processResult = alice.process(cmdAdd)
             assertTrue { processResult.first is Normal }
             alice = processResult.first as Normal
@@ -489,7 +489,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue(process1 is IncomingPaymentHandler.ProcessAddResult.Pending)
         val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), TestConstants.defaultBlockHeight)
         assertTrue(process2 is IncomingPaymentHandler.ProcessAddResult.Accepted)
-        val fulfills = process2.actions.filterIsInstance<WrappedChannelEvent>().mapNotNull { (it.channelEvent as? ChannelEvent.ExecuteCommand)?.command as? CMD_FULFILL_HTLC }
+        val fulfills = process2.actions.filterIsInstance<WrappedChannelCommand>().mapNotNull { (it.channelCommand as? ChannelCommand.ExecuteCommand)?.command as? CMD_FULFILL_HTLC }
         assertEquals(2, fulfills.size)
 
         // Alice receives the fulfill for these 2 HTLCs.
@@ -967,7 +967,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<Pair<ByteVector32, CMD_ADD_HTLC>> {
         val addCommands = mutableListOf<Pair<ByteVector32, CMD_ADD_HTLC>>()
         for (action in progress.actions) {
-            val addCommand = (action.channelEvent as? ChannelEvent.ExecuteCommand)?.command as? CMD_ADD_HTLC
+            val addCommand = (action.channelCommand as? ChannelCommand.ExecuteCommand)?.command as? CMD_ADD_HTLC
             if (addCommand != null) {
                 addCommands.add(Pair(action.channelId, addCommand))
             }

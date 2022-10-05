@@ -427,14 +427,14 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             val (bob7, alice7) = nodes7
             val (bob8, alice8) = TestsHelper.crossSign(bob7, alice7)
             // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-            val (alice9, _) = alice8.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob2.id, preimageBob2)))
-            val (bob9, _) = bob8.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice2.id, preimageAlice2)))
+            val (alice9, _) = alice8.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob2.id, preimageBob2)))
+            val (bob9, _) = bob8.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice2.id, preimageAlice2)))
             // Alice publishes her commitment.
-            val (aliceClosing, _) = alice9.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
+            val (aliceClosing, _) = alice9.processEx(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
             assertTrue(aliceClosing is Closing)
             val lcp = aliceClosing.localCommitPublished
             assertNotNull(lcp)
-            val (bobClosing, _) = bob9.processEx(ChannelEvent.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            val (bobClosing, _) = bob9.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
             assertTrue(bobClosing is Closing)
             val rcp = bobClosing.remoteCommitPublished
             assertNotNull(rcp)
