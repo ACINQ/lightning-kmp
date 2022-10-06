@@ -83,7 +83,6 @@ interface LightningMessage {
                 SwapOutRequest.type -> SwapOutRequest.read(stream)
                 SwapOutResponse.type -> SwapOutResponse.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
-                PhoenixAndroidLegacyMigrate.type -> PhoenixAndroidLegacyMigrate.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
                 PleaseOpenChannelRejected.type -> PleaseOpenChannelRejected.read(stream)
                 else -> UnknownMessage(code.toLong())
@@ -1559,24 +1558,6 @@ data class PhoenixAndroidLegacyInfo(
 
         override fun read(input: Input): PhoenixAndroidLegacyInfo {
             return PhoenixAndroidLegacyInfo(LightningCodecs.byte(input) != 0)
-        }
-    }
-}
-
-data class PhoenixAndroidLegacyMigrate(
-    val newNodeId: PublicKey
-) : LightningMessage {
-    override val type: Long get() = PhoenixAndroidLegacyMigrate.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(newNodeId.value, out)
-    }
-
-    companion object : LightningMessageReader<PhoenixAndroidLegacyMigrate> {
-        const val type: Long = 35025
-
-        override fun read(input: Input): PhoenixAndroidLegacyMigrate {
-            return PhoenixAndroidLegacyMigrate(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 }
