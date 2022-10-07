@@ -2,7 +2,6 @@ package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
-import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKeyPath
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.*
@@ -217,18 +216,22 @@ class Peer(
                 }
             }
         }
+
         launch {
-            swapInWallet.walletStateFlow
-                .takeWhile { wallet ->
-                    if (wallet.spendableBalance > 10_000.sat) {
-                        logger.info { "${wallet.spendableBalance} available on swap-in wallet, requesting channel" }
-                        input.send(RequestChannelOpen(randomBytes32(), wallet, maxFeesBasisPoint = 100))
-                        false// TODO: we stop listening, we only request a channel once during the app uptime
+            swapInWallet.walletStateFlow.fold(false) { swapAlreadyAttempted, wallet ->
+                if (wallet.spendableBalance > 10_000.sat) {
+                    if (swapAlreadyAttempted) {
+                        logger.info { "${wallet.spendableBalance} available on swap-in wallet but swap-in already attempted: not doing anything" }
                     } else {
-                        logger.info { "${wallet.spendableBalance} available on swap-in wallet, waiting for more" }
-                        true
+                        logger.info { "${wallet.spendableBalance} available on swap-in wallet: requesting channel" }
+                        input.send(RequestChannelOpen(Lightning.randomBytes32(), wallet, maxFeesBasisPoint = 100)) // 100 bips = 1 %
                     }
+                    true
+                } else {
+                    logger.info { "${wallet.spendableBalance} available on swap-in wallet but amount insufficient: waiting for more" }
+                    swapAlreadyAttempted
                 }
+            }
         }
         launch {
             // we don't restore closed channels
