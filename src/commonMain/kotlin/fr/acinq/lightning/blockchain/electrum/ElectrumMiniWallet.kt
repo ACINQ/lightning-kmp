@@ -2,10 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.utils.Connection
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.sum
-import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
@@ -83,10 +81,13 @@ class ElectrumMiniWallet(
     val chainHash: ByteVector32,
     private val client: ElectrumClient,
     private val scope: CoroutineScope,
-    loggerFactory: LoggerFactory
+    loggerFactory: LoggerFactory,
+    private val name: String = ""
 ) : CoroutineScope by scope {
 
     private val logger = loggerFactory.newLogger(this::class)
+    val uuid = UUID.randomUUID().toString().take(4)
+    fun Logger.mdcinfo(msgCreator: () -> String) { log(level = Logger.Level.INFO, meta = mapOf("wallet" to name), msgCreator = msgCreator) }
 
     // state flow with the current balance
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
@@ -121,7 +122,7 @@ class ElectrumMiniWallet(
             mailbox.consumeAsFlow().collect {
                 when (it) {
                     is WalletCommand.Companion.ElectrumConnected -> {
-                        logger.info { "electrum connected" }
+                        logger.mdcinfo { "electrum connected" }
                         scriptHashes.values.forEach { subscribe(it) }
                     }
                     is WalletCommand.Companion.ElectrumNotification -> {
@@ -130,7 +131,7 @@ class ElectrumMiniWallet(
                             is ScriptHashSubscriptionResponse -> {
                                 scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
                                     if (msg.status.isNotEmpty()) {
-                                        logger.info { "non-empty status for address=$bitcoinAddress, requesting utxos" }
+                                        logger.mdcinfo { "non-empty status for address=$bitcoinAddress, requesting utxos" }
                                         client.sendElectrumRequest(ScriptHashListUnspent(msg.scriptHash))
                                     }
                                 }
@@ -141,22 +142,28 @@ class ElectrumMiniWallet(
                                     // request new parent txs
                                     newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
-                                    logger.info { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
+                                    logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
                                     _walletStateFlow.value = walletState
                                 }
                             }
                             is GetTransactionResponse -> {
-                                val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
-                                logger.info { "received parent transaction with txid=${msg.tx.txid}" }
-                                _walletStateFlow.value = walletState
+                                // electrum broadcast responses to all clients, is this for us?
+                                if (_walletStateFlow.value.utxos.map { it.txid }.contains(msg.tx.txid)) {
+                                    val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
+                                    logger.mdcinfo { "received parent transaction with txid=${msg.tx.txid}" }
+                                    _walletStateFlow.value = walletState
+                                } else {
+                                    logger.mdcinfo { "ignoring unrelated transaction with txid=${msg.tx.txid}" }
+                                }
+
                             }
                             else -> {} // ignore other electrum msgs
                         }
                     }
                     is WalletCommand.Companion.AddAddress -> {
-                        logger.info { "adding new address=${it.bitcoinAddress}" }
+                        logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
                     }
                 }

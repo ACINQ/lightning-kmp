@@ -181,11 +181,11 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
-    val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory)
+    val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "final")
     val finalAddress: String = nodeParams.keyManager.bip84Address(account = 0L, addressIndex = 0L).also { finalWallet.addAddress(it) }
 
-    val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory)
-    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { finalWallet.addAddress(it) }
+    val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
+    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { swapInWallet.addAddress(it) }
 
     init {
         launch {
