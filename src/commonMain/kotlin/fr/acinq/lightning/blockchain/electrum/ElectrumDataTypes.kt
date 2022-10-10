@@ -23,9 +23,6 @@ import kotlinx.serialization.json.*
 /**
  * ElectrumMessage
  *       |
- *       |`---- ElectrumSubscription
- *       |             `----- AskForHeaderSubscriptionUpdate
- *       |
  *       |`---- ElectrumRequest
  *       |             |`---- ServerVersion
  *       |             |`---- Ping
@@ -43,8 +40,6 @@ import kotlinx.serialization.json.*
  *                     ...
  */
 sealed interface ElectrumMessage
-sealed interface ElectrumSubscription : ElectrumMessage
-object AskForHeaderSubscriptionUpdate : ElectrumSubscription
 
 /**
  * [ElectrumClient] requests / responses

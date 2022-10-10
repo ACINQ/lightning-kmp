@@ -63,7 +63,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(EstimateFees(3))
+        client.sendElectrumRequest(EstimateFees(3))
 
         notifications.consumerCheck<EstimateFeeResponse> { message ->
             assertTrue { message.feerate!! >= FeeratePerKw.MinimumFeeratePerKw }
@@ -77,7 +77,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(GetTransactionIdFromPosition(height, position))
+        client.sendElectrumRequest(GetTransactionIdFromPosition(height, position))
 
         notifications.consumerCheck<GetTransactionIdFromPositionResponse> { message ->
             assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position), message)
@@ -91,7 +91,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(GetTransactionIdFromPosition(height, position, true))
+        client.sendElectrumRequest(GetTransactionIdFromPosition(height, position, true))
 
         notifications.consumerCheck<GetTransactionIdFromPositionResponse> { message ->
             assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, merkleProof), message)
@@ -105,7 +105,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(GetTransaction(referenceTx.txid))
+        client.sendElectrumRequest(GetTransaction(referenceTx.txid))
 
         notifications.consumerCheck<GetTransactionResponse> { message ->
             assertEquals(referenceTx, message.tx)
@@ -119,7 +119,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(GetHeader(100000))
+        client.sendElectrumRequest(GetHeader(100000))
 
         notifications.consumerCheck<GetHeaderResponse> { message ->
             assertEquals(
@@ -137,7 +137,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val notifications = client.notifications.produceIn(this)
 
         val start = (500000 / 2016) * 2016
-        client.sendElectrumMessage(GetHeaders(start, 2016))
+        client.sendElectrumRequest(GetHeaders(start, 2016))
 
         notifications.consumerCheck<GetHeadersResponse> { message ->
             assertEquals(start, message.start_height)
@@ -152,7 +152,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(GetMerkle(referenceTx.txid, 500000))
+        client.sendElectrumRequest(GetMerkle(referenceTx.txid, 500000))
 
         notifications.consumerCheck<GetMerkleResponse> { message ->
             assertEquals(referenceTx.txid, message.txid)
@@ -172,7 +172,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(AskForHeaderSubscriptionUpdate)
+        client.askCurrentHeader()
 
         notifications.consumerCheck<HeaderSubscriptionResponse>()
 
@@ -184,7 +184,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(ScriptHashSubscription(scriptHash))
+        client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
 
         notifications.consumerCheck<ScriptHashSubscriptionResponse> { message ->
             assertNotEquals("", message.status)
@@ -198,7 +198,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(GetScriptHashHistory(scriptHash))
+        client.sendElectrumRequest(GetScriptHashHistory(scriptHash))
 
         notifications.consumerCheck<GetScriptHashHistoryResponse> { message ->
             assertTrue { message.history.contains(TransactionHistoryItem(500000, referenceTx.txid)) }
@@ -212,7 +212,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val notifications = client.notifications.produceIn(this)
 
-        client.sendElectrumMessage(ScriptHashListUnspent(scriptHash))
+        client.sendElectrumRequest(ScriptHashListUnspent(scriptHash))
 
         notifications.consumerCheck<ScriptHashListUnspentResponse> { message ->
             assertTrue { message.unspents.isEmpty() }

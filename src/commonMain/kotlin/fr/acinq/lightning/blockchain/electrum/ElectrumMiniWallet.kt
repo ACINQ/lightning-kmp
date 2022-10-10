@@ -132,15 +132,16 @@ class ElectrumMiniWallet(
                                 scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
                                     if (msg.status.isNotEmpty()) {
                                         logger.mdcinfo { "non-empty status for address=$bitcoinAddress, requesting utxos" }
-                                        client.sendElectrumMessage(ScriptHashListUnspent(msg.scriptHash))
+                                        client.sendElectrumRequest(ScriptHashListUnspent(msg.scriptHash))
                                     }
                                 }
                             }
+
                             is ScriptHashListUnspentResponse -> {
                                 scriptHashes[msg.scriptHash]?.let { address ->
                                     val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
                                     // request new parent txs
-                                    newUtxos.forEach { utxo -> client.sendElectrumMessage(GetTransaction(utxo.txid)) }
+                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
                                     logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
@@ -148,6 +149,7 @@ class ElectrumMiniWallet(
                                     _walletStateFlow.value = walletState
                                 }
                             }
+
                             is GetTransactionResponse -> {
                                 // electrum broadcast responses to all clients, is this for us?
                                 if (_walletStateFlow.value.utxos.map { it.txid }.contains(msg.tx.txid)) {
@@ -159,9 +161,11 @@ class ElectrumMiniWallet(
                                 }
 
                             }
+
                             else -> {} // ignore other electrum msgs
                         }
                     }
+
                     is WalletCommand.Companion.AddAddress -> {
                         logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
@@ -175,7 +179,7 @@ class ElectrumMiniWallet(
         val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
         val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
         logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-        client.sendElectrumMessage(ScriptHashSubscription(scriptHash))
+        client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
         return scriptHash to bitcoinAddress
     }
 }

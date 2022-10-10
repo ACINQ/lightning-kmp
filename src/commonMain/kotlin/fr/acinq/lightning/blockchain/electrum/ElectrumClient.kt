@@ -25,7 +25,7 @@ import kotlin.time.Duration.Companion.seconds
 
 
 /** Commands */
-internal sealed interface ElectrumClientCommand {
+sealed interface ElectrumClientCommand {
     object Connected : ElectrumClientCommand
     object Disconnected : ElectrumClientCommand
     object AskForHeader : ElectrumClientCommand
@@ -34,7 +34,7 @@ internal sealed interface ElectrumClientCommand {
 }
 
 /** Actions */
-internal sealed interface ElectrumClientAction {
+sealed interface ElectrumClientAction {
     data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction
     data class SendRequest(val request: String) : ElectrumClientAction
     data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction
@@ -57,11 +57,14 @@ internal sealed class ClientState {
 
 internal object WaitingForVersion : ClientState() {
     override fun process(cmd: ElectrumClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when {
-        cmd is ReceivedElectrumResponse && cmd.response is Either.Right -> {
-            when (parseJsonResponse(version, cmd.response.value)) {
-                is ServerVersionResponse -> newState {
-                    state = WaitingForTip
-                    actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
+        cmd is ReceivedElectrumResponse && cmd.response is Either.Right ->
+            when (val msg = parseJsonResponse(version, cmd.response.value)) {
+                is ServerVersionResponse -> {
+                    logger.info { "connected to electrum server name=${msg.clientName} version=${msg.protocolVersion}" }
+                    newState {
+                        state = WaitingForTip
+                        actions = listOf(SendRequest(HeaderSubscription.asJsonRPCRequest()))
+                    }
                 }
 
                 is ServerError -> newState {
@@ -71,7 +74,6 @@ internal object WaitingForVersion : ClientState() {
 
                 else -> returnState() // TODO handle error?
             }
-        }
 
         else -> unhandled(cmd, logger)
     }
@@ -335,13 +337,15 @@ class ElectrumClient(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    fun sendElectrumMessage(message: ElectrumMessage) {
+    fun askCurrentHeader() {
         launch {
-            when (message) {
-                is AskForHeaderSubscriptionUpdate -> mailbox.send(AskForHeader)
-                is ElectrumRequest -> mailbox.send(SendElectrumRequest(message))
-                else -> logger.warning { "sendMessage does not support message: ${message::class}" }
-            }
+            mailbox.send(AskForHeader)
+        }
+    }
+
+    fun sendElectrumRequest(request: ElectrumRequest) {
+        launch {
+            mailbox.send(SendElectrumRequest(request))
         }
     }
 
