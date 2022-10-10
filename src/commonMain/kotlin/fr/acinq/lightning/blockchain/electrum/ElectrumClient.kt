@@ -28,16 +28,16 @@ import kotlin.time.Duration.Companion.seconds
 sealed interface ElectrumClientCommand {
     object Connected : ElectrumClientCommand
     object Disconnected : ElectrumClientCommand
-    object AskForHeader : ElectrumClientCommand
+    data class AskForHeader(val id: UUID) : ElectrumClientCommand
     data class ReceivedElectrumResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ElectrumClientCommand
-    data class SendElectrumRequest(val electrumRequest: ElectrumRequest) : ElectrumClientCommand
+    data class SendElectrumRequest(val id: UUID, val electrumRequest: ElectrumRequest) : ElectrumClientCommand
 }
 
 /** Actions */
 sealed interface ElectrumClientAction {
-    data class SendHeader(val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction
+    data class SendHeader(val ids: Set<UUID>, val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction
     data class SendRequest(val request: String) : ElectrumClientAction
-    data class SendResponse(val response: ElectrumResponse) : ElectrumClientAction
+    data class SendResponse(val ids: Set<UUID>, val response: ElectrumResponse) : ElectrumClientAction
     data class BroadcastStatus(val connection: Connection) : ElectrumClientAction
 }
 
@@ -88,7 +88,7 @@ internal object WaitingForTip : ClientState() {
                         when (val response = parseJsonResponse(HeaderSubscription, rpcResponse.value)) {
                             is HeaderSubscriptionResponse -> newState {
                                 state = ClientRunning(height = response.blockHeight, tip = response.header)
-                                actions = listOf(BroadcastStatus(Connection.ESTABLISHED), SendResponse(response))
+                                actions = listOf(BroadcastStatus(Connection.ESTABLISHED), SendResponse(emptySet(), response))
                             }
 
                             else -> returnState()
@@ -105,29 +105,29 @@ internal object WaitingForTip : ClientState() {
 internal data class ClientRunning(
     val height: Int,
     val tip: BlockHeader,
-    val requests: MutableMap<Int, ElectrumRequest> = mutableMapOf(),
+    val requests: MutableMap<Int, SendElectrumRequest> = mutableMapOf(),
     val responseTimestamps: MutableMap<Int, Long?> = mutableMapOf()
 ) : ClientState() {
 
     override fun process(cmd: ElectrumClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> = when (cmd) {
-        is AskForHeader -> returnState(SendHeader(height, tip))
-        is SendElectrumRequest -> returnState(sendRequest(cmd.electrumRequest))
+        is AskForHeader -> returnState(SendHeader(setOf(cmd.id), height, tip))
+        is SendElectrumRequest -> returnState(sendRequest(cmd))
         is ReceivedElectrumResponse -> when (val response = cmd.response) {
             is Either.Left -> when (val electrumResponse = response.value) {
                 is HeaderSubscriptionResponse -> newState {
                     state = copy(height = electrumResponse.blockHeight, tip = electrumResponse.header)
-                    actions = listOf(SendResponse(electrumResponse))
+                    actions = listOf(SendResponse(emptySet(), electrumResponse))
                 }
 
-                is ScriptHashSubscriptionResponse -> returnState(SendResponse(electrumResponse))
+                is ScriptHashSubscriptionResponse -> returnState(SendResponse(emptySet(), electrumResponse))
                 else -> returnState()
             }
 
             is Either.Right -> {
-                requests[response.value.id]?.let { request ->
+                requests[response.value.id]?.let { reqCmd ->
                     responseTimestamps[response.value.id!!] = currentTimestampMillis()
-                    if (request !is Ping) {
-                        returnState(SendResponse(parseJsonResponse(request, response.value)))
+                    if (reqCmd.electrumRequest !is Ping) {
+                        returnState(SendResponse(setOf(reqCmd.id), parseJsonResponse(reqCmd.electrumRequest, response.value)))
                     } else {
                         returnState()
                     }
@@ -138,11 +138,11 @@ internal data class ClientRunning(
         else -> unhandled(cmd, logger)
     }
 
-    private fun sendRequest(electrumRequest: ElectrumRequest): SendRequest {
+    private fun sendRequest(cmd: SendElectrumRequest): SendRequest {
         val newRequestId = requests.maxOfOrNull { it.key + 1 } ?: 0
-        requests[newRequestId] = electrumRequest
+        requests[newRequestId] = cmd
         responseTimestamps[newRequestId] = null
-        return SendRequest(electrumRequest.asJsonRPCRequest(newRequestId))
+        return SendRequest(cmd.electrumRequest.asJsonRPCRequest(newRequestId))
     }
 }
 
@@ -161,7 +161,7 @@ internal object ClientClosed : ClientState() {
 private fun ClientState.unhandled(event: ElectrumClientCommand, logger: Logger): Pair<ClientState, List<ElectrumClientAction>> =
     when (event) {
         Disconnected -> ClientClosed to emptyList()
-        AskForHeader -> returnState() // TODO something else ?
+        is AskForHeader -> returnState() // TODO something else ?
         else -> {
             logger.warning { "cannot process event ${event::class} in state ${this::class}" }
             returnState()
@@ -213,8 +213,8 @@ class ElectrumClient(
     val connectionState: StateFlow<Connection> get() = _connectionState
 
     // subscriptions notifications (headers, script_hashes, etc.)
-    private val _notifications = MutableSharedFlow<ElectrumMessage>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    val notifications: SharedFlow<ElectrumMessage> get() = _notifications.asSharedFlow()
+    private val _notifications = MutableSharedFlow<ElectrumClientNotification>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    val notifications: SharedFlow<ElectrumClientNotification> get() = _notifications.asSharedFlow()
 
     private var state: ClientState = ClientClosed
 
@@ -243,8 +243,8 @@ class ElectrumClient(
                 yield()
                 when (action) {
                     is SendRequest -> if (!output.isClosedForSend) output.send(action.request.encodeToByteArray())
-                    is SendHeader -> _notifications.emit(HeaderSubscriptionResponse(action.height, action.blockHeader))
-                    is SendResponse -> _notifications.emit(action.response)
+                    is SendHeader -> _notifications.emit(ElectrumClientNotification(action.ids, HeaderSubscriptionResponse(action.height, action.blockHeader)))
+                    is SendResponse -> _notifications.emit(ElectrumClientNotification(action.ids, action.response))
                     is BroadcastStatus -> if (_connectionState.value != action.connection) _connectionState.value = action.connection
                 }
             }
@@ -337,15 +337,15 @@ class ElectrumClient(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    fun askCurrentHeader() {
+    fun askCurrentHeader(callerId: UUID) {
         launch {
-            mailbox.send(AskForHeader)
+            mailbox.send(AskForHeader(callerId))
         }
     }
 
-    fun sendElectrumRequest(request: ElectrumRequest) {
+    fun sendElectrumRequest(callerId: UUID, request: ElectrumRequest) {
         launch {
-            mailbox.send(SendElectrumRequest(request))
+            mailbox.send(SendElectrumRequest(callerId, request))
         }
     }
 
@@ -359,7 +359,7 @@ class ElectrumClient(
         }
         return state.requests.mapNotNull { (id, request) ->
             state.responseTimestamps[id]?.let { lastResponseTimestamp ->
-                RequestResponseTimestamp(id, request, lastResponseTimestamp)
+                RequestResponseTimestamp(id, request.electrumRequest, lastResponseTimestamp)
             }
         }
     }
@@ -379,5 +379,10 @@ class ElectrumClient(
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
+        /**
+         * Events sent to consumers.
+         * @param ids identifies a given consumer. Empty if applicable to all consumers
+         */
+        data class ElectrumClientNotification(val ids: Set<UUID>, val msg: ElectrumResponse)
     }
 }

@@ -5,10 +5,7 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
@@ -86,8 +83,13 @@ class ElectrumMiniWallet(
 ) : CoroutineScope by scope {
 
     private val logger = loggerFactory.newLogger(this::class)
-    val uuid = UUID.randomUUID().toString().take(4)
-    fun Logger.mdcinfo(msgCreator: () -> String) { log(level = Logger.Level.INFO, meta = mapOf("wallet" to name), msgCreator = msgCreator) }
+    fun Logger.mdcinfo(msgCreator: () -> String) {
+        log(
+            level = Logger.Level.INFO,
+            meta = mapOf("wallet" to name, "state" to walletStateFlow.value),
+            msgCreator = msgCreator
+        )
+    }
 
     // state flow with the current balance
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
@@ -95,6 +97,8 @@ class ElectrumMiniWallet(
 
     // all currently watched script hashes and their corresponding bitcoin address
     private var scriptHashes: Map<ByteVector32, String> = emptyMap()
+
+    val electrumClientCallerId = UUID.randomUUID()
 
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
@@ -115,7 +119,8 @@ class ElectrumMiniWallet(
         launch {
             // listen to subscriptions events
             client.notifications
-                .filterIsInstance<ElectrumResponse>()
+                .filter { it.ids.isEmpty() || it.ids.contains(electrumClientCallerId) }
+                .map { it.msg }
                 .collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
         }
         launch {
@@ -125,6 +130,7 @@ class ElectrumMiniWallet(
                         logger.mdcinfo { "electrum connected" }
                         scriptHashes.values.forEach { subscribe(it) }
                     }
+
                     is WalletCommand.Companion.ElectrumNotification -> {
                         // NB: we ignore responses for unknown script_hashes (electrum client doesn't maintain a list of subscribers so we receive all subscriptions)
                         when (val msg = it.msg) {
@@ -132,7 +138,7 @@ class ElectrumMiniWallet(
                                 scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
                                     if (msg.status.isNotEmpty()) {
                                         logger.mdcinfo { "non-empty status for address=$bitcoinAddress, requesting utxos" }
-                                        client.sendElectrumRequest(ScriptHashListUnspent(msg.scriptHash))
+                                        client.sendElectrumRequest(electrumClientCallerId, ScriptHashListUnspent(msg.scriptHash))
                                     }
                                 }
                             }
@@ -141,7 +147,7 @@ class ElectrumMiniWallet(
                                 scriptHashes[msg.scriptHash]?.let { address ->
                                     val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
                                     // request new parent txs
-                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
+                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(electrumClientCallerId, GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
                                     logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
@@ -179,7 +185,7 @@ class ElectrumMiniWallet(
         val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
         val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
         logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-        client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
+        client.sendElectrumRequest(electrumClientCallerId, ScriptHashSubscription(scriptHash))
         return scriptHash to bitcoinAddress
     }
 }
