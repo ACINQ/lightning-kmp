@@ -140,5 +140,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         assertEquals(7200_0000.sat, walletState1.spendableBalance)
         assertEquals(3000_0000.sat, walletState2.spendableBalance)
 
+        assertEquals(4, walletState1.parentTxs.size)
+        assertEquals(6, walletState2.parentTxs.size)
+
     }
 }

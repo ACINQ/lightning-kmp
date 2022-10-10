@@ -158,13 +158,9 @@ class ElectrumMiniWallet(
 
                             is GetTransactionResponse -> {
                                 // electrum broadcast responses to all clients, is this for us?
-                                if (_walletStateFlow.value.utxos.map { it.txid }.contains(msg.tx.txid)) {
-                                    val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
-                                    logger.mdcinfo { "received parent transaction with txid=${msg.tx.txid}" }
-                                    _walletStateFlow.value = walletState
-                                } else {
-                                    logger.mdcinfo { "ignoring unrelated transaction with txid=${msg.tx.txid}" }
-                                }
+                                val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
+                                logger.mdcinfo { "received parent transaction with txid=${msg.tx.txid}" }
+                                _walletStateFlow.value = walletState
 
                             }
 
