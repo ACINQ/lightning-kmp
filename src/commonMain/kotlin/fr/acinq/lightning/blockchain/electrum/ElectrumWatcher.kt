@@ -458,19 +458,19 @@ class ElectrumWatcher(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
-                    is RegisterToScriptHashNotification -> client.sendElectrumRequest(
+                    is AskForHeaderUpdate -> client.sendElectrumMessage(AskForHeaderSubscriptionUpdate)
+                    is RegisterToScriptHashNotification -> client.sendElectrumMessage(
                         ScriptHashSubscription(action.scriptHash)
                     )
                     is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.tx))
-                    is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
-                    is AskForScriptHashHistory -> client.sendElectrumRequest(
+                    is BroadcastTxAction -> client.sendElectrumMessage(BroadcastTransaction(action.tx))
+                    is AskForScriptHashHistory -> client.sendElectrumMessage(
                         GetScriptHashHistory(action.scriptHash)
                     )
-                    is AskForTransaction -> client.sendElectrumRequest(
+                    is AskForTransaction -> client.sendElectrumMessage(
                         GetTransaction(action.txid, action.contextOpt)
                     )
-                    is AskForMerkle -> client.sendElectrumRequest(
+                    is AskForMerkle -> client.sendElectrumMessage(
                         GetMerkle(action.txId, action.txheight, action.tx)
                     )
                     is NotifyWatch -> {

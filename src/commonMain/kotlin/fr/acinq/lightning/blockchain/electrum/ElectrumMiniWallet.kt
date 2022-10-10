@@ -132,7 +132,7 @@ class ElectrumMiniWallet(
                                 scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
                                     if (msg.status.isNotEmpty()) {
                                         logger.mdcinfo { "non-empty status for address=$bitcoinAddress, requesting utxos" }
-                                        client.sendElectrumRequest(ScriptHashListUnspent(msg.scriptHash))
+                                        client.sendElectrumMessage(ScriptHashListUnspent(msg.scriptHash))
                                     }
                                 }
                             }
@@ -140,7 +140,7 @@ class ElectrumMiniWallet(
                                 scriptHashes[msg.scriptHash]?.let { address ->
                                     val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
                                     // request new parent txs
-                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
+                                    newUtxos.forEach { utxo -> client.sendElectrumMessage(GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
                                     logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
@@ -175,7 +175,7 @@ class ElectrumMiniWallet(
         val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
         val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
         logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-        client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
+        client.sendElectrumMessage(ScriptHashSubscription(scriptHash))
         return scriptHash to bitcoinAddress
     }
 }
