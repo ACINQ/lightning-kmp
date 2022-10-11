@@ -1,5 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector32
@@ -44,28 +45,16 @@ class ElectrumClientTest : LightningTestSuite() {
     )
         .map { it.toByteVector32() }
 
-    val electrumClientCallerId = UUID.randomUUID()
-
-    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
-        val client =
-            ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
-
-        client.connectionState.first { it is Connection.CLOSED }
-        client.connectionState.first { it is Connection.ESTABLISHING }
-        client.connectionState.first { it is Connection.ESTABLISHED }
-
-        return client
-    }
-
     @Test
     fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
 
     @Test
     fun `estimate fees`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, EstimateFees(3))
+        caller.sendElectrumRequest(EstimateFees(3))
 
         notifications.consumerCheck<EstimateFeeResponse> { message ->
             assertTrue { message.feerate!! >= FeeratePerKw.MinimumFeeratePerKw }
@@ -77,9 +66,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get transaction id from position`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, GetTransactionIdFromPosition(height, position))
+        caller.sendElectrumRequest(GetTransactionIdFromPosition(height, position))
 
         notifications.consumerCheck<GetTransactionIdFromPositionResponse> { message ->
             assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position), message)
@@ -91,9 +81,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get transaction id from position with merkle proof`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, GetTransactionIdFromPosition(height, position, true))
+        caller.sendElectrumRequest(GetTransactionIdFromPosition(height, position, true))
 
         notifications.consumerCheck<GetTransactionIdFromPositionResponse> { message ->
             assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, merkleProof), message)
@@ -105,9 +96,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get transaction`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, GetTransaction(referenceTx.txid))
+        caller.sendElectrumRequest(GetTransaction(referenceTx.txid))
 
         notifications.consumerCheck<GetTransactionResponse> { message ->
             assertEquals(referenceTx, message.tx)
@@ -119,9 +111,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get header`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, GetHeader(100000))
+        caller.sendElectrumRequest(GetHeader(100000))
 
         notifications.consumerCheck<GetHeaderResponse> { message ->
             assertEquals(
@@ -136,10 +129,11 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get headers`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
         val start = (500000 / 2016) * 2016
-        client.sendElectrumRequest(electrumClientCallerId, GetHeaders(start, 2016))
+        caller.sendElectrumRequest(GetHeaders(start, 2016))
 
         notifications.consumerCheck<GetHeadersResponse> { message ->
             assertEquals(start, message.start_height)
@@ -152,9 +146,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get merkle tree`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, GetMerkle(referenceTx.txid, 500000))
+        caller.sendElectrumRequest(GetMerkle(referenceTx.txid, 500000))
 
         notifications.consumerCheck<GetMerkleResponse> { message ->
             assertEquals(referenceTx.txid, message.txid)
@@ -172,9 +167,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `header subscription`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.askCurrentHeader(electrumClientCallerId)
+        caller.askCurrentHeader()
 
         notifications.consumerCheck<HeaderSubscriptionResponse>()
 
@@ -184,9 +180,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `scripthash subscription`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, ScriptHashSubscription(scriptHash))
+        caller.sendElectrumRequest(ScriptHashSubscription(scriptHash))
 
         notifications.consumerCheck<ScriptHashSubscriptionResponse> { message ->
             assertNotEquals("", message.status)
@@ -198,9 +195,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get scripthash history`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, GetScriptHashHistory(scriptHash))
+        caller.sendElectrumRequest(GetScriptHashHistory(scriptHash))
 
         notifications.consumerCheck<GetScriptHashHistoryResponse> { message ->
             assertTrue { message.history.contains(TransactionHistoryItem(500000, referenceTx.txid)) }
@@ -212,9 +210,10 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `list script unspents`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val notifications = client.notifications.produceIn(this)
+        val caller = client.Caller()
+        val notifications = caller.notifications.produceIn(this)
 
-        client.sendElectrumRequest(electrumClientCallerId, ScriptHashListUnspent(scriptHash))
+        caller.sendElectrumRequest(ScriptHashListUnspent(scriptHash))
 
         notifications.consumerCheck<ScriptHashListUnspentResponse> { message ->
             assertTrue { message.unspents.isEmpty() }
@@ -223,12 +222,43 @@ class ElectrumClientTest : LightningTestSuite() {
         client.stop()
     }
 
-    private suspend inline fun <reified T : ElectrumMessage> ReceiveChannel<ElectrumClient.Companion.ElectrumClientNotification>.consumerCheck(crossinline assertion: (T) -> Unit = {}) {
-        val msg = this@consumerCheck
-            .consumeAsFlow()
-            .filter { it.ids.isEmpty() || it.ids.contains(electrumClientCallerId) }
-            .map { it.msg }
-            .filterIsInstance<T>().firstOrNull()
+    @Test
+    fun `client multiplexing`() = runSuspendTest(timeout = 15.seconds) {
+        val client = connectToMainnetServer()
+
+        val txids = listOf(
+            ByteVector32("c1e943938e0bf2e9e6feefe22af0466514a58e9f7ed0f7ada6fd8e6dbeca0742"),
+            ByteVector32("2cf392ecf573a638f01f72c276c3b097d05eb58f39e165eacc91b8a8df09fbd8"),
+            ByteVector32("149a098d6261b7f9359a572d797c4a41b62378836a14093912618b15644ba402"),
+            ByteVector32("2dd9cb7bcebb74b02efc85570a462f22a54a613235bee11d0a2c791342a26007"),
+            ByteVector32("71b3dbaca67e9f9189dad3617138c19725ab541ef0b49c05a94913e9f28e3f4e"),
+            ByteVector32("21d2eb195736af2a40d42107e6abd59c97eb6cffd4a5a7a7709e86590ae61987"),
+            ByteVector32("74d681e0e03bafa802c8aa084379aa98d9fcd632ddc2ed9782b586ec87451f20"),
+            ByteVector32("563ea83f9641d37a36f9294d172fdb4fb86c19b0e9cac45e0b27610331138775"),
+            ByteVector32("971af80218684017722429be08548d1f30a2f1f220abc064380cbca5cabf7623"),
+            ByteVector32("b1ec9c44009147f3cee26caba45abec2610c74df9751fad14074119b5314da21")
+        )
+
+        // request txids in parallel
+        val requests = txids.map {
+            val caller = client.Caller()
+            val notifications = caller.notifications.produceIn(this)
+            caller.sendElectrumRequest(GetTransaction(it))
+            it to notifications
+        }
+
+        // check that each client had the correct tx
+        requests.forEach { (txid, notifications) ->
+            notifications.consumerCheck<GetTransactionResponse> { res ->
+                assertEquals(txid, res.tx.txid)
+            }
+        }
+
+        client.stop()
+    }
+
+    private suspend inline fun <reified T : ElectrumMessage> ReceiveChannel<ElectrumMessage>.consumerCheck(crossinline assertion: (T) -> Unit = {}) {
+        val msg = this@consumerCheck.consumeAsFlow().filterIsInstance<T>().firstOrNull()
         assertNotNull(msg)
         assertion(msg)
     }

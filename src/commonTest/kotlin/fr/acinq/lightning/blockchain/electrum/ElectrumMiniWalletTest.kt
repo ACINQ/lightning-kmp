@@ -4,15 +4,9 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.Connection
-import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.sat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import org.kodein.log.LoggerFactory
@@ -23,30 +17,10 @@ import kotlin.time.Duration.Companion.seconds
 
 class ElectrumMiniWalletTest : LightningTestSuite() {
 
-    private suspend fun connectToElectrumServer(scope: CoroutineScope, addr: ServerAddress): ElectrumClient {
-        val client =
-            ElectrumClient(TcpSocket.Builder(), scope, LoggerFactory.default).apply { connect(addr) }
-
-        client.connectionState.first { it is Connection.CLOSED }
-        client.connectionState.first { it is Connection.ESTABLISHING }
-        client.connectionState.first { it is Connection.ESTABLISHED }
-
-        return client
-    }
-
-    private suspend fun CoroutineScope.connectToTestnetServer(): ElectrumClient =
-        connectToElectrumServer(this, ServerAddress("testnet1.electrum.acinq.co", 51002, TcpSocket.TLS.UNSAFE_CERTIFICATES))
-
-    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient =
-        connectToElectrumServer(this, ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))
-
-    @Test
-    fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
-
     @Test
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default)
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
@@ -62,7 +36,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default)
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
@@ -78,7 +52,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `multiple addresses`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
         wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV")
@@ -129,8 +103,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `parallel wallets`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet1 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default, name = "addr-16MmJT")
-        val wallet2 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default, name = "addr-14xb2H")
+        val wallet1 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default, name = "addr-16MmJT")
+        val wallet2 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default, name = "addr-14xb2H")
         wallet1.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet2.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 

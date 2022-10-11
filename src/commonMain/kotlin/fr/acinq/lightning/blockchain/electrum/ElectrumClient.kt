@@ -210,11 +210,10 @@ class ElectrumClient(
 
     // connection status to the server
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
-    val connectionState: StateFlow<Connection> get() = _connectionState
+    val connectionState: StateFlow<Connection> get() = _connectionState.asStateFlow()
 
     // subscriptions notifications (headers, script_hashes, etc.)
     private val _notifications = MutableSharedFlow<ElectrumClientNotification>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    val notifications: SharedFlow<ElectrumClientNotification> get() = _notifications.asSharedFlow()
 
     private var state: ClientState = ClientClosed
 
@@ -223,8 +222,8 @@ class ElectrumClient(
     init {
         logger.info { "initializing electrum client" }
         launch {
-            var previousState = connectionState.value
-            connectionState.filter { it != previousState }.collect {
+            var previousState = _connectionState.value
+            _connectionState.filter { it != previousState }.collect {
                 logger.info { "connection state changed: $it" }
                 if (it is Connection.CLOSED) mailbox.send(Disconnected)
                 previousState = it
@@ -234,9 +233,11 @@ class ElectrumClient(
     }
 
     private suspend fun run() {
-        mailbox.consumeEach { event ->
+        mailbox.consumeEach { cmd ->
 
-            val (newState, actions) = state.process(event, logger)
+            logger.debug { "processing command $cmd in state ${state::class}" }
+
+            val (newState, actions) = state.process(cmd, logger)
             state = newState
 
             actions.forEach { action ->
@@ -337,32 +338,53 @@ class ElectrumClient(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    fun askCurrentHeader(callerId: UUID) {
-        launch {
-            mailbox.send(AskForHeader(callerId))
-        }
-    }
+    /**
+     * A simple layer that decorates calls to [ElectrumClient] with a unique identifier,
+     * so we can do multiplexing on the same connection to an Electrum server.
+     */
+    inner class Caller(val uuid: UUID = UUID.randomUUID()) {
 
-    fun sendElectrumRequest(callerId: UUID, request: ElectrumRequest) {
-        launch {
-            mailbox.send(SendElectrumRequest(callerId, request))
+        val connectionState: StateFlow<Connection> get() = this@ElectrumClient.connectionState
+
+        val notifications: Flow<ElectrumResponse>
+            get() = _notifications.asSharedFlow()
+            .filter { it.ids.isEmpty() || it.ids.contains(uuid) }
+            .map { it.msg }
+
+        fun askCurrentHeader() {
+            launch {
+                mailbox.send(AskForHeader(uuid))
+            }
+        }
+
+        fun sendElectrumRequest(request: ElectrumRequest) {
+            launch {
+                mailbox.send(SendElectrumRequest(uuid, request))
+            }
+        }
+
+        /**
+         * Returns a list of requests, and when the most recent corresponding response was received.
+         */
+        fun requestResponseTimestamps(): List<RequestResponseTimestamp>? {
+            val state = state
+            if (state !is ClientRunning) {
+                return null
+            }
+            return state.requests.mapNotNull { (id, request) ->
+                state.responseTimestamps[id]?.let { lastResponseTimestamp ->
+                    RequestResponseTimestamp(id, request.electrumRequest, lastResponseTimestamp)
+                }
+            }
         }
     }
 
     /**
-     * Returns a list of requests, and when the most recent corresponding response was received.
+     * Events sent to consumers.
+     * @param ids identifies a given consumer. Empty if applicable to all consumers
      */
-    fun requestResponseTimestamps(): List<RequestResponseTimestamp>? {
-        val state = state
-        if (state !is ClientRunning) {
-            return null
-        }
-        return state.requests.mapNotNull { (id, request) ->
-            state.responseTimestamps[id]?.let { lastResponseTimestamp ->
-                RequestResponseTimestamp(id, request.electrumRequest, lastResponseTimestamp)
-            }
-        }
-    }
+    private inner class ElectrumClientNotification(val ids: Set<UUID>, val msg: ElectrumResponse)
+
 
     fun stop() {
         logger.info { "electrum client stopping" }
@@ -379,10 +401,5 @@ class ElectrumClient(
         const val ELECTRUM_PROTOCOL_VERSION = "1.4"
         val version = ServerVersion()
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
-        /**
-         * Events sent to consumers.
-         * @param ids identifies a given consumer. Empty if applicable to all consumers
-         */
-        data class ElectrumClientNotification(val ids: Set<UUID>, val msg: ElectrumResponse)
     }
 }

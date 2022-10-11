@@ -9,7 +9,6 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.computeSc
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher.Companion.registerToScriptHash
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Connection
-import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.currentTimestampMillis
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
@@ -401,7 +400,7 @@ private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, 
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(
-    val client: ElectrumClient,
+    val client: ElectrumClient.Caller,
     val scope: CoroutineScope,
     loggerFactory: LoggerFactory
 ) : CoroutineScope by scope {
@@ -436,8 +435,6 @@ class ElectrumWatcher(
 
     private val eventChannel = Channel<WatcherEvent>(Channel.BUFFERED)
 
-    val electrumClientCallerId = UUID.randomUUID()
-
     private val input = produce(capacity = Channel.BUFFERED) {
         launch {
             eventChannel.consumeEach { send(it) }
@@ -448,12 +445,9 @@ class ElectrumWatcher(
             }
         }
         launch {
-            client.notifications
-                .filter { it.ids.isEmpty() || it.ids.contains(electrumClientCallerId) }
-                .map { it.msg }
-                .collect {
-                    eventChannel.send(ReceivedMessage(it))
-                }
+            client.notifications.collect {
+                eventChannel.send(ReceivedMessage(it))
+            }
         }
     }
 
@@ -484,17 +478,25 @@ class ElectrumWatcher(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is AskForHeaderUpdate -> client.askCurrentHeader(electrumClientCallerId)
+                    is AskForHeaderUpdate -> client.askCurrentHeader()
                     is RegisterToScriptHashNotification -> client.sendElectrumRequest(
-                        electrumClientCallerId,
                         ScriptHashSubscription(action.scriptHash)
                     )
 
                     is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.tx))
-                    is BroadcastTxAction -> client.sendElectrumRequest(electrumClientCallerId, BroadcastTransaction(action.tx))
-                    is AskForScriptHashHistory -> client.sendElectrumRequest(electrumClientCallerId, GetScriptHashHistory(action.scriptHash))
-                    is AskForTransaction -> client.sendElectrumRequest(electrumClientCallerId, GetTransaction(action.txid, action.contextOpt))
-                    is AskForMerkle -> client.sendElectrumRequest(electrumClientCallerId, GetMerkle(action.txId, action.txheight, action.tx))
+                    is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
+                    is AskForScriptHashHistory -> client.sendElectrumRequest(
+                        GetScriptHashHistory(action.scriptHash)
+                    )
+
+                    is AskForTransaction -> client.sendElectrumRequest(
+                        GetTransaction(action.txid, action.contextOpt)
+                    )
+
+                    is AskForMerkle -> client.sendElectrumRequest(
+                        GetMerkle(action.txId, action.txheight, action.tx)
+                    )
+
                     is NotifyWatch -> {
                         if (action.broadcastNotification)
                             _notificationsFlow.emit(NotifyWatchEvent(action.watchEvent))
