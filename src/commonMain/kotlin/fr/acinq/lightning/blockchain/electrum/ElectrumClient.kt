@@ -21,7 +21,6 @@ import kotlinx.serialization.json.Json
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -29,16 +28,16 @@ import kotlin.time.Duration.Companion.seconds
 sealed interface ElectrumClientCommand {
     object Connected : ElectrumClientCommand
     object Disconnected : ElectrumClientCommand
-    data class AskForHeader(val callerId: Int) : ElectrumClientCommand
+    data class AskForHeader(val callerId: UUID) : ElectrumClientCommand
     data class ReceivedElectrumResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : ElectrumClientCommand
-    data class SendElectrumRequest(val callerId: Int, val electrumRequest: ElectrumRequest) : ElectrumClientCommand
+    data class SendElectrumRequest(val callerId: UUID, val electrumRequest: ElectrumRequest) : ElectrumClientCommand
 }
 
 /** Actions */
 sealed interface ElectrumClientAction {
-    data class SendHeader(val callerId: Int, val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction
+    data class SendHeader(val callerId: UUID, val height: Int, val blockHeader: BlockHeader) : ElectrumClientAction
     data class SendRequest(val request: String) : ElectrumClientAction
-    data class SendResponse(val callerId: Int?, val response: ElectrumResponse) : ElectrumClientAction
+    data class SendResponse(val callerId: UUID?, val response: ElectrumResponse) : ElectrumClientAction
     data class BroadcastStatus(val connection: Connection) : ElectrumClientAction
 }
 
@@ -339,15 +338,13 @@ class ElectrumClient(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    private val callerIdGenerator: AtomicReference<Int> = AtomicReference(0)
-
     /**
      * A simple layer that decorates calls to [ElectrumClient] with a unique identifier,
      * so we can do multiplexing on the same connection to an Electrum server.
      */
     inner class Caller() {
 
-        private val id = callerIdGenerator.getAndUpdate { i -> i + 1 }
+        private val id = UUID.randomUUID()
 
         val connectionState: StateFlow<Connection> get() = this@ElectrumClient.connectionState
 
@@ -389,7 +386,7 @@ class ElectrumClient(
      * @param callerId identifies a given consumer. A null value means that the event will be
      * sent to all consumers
      */
-    private inner class ElectrumClientNotification(val callerId: Int?, val msg: ElectrumResponse)
+    private inner class ElectrumClientNotification(val callerId: UUID?, val msg: ElectrumResponse)
 
 
     fun stop() {

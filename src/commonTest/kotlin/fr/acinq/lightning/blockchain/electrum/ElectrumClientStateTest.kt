@@ -43,7 +43,7 @@ class ElectrumClientStateTest : LightningTestSuite() {
             }
 
             if (state !is ClientRunning)
-                state.process(ElectrumClientCommand.AskForHeader(42), logger).let { (nextState, actions) ->
+                state.process(ElectrumClientCommand.AskForHeader(UUID.randomUUID()), logger).let { (nextState, actions) ->
                     assertEquals(state, nextState)
                     assertTrue(actions.isEmpty())
                 }
