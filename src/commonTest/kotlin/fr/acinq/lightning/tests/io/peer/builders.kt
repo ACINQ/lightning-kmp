@@ -166,7 +166,7 @@ public fun buildPeer(
     databases: InMemoryDatabases = InMemoryDatabases()
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope, LoggerFactory.default)
-    val watcher = ElectrumWatcher(electrum, scope, LoggerFactory.default)
+    val watcher = ElectrumWatcher(electrum.Caller(), scope, LoggerFactory.default)
     val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
     peer.onChainFeeratesFlow.value = OnChainFeerates(

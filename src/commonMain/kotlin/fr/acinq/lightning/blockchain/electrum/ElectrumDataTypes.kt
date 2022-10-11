@@ -17,17 +17,34 @@ import kotlinx.serialization.json.*
 
 /**
  * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
- * See the documentation for the ElectrumX protocol there: https://github.com/spesmilo/electrumx/
+ * See the documentation for the ElectrumX protocol there: https://electrumx.readthedocs.io
  */
-sealed class ElectrumMessage
-sealed class ElectrumSubscription : ElectrumMessage()
-object AskForHeaderSubscriptionUpdate : ElectrumSubscription()
-data class SendElectrumRequest(val electrumRequest: ElectrumRequest) : ElectrumMessage()
+
+/**
+ * ElectrumMessage
+ *       |
+ *       |`---- ElectrumRequest
+ *       |             |`---- ServerVersion
+ *       |             |`---- Ping
+ *       |             |`---- GetScriptHashHistory
+ *       |             |`---- ScriptHashListUnspent
+ *       |             |`---- ScriptHashSubscription
+ *       |             ...
+ *       |
+ *       `----- ElectrumResponse
+ *                     |`---- ServerVersionResponse
+ *                     |`---- PingResponse
+ *                     |`---- GetScriptHashHistoryResponse
+ *                     |`---- ScriptHashListUnspentResponse
+ *                     |`---- ScriptHashSubscriptionResponse
+ *                     ...
+ */
+sealed interface ElectrumMessage
 
 /**
  * [ElectrumClient] requests / responses
  */
-sealed class ElectrumRequest(vararg params: Any) {
+sealed class ElectrumRequest(vararg params: Any) : ElectrumMessage {
     abstract val method: String
     private val parameters = params.toList()
 
@@ -48,7 +65,7 @@ sealed class ElectrumRequest(vararg params: Any) {
     }
 }
 
-sealed class ElectrumResponse : ElectrumMessage()
+sealed interface ElectrumResponse : ElectrumMessage
 
 data class ServerVersion(
     private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
@@ -57,20 +74,20 @@ data class ServerVersion(
     override val method: String = "server.version"
 }
 
-data class ServerVersionResponse(val clientName: String, val protocolVersion: String) : ElectrumResponse()
+data class ServerVersionResponse(val clientName: String, val protocolVersion: String) : ElectrumResponse
 
 object Ping : ElectrumRequest() {
     override val method: String = "server.ping"
 }
 
-object PingResponse : ElectrumResponse()
+object PingResponse : ElectrumResponse
 
 data class GetScriptHashHistory(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.get_history"
 }
 
 data class TransactionHistoryItem(val blockHeight: Int, val txid: ByteVector32)
-data class GetScriptHashHistoryResponse(val scriptHash: ByteVector32, val history: List<TransactionHistoryItem>) : ElectrumResponse()
+data class GetScriptHashHistoryResponse(val scriptHash: ByteVector32, val history: List<TransactionHistoryItem>) : ElectrumResponse
 
 data class ScriptHashListUnspent(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.listunspent"
@@ -80,37 +97,37 @@ data class UnspentItem(val txid: ByteVector32, val outputIndex: Int, val value: 
     val outPoint by lazy { OutPoint(txid.reversed(), outputIndex.toLong()) }
 }
 
-data class ScriptHashListUnspentResponse(val scriptHash: ByteVector32, val unspents: List<UnspentItem>) : ElectrumResponse()
+data class ScriptHashListUnspentResponse(val scriptHash: ByteVector32, val unspents: List<UnspentItem>) : ElectrumResponse
 
 data class BroadcastTransaction(val tx: Transaction) : ElectrumRequest(tx) {
     override val method: String = "blockchain.transaction.broadcast"
 }
 
-data class BroadcastTransactionResponse(val tx: Transaction, val error: JsonRPCError? = null) : ElectrumResponse()
+data class BroadcastTransactionResponse(val tx: Transaction, val error: JsonRPCError? = null) : ElectrumResponse
 
 data class GetTransactionIdFromPosition(val blockHeight: Int, val txIndex: Int, val merkle: Boolean = false) : ElectrumRequest(blockHeight, txIndex, merkle) {
     override val method: String = "blockchain.transaction.id_from_pos"
 }
 
-data class GetTransactionIdFromPositionResponse(val txid: ByteVector32, val blockHeight: Int, val txIndex: Int, val merkle: List<ByteVector32> = emptyList()) : ElectrumResponse()
+data class GetTransactionIdFromPositionResponse(val txid: ByteVector32, val blockHeight: Int, val txIndex: Int, val merkle: List<ByteVector32> = emptyList()) : ElectrumResponse
 
 data class GetTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : ElectrumRequest(txid) {
     override val method: String = "blockchain.transaction.get"
 }
 
-data class GetTransactionResponse(val tx: Transaction, val contextOpt: Any? = null) : ElectrumResponse()
+data class GetTransactionResponse(val tx: Transaction, val contextOpt: Any? = null) : ElectrumResponse
 
 data class GetHeader(val blockHeight: Int) : ElectrumRequest(blockHeight) {
     override val method: String = "blockchain.block.header"
 }
 
-data class GetHeaderResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumResponse()
+data class GetHeaderResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumResponse
 
 data class GetHeaders(val start_height: Int, val count: Int, val cp_height: Int = 0) : ElectrumRequest(start_height, count, cp_height) {
     override val method: String = "blockchain.block.headers"
 }
 
-data class GetHeadersResponse(val start_height: Int, val headers: List<BlockHeader>, val max: Int) : ElectrumResponse() {
+data class GetHeadersResponse(val start_height: Int, val headers: List<BlockHeader>, val max: Int) : ElectrumResponse {
     override fun toString(): String = "GetHeadersResponse($start_height, ${headers.size}, ${headers.first()}, ${headers.last()}, $max)"
 }
 
@@ -118,7 +135,7 @@ data class GetMerkle(val txid: ByteVector32, val blockHeight: Int, val contextOp
     override val method: String = "blockchain.transaction.get_merkle"
 }
 
-data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector32>, val block_height: Int, val pos: Int, val contextOpt: Transaction? = null) : ElectrumResponse() {
+data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector32>, val block_height: Int, val pos: Int, val contextOpt: Transaction? = null) : ElectrumResponse {
     val root: ByteVector32 by lazy {
         tailrec fun loop(pos: Int, hashes: List<ByteVector32>): ByteVector32 {
             return if (hashes.size == 1) hashes[0]
@@ -137,30 +154,35 @@ data class EstimateFees(val confirmations: Int) : ElectrumRequest(confirmations)
     override val method: String = "blockchain.estimatefee"
 }
 
-data class EstimateFeeResponse(val confirmations: Int, val feerate: FeeratePerKw?) : ElectrumResponse()
+data class EstimateFeeResponse(val confirmations: Int, val feerate: FeeratePerKw?) : ElectrumResponse
 
 
 data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.subscribe"
 }
 
-data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumResponse()
+data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumResponse
 
 object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
 }
 
-data class HeaderSubscriptionResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumResponse()
+data class HeaderSubscriptionResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumResponse
 
 /**
  * Other Electrum responses
  */
-data class TransactionHistory(val history: List<TransactionHistoryItem>) : ElectrumResponse()
-data class AddressStatus(val address: String, val status: String?) : ElectrumResponse()
-data class ServerError(val request: ElectrumRequest, val error: JsonRPCError) : ElectrumResponse()
+data class TransactionHistory(val history: List<TransactionHistoryItem>) : ElectrumResponse
+data class AddressStatus(val address: String, val status: String?) : ElectrumResponse
+data class ServerError(val request: ElectrumRequest, val error: JsonRPCError) : ElectrumResponse
 
 /**
- * ElectrumResponse deserializer
+ * The Electrum server sends two types of messages:
+ *   - JSON RPC responses (in reply to requests such as [GetTransaction])
+ *   - Notifications (following subscriptions such as [ScriptHashSubscriptionResponse]
+ *
+ * The former are correlated 1:1 with JSON RPC requests, based on request id. The latter are not: one
+ * subscription can yield an indefinite number of notifications.
  */
 object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonRPCResponse>> {
     private val json = Json { ignoreUnknownKeys = true }
@@ -184,14 +206,17 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
                         val hex = header.getValue("hex").jsonPrimitive.content
                         Either.Left(HeaderSubscriptionResponse(height, BlockHeader.read(hex)))
                     }
+
                     "blockchain.scripthash.subscribe" -> {
                         val scriptHash = params[0].jsonPrimitive.content
                         val status = params[1].jsonPrimitive.contentOrNull
                         Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status ?: ""))
                     }
+
                     else -> throw SerializationException("JSON-RPC Method ${method.content} is not supported")
                 }
             }
+
             else -> Either.Right(json.decodeFromJsonElement(JsonRPCResponseDeserializer(json), jsonObject))
         }
     }
@@ -237,6 +262,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             val resultArray = rpcResponse.result.jsonArray
             ServerVersionResponse(resultArray[0].toString(), resultArray[1].toString())
         }
+
         Ping -> PingResponse
         is GetScriptHashHistory -> {
             val jsonArray = rpcResponse.result.jsonArray
@@ -247,6 +273,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             }
             GetScriptHashHistoryResponse(request.scriptHash, items)
         }
+
         is ScriptHashListUnspent -> {
             val jsonArray = rpcResponse.result.jsonArray
             val items = jsonArray.map {
@@ -258,6 +285,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             }
             ScriptHashListUnspentResponse(request.scriptHash, items)
         }
+
         is GetTransactionIdFromPosition -> {
             val (txHash, leaves) = if (rpcResponse.result is JsonPrimitive) {
                 rpcResponse.result.content to emptyList()
@@ -269,10 +297,12 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
 
             GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(txHash), request.blockHeight, request.txIndex, leaves)
         }
+
         is GetTransaction -> {
             val hex = rpcResponse.result.jsonPrimitive.content
             GetTransactionResponse(Transaction.read(hex), request.contextOpt)
         }
+
         is ScriptHashSubscription -> {
             val status = when (rpcResponse.result) {
                 is JsonPrimitive -> rpcResponse.result.jsonPrimitive.content
@@ -280,6 +310,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             }
             ScriptHashSubscriptionResponse(request.scriptHash, status)
         }
+
         is BroadcastTransaction -> {
             val message = rpcResponse.result.jsonPrimitive.content
             // if we got here, it means that the server's response does not contain an error and message should be our
@@ -293,15 +324,18 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
                     if (result.result == request.tx.txid) BroadcastTransactionResponse(request.tx)
                     else BroadcastTransactionResponse(request.tx, JsonRPCError(1, "response txid $result does not match request txid ${request.tx.txid}"))
                 }
+
                 is Try.Failure -> {
                     BroadcastTransactionResponse(request.tx, JsonRPCError(1, message))
                 }
             }
         }
+
         is GetHeader -> {
             val hex = rpcResponse.result.jsonPrimitive.content
             GetHeaderResponse(request.blockHeight, BlockHeader.read(hex))
         }
+
         is GetHeaders -> {
             val jsonObject = rpcResponse.result.jsonObject
             val max = jsonObject.getValue("max").jsonPrimitive.int
@@ -323,6 +357,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
 
             GetHeadersResponse(request.start_height, blockHeaders, max)
         }
+
         is GetMerkle -> {
             val jsonObject = rpcResponse.result.jsonObject
             val leaves = jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
@@ -330,12 +365,14 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             val pos = jsonObject.getValue("pos").jsonPrimitive.int
             GetMerkleResponse(request.txid, leaves, blockHeight, pos, request.contextOpt)
         }
+
         is EstimateFees -> {
             val btcperkb: Double? = if (rpcResponse.result.jsonPrimitive.intOrNull == -1) null else rpcResponse.result.jsonPrimitive.double
             val feeratePerKb = btcperkb?.let { FeeratePerKB(Satoshi((it * 100_000_000).toLong())) }
             val feeratePerKw = feeratePerKb?.let { FeeratePerKw(it) }
             EstimateFeeResponse(request.confirmations, feeratePerKw)
         }
+
         HeaderSubscription -> {
             val jsonObject = rpcResponse.result.jsonObject
             val height = jsonObject.getValue("height").jsonPrimitive.int

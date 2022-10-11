@@ -4,13 +4,9 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.Connection
-import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.sat
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import org.kodein.log.LoggerFactory
@@ -21,24 +17,10 @@ import kotlin.time.Duration.Companion.seconds
 
 class ElectrumMiniWalletTest : LightningTestSuite() {
 
-    private suspend fun CoroutineScope.connectToMainnetServer(): ElectrumClient {
-        val client =
-            ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
-
-        client.connectionState.first { it is Connection.CLOSED }
-        client.connectionState.first { it is Connection.ESTABLISHING }
-        client.connectionState.first { it is Connection.ESTABLISHED }
-
-        return client
-    }
-
-    @Test
-    fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
-
     @Test
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default)
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
@@ -54,7 +36,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default)
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
@@ -70,7 +52,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `multiple addresses`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
         wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV")
@@ -116,5 +98,24 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         )
 
         client.stop()
+    }
+
+    @Test
+    fun `parallel wallets`() = runSuspendTest(timeout = 15.seconds) {
+        val client = connectToMainnetServer()
+        val wallet1 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default, name = "addr-16MmJT")
+        val wallet2 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client.Caller(), this, LoggerFactory.default, name = "addr-14xb2H")
+        wallet1.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
+        wallet2.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
+
+        val walletState1 = wallet1.walletStateFlow.filter { it.parentTxs.size == 4 }.first()
+        val walletState2 = wallet2.walletStateFlow.filter { it.parentTxs.size == 6 }.first()
+
+        assertEquals(7200_0000.sat, walletState1.spendableBalance)
+        assertEquals(3000_0000.sat, walletState2.spendableBalance)
+
+        assertEquals(4, walletState1.parentTxs.size)
+        assertEquals(6, walletState2.parentTxs.size)
+
     }
 }

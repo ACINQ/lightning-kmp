@@ -181,11 +181,11 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
 
-    val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory)
+    val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "final")
     val finalAddress: String = nodeParams.keyManager.bip84Address(account = 0L, addressIndex = 0L).also { finalWallet.addAddress(it) }
 
-    val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory)
-    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { finalWallet.addAddress(it) }
+    val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
+    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { swapInWallet.addAddress(it) }
 
     init {
         launch {
@@ -197,7 +197,7 @@ class Peer(
         }
         launch {
             watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.collect {
-                watcher.client.sendMessage(AskForHeaderSubscriptionUpdate)
+                watcher.client.askCurrentHeader()
                 // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
                 // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
                 // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)

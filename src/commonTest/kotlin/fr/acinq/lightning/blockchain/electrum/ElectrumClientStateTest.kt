@@ -2,6 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.utils.UUID
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.test.Test
@@ -42,7 +43,7 @@ class ElectrumClientStateTest : LightningTestSuite() {
             }
 
             if (state !is ClientRunning)
-                state.process(ElectrumClientCommand.AskForHeader, logger).let { (nextState, actions) ->
+                state.process(ElectrumClientCommand.AskForHeader(UUID.randomUUID()), logger).let { (nextState, actions) ->
                     assertEquals(state, nextState)
                     assertTrue(actions.isEmpty())
                 }

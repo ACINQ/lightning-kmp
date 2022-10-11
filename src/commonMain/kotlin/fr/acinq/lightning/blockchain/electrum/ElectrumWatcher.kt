@@ -78,6 +78,7 @@ private data class WatcherDisconnected(
                 if (event.connection == Connection.ESTABLISHED) returnState(AskForHeaderUpdate)
                 else returnState()
             }
+
             is ReceivedMessage -> when (val message = event.message) {
                 is HeaderSubscriptionResponse -> {
                     newState {
@@ -95,15 +96,19 @@ private data class WatcherDisconnected(
                         )
                     }
                 }
+
                 else -> returnState()
             }
+
             is ReceiveWatch -> newState(copy(watches = watches + event.watch))
             is PublishAsapEvent -> {
                 newState(copy(publishQueue = publishQueue + PublishAsap(event.tx)))
             }
+
             is GetTxWithMetaEvent -> {
                 newState(copy(getTxQueue = getTxQueue + (event.request)))
             }
+
             else -> unhandled(event)
         }
 }
@@ -144,6 +149,7 @@ internal data class WatcherRunning(
                             actions = scriptHashesActions + broadcastTxActions
                         }
                     }
+
                     message is ScriptHashSubscriptionResponse -> {
                         if (scriptHashSubscriptions.contains(message.scriptHash)) {
                             val (scriptHash, status) = message
@@ -168,6 +174,7 @@ internal data class WatcherRunning(
                             returnState()
                         }
                     }
+
                     message is GetScriptHashHistoryResponse -> {
                         // we retrieve the transaction before checking watches
                         // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed.
@@ -177,6 +184,7 @@ internal data class WatcherRunning(
                         }
                         returnState(actions = getTransactionList)
                     }
+
                     message is GetTransactionResponse -> {
                         when (message.contextOpt) {
                             is TransactionHistoryItem -> {
@@ -219,13 +227,16 @@ internal data class WatcherRunning(
                                     actions = notifyWatchSpentList + notifyWatchConfirmedList + getMerkleList
                                 }
                             }
+
                             is GetTxWithMeta -> {
                                 val getTxWithMeta = GetTxWithMetaResponse(message.tx.txid, message.tx, tip.time)
                                 returnState(action = NotifyTxWithMeta(message.contextOpt.channelId, getTxWithMeta))
                             }
+
                             else -> returnState()
                         }
                     }
+
                     message is BroadcastTransactionResponse -> {
                         val (tx, errorOpt) = message
                         when {
@@ -235,10 +246,12 @@ internal data class WatcherRunning(
                         }
                         newState(copy(sent = sent - tx))
                     }
+
                     message is ServerError && message.request is GetTransaction && message.request.contextOpt is GetTxWithMeta -> {
                         val getTxWithMeta = GetTxWithMetaResponse(message.request.txid, null, tip.time)
                         returnState(action = NotifyTxWithMeta(message.request.contextOpt.channelId, getTxWithMeta))
                     }
+
                     message is GetMerkleResponse -> {
                         val (txid, _, txheight, pos, tx) = message
                         val confirmations = height - txheight + 1
@@ -261,9 +274,11 @@ internal data class WatcherRunning(
                             actions = notifyWatchConfirmedList
                         }
                     }
+
                     else -> returnState()
                 }
             }
+
             is GetTxWithMetaEvent -> returnState(AskForTransaction(event.request.txid, event.request))
             is PublishAsapEvent -> {
                 val tx = event.tx
@@ -286,12 +301,14 @@ internal data class WatcherRunning(
                             logger = logger
                         )
                     }
+
                     cltvTimeout > blockCount -> {
                         logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
                         val updatedBlock2tx = block2tx.toMutableMap()
                         updatedBlock2tx[cltvTimeout] = block2tx.getOrElse(cltvTimeout) { emptyList() } + tx
                         newState(copy(block2tx = updatedBlock2tx))
                     }
+
                     else -> {
                         logger.info { "publishing tx=[${tx.txid} / $tx]" }
                         newState {
@@ -301,6 +318,7 @@ internal data class WatcherRunning(
                     }
                 }
             }
+
             is ReceiveWatch -> setupWatch(event.watch, logger)
             is ReceiveWatchEvent -> when (val watchEvent = event.watchEvent) {
                 is WatchEventConfirmed -> {
@@ -328,8 +346,10 @@ internal data class WatcherRunning(
                         }
                     }
                 }
+
                 else -> unhandled(event)
             }
+
             is ClientStateUpdate -> {
                 if (event.connection is Connection.CLOSED) newState(
                     WatcherDisconnected(
@@ -380,7 +400,7 @@ private fun WatcherState.returnState(action: WatcherAction): Pair<WatcherState, 
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumWatcher(
-    val client: ElectrumClient,
+    val client: ElectrumClient.Caller,
     val scope: CoroutineScope,
     loggerFactory: LoggerFactory
 ) : CoroutineScope by scope {
@@ -458,27 +478,32 @@ class ElectrumWatcher(
             actions.forEach { action ->
                 yield()
                 when (action) {
-                    is AskForHeaderUpdate -> client.sendMessage(AskForHeaderSubscriptionUpdate)
+                    is AskForHeaderUpdate -> client.askCurrentHeader()
                     is RegisterToScriptHashNotification -> client.sendElectrumRequest(
                         ScriptHashSubscription(action.scriptHash)
                     )
+
                     is PublishAsapAction -> eventChannel.send(PublishAsapEvent(action.tx))
                     is BroadcastTxAction -> client.sendElectrumRequest(BroadcastTransaction(action.tx))
                     is AskForScriptHashHistory -> client.sendElectrumRequest(
                         GetScriptHashHistory(action.scriptHash)
                     )
+
                     is AskForTransaction -> client.sendElectrumRequest(
                         GetTransaction(action.txid, action.contextOpt)
                     )
+
                     is AskForMerkle -> client.sendElectrumRequest(
                         GetMerkle(action.txId, action.txheight, action.tx)
                     )
+
                     is NotifyWatch -> {
                         if (action.broadcastNotification)
                             _notificationsFlow.emit(NotifyWatchEvent(action.watchEvent))
                         else
                             eventChannel.send(ReceiveWatchEvent(action.watchEvent))
                     }
+
                     is NotifyTxWithMeta -> {
                         _notificationsFlow.emit(NotifyTxEvent(action.channelId, action.txWithMeta))
                     }
@@ -589,6 +614,7 @@ class ElectrumWatcher(
                 logger.info { "added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash" }
                 RegisterToScriptHashNotification(scriptHash)
             }
+
             is WatchConfirmed -> {
                 val (_, txid, publicKeyScript, _, _) = watch
                 val scriptHash = computeScriptHash(publicKeyScript)
