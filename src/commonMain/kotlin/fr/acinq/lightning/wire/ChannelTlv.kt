@@ -76,6 +76,7 @@ sealed class ChannelTlv : Tlv {
                     LightningCodecs.writeBytes(channelOrigin.paymentHash, out)
                     LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
                 }
+
                 is ChannelOrigin.PleaseOpenChannelOrigin -> {
                     LightningCodecs.writeU16(4, out)
                     LightningCodecs.writeBytes(channelOrigin.requestId, out)
@@ -93,10 +94,12 @@ sealed class ChannelTlv : Tlv {
                         paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
                         fee = LightningCodecs.u64(input).sat,
                     )
+
                     4 -> ChannelOrigin.PleaseOpenChannelOrigin(
                         requestId = LightningCodecs.bytes(input, 32).byteVector32(),
                         fee = LightningCodecs.u64(input).msat,
                     )
+
                     else -> TODO("Unsupported channel origin discriminator")
                 }
                 return ChannelOriginTlv(origin)
@@ -221,13 +224,21 @@ sealed class ClosingSignedTlv : Tlv {
 @Serializable
 sealed class PleaseOpenChannelTlv : Tlv {
     @Serializable
-    data class MaxFees(val basisPoints: Int) : PleaseOpenChannelTlv() {
+    data class MaxFees(val basisPoints: Int, @Contextual val floor: Satoshi) : PleaseOpenChannelTlv() {
         override val tag: Long get() = MaxFees.tag
-        override fun write(out: Output) = LightningCodecs.writeTU16(basisPoints, out)
+        override fun write(out: Output) {
+            LightningCodecs.writeU16(basisPoints, out)
+            LightningCodecs.writeU64(floor.toLong(), out)
+        }
 
         companion object : TlvValueReader<MaxFees> {
             const val tag: Long = 1
-            override fun read(input: Input): MaxFees = MaxFees(LightningCodecs.tu16(input))
+            override fun read(input: Input): MaxFees =
+                MaxFees(
+                    basisPoints = LightningCodecs.u16(input),
+                    floor = LightningCodecs.u64(input).sat
+                )
+
         }
     }
 

@@ -34,8 +34,12 @@ import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerCommand
 
-/** Try to open a channel, consuming all the spendable utxos in the wallet state provided. */
-data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeesBasisPoint: Int) : PeerCommand()
+/**
+ * Try to open a channel, consuming all the spendable utxos in the wallet state provided.
+ * @param maxFeeBasisPoints the max total acceptable fee (all included: service fee and mining fee)
+ * @param maxFeeFloor as long as fee is below this amount, it's okay (whatever the percentage is)
+ */
+data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeeBasisPoints: Int, val maxFeeFloor: Satoshi) : PeerCommand()
 
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
@@ -225,7 +229,7 @@ class Peer(
                             logger.info { "${wallet.balance} available on swap-in wallet but swap-in already attempted: not doing anything" }
                         } else {
                             logger.info { "${wallet.balance} available on swap-in wallet: requesting channel" }
-                            input.send(RequestChannelOpen(Lightning.randomBytes32(), wallet, maxFeesBasisPoint = 100)) // 100 bips = 1 %
+                            input.send(RequestChannelOpen(Lightning.randomBytes32(), wallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
                         }
                         true
                     } else {
@@ -840,7 +844,7 @@ class Peer(
                     balance,
                     utxos.size,
                     utxos.size * Transactions.p2wpkhInputWeight,
-                    TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeesBasisPoint), PleaseOpenChannelTlv.GrandParents(grandParents)))
+                    TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents)))
                 )
                 logger.info { "n:$remoteNodeId sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
                 sendToPeer(pleaseOpenChannel)
