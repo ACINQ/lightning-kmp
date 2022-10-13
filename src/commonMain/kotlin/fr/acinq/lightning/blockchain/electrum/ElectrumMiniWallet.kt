@@ -2,7 +2,9 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.sum
+import fr.acinq.lightning.utils.toByteVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,18 +17,18 @@ import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
 data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
-    val utxos: List<UnspentItem> = addresses.flatMap { it.value }
-    val balance: Satoshi = utxos.sumOf { it.value }.sat
+    /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent*/
+    val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
+    val utxos: List<Utxo> = addresses
+        .flatMap { it.value }
+        .filter { parentTxs.containsKey(it.txid) }
+        .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
+    val balance: Satoshi = utxos.map { it.amount }.sum()
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
-
-    val spendableUtxos: List<Utxo> = utxos
-        .filter { parentTxs.containsKey(it.txid) }
-        .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
-    val spendableBalance: Satoshi = spendableUtxos.map { it.amount }.sum()
 
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())

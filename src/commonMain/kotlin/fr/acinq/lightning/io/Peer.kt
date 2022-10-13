@@ -2,7 +2,6 @@ package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
-import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKeyPath
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.*
@@ -35,8 +34,12 @@ import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerCommand
 
-/** Try to open a channel, consuming all the spendable utxos in the wallet state provided. */
-data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeesBasisPoint: Int) : PeerCommand()
+/**
+ * Try to open a channel, consuming all the spendable utxos in the wallet state provided.
+ * @param maxFeeBasisPoints the max total acceptable fee (all included: service fee and mining fee)
+ * @param maxFeeFloor as long as fee is below this amount, it's okay (whatever the percentage is)
+ */
+data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeeBasisPoints: Int, val maxFeeFloor: Satoshi) : PeerCommand()
 
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
@@ -211,22 +214,27 @@ class Peer(
             }
         }
         launch {
-            finalWallet.walletStateFlow.collect { wallet ->
-                if (wallet.spendableBalance > 0.sat) {
-                    logger.info { "${wallet.spendableBalance} available on final wallet" }
+            finalWallet.walletStateFlow
+                .distinctUntilChangedBy { it.balance }
+                .collect { wallet ->
+                    logger.info { "${wallet.balance} available on final wallet" }
                 }
-            }
         }
         launch {
             swapInWallet.walletStateFlow
-                .takeWhile { wallet ->
-                    if (wallet.spendableBalance > 10_000.sat) {
-                        logger.info { "${wallet.spendableBalance} available on swap-in wallet, requesting channel" }
-                        input.send(RequestChannelOpen(randomBytes32(), wallet, maxFeesBasisPoint = 100))
-                        false// TODO: we stop listening, we only request a channel once during the app uptime
-                    } else {
-                        logger.info { "${wallet.spendableBalance} available on swap-in wallet, waiting for more" }
+                .filter { it.consistent }
+                .fold(false) { swapAlreadyAttempted, wallet ->
+                    if (wallet.balance > 10_000.sat) {
+                        if (swapAlreadyAttempted) {
+                            logger.info { "${wallet.balance} available on swap-in wallet but swap-in already attempted: not doing anything" }
+                        } else {
+                            logger.info { "${wallet.balance} available on swap-in wallet: requesting channel" }
+                            input.send(RequestChannelOpen(Lightning.randomBytes32(), wallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
+                        }
                         true
+                    } else {
+                        logger.info { "${wallet.balance} available on swap-in wallet but amount insufficient: waiting for more" }
+                        swapAlreadyAttempted
                     }
                 }
         }
@@ -668,8 +676,8 @@ class Peer(
                             is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                 is RequestChannelOpen -> {
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                    val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.spendableUtxos.size * Transactions.p2wpkhInputWeight)
-                                    val fundingAmount = request.wallet.spendableBalance - fundingFee
+                                    val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.utxos.size * Transactions.p2wpkhInputWeight)
+                                    val fundingAmount = request.wallet.balance - fundingFee
                                     nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, fundingFee, origin.fee))
                                     Triple(request.wallet, fundingAmount, origin.fee)
                                 }
@@ -828,8 +836,8 @@ class Peer(
 
             cmd is RequestChannelOpen -> {
                 // We currently only support p2wpkh inputs.
-                val utxos = cmd.wallet.spendableUtxos
-                val balance = cmd.wallet.spendableBalance
+                val utxos = cmd.wallet.utxos
+                val balance = cmd.wallet.balance
                 val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
                 val pleaseOpenChannel = PleaseOpenChannel(
                     nodeParams.chainHash,
@@ -837,7 +845,7 @@ class Peer(
                     balance,
                     utxos.size,
                     utxos.size * Transactions.p2wpkhInputWeight,
-                    TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeesBasisPoint), PleaseOpenChannelTlv.GrandParents(grandParents)))
+                    TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents)))
                 )
                 logger.info { "n:$remoteNodeId sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
                 sendToPeer(pleaseOpenChannel)

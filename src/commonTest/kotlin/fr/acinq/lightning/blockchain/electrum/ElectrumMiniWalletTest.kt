@@ -24,7 +24,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 1 }
+            .filter { it.addresses.size == 1 && it.consistent }
             .first()
 
         assertEquals(0, walletState.utxos.size)
@@ -40,7 +40,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 1 }
+            .filter { it.addresses.size == 1 && it.consistent }
             .first()
 
         assertEquals(6, walletState.utxos.size)
@@ -64,11 +64,11 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         // this has been checked on the blockchain
         assertEquals(4 + 6 + 1, walletState.utxos.size)
         assertEquals(72_000_000.sat + 30_000_000.sat + 2_000_000.sat, walletState.balance)
-        assertEquals(11, walletState.spendableUtxos.size)
+        assertEquals(11, walletState.utxos.size)
         // make sure txid is correct has electrum api is confusing
         walletState.parentTxs.forEach { assertEquals(it.key, it.value.txid) }
         assertContains(
-            walletState.spendableUtxos,
+            walletState.utxos,
             WalletState.Utxo(
                 previousTx = Transaction.read("0100000001758713310361270b5ec4cae9b0196cb84fdb2f174d29f9367ad341963fa83e56010000008b483045022100d7b8759aeffe9d829a5df062420eb25017d7341244e49cfede16136a0c0b8dd2022031b42048e66b1f82f7fa99a22954e2709269838ef587c20118e493ced0d63e21014104b9251638d1475b9c62e1cf03129c835bcd5ab843aa0016412e8b39e3f8f7188d3b59023bce2002a2e409ea070c7070392b65d9ae8c8631ae2672a8fbb4f62bbdffffffff02404b4c00000000001976a9143675767783fdf1922f57ab4bb783f3a88dfa609488ac404b4c00000000001976a9142b6ba7c9d796b75eef7942fc9288edd37c32f5c388ac00000000"),
                 outputIndex = 1,
@@ -90,7 +90,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
                 Triple("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", ByteVector32("b1ec9c44009147f3cee26caba45abec2610c74df9751fad14074119b5314da21") to 0, 5_000_000.sat),
                 Triple("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV", ByteVector32("602839d82ac6c9aafd1a20fff5b23e11a99271e7cc238d2e48b352219b2b87ab") to 1, 2_000_000.sat),
             ),
-            actual = walletState.spendableUtxos.map {
+            actual = walletState.utxos.map {
                 val txOut = it.previousTx.txOut[it.outputIndex]
                 val address = Bitcoin.addressFromPublicKeyScript(Block.LivenetGenesisBlock.hash, txOut.publicKeyScript.toByteArray())
                 Triple(address, it.previousTx.txid to it.outputIndex, txOut.amount)
@@ -111,8 +111,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val walletState1 = wallet1.walletStateFlow.filter { it.parentTxs.size == 4 }.first()
         val walletState2 = wallet2.walletStateFlow.filter { it.parentTxs.size == 6 }.first()
 
-        assertEquals(7200_0000.sat, walletState1.spendableBalance)
-        assertEquals(3000_0000.sat, walletState2.spendableBalance)
+        assertEquals(7200_0000.sat, walletState1.balance)
+        assertEquals(3000_0000.sat, walletState2.balance)
 
         assertEquals(4, walletState1.parentTxs.size)
         assertEquals(6, walletState2.parentTxs.size)

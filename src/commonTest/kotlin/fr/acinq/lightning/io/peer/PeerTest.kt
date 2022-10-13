@@ -219,7 +219,7 @@ class PeerTest : LightningTestSuite() {
 
         val requestId = randomBytes32()
         val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
-        bob.send(RequestChannelOpen(requestId, walletBob, 100))
+        bob.send(RequestChannelOpen(requestId, walletBob, 100, maxFeeFloor = 3_000.sat))
         val request = bob2alice.expect<PleaseOpenChannel>()
         assertEquals(request.localFundingAmount, 260_000.sat)
 
