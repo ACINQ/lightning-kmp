@@ -111,8 +111,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val walletState1 = wallet1.walletStateFlow.filter { it.parentTxs.size == 4 }.first()
         val walletState2 = wallet2.walletStateFlow.filter { it.parentTxs.size == 6 }.first()
 
-        assertEquals(7200_0000.sat, walletState1.spendableBalance)
-        assertEquals(3000_0000.sat, walletState2.spendableBalance)
+        assertEquals(7200_0000.sat, walletState1.balance)
+        assertEquals(3000_0000.sat, walletState2.balance)
 
         assertEquals(4, walletState1.parentTxs.size)
         assertEquals(6, walletState2.parentTxs.size)
