@@ -102,7 +102,7 @@ object Serialization {
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun serialize(state: ChannelStateWithCommitments): ByteArray {
+    internal fun serialize(state: ChannelStateWithCommitments): ByteArray {
         val raw = cbor.encodeToByteArray(ChannelStateWithCommitments.serializer(), state)
         val versioned = SerializedData(version = 1, data = raw.toByteVector())
         return cbor.encodeToByteArray(SerializedData.serializer(), versioned)
@@ -123,7 +123,7 @@ object Serialization {
 
     private fun deserialize(bin: ByteVector, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = deserialize(bin.toByteArray(), nodeParams)
 
-    fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
+    internal fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
         val bin = serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
         // See https://en.wikipedia.org/wiki/Birthday_attack
