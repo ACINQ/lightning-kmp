@@ -1,14 +1,18 @@
+@file:UseContextualSerialization(ByteVector32::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
+@Serializable
 data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip

@@ -1,3 +1,4 @@
+@file:UseContextualSerialization(BlockHeader::class, ByteVector32::class, PublicKey::class, WalletState::class)
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
@@ -13,6 +14,8 @@ import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 import kotlin.math.absoluteValue
 
 /*
@@ -24,6 +27,7 @@ import kotlin.math.absoluteValue
  *         |        tx_signatures       |
  *         |--------------------------->|
  */
+@Serializable
 data class WaitForFundingSigned(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

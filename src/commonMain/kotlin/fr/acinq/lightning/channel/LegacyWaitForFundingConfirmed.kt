@@ -1,22 +1,28 @@
+@file:UseContextualSerialization(BlockHeader::class, ByteVector32::class, ByteVector64::class, PublicKey::class, Satoshi::class, ShaChain::class, Transaction::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.crypto.ShaChain
+import fr.acinq.lightning.serialization.v3.EitherSerializer
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /**
  * We changed the channel funding flow to use dual funding, and removed the ability to open legacy channels.
  * However, users may have legacy channels that were waiting for the funding transaction to confirm.
  * This class handles this scenario, and lets those channels safely transition to the normal state.
  */
+@Serializable
 data class LegacyWaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -25,7 +31,7 @@ data class LegacyWaitForFundingConfirmed(
     val fundingTx: Transaction?,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
-    val lastSent: Either<FundingCreated, FundingSigned>
+    val lastSent: @Serializable(with = EitherSerializer::class)  Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 

@@ -1,3 +1,4 @@
+@file:UseContextualSerialization(ByteVector32::class, Satoshi::class, WalletState::class)
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
@@ -19,6 +20,10 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Clo
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import kotlinx.serialization.UseContextualSerialization
 import org.kodein.log.Logger
 import org.kodein.log.newLogger
 
@@ -29,6 +34,7 @@ import org.kodein.log.newLogger
 
 /** Channel Events (inputs to be fed to the state machine). */
 sealed class ChannelCommand {
+    @Serializable
     data class InitInitiator(
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
@@ -45,6 +51,7 @@ sealed class ChannelCommand {
         val temporaryChannelId: ByteVector32 = localParams.channelKeys.temporaryChannelId
     }
 
+    @Serializable
     data class InitNonInitiator(
         val temporaryChannelId: ByteVector32,
         val fundingAmount: Satoshi,
@@ -135,11 +142,13 @@ sealed class ChannelAction {
 }
 
 /** Channel static parameters. */
-data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey) {
+@Serializable
+data class StaticParams(@Contextual val nodeParams: NodeParams, @Contextual val remoteNodeId: PublicKey) {
     val useZeroConf: Boolean = nodeParams.zeroConfPeers.contains(remoteNodeId)
 }
 
 /** Channel state. */
+@Serializable
 sealed class ChannelState : LoggingContext {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
@@ -291,6 +300,7 @@ sealed class ChannelState : LoggingContext {
     }
 }
 
+@Serializable
 sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId

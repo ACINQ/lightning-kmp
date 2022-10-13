@@ -1,8 +1,14 @@
+@file:UseContextualSerialization(BlockHeader::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.crypto.ShaChain
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
+@Serializable
 data class ErrorInformationLeak(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

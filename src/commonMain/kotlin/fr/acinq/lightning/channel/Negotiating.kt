@@ -1,14 +1,15 @@
+@file:UseContextualSerialization(BlockHeader::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.updated
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.MAX_NEGOTIATION_ITERATIONS
+import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -16,7 +17,10 @@ import fr.acinq.lightning.wire.ClosingSigned
 import fr.acinq.lightning.wire.ClosingSignedTlv
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.Shutdown
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
+@Serializable
 data class Negotiating(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

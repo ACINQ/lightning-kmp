@@ -1,3 +1,5 @@
+@file:UseContextualSerialization(BlockHeader::class, ByteVector::class, ByteVector32::class, OutPoint::class, Satoshi::class, TxOut::class)
+
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
@@ -12,11 +14,15 @@ import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /**
  * Created by t-bast on 22/08/2022.
  */
 
+@Serializable
 data class InteractiveTxParams(
     val channelId: ByteVector32,
     val isInitiator: Boolean,
@@ -122,16 +128,19 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
 }
 
 /** A lighter version of our peer's TxAddInput that avoids storing potentially large messages in our DB. */
+@Serializable
 data class RemoteTxAddInput(val serialId: Long, val outPoint: OutPoint, val txOut: TxOut, val sequence: Long) {
     constructor(i: TxAddInput) : this(i.serialId, OutPoint(i.previousTx, i.previousTxOutput), i.previousTx.txOut[i.previousTxOutput.toInt()], i.sequence)
 }
 
 /** A lighter version of our peer's TxAddOutput that avoids storing potentially large messages in our DB. */
+@Serializable
 data class RemoteTxAddOutput(val serialId: Long, val amount: Satoshi, val pubkeyScript: ByteVector) {
     constructor(o: TxAddOutput) : this(o.serialId, o.amount, o.pubkeyScript)
 }
 
 /** Unsigned transaction created collaboratively. */
+@Serializable
 data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs: List<RemoteTxAddInput>, val localOutputs: List<TxAddOutput>, val remoteOutputs: List<RemoteTxAddOutput>, val lockTime: Long) {
     val localAmountIn: Satoshi = localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum()
     val remoteAmountIn: Satoshi = remoteInputs.map { i -> i.txOut.amount }.sum()
@@ -168,6 +177,7 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
 }
 
 /** Signed transaction created collaboratively. */
+@Serializable
 sealed class SignedSharedTransaction {
     abstract val tx: SharedTransaction
     abstract val localSigs: TxSignatures
@@ -234,9 +244,11 @@ sealed class InteractiveTxSessionAction {
     // @formatter:on
 }
 
+
+@Serializable
 data class InteractiveTxSession(
     val fundingParams: InteractiveTxParams,
-    val toSend: List<Either<TxAddInput, TxAddOutput>>,
+    val toSend: List<@Contextual Either<TxAddInput, TxAddOutput>>,
     val previousTxs: List<SignedSharedTransaction> = listOf(),
     val localInputs: List<TxAddInput> = listOf(),
     val remoteInputs: List<TxAddInput> = listOf(),

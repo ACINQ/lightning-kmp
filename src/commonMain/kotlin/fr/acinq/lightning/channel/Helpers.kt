@@ -28,6 +28,7 @@ import fr.acinq.lightning.transactions.Transactions.commitTxFee
 import fr.acinq.lightning.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Serializable
 import kotlin.math.max
 
 object Helpers {
@@ -215,6 +216,7 @@ object Helpers {
                     nextLocalCommitmentNumber < commitments.remoteNextCommitInfo.left!!.nextRemoteCommit.index -> true
                     else -> false
                 }
+
             commitments.remoteNextCommitInfo.isRight ->
                 when {
                     // they have acknowledged the last commit_sig we sent
@@ -223,6 +225,7 @@ object Helpers {
                     nextLocalCommitmentNumber < (commitments.remoteCommit.index + 1) -> true
                     else -> false
                 }
+
             else -> false
         }
     }
@@ -281,6 +284,7 @@ object Helpers {
             )
         }
 
+        @Serializable
         data class FirstCommitTx(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx)
 
         /**
@@ -408,6 +412,7 @@ object Helpers {
                         } ?: return null
                         Base58Check.encode(prefix, opPushData.data)
                     }
+
                     Script.isPay2sh(script) -> {
                         // OP_HASH160 OP_PUSHDATA(20) OP_EQUAL
                         val opPushData = script[1] as OP_PUSHDATA
@@ -418,6 +423,7 @@ object Helpers {
                         } ?: return null
                         Base58Check.encode(prefix, opPushData.data)
                     }
+
                     Script.isPay2wpkh(script) || Script.isPay2wsh(script) -> {
                         // isPay2wpkh : OP_0 OP_PUSHDATA(20)
                         // isPay2wsh  : OP_0 OP_PUSHDATA(32)
@@ -430,6 +436,7 @@ object Helpers {
                         } ?: return null
                         Bech32.encodeWitnessAddress(hrp, 0, opPushData.data.toByteArray())
                     }
+
                     else -> null
                 } // </when>
             }.getOrElse { null }
@@ -666,6 +673,7 @@ object Helpers {
                             }
                         }
                     }
+
                     is IncomingHtlc -> {
                         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
                         generateTx("claim-htlc-timeout") {
@@ -945,6 +953,7 @@ object Helpers {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
                     (localCommit.spec.htlcs.outgoings() - untrimmedHtlcs.toSet()).toSet()
                 }
+
                 localCommitPublished.isHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                     tx.txIn.mapNotNull { txIn ->
@@ -954,15 +963,18 @@ object Helpers {
                                     logger.error { "could not find htlc #${htlcTx.htlcId} for htlc-timeout tx=$tx" }
                                     null
                                 }
+
                                 else -> {
                                     logger.info { "htlc-timeout tx for htlc #${htlc.id} paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)" }
                                     htlc
                                 }
                             }
+
                             else -> null
                         }
                     }.toSet()
                 }
+
                 else -> emptySet()
             }
         }
@@ -981,6 +993,7 @@ object Helpers {
                     // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
                     (remoteCommit.spec.htlcs.incomings() - untrimmedHtlcs.toSet()).toSet()
                 }
+
                 remoteCommitPublished.isClaimHtlcTimeout(tx) -> {
                     // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
                     tx.txIn.mapNotNull { txIn ->
@@ -990,15 +1003,18 @@ object Helpers {
                                     logger.error { "could not find htlc #${htlcTx.htlcId} for claim-htlc-timeout tx=$tx" }
                                     null
                                 }
+
                                 else -> {
                                     logger.info { "claim-htlc-timeout tx for htlc #${htlc.id} paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)" }
                                     htlc
                                 }
                             }
+
                             else -> null
                         }
                     }.toSet()
                 }
+
                 else -> emptySet()
             }
         }
@@ -1027,6 +1043,7 @@ object Helpers {
                 // NB: from the point of view of the remote, their incoming htlcs are our outgoing htlcs
                 htlcsInRemoteCommit.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
             }
+
             remoteCommit.txid == tx.txid -> when (nextRemoteCommit) {
                 null -> emptySet() // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
                 else -> {
@@ -1035,10 +1052,12 @@ object Helpers {
                     nextRemoteCommit.spec.htlcs.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
                 }
             }
+
             revokedCommitPublished.map { it.commitTx.txid }.contains(tx.txid) -> {
                 // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment
                 (nextRemoteCommit ?: remoteCommit).spec.htlcs.incomings().toSet()
             }
+
             else -> emptySet()
         }
 
@@ -1069,11 +1088,13 @@ object Helpers {
                         logger.info { "tx generation success: desc=$desc txid=${txResult.result.tx.txid} amount=${txResult.result.tx.txOut.map { it.amount }.sum()} tx=${txResult.result.tx}" }
                         txResult.result
                     }
+
                     is Transactions.TxResult.Skipped -> {
                         logger.info { "tx generation skipped: desc=$desc reason: ${txResult.why}" }
                         null
                     }
                 }
+
                 is Try.Failure -> {
                     logger.warning { "tx generation failure: desc=$desc reason: ${result.error.message}" }
                     null

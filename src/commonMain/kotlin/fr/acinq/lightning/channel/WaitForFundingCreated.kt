@@ -1,3 +1,4 @@
+@file:UseContextualSerialization(BlockHeader::class, ByteVector32::class, PublicKey::class, WalletState::class)
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
@@ -9,6 +10,8 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /*
  * We build the funding transaction for a new channel.
@@ -31,6 +34,7 @@ import fr.acinq.lightning.wire.*
  *         |        commit_sig          |
  *         |--------------------------->|
  */
+@Serializable
 data class WaitForFundingCreated(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

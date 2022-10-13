@@ -1,23 +1,29 @@
+@file:UseContextualSerialization(BlockHeader::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
+import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.FundingLocked
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /**
  * We changed the channel funding flow to use dual funding, and removed the ability to open legacy channels.
  * However, users may have legacy channels that were waiting to receive funding_locked from their counterparty.
  * This class handles this scenario, and lets those channels safely transition to the normal state.
  */
+@Serializable
 data class LegacyWaitForFundingLocked(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

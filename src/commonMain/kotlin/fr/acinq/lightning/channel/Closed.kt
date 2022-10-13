@@ -2,10 +2,12 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import kotlinx.serialization.Serializable
 
 /**
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
  */
+@Serializable
 data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip

@@ -1,3 +1,4 @@
+@file:UseContextualSerialization(BlockHeader::class)
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
@@ -10,8 +11,11 @@ import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /** The channel funding transaction was confirmed, we exchange funding_locked messages. */
+@Serializable
 data class WaitForChannelReady(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

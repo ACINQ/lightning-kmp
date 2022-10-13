@@ -1,5 +1,8 @@
+@file:UseContextualSerialization(BlockHeader::class, Satoshi::class, WalletState::class)
+
 package fr.acinq.lightning.channel
 
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
@@ -11,6 +14,8 @@ import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.OnionRoutingPacket
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 sealed class Command
 
@@ -33,12 +38,14 @@ object CMD_SIGN : Command()
 data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command()
 
 // We only support a very limited fee bumping mechanism where all spendable utxos will be used (only used in tests).
+@Serializable
 data class CMD_BUMP_FUNDING_FEE(val targetFeerate: FeeratePerKw, val fundingAmount: Satoshi, val wallet: WalletState, val lockTime: Long) : Command()
 
 data class ClosingFees(val preferred: Satoshi, val min: Satoshi, val max: Satoshi) {
     constructor(preferred: Satoshi) : this(preferred, preferred, preferred)
 }
 
+@Serializable
 data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw) {
     constructor(preferred: FeeratePerKw) : this(preferred, preferred / 2, preferred * 2)
 

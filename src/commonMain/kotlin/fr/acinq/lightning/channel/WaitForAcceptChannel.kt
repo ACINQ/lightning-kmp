@@ -1,3 +1,5 @@
+@file:UseContextualSerialization(BlockHeader::class)
+
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
@@ -13,6 +15,8 @@ import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.OpenDualFundedChannel
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /*
  * We initiated a channel open and are waiting for our peer to accept it.
@@ -23,6 +27,7 @@ import fr.acinq.lightning.wire.OpenDualFundedChannel
  *         |       tx_add_input         |
  *         |--------------------------->|
  */
+@Serializable
 data class WaitForAcceptChannel(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

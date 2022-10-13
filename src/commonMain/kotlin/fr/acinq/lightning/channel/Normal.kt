@@ -1,16 +1,22 @@
+@file:UseContextualSerialization(BlockHeader::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
+@Serializable
 data class Normal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,

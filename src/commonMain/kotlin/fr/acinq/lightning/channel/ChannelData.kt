@@ -1,3 +1,5 @@
+@file:UseContextualSerialization(BlockHeader::class, ByteVector::class, ByteVector32::class, ByteVector64::class, KeyPath::class, OutPoint::class, PublicKey::class, PrivateKey::class, Satoshi::class, Transaction::class)
+
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
@@ -12,6 +14,7 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.LoggingContext
 import fr.acinq.lightning.wire.ClosingSigned
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /**
  * Details about a force-close where we published our commitment.
@@ -24,6 +27,7 @@ import kotlinx.serialization.Serializable
  * @param claimAnchorTxs txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
  * @param irrevocablySpent map of relevant outpoints that have been spent and the confirmed transaction that spends them.
  */
+@Serializable
 data class LocalCommitPublished(
     val commitTx: Transaction,
     val claimMainDelayedOutputTx: ClaimLocalDelayedOutputTx? = null,
@@ -142,6 +146,7 @@ data class LocalCommitPublished(
  * @param claimAnchorTxs txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
  * @param irrevocablySpent map of relevant outpoints that have been spent and the confirmed transaction that spends them.
  */
+@Serializable
 data class RemoteCommitPublished(
     val commitTx: Transaction,
     val claimMainOutputTx: ClaimRemoteCommitMainOutputTx? = null,
@@ -246,6 +251,7 @@ data class RemoteCommitPublished(
  * @param claimHtlcDelayedPenaltyTxs penalty txs claiming the output of their HTLC txs (if they managed to get them confirmed before our htlcPenaltyTxs).
  * @param irrevocablySpent map of relevant outpoints that have been spent and the confirmed transaction that spends them.
  */
+@Serializable
 data class RevokedCommitPublished(
     val commitTx: Transaction,
     val remotePerCommitmentSecret: PrivateKey,
@@ -363,6 +369,7 @@ data class RecoveredChannelKeys(
 /**
  * Channel secrets and keys, generated from a funding key BIP32 path
  */
+@Serializable
 data class ChannelKeys(
     val fundingKeyPath: KeyPath,
     val fundingPrivateKey: PrivateKey,
@@ -380,6 +387,7 @@ data class ChannelKeys(
     val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
 }
 
+@Serializable
 data class LocalParams(
     val nodeId: PublicKey,
     val channelKeys: ChannelKeys,
@@ -393,6 +401,7 @@ data class LocalParams(
     val features: Features
 )
 
+@Serializable
 data class RemoteParams(
     val nodeId: PublicKey,
     val dustLimit: Satoshi,
@@ -413,6 +422,7 @@ object ChannelFlags {
     const val Empty = 0x00.toByte()
 }
 
+@Serializable
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
 /** This gives the reason for creating a new channel. */

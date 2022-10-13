@@ -11,7 +11,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
 
-internal abstract class AbstractStringKSerializer<T>(
+abstract class AbstractStringKSerializer<T>(
     name: String,
     private val toString: (T) -> String,
     private val fromString: (String) -> T

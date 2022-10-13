@@ -1,3 +1,4 @@
+@file:UseContextualSerialization(BlockHeader::class)
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
@@ -8,8 +9,11 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /** We wait for the channel funding transaction to confirm. */
+@Serializable
 data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
@@ -318,10 +322,15 @@ data class WaitForFundingConfirmed(
     }
 
     companion object {
+
+        @Serializable
         sealed class RbfStatus {
             object None : RbfStatus()
+            @Serializable
             data class RbfRequested(val command: CMD_BUMP_FUNDING_FEE) : RbfStatus()
+            @Serializable
             data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
+            @Serializable
             data class WaitForCommitSig(val fundingParams: InteractiveTxParams, val fundingTx: SharedTransaction, val commitTx: Helpers.Funding.FirstCommitTx) : RbfStatus()
         }
     }

@@ -1,12 +1,13 @@
+@file:UseContextualSerialization(ByteVector32::class)
+
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.channel.Channel.handleSync
+import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
@@ -14,12 +15,15 @@ import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 /**
  * waitForTheirReestablishMessage == true means that we want to wait until we've received their channel_reestablish message before
  * we send ours (for example, to extract encrypted backup data from extra fields)
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
+@Serializable
 data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip

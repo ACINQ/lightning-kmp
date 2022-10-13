@@ -1,3 +1,5 @@
+@file:UseContextualSerialization(BlockHeader::class, ByteVector32::class, ByteVector64::class, PublicKey::class, Satoshi::class, ShaChain::class, Transaction::class)
+
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
@@ -12,6 +14,7 @@ import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
+import fr.acinq.lightning.serialization.v3.EitherSerializer
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.CommitTx
@@ -26,19 +29,29 @@ import fr.acinq.lightning.transactions.incomings
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 import org.kodein.log.Logger
 import kotlin.math.min
 
 // @formatter:off
+@Serializable
 data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
     val all: List<UpdateMessage> get() = proposed + signed + acked
 }
 
+@Serializable
 data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>)
+@Serializable
 data class HtlcTxAndSigs(val txinfo: HtlcTx, val localSig: ByteVector64, val remoteSig: ByteVector64)
+@Serializable
 data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
+@Serializable
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
+@Serializable
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
+@Serializable
 data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
 // @formatter:on
 
@@ -50,6 +63,7 @@ data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: Co
  * So, when we've signed and sent a commit message and are waiting for their revocation message,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
+@Serializable
 data class Commitments(
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
@@ -63,7 +77,7 @@ data class Commitments(
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
     val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymentId
-    val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>,
+    val remoteNextCommitInfo: @Serializable(with = EitherSerializer::class) Either<WaitingForRevocation, PublicKey>,
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
     val channelId: ByteVector32,

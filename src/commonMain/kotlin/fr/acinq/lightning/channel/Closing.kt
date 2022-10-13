@@ -1,3 +1,5 @@
+@file:UseContextualSerialization(BlockHeader::class, Transaction::class)
+
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.BlockHeader
@@ -20,6 +22,8 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Clo
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 sealed class ClosingType
 data class MutualClose(val tx: ClosingTx) : ClosingType()
@@ -36,6 +40,7 @@ data class NextRemoteClose(override val remoteCommit: RemoteCommit, override val
 data class RecoveryClose(val remoteCommitPublished: RemoteCommitPublished) : ClosingType()
 data class RevokedClose(val revokedCommitPublished: RevokedCommitPublished) : ClosingType()
 
+@Serializable
 data class Closing(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, BlockHeader>,
