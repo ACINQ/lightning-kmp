@@ -16,7 +16,7 @@ import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.db.sqlite.SqliteChannelsDb
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
-import fr.acinq.lightning.serialization.v1.Serialization
+import fr.acinq.lightning.serialization.v3.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.utils.*
 import io.ktor.http.*
@@ -262,11 +262,11 @@ object Node {
                         call.respond(pr)
                     }
                     get("/channels") {
-                        call.respond(peer.channels.values.toList().map { fr.acinq.lightning.serialization.v1.ChannelState.import(it) })
+                        call.respond(peer.channels.values.toList().map { fr.acinq.lightning.serialization.v3.ChannelState.import(it) })
                     }
                     get("/channels/{channelId}") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
-                        call.respond(peer.channels[channelId]?.let { fr.acinq.lightning.serialization.v1.ChannelState.import(it) } ?: "")
+                        call.respond(peer.channels[channelId]?.let { fr.acinq.lightning.serialization.v3.ChannelState.import(it) } ?: "")
                     }
                     post("/channels/{channelId}/close") {
                         val channelId = ByteVector32(call.parameters["channelId"] ?: error("channelId not provided"))
