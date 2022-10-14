@@ -109,12 +109,12 @@ object Serialization {
     }
 
     // used by the "test node" JSON API
-    val lightningSerializersModule = SerializersModule {
+    internal val lightningSerializersModule = SerializersModule {
         include(serializersModule)
         include(serializationModules)
     }
 
-    fun serialize(state: ChannelStateWithCommitments): ByteArray {
+    internal fun serialize(state: ChannelStateWithCommitments): ByteArray {
         val output = ByteArrayOutput()
         val encoder = DataOutputEncoder(output)
         encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)
@@ -147,7 +147,7 @@ object Serialization {
 
     private fun deserialize(bin: ByteVector, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = deserialize(bin.toByteArray(), nodeParams)
 
-    fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
+    internal fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
         val bin = serialize(state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
         // See https://en.wikipedia.org/wiki/Birthday_attack
