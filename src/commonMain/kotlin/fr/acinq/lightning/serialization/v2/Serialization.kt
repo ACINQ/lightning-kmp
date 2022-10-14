@@ -19,10 +19,7 @@ import kotlinx.serialization.encoding.AbstractDecoder
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.contextual
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
+import kotlinx.serialization.modules.*
 
 object Serialization {
     private val versionMagic = 2
@@ -68,20 +65,6 @@ object Serialization {
         }
     }
 
-    private val serializersModule = SerializersModule {
-        polymorphic(ChannelStateWithCommitments::class) {
-            subclass(Normal::class)
-            subclass(WaitForFundingConfirmed::class)
-            subclass(WaitForFundingLocked::class)
-            subclass(WaitForRemotePublishFutureCommitment::class)
-            subclass(ShuttingDown::class)
-            subclass(Negotiating::class)
-            subclass(Closing::class)
-            subclass(Closed::class)
-            subclass(ErrorInformationLeak::class)
-        }
-    }
-
     private val serializationModules = SerializersModule {
         include(tlvSerializersModule)
         include(updateSerializersModule)
@@ -102,7 +85,6 @@ object Serialization {
 
     // used by the "test node" JSON API
     private val lightningSerializersModule = SerializersModule {
-        include(serializersModule)
         include(serializationModules)
     }
 

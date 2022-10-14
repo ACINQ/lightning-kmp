@@ -72,23 +72,6 @@ object Serialization {
         }
     }
 
-    private val serializersModule = SerializersModule {
-        polymorphic(ChannelStateWithCommitments::class) {
-            subclass(Normal::class)
-            subclass(WaitForFundingConfirmed::class)
-            subclass(WaitForFundingConfirmed2::class)
-            subclass(WaitForFundingLocked::class)
-            subclass(WaitForChannelReady::class)
-            subclass(WaitForRemotePublishFutureCommitment::class)
-            subclass(ShuttingDown::class)
-            subclass(Negotiating::class)
-            subclass(Closing::class)
-            subclass(Closing2::class)
-            subclass(Closed::class)
-            subclass(ErrorInformationLeak::class)
-        }
-    }
-
     private val serializationModules = SerializersModule {
         include(tlvSerializersModule)
         include(updateSerializersModule)
@@ -110,7 +93,6 @@ object Serialization {
 
     // used by the "test node" JSON API
     internal val lightningSerializersModule = SerializersModule {
-        include(serializersModule)
         include(serializationModules)
     }
 
