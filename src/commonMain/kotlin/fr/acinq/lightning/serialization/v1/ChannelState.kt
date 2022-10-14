@@ -93,51 +93,6 @@ private object TxOutKSerializer : AbstractBtcSerializableKSerializer<TxOut>("TxO
 
 private object TransactionKSerializer : AbstractBtcSerializableKSerializer<Transaction>("Transaction", Transaction)
 
-
-private object ExtendedPrivateKeyKSerializer : KSerializer<DeterministicWallet.ExtendedPrivateKey> {
-    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ExtendedPublicKey") {
-        element("secretkeybytes", ByteVector32KSerializer.descriptor)
-        element("chaincode", ByteVector32KSerializer.descriptor)
-        element<Int>("depth")
-        element("path", KeyPathKSerializer.descriptor)
-        element<Long>("parent")
-    }
-
-    override fun serialize(encoder: Encoder, value: DeterministicWallet.ExtendedPrivateKey) {
-        val compositeEncoder = encoder.beginStructure(ExtendedPublicKeyKSerializer.descriptor)
-        compositeEncoder.encodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 0, ByteVector32KSerializer, value.secretkeybytes)
-        compositeEncoder.encodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 1, ByteVector32KSerializer, value.chaincode)
-        compositeEncoder.encodeIntElement(ExtendedPublicKeyKSerializer.descriptor, 2, value.depth)
-        compositeEncoder.encodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 3, KeyPathKSerializer, value.path)
-        compositeEncoder.encodeLongElement(ExtendedPublicKeyKSerializer.descriptor, 4, value.parent)
-        compositeEncoder.endStructure(ExtendedPublicKeyKSerializer.descriptor)
-    }
-
-    override fun deserialize(decoder: Decoder): DeterministicWallet.ExtendedPrivateKey {
-        var secretkeybytes: ByteVector32? = null
-        var chaincode: ByteVector32? = null
-        var depth: Int? = null
-        var path: KeyPath? = null
-        var parent: Long? = null
-
-        val compositeDecoder = decoder.beginStructure(ExtendedPublicKeyKSerializer.descriptor)
-        loop@ while (true) {
-            when (compositeDecoder.decodeElementIndex(ExtendedPublicKeyKSerializer.descriptor)) {
-                CompositeDecoder.DECODE_DONE -> break@loop
-                0 -> secretkeybytes = compositeDecoder.decodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 0, ByteVector32KSerializer)
-                1 -> chaincode = compositeDecoder.decodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 1, ByteVector32KSerializer)
-                2 -> depth = compositeDecoder.decodeIntElement(ExtendedPublicKeyKSerializer.descriptor, 2)
-                3 -> path = compositeDecoder.decodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 3, KeyPathKSerializer)
-                4 -> parent = compositeDecoder.decodeLongElement(ExtendedPublicKeyKSerializer.descriptor, 4)
-            }
-        }
-        compositeDecoder.endStructure(ExtendedPublicKeyKSerializer.descriptor)
-
-        return DeterministicWallet.ExtendedPrivateKey(secretkeybytes!!, chaincode!!, depth!!, path!!, parent!!)
-    }
-
-}
-
 private object ExtendedPublicKeyKSerializer : KSerializer<DeterministicWallet.ExtendedPublicKey> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ExtendedPublicKey") {
         element("publickeybytes", ByteVectorKSerializer.descriptor)
@@ -552,17 +507,6 @@ private sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
     abstract val currentOnChainFeerates: OnChainFeerates
-
-    companion object {
-        fun import(from: fr.acinq.lightning.channel.ChannelState): ChannelState = when (from) {
-            is fr.acinq.lightning.channel.WaitForInit -> WaitForInit(from)
-            is fr.acinq.lightning.channel.Aborted -> Aborted(from)
-            is fr.acinq.lightning.channel.Offline -> Offline(from)
-            is fr.acinq.lightning.channel.Syncing -> Syncing(from)
-            is fr.acinq.lightning.channel.ChannelStateWithCommitments -> ChannelStateWithCommitments.import(from)
-            else -> throw RuntimeException("unexpected state ${from::class}")
-        }
-    }
 }
 
 @Serializable
@@ -585,42 +529,6 @@ private sealed class ChannelStateWithCommitments : ChannelState() {
             else -> throw RuntimeException("unexpected state ${from::class}")
         }
     }
-}
-
-@Serializable
-private data class Aborted(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates
-) : ChannelState() {
-    constructor(from: fr.acinq.lightning.channel.Aborted) : this(StaticParams(from.staticParams), from.currentTip, OnChainFeerates(from.currentOnChainFeerates))
-}
-
-@Serializable
-private data class WaitForInit(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates
-) : ChannelState() {
-    constructor(from: fr.acinq.lightning.channel.WaitForInit) : this(StaticParams(from.staticParams), from.currentTip, OnChainFeerates(from.currentOnChainFeerates))
-}
-
-@Serializable
-private data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
-    override val staticParams: StaticParams get() = state.staticParams
-    override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
-    override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-
-    constructor(from: fr.acinq.lightning.channel.Offline) : this(ChannelStateWithCommitments.import(from.state))
-}
-
-@Serializable
-private data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
-    override val staticParams: StaticParams get() = state.staticParams
-    override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
-    override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-
-    constructor(from: fr.acinq.lightning.channel.Syncing) : this(ChannelStateWithCommitments.import(from.state), from.waitForTheirReestablishMessage)
 }
 
 @Serializable
