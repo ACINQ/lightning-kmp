@@ -17,8 +17,6 @@ object Serialization {
             fr.acinq.lightning.serialization.v3.Serialization.deserialize(bin, nodeParams)
         }.recoverWith {
             runTrying { fr.acinq.lightning.serialization.v2.Serialization.deserialize(bin, nodeParams) }
-        }.recoverWith {
-            runTrying { fr.acinq.lightning.serialization.v1.Serialization.deserialize(bin, nodeParams) }
         }.get()
     }
 
@@ -33,8 +31,6 @@ object Serialization {
             fr.acinq.lightning.serialization.v3.Serialization.decrypt(key, data, nodeParams)
         }.recoverWith {
             runTrying { fr.acinq.lightning.serialization.v2.Serialization.decrypt(key, data, nodeParams) }
-        }.recoverWith {
-            runTrying { fr.acinq.lightning.serialization.v1.Serialization.decrypt(key, data, nodeParams) }
         }.get()
     }
 

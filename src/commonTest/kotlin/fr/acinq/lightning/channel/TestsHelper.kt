@@ -421,7 +421,7 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments, minVersion: Int = 1, saveFiles: Boolean = false) {
+    private fun checkSerialization(state: ChannelStateWithCommitments, minVersion: Int = 2, saveFiles: Boolean = false) {
         fun save(blob: ByteArray, suffix: String) {
             val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
             val file: Path = FileSystem.workingDir().resolve(name)
@@ -450,17 +450,11 @@ object TestsHelper {
         }
 
         if (saveFiles) {
-            if (minVersion <= 1) save(fr.acinq.lightning.serialization.v1.Serialization.serialize(state), "v1")
             if (minVersion <= 2) save(fr.acinq.lightning.serialization.v2.Serialization.serialize(state), "v2")
             if (minVersion <= 3) save(fr.acinq.lightning.serialization.v3.Serialization.serialize(state), "v3")
         }
 
-        if (minVersion <= 1) {
-            val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
-            val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
-            assertEquals(maskChannelFeatures(deserializedv1), maskChannelFeatures(state), "serialization error (v1)")
-        }
-        if (minVersion <= 2) {
+         if (minVersion <= 2) {
             val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
             val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
             assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(state), "serialization error (v2)")
