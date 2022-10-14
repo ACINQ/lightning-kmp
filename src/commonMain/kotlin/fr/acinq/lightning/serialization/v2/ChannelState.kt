@@ -1,22 +1,267 @@
 package fr.acinq.lightning.serialization.v2
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.io.ByteArrayOutput
+import fr.acinq.bitcoin.io.readNBytes
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.contextual
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
+
+private object ByteVectorKSerializer : KSerializer<ByteVector> {
+    @Serializable
+    private data class ByteVectorSurrogate(val value: ByteArray)
+
+    override val descriptor: SerialDescriptor = ByteVectorSurrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: ByteVector) {
+        val surrogate = ByteVectorSurrogate(value.toByteArray())
+        return encoder.encodeSerializableValue(ByteVectorSurrogate.serializer(), surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): ByteVector {
+        val surrogate = decoder.decodeSerializableValue(ByteVectorSurrogate.serializer())
+        return ByteVector(surrogate.value)
+    }
+}
+
+private object ByteVector32KSerializer : KSerializer<ByteVector32> {
+    @Serializable
+    private data class ByteVector32Surrogate(val value: ByteArray) {
+        init {
+            require(value.size == 32)
+        }
+    }
+
+    override val descriptor: SerialDescriptor = ByteVector32Surrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: ByteVector32) {
+        val surrogate = ByteVector32Surrogate(value.toByteArray())
+        return encoder.encodeSerializableValue(ByteVector32Surrogate.serializer(), surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): ByteVector32 {
+        val surrogate = decoder.decodeSerializableValue(ByteVector32Surrogate.serializer())
+        return ByteVector32(surrogate.value)
+    }
+}
+
+private object ByteVector64KSerializer : KSerializer<ByteVector64> {
+    @Serializable
+    private data class ByteVector64Surrogate(val value: ByteArray)
+
+    override val descriptor: SerialDescriptor = ByteVector64Surrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: ByteVector64) {
+        val surrogate = ByteVector64Surrogate(value.toByteArray())
+        return encoder.encodeSerializableValue(ByteVector64Surrogate.serializer(), surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): ByteVector64 {
+        val surrogate = decoder.decodeSerializableValue(ByteVector64Surrogate.serializer())
+        return ByteVector64(surrogate.value)
+    }
+}
+
+private object PrivateKeyKSerializer : KSerializer<PrivateKey> {
+
+    override fun deserialize(decoder: Decoder): PrivateKey {
+        return PrivateKey(ByteVector32KSerializer.deserialize(decoder))
+    }
+
+    override val descriptor: SerialDescriptor get() = ByteVector32KSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: PrivateKey) {
+        ByteVector32KSerializer.serialize(encoder, value.value)
+    }
+}
+
+private object PublicKeyKSerializer : KSerializer<PublicKey> {
+
+    override fun deserialize(decoder: Decoder): PublicKey {
+        return PublicKey(ByteVectorKSerializer.deserialize(decoder))
+    }
+
+    override val descriptor: SerialDescriptor get() = ByteVectorKSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: PublicKey) {
+        ByteVectorKSerializer.serialize(encoder, value.value)
+    }
+}
+
+private object SatoshiKSerializer : KSerializer<Satoshi> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Satoshi", PrimitiveKind.LONG)
+
+    override fun serialize(encoder: Encoder, value: Satoshi) {
+        encoder.encodeLong(value.toLong())
+    }
+
+    override fun deserialize(decoder: Decoder): Satoshi {
+        return Satoshi(decoder.decodeLong())
+    }
+}
+
+private abstract class AbstractBtcSerializableKSerializer<T : BtcSerializable<T>>(val name: String, val btcSerializer: BtcSerializer<T>) : KSerializer<T> {
+    @Serializable
+    data class Surrogate(val name: String, val bytes: ByteArray)
+
+    override val descriptor: SerialDescriptor = Surrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: T) {
+        val surrogate = Surrogate(name, btcSerializer.write(value))
+        return encoder.encodeSerializableValue(Surrogate.serializer(), surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): T {
+        val surrogate = decoder.decodeSerializableValue(Surrogate.serializer())
+        return btcSerializer.read(surrogate.bytes)
+    }
+}
+
+private object BlockHeaderKSerializer : AbstractBtcSerializableKSerializer<BlockHeader>("BlockHeader", BlockHeader)
+
+private object OutPointKSerializer : AbstractBtcSerializableKSerializer<OutPoint>("OutPoint", OutPoint)
+
+private object ScriptWitnessKSerializer : AbstractBtcSerializableKSerializer<ScriptWitness>("ScriptWitness", ScriptWitness)
+
+private object TxInKSerializer : AbstractBtcSerializableKSerializer<TxIn>("TxIn", TxIn)
+
+private object TxOutKSerializer : AbstractBtcSerializableKSerializer<TxOut>("TxOut", TxOut)
+
+private object TransactionKSerializer : AbstractBtcSerializableKSerializer<Transaction>("Transaction", Transaction)
+
+
+private object ExtendedPrivateKeyKSerializer : KSerializer<DeterministicWallet.ExtendedPrivateKey> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ExtendedPublicKey") {
+        element("secretkeybytes", ByteVector32KSerializer.descriptor)
+        element("chaincode", ByteVector32KSerializer.descriptor)
+        element<Int>("depth")
+        element("path", KeyPathKSerializer.descriptor)
+        element<Long>("parent")
+    }
+
+    override fun serialize(encoder: Encoder, value: DeterministicWallet.ExtendedPrivateKey) {
+        val compositeEncoder = encoder.beginStructure(ExtendedPublicKeyKSerializer.descriptor)
+        compositeEncoder.encodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 0, ByteVector32KSerializer, value.secretkeybytes)
+        compositeEncoder.encodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 1, ByteVector32KSerializer, value.chaincode)
+        compositeEncoder.encodeIntElement(ExtendedPublicKeyKSerializer.descriptor, 2, value.depth)
+        compositeEncoder.encodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 3, KeyPathKSerializer, value.path)
+        compositeEncoder.encodeLongElement(ExtendedPublicKeyKSerializer.descriptor, 4, value.parent)
+        compositeEncoder.endStructure(ExtendedPublicKeyKSerializer.descriptor)
+    }
+
+    override fun deserialize(decoder: Decoder): DeterministicWallet.ExtendedPrivateKey {
+        var secretkeybytes: ByteVector32? = null
+        var chaincode: ByteVector32? = null
+        var depth: Int? = null
+        var path: KeyPath? = null
+        var parent: Long? = null
+
+        val compositeDecoder = decoder.beginStructure(ExtendedPublicKeyKSerializer.descriptor)
+        loop@ while (true) {
+            when (compositeDecoder.decodeElementIndex(ExtendedPublicKeyKSerializer.descriptor)) {
+                CompositeDecoder.DECODE_DONE -> break@loop
+                0 -> secretkeybytes = compositeDecoder.decodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 0, ByteVector32KSerializer)
+                1 -> chaincode = compositeDecoder.decodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 1, ByteVector32KSerializer)
+                2 -> depth = compositeDecoder.decodeIntElement(ExtendedPublicKeyKSerializer.descriptor, 2)
+                3 -> path = compositeDecoder.decodeSerializableElement(ExtendedPublicKeyKSerializer.descriptor, 3, KeyPathKSerializer)
+                4 -> parent = compositeDecoder.decodeLongElement(ExtendedPublicKeyKSerializer.descriptor, 4)
+            }
+        }
+        compositeDecoder.endStructure(ExtendedPublicKeyKSerializer.descriptor)
+
+        return DeterministicWallet.ExtendedPrivateKey(secretkeybytes!!, chaincode!!, depth!!, path!!, parent!!)
+    }
+
+}
+
+private  object ExtendedPublicKeyKSerializer : KSerializer<DeterministicWallet.ExtendedPublicKey> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ExtendedPublicKey") {
+        element("publickeybytes", ByteVectorKSerializer.descriptor)
+        element("chaincode", ByteVector32KSerializer.descriptor)
+        element<Int>("depth")
+        element("path", KeyPathKSerializer.descriptor)
+        element<Long>("parent")
+    }
+
+    override fun serialize(encoder: Encoder, value: DeterministicWallet.ExtendedPublicKey) {
+        val compositeEncoder = encoder.beginStructure(descriptor)
+        compositeEncoder.encodeSerializableElement(descriptor, 0, ByteVectorKSerializer, value.publickeybytes)
+        compositeEncoder.encodeSerializableElement(descriptor, 1, ByteVector32KSerializer, value.chaincode)
+        compositeEncoder.encodeIntElement(descriptor, 2, value.depth)
+        compositeEncoder.encodeSerializableElement(descriptor, 3, KeyPathKSerializer, value.path)
+        compositeEncoder.encodeLongElement(descriptor, 4, value.parent)
+        compositeEncoder.endStructure(descriptor)
+    }
+
+    override fun deserialize(decoder: Decoder): DeterministicWallet.ExtendedPublicKey {
+        var publickeybytes: ByteVector? = null
+        var chaincode: ByteVector32? = null
+        var depth: Int? = null
+        var path: KeyPath? = null
+        var parent: Long? = null
+
+        val compositeDecoder = decoder.beginStructure(descriptor)
+        loop@ while (true) {
+            when (compositeDecoder.decodeElementIndex(descriptor)) {
+                CompositeDecoder.DECODE_DONE -> break@loop
+                0 -> publickeybytes = compositeDecoder.decodeSerializableElement(descriptor, 0, ByteVectorKSerializer)
+                1 -> chaincode = compositeDecoder.decodeSerializableElement(descriptor, 1, ByteVector32KSerializer)
+                2 -> depth = compositeDecoder.decodeIntElement(descriptor, 2)
+                3 -> path = compositeDecoder.decodeSerializableElement(descriptor, 3, KeyPathKSerializer)
+                4 -> parent = compositeDecoder.decodeLongElement(descriptor, 4)
+            }
+        }
+        compositeDecoder.endStructure(descriptor)
+
+        return DeterministicWallet.ExtendedPublicKey(publickeybytes!!, chaincode!!, depth!!, path!!, parent!!)
+    }
+
+}
+
+private  object KeyPathKSerializer : KSerializer<KeyPath> {
+    private val listSerializer = ListSerializer(Long.serializer())
+
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("KeyPath") {
+        element("path", listSerializer.descriptor)
+    }
+
+    override fun serialize(encoder: Encoder, value: KeyPath) {
+        val compositeEncoder = encoder.beginStructure(ExtendedPublicKeyKSerializer.descriptor)
+        compositeEncoder.encodeSerializableElement(descriptor, 0, listSerializer, value.path)
+        compositeEncoder.endStructure(descriptor)
+    }
+
+    override fun deserialize(decoder: Decoder): KeyPath {
+        val compositeDecoder = decoder.beginStructure(ExtendedPublicKeyKSerializer.descriptor)
+        require(compositeDecoder.decodeElementIndex(descriptor) == 0)
+        val path = compositeDecoder.decodeSerializableElement(descriptor, 0, listSerializer)
+        compositeDecoder.endStructure(descriptor)
+        return KeyPath(path)
+    }
+}
 
 @Serializable
-internal sealed class DirectedHtlc {
+private sealed class DirectedHtlc {
     abstract val add: UpdateAddHtlc
 
     fun to(): fr.acinq.lightning.transactions.DirectedHtlc = when (this) {
@@ -33,13 +278,13 @@ internal sealed class DirectedHtlc {
 }
 
 @Serializable
-internal data class IncomingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
+private data class IncomingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
 
 @Serializable
-internal data class OutgoingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
+private data class OutgoingHtlc(override val add: UpdateAddHtlc) : DirectedHtlc()
 
 @Serializable
-internal data class CommitmentSpec(
+private data class CommitmentSpec(
     val htlcs: Set<DirectedHtlc>,
     val feerate: FeeratePerKw,
     val toLocal: MilliSatoshi,
@@ -52,21 +297,21 @@ internal data class CommitmentSpec(
 }
 
 @Serializable
-internal data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
+private data class LocalChanges(val proposed: List<UpdateMessage>, val signed: List<UpdateMessage>, val acked: List<UpdateMessage>) {
     constructor(from: fr.acinq.lightning.channel.LocalChanges) : this(from.proposed, from.signed, from.acked)
 
     fun export() = fr.acinq.lightning.channel.LocalChanges(proposed, signed, acked)
 }
 
 @Serializable
-internal data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>) {
+private data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<UpdateMessage>, val signed: List<UpdateMessage>) {
     constructor(from: fr.acinq.lightning.channel.RemoteChanges) : this(from.proposed, from.acked, from.signed)
 
     fun export() = fr.acinq.lightning.channel.RemoteChanges(proposed, acked, signed)
 }
 
 @Serializable
-internal data class HtlcTxAndSigs(
+private data class HtlcTxAndSigs(
     val txinfo: Transactions.TransactionWithInputInfo.HtlcTx,
     @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64,
     @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64
@@ -77,35 +322,35 @@ internal data class HtlcTxAndSigs(
 }
 
 @Serializable
-internal data class PublishableTxs(val commitTx: Transactions.TransactionWithInputInfo.CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>) {
+private data class PublishableTxs(val commitTx: Transactions.TransactionWithInputInfo.CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>) {
     constructor(from: fr.acinq.lightning.channel.PublishableTxs) : this(from.commitTx, from.htlcTxsAndSigs.map { HtlcTxAndSigs(it) })
 
     fun export() = fr.acinq.lightning.channel.PublishableTxs(commitTx, htlcTxsAndSigs.map { it.export() })
 }
 
 @Serializable
-internal data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs) {
+private data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs) {
     constructor(from: fr.acinq.lightning.channel.LocalCommit) : this(from.index, CommitmentSpec(from.spec), PublishableTxs(from.publishableTxs))
 
     fun export() = fr.acinq.lightning.channel.LocalCommit(index, spec.export(), publishableTxs.export())
 }
 
 @Serializable
-internal data class RemoteCommit(val index: Long, val spec: CommitmentSpec, @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey) {
+private data class RemoteCommit(val index: Long, val spec: CommitmentSpec, @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey) {
     constructor(from: fr.acinq.lightning.channel.RemoteCommit) : this(from.index, CommitmentSpec(from.spec), from.txid, from.remotePerCommitmentPoint)
 
     fun export() = fr.acinq.lightning.channel.RemoteCommit(index, spec.export(), txid, remotePerCommitmentPoint)
 }
 
 @Serializable
-internal data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false) {
+private data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false) {
     constructor(from: fr.acinq.lightning.channel.WaitingForRevocation) : this(RemoteCommit(from.nextRemoteCommit), from.sent, from.sentAfterLocalCommitIndex, from.reSignAsap)
 
     fun export() = fr.acinq.lightning.channel.WaitingForRevocation(nextRemoteCommit.export(), sent, sentAfterLocalCommitIndex, reSignAsap)
 }
 
 @Serializable
-internal data class LocalCommitPublished(
+private data class LocalCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
     val claimMainDelayedOutputTx: Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx? = null,
     val htlcTxs: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, Transactions.TransactionWithInputInfo.HtlcTx?> = emptyMap(),
@@ -119,7 +364,7 @@ internal data class LocalCommitPublished(
 }
 
 @Serializable
-internal data class RemoteCommitPublished(
+private data class RemoteCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
     val claimMainOutputTx: Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx? = null,
     val claimHtlcTxs: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, Transactions.TransactionWithInputInfo.ClaimHtlcTx?> = emptyMap(),
@@ -132,7 +377,7 @@ internal data class RemoteCommitPublished(
 }
 
 @Serializable
-internal data class RevokedCommitPublished(
+private data class RevokedCommitPublished(
     @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
     @Serializable(with = PrivateKeyKSerializer::class) val remotePerCommitmentSecret: PrivateKey,
     val claimMainOutputTx: Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx? = null,
@@ -160,7 +405,7 @@ internal data class RevokedCommitPublished(
  * This means that they will be recomputed once when we convert serialized data to their "live" counterparts.
  */
 @Serializable
-internal data class LocalParams constructor(
+private data class LocalParams constructor(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     @Serializable(with = KeyPathKSerializer::class) val fundingKeyPath: KeyPath,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
@@ -202,7 +447,7 @@ internal data class LocalParams constructor(
 }
 
 @Serializable
-internal data class RemoteParams(
+private data class RemoteParams(
     @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
     @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long,
@@ -250,7 +495,7 @@ internal data class RemoteParams(
 }
 
 @Serializable
-internal data class ChannelVersion(@Serializable(with = ByteVectorKSerializer::class) val bits: ByteVector) {
+private data class ChannelVersion(@Serializable(with = ByteVectorKSerializer::class) val bits: ByteVector) {
     init {
         require(bits.size() == 4) { "channel version takes 4 bytes" }
     }
@@ -276,14 +521,14 @@ internal data class ChannelVersion(@Serializable(with = ByteVectorKSerializer::c
 }
 
 @Serializable
-internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
+private data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
     constructor(from: fr.acinq.lightning.channel.ClosingTxProposed) : this(from.unsignedTx, from.localClosingSigned)
 
     fun export() = fr.acinq.lightning.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
 }
 
 @Serializable
-internal data class Commitments(
+private data class Commitments(
     val channelVersion: ChannelVersion,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
@@ -342,14 +587,14 @@ internal data class Commitments(
 }
 
 @Serializable
-internal data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw) {
+private data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw) {
     constructor(from: fr.acinq.lightning.blockchain.fee.OnChainFeerates) : this(from.mutualCloseFeerate, from.claimMainFeerate, from.fastFeerate)
 
     fun export() = fr.acinq.lightning.blockchain.fee.OnChainFeerates(mutualCloseFeerate, claimMainFeerate, fastFeerate)
 }
 
 @Serializable
-internal data class StaticParams(@Serializable(with = ByteVector32KSerializer::class) val chainHash: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey) {
+private data class StaticParams(@Serializable(with = ByteVector32KSerializer::class) val chainHash: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey) {
     constructor(from: fr.acinq.lightning.channel.StaticParams) : this(from.nodeParams.chainHash, from.remoteNodeId)
 
     fun export(nodeParams: NodeParams): fr.acinq.lightning.channel.StaticParams {
@@ -359,7 +604,7 @@ internal data class StaticParams(@Serializable(with = ByteVector32KSerializer::c
 }
 
 @Serializable
-internal sealed class ChannelState {
+private sealed class ChannelState {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
     abstract val currentOnChainFeerates: OnChainFeerates
@@ -377,7 +622,7 @@ internal sealed class ChannelState {
 }
 
 @Serializable
-internal sealed class ChannelStateWithCommitments : ChannelState() {
+private sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
     abstract fun export(nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments
@@ -399,7 +644,7 @@ internal sealed class ChannelStateWithCommitments : ChannelState() {
 }
 
 @Serializable
-internal data class Aborted(
+private data class Aborted(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates
@@ -408,7 +653,7 @@ internal data class Aborted(
 }
 
 @Serializable
-internal data class WaitForInit(
+private data class WaitForInit(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates
@@ -417,7 +662,7 @@ internal data class WaitForInit(
 }
 
 @Serializable
-internal data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
+private data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
@@ -426,7 +671,7 @@ internal data class Offline(val state: ChannelStateWithCommitments) : ChannelSta
 }
 
 @Serializable
-internal data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
+private data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
@@ -435,7 +680,7 @@ internal data class Syncing(val state: ChannelStateWithCommitments, val waitForT
 }
 
 @Serializable
-internal data class WaitForRemotePublishFutureCommitment(
+private data class WaitForRemotePublishFutureCommitment(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -455,7 +700,7 @@ internal data class WaitForRemotePublishFutureCommitment(
 }
 
 @Serializable
-internal data class WaitForFundingConfirmed(
+private data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -489,7 +734,7 @@ internal data class WaitForFundingConfirmed(
 }
 
 @Serializable
-internal data class WaitForFundingLocked(
+private data class WaitForFundingLocked(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -517,7 +762,7 @@ internal data class WaitForFundingLocked(
 }
 
 @Serializable
-internal data class Normal(
+private data class Normal(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -561,7 +806,7 @@ internal data class Normal(
 }
 
 @Serializable
-internal data class ShuttingDown(
+private data class ShuttingDown(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -590,7 +835,7 @@ internal data class ShuttingDown(
 }
 
 @Serializable
-internal data class Negotiating(
+private data class Negotiating(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -630,7 +875,7 @@ internal data class Negotiating(
 }
 
 @Serializable
-internal data class Closing(
+private data class Closing(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -680,7 +925,7 @@ internal data class Closing(
 }
 
 @Serializable
-internal data class Closed(val state: Closing) : ChannelStateWithCommitments() {
+private data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val commitments: Commitments get() = state.commitments
     override val staticParams: StaticParams get() = state.staticParams
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
@@ -692,7 +937,7 @@ internal data class Closed(val state: Closing) : ChannelStateWithCommitments() {
 }
 
 @Serializable
-internal data class ErrorInformationLeak(
+private data class ErrorInformationLeak(
     override val staticParams: StaticParams,
     override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
@@ -713,7 +958,7 @@ internal data class ErrorInformationLeak(
     )
 }
 
-internal object ShaChainSerializer : KSerializer<ShaChain> {
+private object ShaChainSerializer : KSerializer<ShaChain> {
     @Serializable
     private data class Surrogate(val knownHashes: List<Pair<String, ByteArray>>, val lastIndex: Long? = null)
 
@@ -736,7 +981,7 @@ internal object ShaChainSerializer : KSerializer<ShaChain> {
     private fun String.toBooleanList(): List<Boolean> = this.map { it == '1' }
 }
 
-internal class EitherSerializer<A : Any, B : Any>(val aSer: KSerializer<A>, val bSer: KSerializer<B>) : KSerializer<Either<A, B>> {
+private class EitherSerializer<A : Any, B : Any>(val aSer: KSerializer<A>, val bSer: KSerializer<B>) : KSerializer<Either<A, B>> {
     @Serializable
     private data class Surrogate<A : Any, B : Any>(val isRight: Boolean, val left: A?, val right: B?)
 
@@ -750,5 +995,221 @@ internal class EitherSerializer<A : Any, B : Any>(val aSer: KSerializer<A>, val 
     override fun deserialize(decoder: Decoder): Either<A, B> {
         val surrogate = decoder.decodeSerializableValue(Surrogate.serializer<A, B>(aSer, bSer))
         return if (surrogate.isRight) Either.Right(surrogate.right!!) else Either.Left(surrogate.left!!)
+    }
+}
+
+object Serialization {
+    private val versionMagic = 2
+
+    /**
+     * Versioned serialized data.
+     *
+     * @README DO NOT change the structure of this class !!
+     *
+     * If a new serialization format is added, just change the `version` field and update serialize()/deserialize() methods
+     * @param version version of the serialization algorithm
+     * @param data serialized data
+     */
+    @Serializable
+    private data class SerializedData(val version: Int, @Serializable(with = ByteVectorKSerializer::class) val data: ByteVector)
+
+    private val updateSerializersModule = SerializersModule {
+        polymorphic(UpdateMessage::class) {
+            subclass(UpdateAddHtlc.serializer())
+            subclass(UpdateFailHtlc.serializer())
+            subclass(UpdateFailMalformedHtlc.serializer())
+            subclass(UpdateFee.serializer())
+            subclass(UpdateFulfillHtlc.serializer())
+        }
+    }
+
+    private val tlvSerializersModule = SerializersModule {
+        polymorphic(Tlv::class) {
+            subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
+            subclass(ChannelTlv.ChannelOriginTlv.serializer())
+            subclass(InitTlv.Networks.serializer())
+            subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())
+            subclass(OnionPaymentPayloadTlv.AmountToForward.serializer())
+            subclass(OnionPaymentPayloadTlv.OutgoingCltv.serializer())
+            subclass(OnionPaymentPayloadTlv.OutgoingChannelId.serializer())
+            subclass(OnionPaymentPayloadTlv.PaymentData.serializer())
+            subclass(OnionPaymentPayloadTlv.PaymentMetadata.serializer())
+            subclass(OnionPaymentPayloadTlv.InvoiceFeatures.serializer())
+            subclass(OnionPaymentPayloadTlv.OutgoingNodeId.serializer())
+            subclass(OnionPaymentPayloadTlv.InvoiceRoutingInfo.serializer())
+            subclass(OnionPaymentPayloadTlv.TrampolineOnion.serializer())
+            subclass(GenericTlv.serializer())
+        }
+    }
+
+    private val serializersModule = SerializersModule {
+        polymorphic(ChannelStateWithCommitments::class) {
+            subclass(Normal::class)
+            subclass(WaitForFundingConfirmed::class)
+            subclass(WaitForFundingLocked::class)
+            subclass(WaitForRemotePublishFutureCommitment::class)
+            subclass(ShuttingDown::class)
+            subclass(Negotiating::class)
+            subclass(Closing::class)
+            subclass(Closed::class)
+            subclass(ErrorInformationLeak::class)
+        }
+    }
+
+    private val serializationModules = SerializersModule {
+        include(tlvSerializersModule)
+        include(updateSerializersModule)
+        include(SerializersModule {
+            contextual(ByteVector64KSerializer)
+            contextual(ByteVector32KSerializer)
+            contextual(ByteVectorKSerializer)
+            contextual(SatoshiKSerializer)
+            contextual(PrivateKeyKSerializer)
+            contextual(PublicKeyKSerializer)
+            contextual(OutPointKSerializer)
+            contextual(TxInKSerializer)
+            contextual(TxOutKSerializer)
+            contextual(TransactionKSerializer)
+            contextual(BlockHeaderKSerializer)
+        })
+    }
+
+    // used by the "test node" JSON API
+    val lightningSerializersModule = SerializersModule {
+        include(serializersModule)
+        include(serializationModules)
+    }
+
+    private fun serialize(state: ChannelStateWithCommitments): ByteArray {
+        val output = ByteArrayOutput()
+        val encoder = DataOutputEncoder(output)
+        encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)
+        val bytes = output.toByteArray()
+        val versioned = SerializedData(version = versionMagic, data = bytes.toByteVector())
+        val output1 = ByteArrayOutput()
+        val encoder1 = DataOutputEncoder(output1)
+        encoder1.encodeSerializableValue(SerializedData.serializer(), versioned)
+        return output1.toByteArray()
+    }
+
+    fun serialize(state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
+        return serialize(ChannelStateWithCommitments.import(state))
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    fun deserialize(bin: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+        val input = ByteArrayInput(bin)
+        val decoder = DataInputDecoder(input)
+        val versioned = decoder.decodeSerializableValue(SerializedData.serializer())
+        return when (versioned.version) {
+            versionMagic -> {
+                val input1 = ByteArrayInput(versioned.data.toByteArray())
+                val decoder1 = DataInputDecoder(input1)
+                decoder1.decodeSerializableValue(ChannelStateWithCommitments.serializer()).export(nodeParams)
+            }
+            else -> error("unknown serialization version ${versioned.version}")
+        }
+    }
+
+    private fun deserialize(bin: ByteVector, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = deserialize(bin.toByteArray(), nodeParams)
+
+    private fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
+        val bin = serialize(state)
+        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
+        // See https://en.wikipedia.org/wiki/Birthday_attack
+        val nonce = Crypto.sha256(bin).take(12).toByteArray()
+        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
+        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
+    }
+
+    fun encrypt(key: ByteVector32, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData {
+        val bin = serialize(state)
+        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
+        // See https://en.wikipedia.org/wiki/Birthday_attack
+        val nonce = Crypto.sha256(bin).take(12).toByteArray()
+        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
+        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
+    }
+
+    fun encrypt(key: PrivateKey, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, state)
+
+    fun decrypt(key: ByteVector32, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+        // nonce is 12B, tag is 16B
+        val ciphertext = data.dropLast(12 + 16)
+        val nonce = data.takeLast(12 + 16).take(12)
+        val tag = data.takeLast(16)
+        val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
+        return deserialize(plaintext, nodeParams)
+    }
+
+    fun decrypt(key: PrivateKey, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data, nodeParams)
+    fun decrypt(key: PrivateKey, backup: EncryptedChannelData, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray(), nodeParams)
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private class DataOutputEncoder(val output: ByteArrayOutput) : AbstractEncoder() {
+        override val serializersModule: SerializersModule = serializationModules
+        override fun encodeBoolean(value: Boolean) = output.write(if (value) 1 else 0)
+        override fun encodeByte(value: Byte) = output.write(value.toInt())
+        override fun encodeShort(value: Short) = output.write(Pack.writeInt16BE(value))
+        override fun encodeInt(value: Int) = output.write(Pack.writeInt32BE(value))
+        override fun encodeLong(value: Long) = output.write(Pack.writeInt64BE(value))
+        override fun encodeFloat(value: Float) {
+            TODO()
+        }
+
+        override fun encodeDouble(value: Double) {
+            TODO()
+        }
+
+        override fun encodeChar(value: Char) = output.write(value.code)
+        override fun encodeString(value: String) {
+            val bytes = value.encodeToByteArray()
+            encodeInt(bytes.size)
+            output.write(bytes)
+        }
+
+        override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) = output.write(index)
+        override fun beginCollection(descriptor: SerialDescriptor, collectionSize: Int): CompositeEncoder {
+            encodeInt(collectionSize)
+            return this
+        }
+
+        override fun encodeNull() = encodeBoolean(false)
+        override fun encodeNotNullMark() = encodeBoolean(true)
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @ExperimentalSerializationApi
+    private class DataInputDecoder(val input: ByteArrayInput, var elementsCount: Int = 0) : AbstractDecoder() {
+        private var elementIndex = 0
+        override val serializersModule: SerializersModule = serializationModules
+        override fun decodeBoolean(): Boolean = input.read() != 0
+        override fun decodeByte(): Byte = input.read().toByte()
+        override fun decodeShort(): Short = Pack.int16BE(input.readNBytes(2)!!)
+        override fun decodeInt(): Int = Pack.int32BE(input.readNBytes(4)!!)
+        override fun decodeLong(): Long = Pack.int64BE(input.readNBytes(8)!!)
+        override fun decodeFloat(): Float = TODO()
+        override fun decodeDouble(): Double = TODO()
+        override fun decodeChar(): Char = input.read().toChar()
+        override fun decodeString(): String {
+            val len = decodeInt()
+            require(len <= input.availableBytes)
+            return input.readNBytes(len)!!.decodeToString()
+        }
+
+        override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = input.read()
+        override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
+            if (elementIndex == elementsCount) return CompositeDecoder.DECODE_DONE
+            return elementIndex++
+        }
+
+        override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = DataInputDecoder(input, descriptor.elementsCount)
+        override fun decodeSequentially(): Boolean = true
+        override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = decodeInt().also {
+            require(it <= input.availableBytes)
+            elementsCount = it
+        }
+
+        override fun decodeNotNullMark(): Boolean = decodeBoolean()
     }
 }
