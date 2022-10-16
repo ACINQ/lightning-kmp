@@ -44,7 +44,7 @@ interface KeyManager {
         else -> fundingKeyPath
     }
 
-    fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath = channelKeyPath(localParams.channelKeys.fundingKeyPath, channelConfig)
+    fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath = channelKeyPath(localParams.fundingKeyPath, channelConfig)
 
     /**
      *

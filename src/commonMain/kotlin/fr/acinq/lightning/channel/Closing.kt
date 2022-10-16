@@ -1,11 +1,9 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedHtlcTxOutputs
@@ -37,9 +35,6 @@ data class RecoveryClose(val remoteCommitPublished: RemoteCommitPublished) : Clo
 data class RevokedClose(val revokedCommitPublished: RevokedCommitPublished) : ClosingType()
 
 data class Closing(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val fundingTx: Transaction?, // this will be non-empty if we got in closing while waiting for the funding tx to confirm
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
@@ -64,7 +59,7 @@ data class Closing(
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.WatchReceived -> {
                 val watch = cmd.watch
@@ -73,7 +68,7 @@ data class Closing(
                         when (val commitments1 = alternativeCommitments.find { it.fundingTxId == watch.tx.txid }) {
                             null -> if (commitments.fundingTxId == watch.tx.txid) {
                                 // The best funding tx candidate has been confirmed, we can forget alternative commitments.
-                                val nextState = this.copy(alternativeCommitments = listOf())
+                                val nextState = this@Closing.copy(alternativeCommitments = listOf())
                                 val watchSpent = WatchSpent(channelId, watch.tx, commitments.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
                                 val actions = listOf(
                                     ChannelAction.Blockchain.SendWatch(watchSpent),
@@ -82,7 +77,7 @@ data class Closing(
                                 Pair(nextState, actions)
                             } else {
                                 logger.warning { "c:$channelId an unknown funding tx with txId=${watch.tx.txid} got confirmed, this should not happen" }
-                                Pair(this, listOf())
+                                Pair(this@Closing, listOf())
                             }
                             else -> {
                                 // This is a corner case where:
@@ -100,7 +95,7 @@ data class Closing(
                                 val watchSpent = WatchSpent(channelId, watch.tx, commitments1.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
                                 val commitTx = commitments1.localCommit.publishableTxs.commitTx.tx
                                 val localCommitPublished = claimCurrentLocalCommitTxOutputs(keyManager, commitments1, commitTx, currentOnChainFeerates)
-                                val nextState = Closing(staticParams, currentTip, currentOnChainFeerates, commitments1, watch.tx, waitingSinceBlock, alternativeCommitments = listOf(), localCommitPublished = localCommitPublished)
+                                val nextState = Closing(commitments1, watch.tx, waitingSinceBlock, alternativeCommitments = listOf(), localCommitPublished = localCommitPublished)
                                 val actions = buildList {
                                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
                                     add(ChannelAction.Storage.StoreState(nextState))
@@ -113,18 +108,18 @@ data class Closing(
                     watch is WatchEventSpent && watch.event is BITCOIN_FUNDING_SPENT -> when {
                         mutualClosePublished.any { it.tx.txid == watch.tx.txid } -> {
                             // we already know about this tx, probably because we have published it ourselves after successful negotiation
-                            Pair(this, listOf())
+                            Pair(this@Closing, listOf())
                         }
                         mutualCloseProposed.any { it.tx.txid == watch.tx.txid } -> {
                             // at any time they can publish a closing tx with any sig we sent them
                             val closingTx = mutualCloseProposed.first { it.tx.txid == watch.tx.txid }.copy(tx = watch.tx)
-                            val nextState = this.copy(mutualClosePublished = this.mutualClosePublished + listOf(closingTx))
+                            val nextState = this@Closing.copy(mutualClosePublished = mutualClosePublished + listOf(closingTx))
                             val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Blockchain.PublishTx(watch.tx))
                             Pair(nextState, actions)
                         }
                         localCommitPublished?.commitTx == watch.tx || remoteCommitPublished?.commitTx == watch.tx || nextRemoteCommitPublished?.commitTx == watch.tx || futureRemoteCommitPublished?.commitTx == watch.tx -> {
                             // this is because WatchSpent watches never expire and we are notified multiple times
-                            Pair(this, listOf())
+                            Pair(this@Closing, listOf())
                         }
                         watch.tx.txid == commitments.remoteCommit.txid -> {
                             // counterparty may attempt to spend its last commit tx at any time
@@ -183,12 +178,12 @@ data class Closing(
                     watch is WatchEventConfirmed && watch.event is BITCOIN_TX_CONFIRMED -> {
                         logger.info { "c:$channelId txid=${watch.tx.txid} has reached mindepth, updating closing state" }
                         // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
-                        val closing1 = this.copy(
-                            localCommitPublished = this.localCommitPublished?.update(watch.tx),
-                            remoteCommitPublished = this.remoteCommitPublished?.update(watch.tx),
-                            nextRemoteCommitPublished = this.nextRemoteCommitPublished?.update(watch.tx),
-                            futureRemoteCommitPublished = this.futureRemoteCommitPublished?.update(watch.tx),
-                            revokedCommitPublished = this.revokedCommitPublished.map { it.update(watch.tx) }
+                        val closing1 = this@Closing.copy(
+                            localCommitPublished = localCommitPublished?.update(watch.tx),
+                            remoteCommitPublished = remoteCommitPublished?.update(watch.tx),
+                            nextRemoteCommitPublished = nextRemoteCommitPublished?.update(watch.tx),
+                            futureRemoteCommitPublished = futureRemoteCommitPublished?.update(watch.tx),
+                            revokedCommitPublished = revokedCommitPublished.map { it.update(watch.tx) }
                         )
 
                         // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
@@ -262,7 +257,7 @@ data class Closing(
                     Pair(nextState, actions)
                 } else {
                     logger.warning { "c:$channelId cannot find revoked commit with txid=${cmd.revokedCommitTxId}" }
-                    Pair(this, listOf())
+                    Pair(this@Closing, listOf())
                 }
             }
             is ChannelCommand.MessageReceived -> when (cmd.message) {
@@ -272,12 +267,12 @@ data class Closing(
                     // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
                     val exc = FundingTxSpent(channelId, spendingTxs.first().txid)
                     val error = Error(channelId, exc.message)
-                    Pair(this, listOf(ChannelAction.Message.Send(error)))
+                    Pair(this@Closing, listOf(ChannelAction.Message.Send(error)))
                 }
                 is Error -> {
                     logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                     // nothing to do, there is already a spending tx published
-                    Pair(this, listOf())
+                    Pair(this@Closing, listOf())
                 }
                 else -> unhandled(cmd)
             }
@@ -325,18 +320,16 @@ data class Closing(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
-            is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
-            is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@Closing), listOf())
             else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error processing ${cmd::class} in state ${this::class}" }
         return localCommitPublished?.let {
             // we're already trying to claim our commitment, there's nothing more we can do
-            Pair(this, listOf())
+            Pair(this@Closing, listOf())
         } ?: spendLocalCurrent()
     }
 

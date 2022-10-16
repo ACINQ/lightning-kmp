@@ -1,13 +1,11 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.Either
@@ -18,9 +16,6 @@ import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.Shutdown
 
 data class Negotiating(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
@@ -35,7 +30,7 @@ data class Negotiating(
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is ClosingSigned -> {
                 val remoteClosingFee = cmd.message.feeSatoshis
@@ -93,7 +88,7 @@ data class Negotiating(
                                                 closingTxProposed.lastIndex,
                                                 closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                                             )
-                                            val nextState = this.copy(
+                                            val nextState = this@Negotiating.copy(
                                                 commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
                                                 closingTxProposed = closingProposed1,
                                                 bestUnpublishedClosingTx = signedClosingTx
@@ -125,7 +120,7 @@ data class Negotiating(
                                                     closingTxProposed.lastIndex,
                                                     closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                                                 )
-                                                val nextState = this.copy(
+                                                val nextState = this@Negotiating.copy(
                                                     commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
                                                     closingTxProposed = closingProposed1,
                                                     bestUnpublishedClosingTx = signedClosingTx
@@ -149,14 +144,11 @@ data class Negotiating(
                         logger.info { "c:$channelId closing tx published: closingTxId=${watch.tx.txid}" }
                         val closingTx = getMutualClosePublished(watch.tx)
                         val nextState = Closing(
-                            staticParams,
-                            currentTip,
-                            currentOnChainFeerates,
                             commitments,
                             fundingTx = null,
                             waitingSinceBlock = currentBlockHeight.toLong(),
                             alternativeCommitments = listOf(),
-                            mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx },
+                            mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOf(closingTx)
                         )
                         val actions = listOf(
@@ -173,9 +165,7 @@ data class Negotiating(
                 else -> unhandled(cmd)
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
-            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
-            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
-            cmd is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            cmd is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_ADD_HTLC -> handleCommandError(cmd.command, ChannelUnavailable(channelId))
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
             else -> unhandled(cmd)
@@ -189,11 +179,8 @@ data class Negotiating(
         return closingTxProposed.flatten().first { it.unsignedTx.tx.txid == tx.txid }.unsignedTx.copy(tx = tx)
     }
 
-    private fun completeMutualClose(signedClosingTx: ClosingTx, closingSigned: ClosingSigned?): Pair<ChannelState, List<ChannelAction>> {
+    private fun ChannelContext.completeMutualClose(signedClosingTx: ClosingTx, closingSigned: ClosingSigned?): Pair<ChannelState, List<ChannelAction>> {
         val nextState = Closing(
-            staticParams,
-            currentTip,
-            currentOnChainFeerates,
             commitments,
             fundingTx = null,
             waitingSinceBlock = currentBlockHeight.toLong(),
@@ -210,22 +197,19 @@ data class Negotiating(
         return Pair(nextState, actions)
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
-            nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             bestUnpublishedClosingTx != null -> {
                 // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
                 val nextState = Closing(
-                    staticParams,
-                    currentTip,
-                    currentOnChainFeerates,
                     commitments,
                     fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
                     alternativeCommitments = listOf(),
-                    mutualCloseProposed = this.closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
+                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
                     mutualClosePublished = listOf(bestUnpublishedClosingTx)
                 )
                 val actions = listOf(

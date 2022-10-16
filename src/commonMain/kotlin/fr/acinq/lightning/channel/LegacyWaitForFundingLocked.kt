@@ -1,11 +1,9 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
@@ -19,22 +17,19 @@ import fr.acinq.lightning.wire.FundingLocked
  * This class handles this scenario, and lets those channels safely transition to the normal state.
  */
 data class LegacyWaitForFundingLocked(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val lastSent: FundingLocked
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReady -> {
                     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                     val watchConfirmed = WatchConfirmed(
-                        this.channelId,
+                        this@LegacyWaitForFundingLocked.channelId,
                         commitments.commitInput.outPoint.txid,
                         commitments.commitInput.txOut.publicKeyScript,
                         ANNOUNCEMENTS_MINCONF.toLong(),
@@ -54,9 +49,6 @@ data class LegacyWaitForFundingLocked(
                         enable = Helpers.aboveReserve(commitments)
                     )
                     val nextState = Normal(
-                        staticParams,
-                        currentTip,
-                        currentOnChainFeerates,
                         commitments.copy(remoteNextCommitInfo = Either.Right(cmd.message.nextPerCommitmentPoint)),
                         shortChannelId,
                         buried = false,
@@ -84,23 +76,21 @@ data class LegacyWaitForFundingLocked(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.ExecuteCommand -> when (cmd.command) {
-                is CMD_CLOSE -> Pair(this, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
+                is CMD_CLOSE -> Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
                 is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
                 else -> unhandled(cmd)
             }
-            is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
-            is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
-            is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
-            is ChannelCommand.Disconnected -> Pair(Offline(this), listOf())
+            is ChannelCommand.CheckHtlcTimeout -> Pair(this@LegacyWaitForFundingLocked, listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@LegacyWaitForFundingLocked), listOf())
             else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
-            commitments.nothingAtStake() -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+            commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
         }
     }

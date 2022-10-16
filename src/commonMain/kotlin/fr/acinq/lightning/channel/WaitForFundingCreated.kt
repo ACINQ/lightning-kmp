@@ -1,12 +1,10 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
@@ -32,9 +30,6 @@ import fr.acinq.lightning.wire.*
  *         |--------------------------->|
  */
 data class WaitForFundingCreated(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
     val wallet: WalletState,
@@ -50,12 +45,12 @@ data class WaitForFundingCreated(
 ) : ChannelState() {
     val channelId: ByteVector32 = interactiveTxSession.fundingParams.channelId
 
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is InteractiveTxConstructionMessage -> {
                 val (interactiveTxSession1, interactiveTxAction) = interactiveTxSession.receive(cmd.message)
                 when (interactiveTxAction) {
-                    is InteractiveTxSessionAction.SendMessage -> Pair(this.copy(interactiveTxSession = interactiveTxSession1), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
+                    is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingCreated.copy(interactiveTxSession = interactiveTxSession1), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                     is InteractiveTxSessionAction.SignSharedTx -> {
                         val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
                             keyManager,
@@ -78,12 +73,9 @@ data class WaitForFundingCreated(
                             }
                             is Either.Right -> {
                                 val firstCommitTx = firstCommitTxRes.value
-                                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, localParams.channelKeys.fundingPrivateKey)
+                                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
                                 val commitSig = CommitSig(channelId, localSigOfRemoteTx, listOf())
                                 val nextState = WaitForFundingSigned(
-                                    staticParams,
-                                    currentTip,
-                                    currentOnChainFeerates,
                                     localParams,
                                     remoteParams,
                                     wallet,
@@ -122,32 +114,30 @@ data class WaitForFundingCreated(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
                 logger.info { "c:$channelId ignoring unexpected tx_init_rbf message" }
-                Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
+                Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> {
                 logger.info { "c:$channelId ignoring unexpected tx_ack_rbf message" }
-                Pair(this, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
+                Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
                 logger.warning { "c:$channelId our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+                Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
                 logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+                Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
-            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
-            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
-            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
-            cmd is ChannelCommand.Disconnected -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingCreated, listOf())
+            cmd is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }
 }

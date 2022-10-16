@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.readNBytes
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.channel.ChannelContext
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
@@ -100,12 +101,12 @@ object Serialization {
         return output1.toByteArray()
     }
 
-    fun serialize(state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
-        return serialize(ChannelStateWithCommitments.import(state))
+    fun serialize(ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
+        return serialize(ChannelStateWithCommitments.import(ctx, state))
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun deserialize(bin: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+    fun deserialize(bin: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments {
         val input = ByteArrayInput(bin)
         val decoder = DataInputDecoder(input)
         val versioned = decoder.decodeSerializableValue(SerializedData.serializer())
@@ -113,7 +114,7 @@ object Serialization {
             versionMagic -> {
                 val input1 = ByteArrayInput(versioned.data.toByteArray())
                 val decoder1 = DataInputDecoder(input1)
-                decoder1.decodeSerializableValue(ChannelStateWithCommitments.serializer()).export(nodeParams)
+                decoder1.decodeSerializableValue(ChannelStateWithCommitments.serializer()).export()
             }
             else -> error("unknown serialization version ${versioned.version}")
         }
@@ -128,8 +129,8 @@ object Serialization {
         return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
     }
 
-    fun encrypt(key: ByteVector32, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData {
-        val bin = serialize(state)
+    fun encrypt(key: ByteVector32, ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData {
+        val bin = serialize(ctx, state)
         // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
         // See https://en.wikipedia.org/wiki/Birthday_attack
         val nonce = Crypto.sha256(bin).take(12).toByteArray()
@@ -137,19 +138,19 @@ object Serialization {
         return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
     }
 
-    fun encrypt(key: PrivateKey, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, state)
+    fun encrypt(key: PrivateKey, ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, ctx, state)
 
-    fun decrypt(key: ByteVector32, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+    fun decrypt(key: ByteVector32, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)
         val nonce = data.takeLast(12 + 16).take(12)
         val tag = data.takeLast(16)
         val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
-        return deserialize(plaintext, nodeParams)
+        return deserialize(plaintext)
     }
 
-    fun decrypt(key: PrivateKey, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data, nodeParams)
-    fun decrypt(key: PrivateKey, backup: EncryptedChannelData, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray(), nodeParams)
+    fun decrypt(key: PrivateKey, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data)
+    fun decrypt(key: PrivateKey, backup: EncryptedChannelData): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray())
 
     @OptIn(ExperimentalSerializationApi::class)
     class DataOutputEncoder(val output: ByteArrayOutput) : AbstractEncoder() {

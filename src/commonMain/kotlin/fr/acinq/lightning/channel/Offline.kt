@@ -1,21 +1,17 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
 
 data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
-    override val staticParams: StaticParams get() = state.staticParams
-    override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
-    override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
+
     val channelId = state.channelId
 
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "c:$channelId offline processing ${cmd::class}" }
         return when {
             cmd is ChannelCommand.Connected -> {
@@ -36,7 +32,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     }
                     else -> {
                         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, state.commitments.localCommit.index)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommit.index)
                         val channelReestablish = ChannelReestablish(
                             channelId = channelId,
                             nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
@@ -65,9 +61,9 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                         }
                         else -> state
                     }
-                    Pair(this.copy(state = nextState), listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+                    Pair(this@Offline.copy(state = nextState), listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
                 } else {
-                    Pair(this, listOf())
+                    Pair(this@Offline, listOf())
                 }
             }
             cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventSpent -> when {
@@ -75,9 +71,6 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     logger.info { "c:$channelId closing tx published: closingTxId=${cmd.watch.tx.txid}" }
                     val closingTx = state.getMutualClosePublished(cmd.watch.tx)
                     val nextState = Closing(
-                        staticParams,
-                        currentTip,
-                        currentOnChainFeerates,
                         state.commitments,
                         fundingTx = null,
                         waitingSinceBlock = currentBlockHeight.toLong(),
@@ -92,13 +85,13 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     )
                     Pair(nextState, actions)
                 }
-                cmd.watch.tx.txid == state.commitments.remoteCommit.txid -> state.handleRemoteSpentCurrent(cmd.watch.tx)
-                cmd.watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.handleRemoteSpentNext(cmd.watch.tx)
-                state is WaitForRemotePublishFutureCommitment -> state.handleRemoteSpentFuture(cmd.watch.tx)
-                else -> state.handleRemoteSpentOther(cmd.watch.tx)
+                cmd.watch.tx.txid == state.commitments.remoteCommit.txid -> state.run { handleRemoteSpentCurrent(cmd.watch.tx) }
+                cmd.watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.run { handleRemoteSpentNext(cmd.watch.tx) }
+                state is WaitForRemotePublishFutureCommitment -> state. run { handleRemoteSpentFuture(cmd.watch.tx) }
+                else -> state.run { handleRemoteSpentOther(cmd.watch.tx) }
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> {
-                val (newState, actions) = state.checkHtlcTimeout()
+                val (newState, actions) = state.run { checkHtlcTimeout() }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
@@ -106,7 +99,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                 }
             }
             cmd is ChannelCommand.NewBlock -> {
-                val (newState, actions) = state.process(cmd)
+                val (newState, actions) = state. run { process(cmd) }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
@@ -114,7 +107,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                 }
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
-                val (newState, actions) = state.process(cmd)
+                val (newState, actions) = state.run { process(cmd) }
                 when (newState) {
                     // NB: it doesn't make sense to try to send outgoing messages if we're offline.
                     is Closing -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })
@@ -126,8 +119,8 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
         }
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
-        return Pair(this, listOf(ChannelAction.ProcessLocalError(t, cmd)))
+        return Pair(this@Offline, listOf(ChannelAction.ProcessLocalError(t, cmd)))
     }
 }

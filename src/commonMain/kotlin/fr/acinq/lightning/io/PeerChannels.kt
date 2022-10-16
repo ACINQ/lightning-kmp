@@ -16,7 +16,7 @@ object PeerChannels {
     private fun makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, isInitiator: Boolean, maxHtlcValueInFlight: MilliSatoshi, fundingKeyPath: KeyPath): LocalParams {
         return LocalParams(
             nodeParams.nodeId,
-            nodeParams.keyManager.channelKeys(fundingKeyPath),
+            fundingKeyPath,
             dustLimit = nodeParams.dustLimit,
             maxHtlcValueInFlightMsat = maxHtlcValueInFlight.toLong(),
             htlcMinimum = nodeParams.htlcMinimum,

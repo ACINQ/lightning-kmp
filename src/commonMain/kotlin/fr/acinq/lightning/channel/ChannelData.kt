@@ -7,6 +7,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
+import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.LoggingContext
@@ -382,7 +383,7 @@ data class ChannelKeys(
 
 data class LocalParams(
     val nodeId: PublicKey,
-    val channelKeys: ChannelKeys,
+    val fundingKeyPath: KeyPath,
     val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
     val htlcMinimum: MilliSatoshi,
@@ -391,7 +392,9 @@ data class LocalParams(
     val isInitiator: Boolean,
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
-)
+) {
+    fun channelKeys(keyManager: KeyManager) = keyManager.channelKeys(fundingKeyPath)
+}
 
 data class RemoteParams(
     val nodeId: PublicKey,

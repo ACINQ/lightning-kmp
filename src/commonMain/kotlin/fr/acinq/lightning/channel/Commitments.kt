@@ -469,12 +469,12 @@ data class Commitments(
 
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTxs) = makeRemoteTxs(remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, localParams.channelKeys.fundingPrivateKey)
+        val (remoteCommitTx, htlcTxs) = makeRemoteTxs(keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
+        val sig = keyManager.sign(remoteCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, localParams.channelKeys.htlcKey, remoteNextPerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, localParams.channelKeys(keyManager).htlcKey, remoteNextPerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info {
@@ -513,9 +513,9 @@ data class Commitments(
         // receiving money i.e its commit tx has one output for them
 
         val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-        val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys.shaSeed, localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = makeLocalTxs(localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-        val sig = Transactions.sign(localCommitTx, localParams.channelKeys.fundingPrivateKey)
+        val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, localCommit.index + 1)
+        val (localCommitTx, htlcTxs) = makeLocalTxs(keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+        val sig = Transactions.sign(localCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
 
         log.info {
             val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
@@ -524,7 +524,7 @@ data class Commitments(
         }
 
         // no need to compute htlc sigs if commit sig doesn't check out
-        val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.channelKeys.fundingPubKey, remoteParams.fundingPubKey, sig, commit.signature)
+        val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.channelKeys(keyManager).fundingPubKey, remoteParams.fundingPubKey, sig, commit.signature)
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
             is Try.Failure -> {
                 log.error(check.error) { "c:$channelId remote signature $commit is invalid" }
@@ -537,7 +537,7 @@ data class Commitments(
         if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
             return Either.Left(HtlcSigCountMismatch(channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, localParams.channelKeys.htlcKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
+        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, localParams.channelKeys(keyManager).htlcKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
         val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
         // combine the sigs to make signed txs
         val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
@@ -560,8 +560,8 @@ data class Commitments(
         }
 
         // we will send our revocation preimage + our next revocation hash
-        val localPerCommitmentSecret = keyManager.commitmentSecret(localParams.channelKeys.shaSeed, localCommit.index)
-        val localNextPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys.shaSeed, localCommit.index + 2)
+        val localPerCommitmentSecret = keyManager.commitmentSecret(localParams.channelKeys(keyManager).shaSeed, localCommit.index)
+        val localNextPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, localCommit.index + 2)
         val revocation = RevokeAndAck(channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
 
         // update our commitment data
@@ -633,6 +633,7 @@ data class Commitments(
         }
 
         fun makeLocalTxs(
+            keyManager: KeyManager,
             commitTxNumber: Long,
             localParams: LocalParams,
             remoteParams: RemoteParams,
@@ -640,14 +641,14 @@ data class Commitments(
             localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
-            val localDelayedPaymentPubkey = Generators.derivePubKey(localParams.channelKeys.delayedPaymentBasepoint, localPerCommitmentPoint)
-            val localHtlcPubkey = Generators.derivePubKey(localParams.channelKeys.htlcBasepoint, localPerCommitmentPoint)
+            val localDelayedPaymentPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).delayedPaymentBasepoint, localPerCommitmentPoint)
+            val localHtlcPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).htlcBasepoint, localPerCommitmentPoint)
             val remotePaymentPubkey = remoteParams.paymentBasepoint
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
             val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-            val localPaymentBasepoint = localParams.channelKeys.paymentBasepoint
+            val localPaymentBasepoint = localParams.channelKeys(keyManager).paymentBasepoint
             val outputs = makeCommitTxOutputs(
-                localParams.channelKeys.fundingPubKey,
+                localParams.channelKeys(keyManager).fundingPubKey,
                 remoteParams.fundingPubKey,
                 localParams.isInitiator,
                 localParams.dustLimit,
@@ -665,19 +666,20 @@ data class Commitments(
         }
 
         fun makeRemoteTxs(
+            keyManager: KeyManager,
             commitTxNumber: Long, localParams: LocalParams,
             remoteParams: RemoteParams, commitmentInput: Transactions.InputInfo,
             remotePerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
-            val localPaymentPubkey = localParams.channelKeys.paymentBasepoint
-            val localHtlcPubkey = Generators.derivePubKey(localParams.channelKeys.htlcBasepoint, remotePerCommitmentPoint)
+            val localPaymentPubkey = localParams.channelKeys(keyManager).paymentBasepoint
+            val localHtlcPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).htlcBasepoint, remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(localParams.channelKeys.revocationBasepoint, remotePerCommitmentPoint)
+            val remoteRevocationPubkey = Generators.revocationPubKey(localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
                 remoteParams.fundingPubKey,
-                localParams.channelKeys.fundingPubKey,
+                localParams.channelKeys(keyManager).fundingPubKey,
                 !localParams.isInitiator,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,
