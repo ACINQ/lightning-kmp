@@ -364,25 +364,10 @@ internal data class StaticParams(@Serializable(with = ByteVector32KSerializer::c
 }
 
 @Serializable
-internal sealed class ChannelState {
+internal sealed class ChannelStateWithCommitments {
     abstract val staticParams: StaticParams
     abstract val currentTip: Pair<Int, BlockHeader>
     abstract val currentOnChainFeerates: OnChainFeerates
-
-    companion object {
-        fun import(from: fr.acinq.lightning.channel.ChannelState): ChannelState = when (from) {
-            is fr.acinq.lightning.channel.WaitForInit -> WaitForInit(from)
-            is fr.acinq.lightning.channel.Aborted -> Aborted(from)
-            is fr.acinq.lightning.channel.Offline -> Offline(from)
-            is fr.acinq.lightning.channel.Syncing -> Syncing(from)
-            is fr.acinq.lightning.channel.ChannelStateWithCommitments -> ChannelStateWithCommitments.import(from)
-            else -> throw RuntimeException("unexpected state ${from::class}")
-        }
-    }
-}
-
-@Serializable
-internal sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
     abstract fun export(nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments
@@ -401,42 +386,6 @@ internal sealed class ChannelStateWithCommitments : ChannelState() {
             else -> throw RuntimeException("unexpected state ${from::class}")
         }
     }
-}
-
-@Serializable
-internal data class Aborted(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates
-) : ChannelState() {
-    constructor(from: fr.acinq.lightning.channel.Aborted) : this(StaticParams(from.staticParams), from.currentTip, OnChainFeerates(from.currentOnChainFeerates))
-}
-
-@Serializable
-internal data class WaitForInit(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates
-) : ChannelState() {
-    constructor(from: fr.acinq.lightning.channel.WaitForInit) : this(StaticParams(from.staticParams), from.currentTip, OnChainFeerates(from.currentOnChainFeerates))
-}
-
-@Serializable
-internal data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
-    override val staticParams: StaticParams get() = state.staticParams
-    override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
-    override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-
-    constructor(from: fr.acinq.lightning.channel.Offline) : this(ChannelStateWithCommitments.import(from.state))
-}
-
-@Serializable
-internal data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
-    override val staticParams: StaticParams get() = state.staticParams
-    override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
-    override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
-
-    constructor(from: fr.acinq.lightning.channel.Syncing) : this(ChannelStateWithCommitments.import(from.state), from.waitForTheirReestablishMessage)
 }
 
 @Serializable
