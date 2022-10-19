@@ -46,17 +46,19 @@ class NormalTestsCommon : LightningTestSuite() {
         val add = defaultAdd.copy(paymentHash = randomBytes32())
 
         val (alice1, actions) = alice0.processEx(ChannelCommand.ExecuteCommand(add))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.commitments.availableBalanceForSend() < alice0.commitments.availableBalanceForSend())
 
         val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
         assertEquals(0, htlc.id)
         assertEquals(add.paymentHash, htlc.paymentHash)
         val expected = alice0.copy(
-            commitments = alice0.commitments.copy(
-                localNextHtlcId = 1,
-                localChanges = alice0.commitments.localChanges.copy(proposed = listOf(htlc)),
-                payments = mapOf(0L to add.paymentId)
+            state = alice0.state.copy(
+                commitments = alice0.commitments.copy(
+                    localNextHtlcId = 1,
+                    localChanges = alice0.commitments.localChanges.copy(proposed = listOf(htlc)),
+                    payments = mapOf(0L to add.paymentId)
+                )
             )
         )
         assertEquals(expected, alice1)
@@ -69,7 +71,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
 
         val (bob1, actions) = bob0.processEx(ChannelCommand.ExecuteCommand(add))
-        assertIs<Normal>(bob1)
+        assertIs<LNChannel<Normal>>(bob1)
         assertEquals(bob1.commitments.availableBalanceForSend(), 0.msat)
 
         val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
@@ -83,7 +85,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
 
         val (bob1, actions) = bob0.processEx(ChannelCommand.ExecuteCommand(add))
-        assertIs<Normal>(bob1)
+        assertIs<LNChannel<Normal>>(bob1)
         assertEquals(bob1.commitments.availableBalanceForSend(), 0.msat)
 
         val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
@@ -97,7 +99,8 @@ class NormalTestsCommon : LightningTestSuite() {
         for (i in 0 until 10) {
             val add = defaultAdd.copy(paymentHash = randomBytes32())
             val (tempAlice, actions) = alice.processEx(ChannelCommand.ExecuteCommand(add))
-            alice = tempAlice as Normal
+            assertIs<LNChannel<Normal>>(tempAlice)
+            alice = tempAlice
 
             val htlc = actions.findOutgoingMessage<UpdateAddHtlc>()
             assertEquals(i.toLong(), htlc.id)
@@ -164,11 +167,11 @@ class NormalTestsCommon : LightningTestSuite() {
 
         val cmdAdd = defaultAdd.copy(amount = 1_500.msat)
         val (alice1, actionsAlice) = alice0.processEx(ChannelCommand.ExecuteCommand(cmdAdd))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         val add = actionsAlice.hasOutgoingMessage<UpdateAddHtlc>()
 
         val (bob1, actionsBob) = bob0.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
         assertTrue(actionsBob.isEmpty())
         assertEquals(0.msat, bob1.commitments.availableBalanceForSend())
     }
@@ -200,9 +203,9 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(774_660_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
-        assertEquals(0.msat, (alice2 as ChannelStateWithCommitments).commitments.availableBalanceForSend())
+        assertEquals(0.msat, alice2.state.commitments.availableBalanceForSend())
 
-        tailrec fun loop(bob: ChannelState, count: Int): ChannelState = if (count == 0) bob else {
+        tailrec fun loop(bob: LNChannel<ChannelState>, count: Int): LNChannel<ChannelState> = if (count == 0) bob else {
             val (newBob, actions1) = bob.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(amount = 16_000_000.msat)))
             actions1.hasOutgoingMessage<UpdateAddHtlc>()
             loop(newBob, count - 1)
@@ -249,7 +252,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CMD_ADD_HTLC -- over their max in-flight htlc value`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
-            bob.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
+            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000))))
         }
         val (_, actions) = bob0.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(amount = 151_000_000.msat)))
         val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
@@ -261,7 +264,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CMD_ADD_HTLC -- over our max in-flight htlc value`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
-            bob.copy(commitments = bob.commitments.copy(localParams = bob.commitments.localParams.copy(maxHtlcValueInFlightMsat = 100_000_000)))
+            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(localParams = bob.commitments.localParams.copy(maxHtlcValueInFlightMsat = 100_000_000))))
         }
         val (_, actions) = bob0.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(amount = 101_000_000.msat)))
         val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
@@ -273,7 +276,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CMD_ADD_HTLC -- over max in-flight htlc value with duplicate amounts`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
-            bob.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
+            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(remoteParams = bob.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000))))
         }
         val (bob1, actionsBob1) = bob0.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(amount = 75_500_000.msat)))
         actionsBob1.hasOutgoingMessage<UpdateAddHtlc>()
@@ -293,7 +296,8 @@ class NormalTestsCommon : LightningTestSuite() {
             for (i in 0 until bob0.staticParams.nodeParams.maxAcceptedHtlcs) {
                 val (tempAlice, actions) = alice.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
                 actions.hasOutgoingMessage<UpdateAddHtlc>()
-                alice = tempAlice as Normal
+                assertIs<LNChannel<Normal>>(tempAlice)
+                alice = tempAlice
             }
             alice
         }
@@ -308,14 +312,15 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CMD_ADD_HTLC -- over max offered htlcs`() {
         val (alice0, _) = reachNormal()
         // Bob accepts a maximum of 100 htlcs, but for Alice that value is only 5
-        val alice1 = alice0.copy(commitments = alice0.commitments.copy(localParams = alice0.commitments.localParams.copy(maxAcceptedHtlcs = 5)))
+        val alice1 = alice0.copy(state = alice0.state.copy(commitments = alice0.commitments.copy(localParams = alice0.commitments.localParams.copy(maxAcceptedHtlcs = 5))))
 
         val alice2 = run {
             var alice = alice1
             for (i in 0 until 5) {
                 val (tempAlice, actions) = alice.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(amount = 1_000_000.msat)))
                 actions.hasOutgoingMessage<UpdateAddHtlc>()
-                alice = tempAlice as Normal
+                assertIs<LNChannel<Normal>>(tempAlice)
+                alice = tempAlice
             }
             alice
         }
@@ -346,7 +351,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, _) = reachNormal()
         val (alice1, actionsAlice1) = alice0.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
         actionsAlice1.findOutgoingMessage<Shutdown>()
-        assertTrue(alice1 is Normal && alice1.localShutdown != null && alice1.remoteShutdown == null)
+        assertIs<LNChannel<Normal>>(alice1)
+        assertTrue(alice1.state.localShutdown != null && alice1.state.remoteShutdown == null)
 
         val (_, cmdAdd) = makeCmdAdd(500_000_000.msat, alice0.staticParams.nodeParams.nodeId, TestConstants.defaultBlockHeight.toLong(), randomBytes32())
         val (_, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(cmdAdd))
@@ -378,7 +384,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val add = UpdateAddHtlc(bob0.channelId, 0, 15_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelCommand.MessageReceived(add))
         assertTrue(actions1.isEmpty())
-        val expected = bob0.copy(commitments = bob0.commitments.copy(remoteNextHtlcId = 1, remoteChanges = bob0.commitments.remoteChanges.copy(proposed = listOf(add))))
+        val expected = bob0.copy(state = bob0.state.copy(commitments = bob0.commitments.copy(remoteNextHtlcId = 1, remoteChanges = bob0.commitments.remoteChanges.copy(proposed = listOf(add)))))
         assertEquals(expected, bob1)
     }
 
@@ -388,7 +394,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(alice0.commitments.availableBalanceForReceive(), 10_000_000.msat)
         val add = UpdateAddHtlc(alice0.channelId, 0, 10_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(add))
-        assertIs<Normal>(alice1)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(actions1.isEmpty())
         assertEquals(alice1.commitments.remoteChanges.proposed, listOf(add))
     }
@@ -399,7 +405,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(alice0.commitments.availableBalanceForReceive(), 10_000_000.msat)
         val add = UpdateAddHtlc(alice0.channelId, 0, 10_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(add))
-        assertIs<Normal>(alice1)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(actions1.isEmpty())
         assertEquals(alice1.commitments.remoteChanges.proposed, listOf(add))
     }
@@ -415,7 +421,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob3, actions3) = bob2.processEx(ChannelCommand.MessageReceived(add.copy(id = 2)))
         assertTrue(actions3.isEmpty())
         val (bob4, actions4) = bob3.processEx(ChannelCommand.MessageReceived(add.copy(id = 4)))
-        assertTrue(bob4 is Closing)
+        assertIs<LNChannel<Closing>>(bob4)
         val error = actions4.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), UnexpectedHtlcId(bob0.channelId, 3, 4).message)
     }
@@ -425,7 +431,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 150.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), HtlcValueTooSmall(bob0.channelId, 1_000.msat, add.amountMsat).message)
     }
@@ -435,7 +441,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 800_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 17_140.sat, 10_000.sat, 7_140.sat).message)
     }
@@ -451,7 +457,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob3, actions3) = bob2.processEx(ChannelCommand.MessageReceived(add.copy(id = 2)))
         assertTrue(actions3.isEmpty())
         val (bob4, actions4) = bob3.processEx(ChannelCommand.MessageReceived(add.copy(id = 3, amountMsat = 800_000_000.msat)))
-        assertTrue(bob4 is Closing)
+        assertIs<LNChannel<Closing>>(bob4)
         val error = actions4.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 64_720.sat, 10_000.sat, 9_720.sat).message)
     }
@@ -460,11 +466,11 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv UpdateAddHtlc -- over max in-flight htlc value`() {
         val alice0 = run {
             val (alice, _) = reachNormal()
-            alice.copy(commitments = alice.commitments.copy(localParams = alice.commitments.localParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))
+            alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(localParams = alice.commitments.localParams.copy(maxHtlcValueInFlightMsat = 150_000_000))))
         }
         val add = UpdateAddHtlc(alice0.channelId, 0, 151_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue(alice1 is Closing)
+        assertIs<LNChannel<Closing>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), HtlcValueTooHighInFlight(alice0.channelId, 150_000_000UL, 151_000_000.msat).message)
     }
@@ -480,7 +486,8 @@ class NormalTestsCommon : LightningTestSuite() {
                 val add = UpdateAddHtlc(bob0.channelId, i.toLong(), 2_500_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
                 val (tempBob, actions) = bob.processEx(ChannelCommand.MessageReceived(add))
                 assertTrue(actions.isEmpty())
-                bob = tempBob as Normal
+                assertIs<LNChannel<Normal>>(tempBob)
+                bob = tempBob
             }
             bob
         }
@@ -488,7 +495,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val nextHtlcId = bob1.commitments.remoteNextHtlcId
         val add = UpdateAddHtlc(bob0.channelId, nextHtlcId, 2_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob2, actions2) = bob1.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue(bob2 is Closing)
+        assertIs<LNChannel<Closing>>(bob2)
         val error = actions2.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), TooManyAcceptedHtlcs(bob0.channelId, bob0.staticParams.nodeParams.maxAcceptedHtlcs.toLong()).message)
     }
@@ -500,7 +507,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, actions) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions.findOutgoingMessage<CommitSig>()
         assertEquals(1, commitSig.htlcSignatures.size)
-        assertTrue(alice2 is ChannelStateWithCommitments)
+        assertIs<LNChannel<ChannelStateWithCommitments>>(alice2)
         assertTrue(alice2.commitments.remoteNextCommitInfo.isLeft)
     }
 
@@ -516,6 +523,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
         val (bob2, _) = bob1.processEx(ChannelCommand.MessageReceived(htlc2))
 
+        assertIs<LNChannel<ChannelStateWithCommitments>>(alice2)
+        assertIs<LNChannel<ChannelStateWithCommitments>>(bob2)
         val (alice3, bob3) = crossSign(alice2, bob2)
 
         val (bob4, actionsBob4) = bob3.processEx(ChannelCommand.ExecuteCommand(add))
@@ -603,10 +612,12 @@ class NormalTestsCommon : LightningTestSuite() {
             var (alice1, bob1) = alice0 to bob0
             for (i in epsilons) {
                 val (stateA, actionsA) = alice1.processEx(ChannelCommand.ExecuteCommand(add.copy(amount = add.amount + (i * 1000).msat)))
-                alice1 = stateA as Normal
+                assertIs<LNChannel<Normal>>(stateA)
+                alice1 = stateA
                 val updateAddHtlc = actionsA.findOutgoingMessage<UpdateAddHtlc>()
                 val (stateB, _) = bob1.processEx(ChannelCommand.MessageReceived(updateAddHtlc))
-                bob1 = stateB as Normal
+                assertIs<LNChannel<Normal>>(stateB)
+                bob1 = stateB
             }
             alice1 to bob1
         }
@@ -615,7 +626,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         assertEquals(htlcCount, commitSig.htlcSignatures.size)
         val (bob2, _) = bob1.processEx(ChannelCommand.MessageReceived(commitSig))
-        bob2 as ChannelStateWithCommitments
+        assertIs<LNChannel<ChannelStateWithCommitments>>(bob2)
         val htlcTxs = bob2.commitments.localCommit.publishableTxs.htlcTxsAndSigs
         assertEquals(htlcCount, htlcTxs.size)
         val amounts = htlcTxs.map { it.txinfo.tx.txOut.first().amount.sat }
@@ -633,18 +644,18 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CMD_SIGN -- while waiting for RevokeAndAck + no pending changes`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasOutgoingMessage<CommitSig>()
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left!!
         assertFalse(waitForRevocation.reSignAsap)
 
         val (alice3, actionsAlice3) = alice2.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice3 is Normal)
+        assertIs<LNChannel<Normal>>(alice3)
         assertEquals(Either.Left(waitForRevocation), alice3.commitments.remoteNextCommitInfo)
         assertNull(actionsAlice3.findOutgoingMessageOpt<CommitSig>())
     }
@@ -653,19 +664,19 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CMD_SIGN -- while waiting for RevokeAndAck + with pending changes`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         actionsAlice2.hasOutgoingMessage<CommitSig>()
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         assertNotNull(alice2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = alice2.commitments.remoteNextCommitInfo.left!!
         assertFalse(waitForRevocation.reSignAsap)
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob1).first
         val (alice4, actionsAlice4) = alice3.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice4 is Normal)
+        assertIs<LNChannel<Normal>>(alice4)
         assertEquals(Either.Left(waitForRevocation.copy(reSignAsap = true)), alice4.commitments.remoteNextCommitInfo)
         assertTrue(actionsAlice4.isEmpty())
     }
@@ -680,7 +691,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob3, actions3) = bob2.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
         actions3.hasOutgoingMessage<UpdateFulfillHtlc>()
         val (bob4, actions4) = bob3.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(bob4 is Normal)
+        assertIs<LNChannel<Normal>>(bob4)
         actions4.hasOutgoingMessage<CommitSig>()
         assertTrue(bob4.commitments.availableBalanceForSend() > 0.msat)
     }
@@ -703,10 +714,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.processEx(ChannelCommand.ExecuteCommand(cmdAdd))
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val (alice1, _) = alice.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue { (alice1 as Normal).commitments.remoteChanges.proposed.contains(add) }
+        assertIs<LNChannel<Normal>>(alice1)
+        assertTrue { alice1.state.commitments.remoteChanges.proposed.contains(add) }
         val (bob2, actions2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
-        val blob = Serialization.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2 as Normal)
+        assertIs<LNChannel<Normal>>(bob2)
+        val blob = Serialization.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2.ctx, bob2.state)
         assertEquals(blob, commitSig.channelData)
     }
 
@@ -715,13 +728,13 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (nodes0, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes0
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
 
         val (_, bob2) = signAndRevack(alice1, bob1)
         val (bob3, actions3) = bob2.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions3.findOutgoingMessage<CommitSig>()
         assertTrue(commitSig.channelData.isEmpty())
-        assertTrue(bob3 is Normal)
+        assertIs<LNChannel<Normal>>(bob3)
         assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc.id })
         assertEquals(1, bob3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
         assertEquals(bob1.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
@@ -734,14 +747,14 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes0, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes0
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
 
         val (alice2, bob2) = signAndRevack(alice1, bob1)
         val (bob3, actionsBob3) = bob2.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(bob3 is Normal)
+        assertIs<LNChannel<Normal>>(bob3)
         val commitSig = actionsBob3.findOutgoingMessage<CommitSig>()
         val (alice3, _) = alice2.processEx(ChannelCommand.MessageReceived(commitSig))
-        assertTrue(alice3 is Normal)
+        assertIs<LNChannel<Normal>>(alice3)
         assertTrue(alice3.commitments.localCommit.spec.htlcs.outgoings().any { it.id == htlc.id })
         assertEquals(1, alice3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
         assertEquals(1, alice3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
@@ -770,7 +783,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (_, actionsBob9) = bob8.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsBob9.findOutgoingMessage<CommitSig>()
         val (alice9, _) = alice8.processEx(ChannelCommand.MessageReceived(commitSig))
-        assertTrue(alice9 is Normal)
+        assertIs<LNChannel<Normal>>(alice9)
         assertEquals(1, alice9.commitments.localCommit.index)
         assertEquals(3, alice9.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
     }
@@ -787,7 +800,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (_, actions3) = bob1.processEx(ChannelCommand.MessageReceived(commitSig))
         val revokeAndAck = actions3.findOutgoingMessage<RevokeAndAck>()
         val (alice3, _) = alice2.processEx(ChannelCommand.MessageReceived(revokeAndAck))
-        assertTrue(alice3 is Normal)
+        assertIs<LNChannel<Normal>>(alice3)
     }
 
     @Test
@@ -803,10 +816,13 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(defaultAdd.copy(paymentHash = h)))
         val htlc2 = actionsAlice2.findOutgoingMessage<UpdateAddHtlc>()
         val (bob2, _) = bob1.processEx(ChannelCommand.MessageReceived(htlc2))
-        assertEquals(listOf(htlc1, htlc2), (bob2 as ChannelStateWithCommitments).commitments.remoteChanges.proposed)
+        assertIs<LNChannel<ChannelStateWithCommitments>>(bob2)
+        assertEquals(listOf(htlc1, htlc2), bob2.commitments.remoteChanges.proposed)
 
+        assertIs<LNChannel<Normal>>(alice2)
+        assertIs<LNChannel<Normal>>(bob2)
         val (_, bob3) = crossSign(alice2, bob2)
-        assertTrue(bob3 is Normal)
+        assertIs<LNChannel<Normal>>(bob3)
         assertTrue(bob3.commitments.localCommit.spec.htlcs.incomings().any { it.id == htlc1.id })
         assertEquals(2, bob3.commitments.localCommit.publishableTxs.htlcTxsAndSigs.size)
         assertEquals(bob2.commitments.localCommit.spec.toLocal, bob3.commitments.localCommit.spec.toLocal)
@@ -821,7 +837,7 @@ class NormalTestsCommon : LightningTestSuite() {
         // signature is invalid but it doesn't matter
         val sig = CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, emptyList())
         val (bob1, actionsBob1) = bob0.processEx(ChannelCommand.MessageReceived(sig))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         actionsBob1.hasOutgoingMessage<Error>()
 
         assertEquals(2, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
@@ -849,7 +865,7 @@ class NormalTestsCommon : LightningTestSuite() {
         // signature is invalid but it doesn't matter
         val sig = CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, emptyList())
         val (bob1, actionsBob1) = bob0.processEx(ChannelCommand.MessageReceived(sig))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         actionsBob1.hasOutgoingMessage<Error>()
 
         assertEquals(2, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
@@ -873,7 +889,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CommitSig -- bad htlc sig count`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
         val tx = bob1.commitments.localCommit.publishableTxs.commitTx.tx
 
         val (_, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
@@ -881,7 +897,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val badCommitSig = commitSig.copy(htlcSignatures = commitSig.htlcSignatures + commitSig.htlcSignatures)
 
         val (bob2, actionsBob2) = bob1.processEx(ChannelCommand.MessageReceived(badCommitSig))
-        assertTrue(bob2 is Closing)
+        assertIs<LNChannel<Closing>>(bob2)
         actionsBob2.hasOutgoingMessage<Error>()
         assertEquals(2, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(tx, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx)
@@ -904,14 +920,14 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv CommitSig -- invalid htlc sig`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
         val tx = bob1.commitments.localCommit.publishableTxs.commitTx.tx
 
         val (_, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         val badCommitSig = commitSig.copy(htlcSignatures = listOf(commitSig.signature))
         val (bob2, actionsBob2) = bob1.processEx(ChannelCommand.MessageReceived(badCommitSig))
-        assertTrue(bob2 is Closing)
+        assertIs<LNChannel<Closing>>(bob2)
         actionsBob2.hasOutgoingMessage<Error>()
         assertEquals(2, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(tx, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first().tx)
@@ -939,7 +955,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.processEx(ChannelCommand.ExecuteCommand(cmdAdd))
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val (alice1, _) = alice.processEx(ChannelCommand.MessageReceived(add))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.commitments.remoteChanges.proposed.contains(add))
         val (bob2, actions2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
@@ -950,7 +966,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val commitSig1 = actions4.findOutgoingMessage<CommitSig>()
         val (bob4, actions5) = bob3.processEx(ChannelCommand.MessageReceived(commitSig1))
         val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
-        val blob = Serialization.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4 as Normal)
+        assertIs<LNChannel<Normal>>(bob4)
+        val blob = Serialization.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4.ctx, bob4.state)
         assertEquals(blob, revack1.channelData)
     }
 
@@ -960,7 +977,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         assertTrue(alice2.commitments.remoteNextCommitInfo.isLeft)
         val commitSig = actionsAlice2.findOutgoingMessage<CommitSig>()
         val (_, actionsBob2) = bob1.processEx(ChannelCommand.MessageReceived(commitSig))
@@ -968,7 +985,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertTrue(revokeAndAck.channelData.isEmpty())
 
         val (alice3, _) = alice2.processEx(ChannelCommand.MessageReceived(revokeAndAck))
-        assertTrue(alice3 is Normal)
+        assertIs<LNChannel<Normal>>(alice3)
         assertTrue(alice3.commitments.remoteNextCommitInfo.isRight)
         assertEquals(1, alice3.commitments.localChanges.acked.size)
     }
@@ -987,13 +1004,13 @@ class NormalTestsCommon : LightningTestSuite() {
         val cmd = actionsBob2.findCommand<CMD_SIGN>()
         val (bob3, actionsBob3) = bob2.processEx(ChannelCommand.ExecuteCommand(cmd))
         val (alice3, _) = alice2.processEx(ChannelCommand.MessageReceived(revokeAndAck0))
-        assertTrue(alice3 is Normal)
+        assertIs<LNChannel<Normal>>(alice3)
         assertTrue(alice3.commitments.remoteNextCommitInfo.isRight)
         val commitSig1 = actionsBob3.findOutgoingMessage<CommitSig>()
         val (_, actionsAlice4) = alice3.processEx(ChannelCommand.MessageReceived(commitSig1))
         val revokeAndAck1 = actionsAlice4.findOutgoingMessage<RevokeAndAck>()
         val (bob4, actionsBob4) = bob3.processEx(ChannelCommand.MessageReceived(revokeAndAck1))
-        assertTrue(bob4 is Normal)
+        assertIs<LNChannel<Normal>>(bob4)
         assertTrue(bob4.commitments.remoteNextCommitInfo.isRight)
         actionsBob4.has<ChannelAction.Storage.StoreState>()
         assertEquals(add, actionsBob4.find<ChannelAction.ProcessIncomingHtlc>().add)
@@ -1024,14 +1041,14 @@ class NormalTestsCommon : LightningTestSuite() {
         val cmd = actionsBob8.findCommand<CMD_SIGN>()
         val (bob9, actionsBob9) = bob8.processEx(ChannelCommand.ExecuteCommand(cmd))
         val (alice9, _) = alice8.processEx(ChannelCommand.MessageReceived(revokeAndAck0))
-        assertTrue(alice9 is Normal)
+        assertIs<LNChannel<Normal>>(alice9)
         assertTrue(alice9.commitments.remoteNextCommitInfo.isRight)
 
         val commitSig1 = actionsBob9.findOutgoingMessage<CommitSig>()
         val (_, actionsAlice10) = alice9.processEx(ChannelCommand.MessageReceived(commitSig1))
         val revokeAndAck1 = actionsAlice10.findOutgoingMessage<RevokeAndAck>()
         val (bob10, actionsBob10) = bob9.processEx(ChannelCommand.MessageReceived(revokeAndAck1))
-        assertTrue(bob10 is Normal)
+        assertIs<LNChannel<Normal>>(bob10)
         assertTrue(bob10.commitments.remoteNextCommitInfo.isRight)
         assertEquals(1, bob10.commitments.remoteCommit.index)
         assertEquals(7, bob10.commitments.remoteCommit.spec.htlcs.size)
@@ -1042,7 +1059,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv RevokeAndAck -- with reSignAsap=true`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
@@ -1051,7 +1068,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         val (alice3, _) = addHtlc(50_000_000.msat, alice2, bob2).first
         val (alice4, _) = alice3.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice4 is Normal)
+        assertIs<LNChannel<Normal>>(alice4)
         assertTrue(alice4.commitments.remoteNextCommitInfo.left?.reSignAsap == true)
 
         val revokeAndAck0 = actionsBob2.findOutgoingMessage<RevokeAndAck>()
@@ -1065,7 +1082,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv RevokeAndAck -- invalid preimage`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         val tx = alice1.commitments.localCommit.publishableTxs.commitTx.tx
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
@@ -1074,7 +1091,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsBob2.hasOutgoingMessage<RevokeAndAck>()
 
         val (alice3, actionsAlice3) = alice2.processEx(ChannelCommand.MessageReceived(RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey())))
-        assertTrue(alice3 is Closing)
+        assertIs<LNChannel<Closing>>(alice3)
         actionsAlice3.hasOutgoingMessage<Error>()
         assertEquals(2, actionsAlice3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice3.findWatches<WatchConfirmed>().count())
@@ -1085,12 +1102,12 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv RevokeAndAck -- unexpectedly`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.commitments.remoteNextCommitInfo.isRight)
         val tx = alice1.commitments.localCommit.publishableTxs.commitTx.tx
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.MessageReceived(RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey())))
-        assertTrue(alice2 is Closing)
+        assertIs<LNChannel<Closing>>(alice2)
         actionsAlice2.hasOutgoingMessage<Error>()
         assertEquals(2, actionsAlice2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice2.findWatches<WatchConfirmed>().count())
@@ -1102,11 +1119,11 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
 
         val (bob2, actionsBob2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, r)))
         val fulfillHtlc = actionsBob2.findOutgoingMessage<UpdateFulfillHtlc>()
-        assertEquals(bob1.copy(commitments = bob1.commitments.copy(localChanges = bob1.commitments.localChanges.copy(bob1.commitments.localChanges.proposed + fulfillHtlc))), bob2)
+        assertEquals(bob1.copy(state = bob1.state.copy(commitments = bob1.commitments.copy(localChanges = bob1.commitments.localChanges.copy(bob1.commitments.localChanges.proposed + fulfillHtlc)))), bob2)
     }
 
     @Test
@@ -1125,7 +1142,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
 
         val cmd = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes)
         val (bob2, actionsBob2) = bob1.processEx(ChannelCommand.ExecuteCommand(cmd))
@@ -1140,10 +1157,10 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = crossSign(nodes.first, nodes.second)
         val (_, actionsBob2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, r)))
         val fulfill = actionsBob2.findOutgoingMessage<UpdateFulfillHtlc>()
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.MessageReceived(fulfill))
-        assertEquals(alice1.copy(commitments = alice1.commitments.copy(remoteChanges = alice1.commitments.remoteChanges.copy(alice1.commitments.remoteChanges.proposed + fulfill))), alice2)
+        assertEquals(alice1.copy(state = alice1.state.copy(commitments = alice1.commitments.copy(remoteChanges = alice1.commitments.remoteChanges.copy(alice1.commitments.remoteChanges.proposed + fulfill)))), alice2)
         val addSettled = actionsAlice2.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().first()
         assertEquals(htlc, addSettled.htlc)
         assertEquals(ChannelAction.HtlcResult.Fulfill.RemoteFulfill(fulfill), addSettled.result)
@@ -1154,8 +1171,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, _) = reachNormal()
         val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice0.channelId, 42, randomBytes32())))
-        assertTrue(alice1 is Closing)
-        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertIs<LNChannel<Closing>>(alice1)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
         assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
@@ -1168,12 +1185,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, actions1) = nodes.first.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.findOutgoingMessage<CommitSig>()
         val commitTx = alice1.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice2, actions2) = alice1.processEx(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice1.channelId, htlc.id, r)))
-        assertTrue(alice2 is Closing)
-        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertIs<LNChannel<Closing>>(alice2)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
         assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertTrue(actions2.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
@@ -1186,11 +1203,11 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         val commitTx = alice1.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice2, actions2) = alice1.processEx(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice0.channelId, htlc.id, ByteVector32.Zeroes)))
-        assertTrue(alice2 is Closing)
-        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertIs<LNChannel<Closing>>(alice2)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
         assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
@@ -1203,12 +1220,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
 
         val cmd = CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))
         val (bob2, actions2) = bob1.processEx(ChannelCommand.ExecuteCommand(cmd))
         val fail = actions2.findOutgoingMessage<UpdateFailHtlc>()
-        assertEquals(bob1.copy(commitments = bob1.commitments.copy(localChanges = bob1.commitments.localChanges.copy(bob1.commitments.localChanges.proposed + fail))), bob2)
+        assertEquals(bob1.copy(state = bob1.state.copy(commitments = bob1.commitments.copy(localChanges = bob1.commitments.localChanges.copy(bob1.commitments.localChanges.proposed + fail)))), bob2)
     }
 
     @Test
@@ -1225,12 +1242,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
 
         val cmdFail = CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessage.BADONION)
         val (bob2, actions2) = bob1.processEx(ChannelCommand.ExecuteCommand(cmdFail))
         val fail = actions2.findOutgoingMessage<UpdateFailMalformedHtlc>()
-        assertEquals(bob1.copy(commitments = bob1.commitments.copy(localChanges = bob1.commitments.localChanges.copy(bob1.commitments.localChanges.proposed + fail))), bob2)
+        assertEquals(bob1.state.copy(commitments = bob1.commitments.copy(localChanges = bob1.commitments.localChanges.copy(bob1.commitments.localChanges.proposed + fail))), bob2.state)
     }
 
     @Test
@@ -1261,12 +1278,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = crossSign(nodes.first, nodes.second)
         val (_, actionsBob2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(PermanentChannelFailure))))
         val fail = actionsBob2.findOutgoingMessage<UpdateFailHtlc>()
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.MessageReceived(fail))
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         assertTrue(actionsAlice2.isEmpty())
-        assertEquals(alice1.copy(commitments = alice1.commitments.copy(remoteChanges = alice1.commitments.remoteChanges.copy(alice1.commitments.remoteChanges.proposed + fail))), alice2)
+        assertEquals(alice1.state.copy(commitments = alice1.commitments.copy(remoteChanges = alice1.commitments.remoteChanges.copy(alice1.commitments.remoteChanges.proposed + fail))), alice2.state)
     }
 
     @Test
@@ -1274,8 +1291,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, _) = reachNormal()
         val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(UpdateFailHtlc(alice0.channelId, 42, ByteVector.empty)))
-        assertTrue(alice1 is Closing)
-        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertIs<LNChannel<Closing>>(alice1)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
         assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
@@ -1288,12 +1305,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, actions1) = nodes.first.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.findOutgoingMessage<CommitSig>()
         val commitTx = alice1.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice2, actions2) = alice1.processEx(ChannelCommand.MessageReceived(UpdateFailHtlc(alice1.channelId, htlc.id, ByteVector.empty)))
-        assertTrue(alice2 is Closing)
-        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertIs<LNChannel<Closing>>(alice2)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
         assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertTrue(actions2.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
@@ -1308,12 +1325,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = crossSign(nodes.first, nodes.second)
         val (_, actionsBob2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessage.BADONION)))
         val fail = actionsBob2.findOutgoingMessage<UpdateFailMalformedHtlc>()
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
 
         val (alice2, actionsAlice2) = alice1.processEx(ChannelCommand.MessageReceived(fail))
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         assertTrue(actionsAlice2.isEmpty())
-        assertEquals(alice1.copy(commitments = alice1.commitments.copy(remoteChanges = alice1.commitments.remoteChanges.copy(alice1.commitments.remoteChanges.proposed + fail))), alice2)
+        assertEquals(alice1.state.copy(commitments = alice1.commitments.copy(remoteChanges = alice1.commitments.remoteChanges.copy(alice1.commitments.remoteChanges.proposed + fail))), alice2.state)
     }
 
     @Test
@@ -1321,8 +1338,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, _) = reachNormal()
         val commitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice0.processEx(ChannelCommand.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, 42, ByteVector32.Zeroes, FailureMessage.BADONION)))
-        assertTrue(alice1 is Closing)
-        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1)))
+        assertIs<LNChannel<Closing>>(alice1)
+        assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
         assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
@@ -1335,12 +1352,12 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         val commitTx = alice1.commitments.localCommit.publishableTxs.commitTx.tx
 
         val (alice2, actions2) = alice1.processEx(ChannelCommand.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, htlc.id, Sphinx.hash(htlc.onionRoutingPacket), 42)))
-        assertTrue(alice2 is Closing)
-        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2)))
+        assertIs<LNChannel<Closing>>(alice2)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
         assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
@@ -1353,7 +1370,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (_, bob) = reachNormal()
         val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
         val (bob1, _) = bob.processEx(ChannelCommand.MessageReceived(fee))
-        bob1 as Normal
+        assertIs<LNChannel<Normal>>(bob1)
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee)), bob1.commitments)
     }
 
@@ -1364,7 +1381,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, _) = bob.processEx(ChannelCommand.MessageReceived(fee1))
         val fee2 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(9_000.sat))
         val (bob2, _) = bob1.processEx(ChannelCommand.MessageReceived(fee2))
-        assertTrue(bob2 is Normal)
+        assertIs<LNChannel<Normal>>(bob2)
         assertEquals(bob.commitments.copy(remoteChanges = bob.commitments.remoteChanges.copy(proposed = bob.commitments.remoteChanges.proposed + fee2)), bob2.commitments)
     }
 
@@ -1374,12 +1391,12 @@ class NormalTestsCommon : LightningTestSuite() {
         // We put all the balance on Bob's side, so that Alice cannot afford a feerate increase.
         val (nodes, _, _) = addHtlc(alice.commitments.availableBalanceForSend(), alice, bob)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
         val commitTx = bob1.commitments.localCommit.publishableTxs.commitTx.tx
 
         val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw.CommitmentFeerate * 4)
         val (bob2, actions) = bob1.processEx(ChannelCommand.MessageReceived(fee))
-        assertTrue(bob2 is Closing)
+        assertIs<LNChannel<Closing>>(bob2)
         actions.hasTx(commitTx)
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
@@ -1391,7 +1408,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (_, bob) = reachNormal()
         assertEquals(FeeratePerKw.CommitmentFeerate, bob.commitments.localCommit.spec.feerate)
         val (bob1, actions) = bob.processEx(ChannelCommand.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         actions.hasTx(bob.commitments.localCommit.publishableTxs.commitTx.tx)
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
@@ -1401,20 +1418,20 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelUpdate`() {
         val (alice, bob) = reachNormal()
-        assertNull(alice.remoteChannelUpdate)
-        assertNull(bob.remoteChannelUpdate)
-        val aliceUpdate = Announcements.makeChannelUpdate(alice.staticParams.nodeParams.chainHash, alice.privateKey, alice.staticParams.remoteNodeId, alice.shortChannelId, CltvExpiryDelta(36), 5.msat, 15.msat, 150, 150_000.msat)
+        assertNull(alice.state.remoteChannelUpdate)
+        assertNull(bob.state.remoteChannelUpdate)
+        val aliceUpdate = Announcements.makeChannelUpdate(alice.staticParams.nodeParams.chainHash, alice.ctx.privateKey, alice.staticParams.remoteNodeId, alice.state.shortChannelId, CltvExpiryDelta(36), 5.msat, 15.msat, 150, 150_000.msat)
         val (bob1, actions1) = bob.processEx(ChannelCommand.MessageReceived(aliceUpdate))
-        assertTrue(bob1 is Normal)
-        assertEquals(bob1.remoteChannelUpdate, aliceUpdate)
+        assertIs<LNChannel<Normal>>(bob1)
+        assertEquals(bob1.state.remoteChannelUpdate, aliceUpdate)
         actions1.has<ChannelAction.Storage.StoreState>()
 
-        val aliceUpdateOtherChannel = Announcements.makeChannelUpdate(alice.staticParams.nodeParams.chainHash, alice.privateKey, alice.staticParams.remoteNodeId, ShortChannelId(7), CltvExpiryDelta(12), 1.msat, 10.msat, 50, 15_000.msat)
+        val aliceUpdateOtherChannel = Announcements.makeChannelUpdate(alice.staticParams.nodeParams.chainHash, alice.ctx.privateKey, alice.staticParams.remoteNodeId, ShortChannelId(7), CltvExpiryDelta(12), 1.msat, 10.msat, 50, 15_000.msat)
         val (bob2, actions2) = bob1.processEx(ChannelCommand.MessageReceived(aliceUpdateOtherChannel))
         assertEquals(bob1, bob2)
         assertTrue(actions2.isEmpty())
 
-        val bobUpdate = Announcements.makeChannelUpdate(bob.staticParams.nodeParams.chainHash, bob.privateKey, bob.staticParams.remoteNodeId, bob.shortChannelId, CltvExpiryDelta(24), 1.msat, 5.msat, 10, 125_000.msat)
+        val bobUpdate = Announcements.makeChannelUpdate(bob.staticParams.nodeParams.chainHash, bob.ctx.privateKey, bob.staticParams.remoteNodeId, bob.state.shortChannelId, CltvExpiryDelta(24), 1.msat, 5.msat, 10, 125_000.msat)
         val (bob3, actions3) = bob2.processEx(ChannelCommand.MessageReceived(bobUpdate))
         assertEquals(bob1, bob3)
         assertTrue(actions3.isEmpty())
@@ -1423,11 +1440,11 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CMD_CLOSE -- no pending htlcs`() {
         val (alice, _) = reachNormal()
-        assertNull(alice.localShutdown)
+        assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.hasOutgoingMessage<Shutdown>()
-        assertNotNull(alice1.localShutdown)
+        assertNotNull(alice1.state.localShutdown)
     }
 
     @Test
@@ -1436,7 +1453,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, _) = nodes
         val (alice2, actions1) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         actions1.hasCommandError<CannotCloseWithUnsignedOutgoingHtlcs>()
     }
 
@@ -1446,26 +1463,26 @@ class NormalTestsCommon : LightningTestSuite() {
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (_, bob1) = nodes
         val (bob2, actions1) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(bob2 is Normal)
+        assertIs<LNChannel<Normal>>(bob2)
         actions1.hasOutgoingMessage<Shutdown>()
-        assertNotNull(bob2.localShutdown)
+        assertNotNull(bob2.state.localShutdown)
     }
 
     @Test
     fun `recv CMD_CLOSE -- with invalid final script`() {
         val (alice, _) = reachNormal()
-        assertNull(alice.localShutdown)
+        assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(ByteVector("00112233445566778899"), null)))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.hasCommandError<InvalidFinalScript>()
     }
 
     @Test
     fun `recv CMD_CLOSE -- with unsupported native segwit script`() {
         val (alice, _) = reachNormal()
-        assertNull(alice.localShutdown)
+        assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(ByteVector("51050102030405"), null)))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.hasCommandError<InvalidFinalScript>()
     }
 
@@ -1475,11 +1492,11 @@ class NormalTestsCommon : LightningTestSuite() {
             aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
             bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
         )
-        assertNull(alice.localShutdown)
+        assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(ByteVector("51050102030405"), null)))
         actions1.hasOutgoingMessage<Shutdown>()
-        assertTrue(alice1 is Normal)
-        assertNotNull(alice1.localShutdown)
+        assertIs<LNChannel<Normal>>(alice1)
+        assertNotNull(alice1.state.localShutdown)
     }
 
     @Test
@@ -1489,20 +1506,20 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, _) = crossSign(nodes.first, nodes.second)
         val (alice2, actions1) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
         actions1.hasOutgoingMessage<Shutdown>()
-        assertTrue(alice2 is Normal)
-        assertNotNull(alice2.localShutdown)
+        assertIs<LNChannel<Normal>>(alice2)
+        assertNotNull(alice2.state.localShutdown)
     }
 
     @Test
     fun `recv CMD_CLOSE -- two in a row`() {
         val (alice, _) = reachNormal()
-        assertNull(alice.localShutdown)
+        assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.hasOutgoingMessage<Shutdown>()
-        assertNotNull(alice1.localShutdown)
+        assertNotNull(alice1.state.localShutdown)
         val (alice2, actions2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         actions2.hasCommandError<ClosingAlreadyInProgress>()
     }
 
@@ -1511,10 +1528,10 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, actions1) = nodes.first.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         actions1.hasOutgoingMessage<CommitSig>()
         val (alice2, actions2) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(alice2 is Normal)
+        assertIs<LNChannel<Normal>>(alice2)
         actions2.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1527,7 +1544,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actions2.hasCommandError<CannotCloseWithUnsignedOutgoingUpdateFee>()
         val (alice3, _) = alice2.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val (alice4, actions4) = alice3.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertTrue(alice4 is Normal)
+        assertIs<LNChannel<Normal>>(alice4)
         actions4.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1535,7 +1552,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv Shutdown -- no pending htlcs`() {
         val (alice, bob) = reachNormal()
         val (alice1, actions1) = alice.processEx(ChannelCommand.MessageReceived(Shutdown(alice.channelId, bob.commitments.localParams.defaultFinalScriptPubKey)))
-        assertTrue(alice1 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(alice1)
         actions1.hasOutgoingMessage<Shutdown>()
         actions1.hasOutgoingMessage<ClosingSigned>()
     }
@@ -1559,7 +1576,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // as soon as alice has received the revocation, she will send her shutdown message
         val (alice3, actions5) = alice2.processEx(ChannelCommand.MessageReceived(revack))
-        assertTrue(alice3 is ShuttingDown)
+        assertIs<LNChannel<ShuttingDown>>(alice3)
         actions5.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1568,7 +1585,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (bob1, actions1) = nodes.second.processEx(ChannelCommand.MessageReceived(Shutdown(alice.channelId, alice.commitments.localParams.defaultFinalScriptPubKey)))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         actions1.hasOutgoingMessage<Error>()
         assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         actions1.hasWatch<WatchConfirmed>()
@@ -1597,24 +1614,24 @@ class NormalTestsCommon : LightningTestSuite() {
         val shutdownAlice = aliceActions3.hasOutgoingMessage<Shutdown>()
         val (alice4, _) = alice3.processEx(ChannelCommand.MessageReceived(revBob))
         val (alice5, aliceActions5) = alice4.processEx(ChannelCommand.MessageReceived(sigBob))
-        assertTrue(alice5 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(alice5)
         val revAlice = aliceActions5.hasOutgoingMessage<RevokeAndAck>()
         val closingAlice = aliceActions5.hasOutgoingMessage<ClosingSigned>()
 
         val (bob5, _) = bob4.processEx(ChannelCommand.MessageReceived(shutdownAlice))
         val (bob6, _) = bob5.processEx(ChannelCommand.MessageReceived(revAlice))
         val (bob7, bobActions7) = bob6.processEx(ChannelCommand.MessageReceived(closingAlice))
-        assertTrue(bob7 is Closing)
+        assertIs<LNChannel<Closing>>(bob7)
         val closingBob = bobActions7.hasOutgoingMessage<ClosingSigned>()
         val (alice6, _) = alice5.processEx(ChannelCommand.MessageReceived(closingBob))
-        assertTrue(alice6 is Closing)
+        assertIs<LNChannel<Closing>>(alice6)
     }
 
     @Test
     fun `recv Shutdown -- with invalid script`() {
         val (_, bob) = reachNormal()
         val (bob1, actions1) = bob.processEx(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("00112233445566778899"))))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         actions1.hasOutgoingMessage<Error>()
         assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         actions1.hasWatch<WatchConfirmed>()
@@ -1624,7 +1641,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv Shutdown -- with unsupported native segwit script`() {
         val (_, bob) = reachNormal()
         val (bob1, actions1) = bob.processEx(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
-        assertTrue(bob1 is Closing)
+        assertIs<LNChannel<Closing>>(bob1)
         actions1.hasOutgoingMessage<Error>()
         assertEquals(2, actions1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         actions1.hasWatch<WatchConfirmed>()
@@ -1637,7 +1654,7 @@ class NormalTestsCommon : LightningTestSuite() {
             bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
         )
         val (bob1, actions1) = bob.processEx(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
-        assertTrue(bob1 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(bob1)
         actions1.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1651,7 +1668,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // actual test begins
         val (bob3, actions2) = bob2.processEx(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("00112233445566778899"))))
-        assertTrue(bob3 is Closing)
+        assertIs<LNChannel<Closing>>(bob3)
         actions2.hasOutgoingMessage<Error>()
         assertEquals(2, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         actions2.hasWatch<WatchConfirmed>()
@@ -1665,7 +1682,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // actual test begins
         val (bob2, actions1) = bob1.processEx(ChannelCommand.MessageReceived(Shutdown(bob.channelId, alice.commitments.localParams.defaultFinalScriptPubKey)))
-        assertTrue(bob2 is ShuttingDown)
+        assertIs<LNChannel<ShuttingDown>>(bob2)
         actions1.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1680,7 +1697,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // actual test begins
         val (alice2, actions3) = alice1.processEx(ChannelCommand.MessageReceived(shutdown))
-        assertTrue(alice2 is ShuttingDown)
+        assertIs<LNChannel<ShuttingDown>>(alice2)
         actions3.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1716,12 +1733,12 @@ class NormalTestsCommon : LightningTestSuite() {
         // then alice can sign the 2nd htlc
         assertTrue(actions7.contains(ChannelAction.Message.SendToSelf(CMD_SIGN)))
         val (alice6, actions8) = alice5.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertTrue(alice6 is Normal)
+        assertIs<LNChannel<Normal>>(alice6)
         val (_, actions9) = bob3.processEx(ChannelCommand.MessageReceived(actions8.findOutgoingMessage<CommitSig>()))
         // bob replies with the 2nd revocation
         val (alice7, actions11) = alice6.processEx(ChannelCommand.MessageReceived(actions9.findOutgoingMessage<RevokeAndAck>()))
         // then alice sends her shutdown
-        assertTrue(alice7 is ShuttingDown)
+        assertIs<LNChannel<ShuttingDown>>(alice7)
         actions11.hasOutgoingMessage<Shutdown>()
     }
 
@@ -1742,8 +1759,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice6, bob6) = crossSign(alice5, bob5)
         val (alice7, bob7) = fulfillHtlc(1, preimage_alice2bob_2, payer = alice6, payee = bob6)
         val (bob8, alice8) = fulfillHtlc(0, preimage_bob2alice_1, payer = bob7, payee = alice7)
-        assertTrue(alice8 is Normal)
-        assertTrue(bob8 is Normal)
+        assertIs<LNChannel<Normal>>(alice8)
+        assertIs<LNChannel<Normal>>(bob8)
 
         // at this point here is the situation from alice pov and what she should do when bob publishes his commit tx:
         // balances :
@@ -1760,7 +1777,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(8, bobCommitTx.txOut.size) // 2 main outputs, 4 pending htlcs and 2 anchors
 
         val (aliceClosing, actions) = alice8.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice8.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
-        assertTrue(aliceClosing is Closing)
+        assertIs<LNChannel<Closing>>(aliceClosing)
         assertTrue(actions.isNotEmpty())
 
         // in response to that, alice publishes its claim txs
@@ -1777,7 +1794,7 @@ class NormalTestsCommon : LightningTestSuite() {
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
         assertEquals(829_710.sat, amountClaimed)
 
-        val rcp = aliceClosing.remoteCommitPublished!!
+        val rcp = aliceClosing.state.remoteCommitPublished!!
         val watchConfirmed = actions.findWatches<WatchConfirmed>()
         assertEquals(2, watchConfirmed.size)
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
@@ -1809,8 +1826,8 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice9, actions8) = alice8.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions8.findOutgoingMessage<CommitSig>()
         val (bob9, _) = bob8.processEx(ChannelCommand.MessageReceived(commitSig))
-        assertTrue(alice9 is Normal)
-        assertTrue(bob9 is Normal)
+        assertIs<LNChannel<Normal>>(alice9)
+        assertIs<LNChannel<Normal>>(bob9)
 
         // as far as alice knows, bob currently has two valid unrevoked commitment transactions
 
@@ -1830,7 +1847,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(7, bobCommitTx.txOut.size) // 2 main outputs, 3 pending htlcs and 2 anchors
 
         val (aliceClosing, actions9) = alice9.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice9.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
-        assertTrue(aliceClosing is Closing)
+        assertIs<LNChannel<Closing>>(aliceClosing)
         assertTrue(actions9.isNotEmpty())
 
         // in response to that, alice publishes its claim txs
@@ -1847,7 +1864,7 @@ class NormalTestsCommon : LightningTestSuite() {
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
         assertEquals(833_440.sat, amountClaimed)
 
-        val rcp = aliceClosing.nextRemoteCommitPublished!!
+        val rcp = aliceClosing.state.nextRemoteCommitPublished!!
         val watchConfirmed = actions9.findWatches<WatchConfirmed>()
         assertEquals(2, watchConfirmed.size)
         assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
@@ -1872,11 +1889,15 @@ class NormalTestsCommon : LightningTestSuite() {
                 val (nodes, _, add) = addHtlc(10_000_000.msat, payer = alice, payee = bob)
                 Triple(nodes.first, nodes.second, add)
             }
-            alice = alice1 as Normal
-            bob = bob1 as Normal
+            assertIs<LNChannel<Normal>>(alice1)
+            assertIs<LNChannel<Normal>>(bob1)
+            alice = alice1
+            bob = bob1
             crossSign(alice, bob).run {
-                alice = first as Normal
-                bob = second as Normal
+                assertIs<LNChannel<Normal>>(first)
+                assertIs<LNChannel<Normal>>(second)
+                alice = first
+                bob = second
             }
             return Pair(bob.commitments.localCommit.publishableTxs.commitTx.tx, add)
         }
@@ -1902,14 +1923,14 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(8, revokedTx.txOut.size) // 2 anchor outputs + 2 main outputs + 4 htlc
 
         val (aliceClosing1, actions1) = alice.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
-        assertTrue(aliceClosing1 is Closing)
-        assertEquals(1, aliceClosing1.revokedCommitPublished.size)
+        assertIs<LNChannel<Closing>>(aliceClosing1)
+        assertEquals(1, aliceClosing1.state.revokedCommitPublished.size)
         actions1.hasOutgoingMessage<Error>()
         assertEquals(ChannelAction.Storage.GetHtlcInfos(revokedTx.txid, 4), actions1.find())
 
         val (aliceClosing2, actions2) = aliceClosing1.processEx(ChannelCommand.GetHtlcInfosResponse(revokedTx.txid, adds.take(4).map { ChannelAction.Storage.HtlcInfo(alice.channelId, 4, it.paymentHash, it.cltvExpiry) }))
-        assertTrue(aliceClosing2 is Closing)
-        assertEquals(1, aliceClosing2.revokedCommitPublished.size)
+        assertIs<LNChannel<Closing>>(aliceClosing2)
+        assertEquals(1, aliceClosing2.state.revokedCommitPublished.size)
         assertNull(actions2.findOutgoingMessageOpt<Error>())
         assertNull(actions2.findOpt<ChannelAction.Storage.GetHtlcInfos>())
 
@@ -1938,36 +1959,32 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock -- no htlc timed out`() {
+    fun `recv CheckHtlcTimeout -- no htlc timed out`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
 
-        val (alice2, actions2) = alice1.processEx(ChannelCommand.NewBlock(alice1.currentBlockHeight + 1, alice1.currentTip.second))
-        assertEquals(alice1.copy(currentTip = alice2.currentTip), alice2)
-        assertTrue(actions2.isEmpty())
-
-        val (alice3, actions3) = alice2.processEx(ChannelCommand.CheckHtlcTimeout)
-        assertEquals(alice2, alice3)
+        val (alice3, actions3) = alice1.processEx(ChannelCommand.CheckHtlcTimeout)
+        assertEquals(alice1, alice3)
         assertTrue(actions3.isEmpty())
     }
 
     @Test
-    fun `recv NewBlock -- an htlc timed out`() {
+    fun `recv CheckHtlcTimeout -- an htlc timed out`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, _, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
 
         // alice restarted after the htlc timed out
-        val alice2 = alice1.copy(currentTip = alice1.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt()))
+        val alice2 = alice1.copy(ctx = alice1.ctx.copy(currentTip = alice1.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())))
         val (alice3, actions) = alice2.processEx(ChannelCommand.CheckHtlcTimeout)
-        assertTrue(alice3 is Closing)
-        assertNotNull(alice3.localCommitPublished)
+        assertIs<LNChannel<Closing>>(alice3)
+        assertNotNull(alice3.state.localCommitPublished)
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
-        val lcp = alice3.localCommitPublished!!
+        val lcp = alice3.state.localCommitPublished!!
         actions.hasTx(lcp.commitTx)
         assertEquals(1, lcp.htlcTimeoutTxs().size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
@@ -1976,13 +1993,13 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(1, actions.findWatches<WatchSpent>().size) // htlc-timeout
     }
 
-    private fun checkFulfillTimeout(bob: ChannelState, actions: List<ChannelAction>) {
-        assertTrue(bob is Closing)
-        assertNotNull(bob.localCommitPublished)
+    private fun checkFulfillTimeout(bob: LNChannel<ChannelState>, actions: List<ChannelAction>) {
+        assertIs<LNChannel<Closing>>(bob)
+        assertNotNull(bob.state.localCommitPublished)
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
 
-        val lcp = bob.localCommitPublished!!
+        val lcp = bob.state.localCommitPublished!!
         assertNotNull(lcp.claimMainDelayedOutputTx)
         assertEquals(1, lcp.htlcSuccessTxs().size)
         Transaction.correctlySpends(lcp.htlcSuccessTxs().first().tx, lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1998,7 +2015,7 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock -- fulfilled signed htlc ignored by peer`() {
+    fun `recv CheckHtlcTimeout -- fulfilled signed htlc ignored by peer`() {
         val (alice0, bob0) = reachNormal()
         val (nodes, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
@@ -2010,7 +2027,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // fulfilled htlc is close to timing out and alice still hasn't signed, so bob closes the channel
         val (bob4, actions4) = run {
-            val (tmp, _) = bob3.processEx(ChannelCommand.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+            val tmp = bob3.copy(ctx = bob3.ctx.copy(currentTip = htlc.cltvExpiry.toLong().toInt() - 3 to bob3.ctx.currentTip.second))
             tmp.processEx(ChannelCommand.CheckHtlcTimeout)
         }
         checkFulfillTimeout(bob4, actions4)
@@ -2026,7 +2043,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
 
         // bob restarts when the fulfilled htlc is close to timing out
-        val bob3 = (bob2 as Normal).copy(currentTip = bob2.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt() - 3))
+        val bob3 = bob2.copy(ctx = bob2.ctx.copy(currentTip = bob2.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt() - 3)))
         // alice still hasn't signed, so bob closes the channel
         val (bob4, actions4) = bob3.processEx(ChannelCommand.CheckHtlcTimeout)
         checkFulfillTimeout(bob4, actions4)
@@ -2049,7 +2066,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // fulfilled htlc is close to timing out and alice has revoked her previous commitment but not signed the new one, so bob closes the channel
         val (bob5, actions5) = run {
-            val (tmp, _) = bob4.processEx(ChannelCommand.NewBlock(htlc.cltvExpiry.toLong().toInt() - 3, bob3.currentTip.second))
+            val tmp = bob4.copy(ctx = bob4.ctx.copy(currentTip = htlc.cltvExpiry.toLong().toInt() - 3 to bob3.ctx.currentTip.second))
             tmp.processEx(ChannelCommand.CheckHtlcTimeout)
         }
         checkFulfillTimeout(bob5, actions5)
@@ -2059,10 +2076,10 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv Disconnected`() {
         val (alice0, _) = reachNormal()
         val (alice1, _) = alice0.processEx(ChannelCommand.Disconnected)
-        assertTrue(alice1 is Offline)
-        val previousState = alice1.state
-        assertTrue(previousState is Normal)
-        assertEquals(alice0.channelUpdate, previousState.channelUpdate)
+        assertIs<LNChannel<Offline>>(alice1)
+        val previousState = alice1.state.state
+        assertIs<Normal>(previousState)
+        assertEquals(alice0.state.channelUpdate, previousState.channelUpdate)
     }
 
     @Test
@@ -2074,14 +2091,14 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, _) = nodes1
 
         val (alice3, actions) = alice2.processEx(ChannelCommand.Disconnected)
-        assertTrue(alice3 is Offline)
+        assertIs<LNChannel<Offline>>(alice3)
 
         val addSettledFailList = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         assertEquals(2, addSettledFailList.size)
         assertTrue(addSettledFailList.all { it.result is ChannelAction.HtlcResult.Fail.Disconnected })
         assertEquals(htlc1.paymentHash, addSettledFailList.first().htlc.paymentHash)
         assertEquals(htlc2.paymentHash, addSettledFailList.last().htlc.paymentHash)
-        assertEquals(alice2, alice3.state)
+        assertEquals(alice2.state, alice3.state.state)
     }
 
     @Test
@@ -2108,16 +2125,16 @@ class NormalTestsCommon : LightningTestSuite() {
         //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
         // an error occurs and alice publishes her commit tx
-        assertTrue(alice3 is Normal)
+        assertIs<LNChannel<Normal>>(alice3)
         val aliceCommitTx = alice3.commitments.localCommit.publishableTxs.commitTx
         val (alice4, actions) = alice3.processEx(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertTrue(alice4 is Closing)
-        assertNotNull(alice4.localCommitPublished)
-        assertEquals(alice4.localCommitPublished!!.commitTx, aliceCommitTx.tx)
-        assertEquals(4, alice4.localCommitPublished!!.htlcTxs.size)
-        assertEquals(1, alice4.localCommitPublished!!.htlcSuccessTxs().size)
-        assertEquals(2, alice4.localCommitPublished!!.htlcTimeoutTxs().size)
-        assertEquals(3, alice4.localCommitPublished!!.claimHtlcDelayedTxs.size)
+        assertIs<LNChannel<Closing>>(alice4)
+        assertNotNull(alice4.state.localCommitPublished)
+        assertEquals(alice4.state.localCommitPublished!!.commitTx, aliceCommitTx.tx)
+        assertEquals(4, alice4.state.localCommitPublished!!.htlcTxs.size)
+        assertEquals(1, alice4.state.localCommitPublished!!.htlcSuccessTxs().size)
+        assertEquals(2, alice4.state.localCommitPublished!!.htlcTimeoutTxs().size)
+        assertEquals(3, alice4.state.localCommitPublished!!.claimHtlcDelayedTxs.size)
 
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(8, txs.size)
@@ -2163,7 +2180,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob0.processEx(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(txs, listOf(bobCommitTx))
-        assertTrue(bob1 is Closing)
-        assertEquals(bob1.localCommitPublished!!.commitTx, bobCommitTx)
+        assertIs<LNChannel<Closing>>(bob1)
+        assertEquals(bob1.state.localCommitPublished!!.commitTx, bobCommitTx)
     }
 }

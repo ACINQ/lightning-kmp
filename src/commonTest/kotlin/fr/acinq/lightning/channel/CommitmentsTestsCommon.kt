@@ -28,10 +28,7 @@ import fr.acinq.lightning.wire.UpdateAddHtlc
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
@@ -51,8 +48,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         val p = 42_000_000.msat // a->b payment
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
-        val ac0 = alice.commitments
-        val bc0 = bob.commitments
+        val ac0 = alice.state.commitments
+        val bc0 = bob.state.commitments
 
         assertTrue(ac0.availableBalanceForSend() > p) // alice can afford the payment
         assertEquals(ac0.availableBalanceForSend(), a)
@@ -137,8 +134,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         val p = 42_000_000.msat // a->b payment
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
-        val ac0 = alice.commitments
-        val bc0 = bob.commitments
+        val ac0 = alice.state.commitments
+        val bc0 = bob.state.commitments
 
         assertTrue(ac0.availableBalanceForSend() > p) // alice can afford the payment
         assertEquals(ac0.availableBalanceForSend(), a)
@@ -223,8 +220,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         val p1 = 18_000_000.msat // a->b payment
         val p2 = 20_000_000.msat // a->b payment
         val p3 = 40_000_000.msat // b->a payment
-        val ac0 = alice.commitments
-        val bc0 = bob.commitments
+        val ac0 = alice.state.commitments
+        val bc0 = bob.state.commitments
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
         assertTrue(ac0.availableBalanceForSend() > p1 + p2) // alice can afford the payment
@@ -379,7 +376,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
         val (_, cmdAdd1) = TestsHelper.makeCmdAdd(100.msat, randomKey().publicKey(), currentBlockHeight)
         val e = c2.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight).left
-        assertTrue(e is InsufficientFunds)
+        assertIs<InsufficientFunds>(e)
     }
 
     @Test
@@ -431,20 +428,20 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             val (bob9, _) = bob8.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice2.id, preimageAlice2)))
             // Alice publishes her commitment.
             val (aliceClosing, _) = alice9.processEx(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
-            assertTrue(aliceClosing is Closing)
-            val lcp = aliceClosing.localCommitPublished
+            assertIs<LNChannel<Closing>>(aliceClosing)
+            val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)
-            val (bobClosing, _) = bob9.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
-            assertTrue(bobClosing is Closing)
-            val rcp = bobClosing.remoteCommitPublished
+            val (bobClosing, _) = bob9.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice0.state.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            assertIs<LNChannel<Closing>>(bobClosing)
+            val rcp = bobClosing.state.remoteCommitPublished
             assertNotNull(rcp)
             Triple(aliceClosing, bobClosing, listOf(htlcAlice1a, htlcAlice1b, htlcAlice2, htlcBob1a, htlcBob1b, htlcBob2))
         }
 
-        val lcp = alice.localCommitPublished!!
-        val localCommit = alice.commitments.localCommit
-        val rcp = bob.remoteCommitPublished!!
-        val remoteCommit = bob.commitments.remoteCommit
+        val lcp = alice.state.localCommitPublished!!
+        val localCommit = alice.state.commitments.localCommit
+        val rcp = bob.state.remoteCommitPublished!!
+        val remoteCommit = bob.state.commitments.remoteCommit
         val dustLimit = TestConstants.Alice.nodeParams.dustLimit
         val htlcTimeoutTxs = lcp.htlcTimeoutTxs()
         val htlcSuccessTxs = lcp.htlcSuccessTxs()
@@ -475,9 +472,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     companion object {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments {
-            val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())
             val localParams = LocalParams(
-                randomKey().publicKey(), channelKeys, dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, Features.empty
+                randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
                 randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50,
@@ -510,9 +506,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         }
 
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments {
-            val channelKeys = ChannelKeys(KeyPath("42"), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomBytes32())
             val localParams = LocalParams(
-                localNodeId, channelKeys, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
+                localNodeId, KeyPath("42"), 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
                 remoteNodeId, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty

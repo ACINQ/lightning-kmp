@@ -201,7 +201,6 @@ class Peer(
             watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
                     currentTipFlow.value = msg.blockHeight to msg.header
-                    input.send(WrappedChannelCommand(ByteVector32.Zeroes, ChannelCommand.NewBlock(msg.blockHeight, msg.header)))
                 }
         }
         launch {

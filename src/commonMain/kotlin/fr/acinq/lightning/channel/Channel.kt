@@ -61,7 +61,7 @@ sealed class ChannelCommand {
     data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
     data class ExecuteCommand(val command: Command) : ChannelCommand()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelCommand()
-    data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelCommand()
+    //data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelCommand()
     object Disconnected : ChannelCommand()
     data class Connected(val localInit: Init, val remoteInit: Init) : ChannelCommand()
 }
@@ -231,7 +231,7 @@ sealed class ChannelState {
     abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
     internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled event ${cmd::class} in state ${this::class}" }
+        logger.warning { "unhandled event ${cmd::class} in state ${this@ChannelState::class}" }
         return Pair(this@ChannelState, listOf())
     }
 
@@ -521,6 +521,31 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
+}
+
+data class LNChannel<out S : ChannelState>(
+    val ctx: ChannelContext,
+    val state: S
+) {
+    val staticParams = ctx.staticParams
+    val currentBlockHeight = ctx.currentBlockHeight
+    val channelId: ByteVector32 by lazy {
+        when (state) {
+            is ChannelStateWithCommitments -> state.channelId
+            is WaitForFundingCreated -> state.channelId
+            is WaitForFundingSigned -> state.channelId
+            else -> error("no channel id in state ${state::class}")
+        }
+    }
+    val commitments: Commitments by lazy {
+        when (state) {
+            is ChannelStateWithCommitments -> state.commitments
+            else -> error("no commitments in state ${state::class}")
+        }
+    }
+    fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
+        state.run { ctx.process(cmd) }
+            .let { (newState, actions) -> LNChannel(ctx, newState) to actions }
 }
 
 object Channel {

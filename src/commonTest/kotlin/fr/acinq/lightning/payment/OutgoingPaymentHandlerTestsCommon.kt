@@ -9,6 +9,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.TestsHelper.processSameState
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
@@ -72,7 +73,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true)
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPaymentNormal(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
-        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to Offline(alice)), alice.currentBlockHeight)
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to Offline(alice.state)), alice.currentBlockHeight)
         assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.NoAvailableChannels.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
@@ -92,7 +93,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val invoice = makeInvoice(amount = amount, supportsTrampoline = true)
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         val payment = SendPaymentNormal(UUID.randomUUID(), amount, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
-        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
         assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.InsufficientBalance.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
@@ -122,22 +123,21 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `channel restrictions -- maxAcceptedHtlcs`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
-        alice = alice.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxAcceptedHtlcs = 1)))
+        alice = alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxAcceptedHtlcs = 1))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
             // Send payment 1 of 2: this should work because we're still under the maxAcceptedHtlcs.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = SendPaymentNormal(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
-            val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
+            val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
             assertTrue { result is OutgoingPaymentHandler.Progress }
 
             val progress = result as OutgoingPaymentHandler.Progress
             assertEquals(1, result.actions.size)
-            val processResult = alice.process(progress.actions.first().channelCommand)
-            assertTrue { processResult.first is Normal }
+            val processResult = alice.processSameState(progress.actions.first().channelCommand)
             assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
-            alice = processResult.first as Normal
+            alice = processResult.first
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
             val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
@@ -150,20 +150,19 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             // Send payment 2 of 2: this should exceed the configured maxAcceptedHtlcs.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = SendPaymentNormal(UUID.randomUUID(), 50_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
-            val result1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
+            val result1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
             assertTrue { result1 is OutgoingPaymentHandler.Progress }
 
             val progress = result1 as OutgoingPaymentHandler.Progress
             assertEquals(1, result1.actions.size)
             val cmdAdd = progress.actions.first().channelCommand
-            val processResult = alice.process(cmdAdd)
-            assertTrue { processResult.first is Normal }
-            alice = processResult.first as Normal
+            val processResult = alice.processSameState(cmdAdd)
+            alice = processResult.first
 
             val addFailure = processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
+            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice.state))
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1)))))
             assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
 
@@ -176,22 +175,21 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `channel restrictions -- maxHtlcValueInFlight`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
         val maxHtlcValueInFlightMsat = 150_000L
-        alice = alice.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat)))
+        alice = alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
             // Send payment 1 of 2: this should work because we're still under the maxHtlcValueInFlightMsat.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = SendPaymentNormal(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
-            val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
+            val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
             assertTrue { result is OutgoingPaymentHandler.Progress }
 
             val progress = result as OutgoingPaymentHandler.Progress
             assertEquals(1, result.actions.size)
-            val processResult = alice.process(progress.actions.first().channelCommand)
-            assertTrue { processResult.first is Normal }
+            val processResult = alice.processSameState(progress.actions.first().channelCommand)
             assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
-            alice = processResult.first as Normal
+            alice = processResult.first
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
             val dbPayment = outgoingPaymentHandler.db.getOutgoingPayment(payment.paymentId)
@@ -204,20 +202,19 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             // Send payment 2 of 2: this should exceed the configured maxHtlcValueInFlightMsat.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = SendPaymentNormal(UUID.randomUUID(), 100_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
-            val result1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice), alice.currentBlockHeight)
+            val result1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
             assertTrue { result1 is OutgoingPaymentHandler.Progress }
 
             val progress = result1 as OutgoingPaymentHandler.Progress
             assertEquals(1, result1.actions.size)
             val cmdAdd = progress.actions.first().channelCommand
-            val processResult = alice.process(cmdAdd)
-            assertTrue { processResult.first is Normal }
-            alice = processResult.first as Normal
+            val processResult = alice.processSameState(cmdAdd)
+            alice = processResult.first
 
             val addFailure = processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice))
+            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice.state))
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat)))))
             assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
 
@@ -953,7 +950,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         return channelDetails.associate {
             val channelId = randomBytes32()
-            val channel = alice.copy(
+            val channel = alice.state.copy(
                 shortChannelId = it.first,
                 commitments = alice.commitments.copy(
                     channelId = channelId,

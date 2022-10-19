@@ -11,6 +11,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.ChannelStateWithCommitments
+import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.Normal
 import fr.acinq.lightning.channel.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
@@ -36,15 +37,15 @@ public suspend fun newPeers(
     scope: CoroutineScope,
     nodeParams: Pair<NodeParams, NodeParams>,
     walletParams: Pair<WalletParams, WalletParams>,
-    initChannels: List<Pair<ChannelStateWithCommitments, ChannelStateWithCommitments>> = emptyList(),
+    initChannels: List<Pair<LNChannel<ChannelStateWithCommitments>, LNChannel<ChannelStateWithCommitments>>> = emptyList(),
     automateMessaging: Boolean = true
 ): PeerTuple {
     // Create Alice and Bob peers
     val alice = buildPeer(scope, nodeParams.first, walletParams.first, databases = InMemoryDatabases().apply {
-        initChannels.forEach { channels.addOrUpdateChannel(it.first) }
+        initChannels.forEach { channels.addOrUpdateChannel(it.first.state) }
     })
     val bob = buildPeer(scope, nodeParams.second, walletParams.second, databases = InMemoryDatabases().apply {
-        initChannels.forEach { channels.addOrUpdateChannel(it.second) }
+        initChannels.forEach { channels.addOrUpdateChannel(it.second.state) }
     })
 
     // Create collectors for Alice and Bob output messages
@@ -115,7 +116,7 @@ public suspend fun newPeers(
 public suspend fun CoroutineScope.newPeer(
     nodeParams: NodeParams,
     walletParams: WalletParams,
-    remotedNodeChannelState: ChannelStateWithCommitments? = null,
+    remotedNodeChannelState: LNChannel<ChannelStateWithCommitments>? = null,
     setupDatabases: suspend InMemoryDatabases.() -> Unit = {},
 ): Peer {
     val db = InMemoryDatabases().apply { setupDatabases(this) }
@@ -124,7 +125,7 @@ public suspend fun CoroutineScope.newPeer(
 
     remotedNodeChannelState?.let { state ->
         // send Init from remote node
-        val theirInit = Init(features = state.staticParams.nodeParams.features.initFeatures().toByteArray().toByteVector())
+        val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures().toByteArray().toByteVector())
 
         val initMsg = LightningMessage.encode(theirInit)
         peer.send(BytesReceived(initMsg))

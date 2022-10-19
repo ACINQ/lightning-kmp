@@ -32,8 +32,8 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
             channelId = channelId,
             remoteCommit = defaultChannel.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, balance + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))
         )
-        val channelUpdate = defaultChannel.channelUpdate.copy(htlcMinimumMsat = htlcMin)
-        return defaultChannel.copy(shortChannelId = shortChannelId, commitments = commitments, channelUpdate = channelUpdate)
+        val channelUpdate = defaultChannel.state.channelUpdate.copy(htlcMinimumMsat = htlcMin)
+        return defaultChannel.state.copy(shortChannelId = shortChannelId, commitments = commitments, channelUpdate = channelUpdate)
     }
 
     @Test

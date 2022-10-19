@@ -514,7 +514,7 @@ data class Commitments(
 
         val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
         val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = makeLocalTxs(keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+        val (localCommitTx, htlcTxs) = makeLocalTxs(keyManager.channelKeys(localParams.fundingKeyPath), localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
         val sig = Transactions.sign(localCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
 
         log.info {
@@ -633,7 +633,7 @@ data class Commitments(
         }
 
         fun makeLocalTxs(
-            keyManager: KeyManager,
+            channelKeys: ChannelKeys,
             commitTxNumber: Long,
             localParams: LocalParams,
             remoteParams: RemoteParams,
@@ -641,14 +641,14 @@ data class Commitments(
             localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
-            val localDelayedPaymentPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).delayedPaymentBasepoint, localPerCommitmentPoint)
-            val localHtlcPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).htlcBasepoint, localPerCommitmentPoint)
+            val localDelayedPaymentPubkey = Generators.derivePubKey(channelKeys.delayedPaymentBasepoint, localPerCommitmentPoint)
+            val localHtlcPubkey = Generators.derivePubKey(channelKeys.htlcBasepoint, localPerCommitmentPoint)
             val remotePaymentPubkey = remoteParams.paymentBasepoint
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
             val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-            val localPaymentBasepoint = localParams.channelKeys(keyManager).paymentBasepoint
+            val localPaymentBasepoint = channelKeys.paymentBasepoint
             val outputs = makeCommitTxOutputs(
-                localParams.channelKeys(keyManager).fundingPubKey,
+                channelKeys.fundingPubKey,
                 remoteParams.fundingPubKey,
                 localParams.isInitiator,
                 localParams.dustLimit,

@@ -261,14 +261,6 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
                 }
             }
-            cmd is ChannelCommand.NewBlock -> {
-                val (newState, actions) = state.run { process(cmd) }
-                when (newState) {
-                    is Closing -> Pair(newState, actions)
-                    is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
-                }
-            }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
                 val (newState, actions) = state.run { process(cmd) }

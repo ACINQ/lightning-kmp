@@ -98,14 +98,6 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
                 }
             }
-            cmd is ChannelCommand.NewBlock -> {
-                val (newState, actions) = state. run { process(cmd) }
-                when (newState) {
-                    is Closing -> Pair(newState, actions)
-                    is Closed -> Pair(newState, actions)
-                    else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
-                }
-            }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
                 val (newState, actions) = state.run { process(cmd) }
                 when (newState) {

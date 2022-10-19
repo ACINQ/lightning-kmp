@@ -275,12 +275,12 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             val (bob7, _) = bob6.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice.id, preimageAlice)))
             // Alice publishes her commitment.
             val (aliceClosing, _) = alice7.processEx(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
-            assertTrue(aliceClosing is Closing)
-            val lcp = aliceClosing.localCommitPublished
+            assertIs<LNChannel<Closing>>(aliceClosing)
+            val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)
-            val (bobClosing, _) = bob7.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
-            assertTrue(bobClosing is Closing)
-            val rcp = bobClosing.remoteCommitPublished
+            val (bobClosing, _) = bob7.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice0.state.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            assertIs<LNChannel<Closing>>(bobClosing)
+            val rcp = bobClosing.state.remoteCommitPublished
             assertNotNull(rcp)
             Pair(lcp, rcp)
         }

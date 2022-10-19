@@ -10,44 +10,42 @@ sealed class Action {
 }
 
 sealed class State {
-
-    abstract fun Context.process(cmd: Command): Pair<State, List<Action>>
+    abstract fun Context<State>.doProcess(cmd: Command): Pair<State, List<Action>>
 
     data class State1(val a: String) : State() {
-        override fun Context.process(cmd: Command): Pair<State, List<Action>> {
+        override fun Context<State>.doProcess(cmd: Command): Pair<State, List<Action>> {
             // we have access to both the context and the state
-            val params = this.params
-            val state = this@State1
+            //val params = this.params
+            //val state = this@State1
             return State2(10) to listOf<Action.Action1>()
         }
     }
 
     data class State2(val b: Int) : State() {
-        override fun Context.process(cmd: Command): Pair<State, List<Action>> {
+        override fun Context<State>.doProcess(cmd: Command): Pair<State, List<Action>> {
             TODO("Not yet implemented")
         }
     }
 }
 
+
 data class Params(val alias: String)
 
-data class Context(val params: Params)
-
-data class Channel<out S: State>(
-    val context: Context,
+data class Context<out S : State>(
+    val params: Params,
     val state: S
 ) {
-    fun process(cmd: Command): Pair<State, List<Action>> =
-        state.run { context.process(cmd) }
+    fun process(cmd: Command): Pair<Context<State>, List<Action>> =
+        state.run { doProcess(cmd) }.let { (state1, actions) -> Context(params, state1) to actions }
 }
 
-fun test() {
-    val channel = Channel(
-        context = Context(Params(alias = "my node")),
-        state = State.State1("foobar")
-    )
-
-    val (state1, actions) = channel.process(Command.Command1)
-}
+//fun test() {
+//    val channel = Context(
+//        params = Params(alias = "my node"),
+//        state = State.State1("foobar")
+//    )
+//
+//    val (state1, actions) = channel.process(Command.Command1)
+//}
 
 

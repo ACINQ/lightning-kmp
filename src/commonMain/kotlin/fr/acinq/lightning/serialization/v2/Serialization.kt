@@ -89,7 +89,7 @@ object Serialization {
         include(serializationModules)
     }
 
-    internal fun serialize(state: ChannelStateWithCommitments): ByteArray {
+    private fun serialize(state: ChannelStateWithCommitments): ByteArray {
         val output = ByteArrayOutput()
         val encoder = DataOutputEncoder(output)
         encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)

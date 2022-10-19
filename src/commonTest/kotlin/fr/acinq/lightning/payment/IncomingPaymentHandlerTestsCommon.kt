@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.TestsHelper.processSameState
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
@@ -36,15 +37,15 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 1: alice ---> update_add_htlc ---> bob
 
-        var processResult = alice.process(ChannelCommand.ExecuteCommand(cmdAddHtlc))
-        alice = processResult.first as Normal
+        var processResult = alice.processSameState(ChannelCommand.ExecuteCommand(cmdAddHtlc))
+        alice = processResult.first
         var actions = processResult.second
         assertEquals(2, actions.size)
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
         val aliceCmdSign = actions.findCommand<CMD_SIGN>()
 
-        processResult = bob.process(ChannelCommand.MessageReceived(add))
-        bob = processResult.first as Normal
+        processResult = bob.processSameState(ChannelCommand.MessageReceived(add))
+        bob = processResult.first
         actions = processResult.second
         assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
 
@@ -58,13 +59,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 2: alice ---> commitment_signed ---> bob
 
-        processResult = alice.process(ChannelCommand.ExecuteCommand(aliceCmdSign))
-        alice = processResult.first as Normal
+        processResult = alice.processSameState(ChannelCommand.ExecuteCommand(aliceCmdSign))
+        alice = processResult.first
         actions = processResult.second
         val aliceSig = actions.findOutgoingMessage<CommitSig>()
 
-        processResult = bob.process(ChannelCommand.MessageReceived(aliceSig))
-        bob = processResult.first as Normal
+        processResult = bob.processSameState(ChannelCommand.MessageReceived(aliceSig))
+        bob = processResult.first
         actions = processResult.second
         val bobRev = actions.findOutgoingMessage<RevokeAndAck>()
         val bobCmdSign = actions.findCommand<CMD_SIGN>()
@@ -79,8 +80,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 3: alice <--- revoke_and_ack <--- bob
 
-        processResult = alice.process(ChannelCommand.MessageReceived(bobRev))
-        alice = processResult.first as Normal
+        processResult = alice.processSameState(ChannelCommand.MessageReceived(bobRev))
+        alice = processResult.first
         actions = processResult.second
         assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
 
@@ -94,13 +95,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 4: alice <--- commitment_signed <--- bob
 
-        processResult = bob.process(ChannelCommand.ExecuteCommand(bobCmdSign))
-        bob = processResult.first as Normal
+        processResult = bob.processSameState(ChannelCommand.ExecuteCommand(bobCmdSign))
+        bob = processResult.first
         actions = processResult.second
         val bobSig = actions.findOutgoingMessage<CommitSig>()
 
-        processResult = alice.process(ChannelCommand.MessageReceived(bobSig))
-        alice = processResult.first as Normal
+        processResult = alice.processSameState(ChannelCommand.MessageReceived(bobSig))
+        alice = processResult.first
         actions = processResult.second
         val aliceRev = actions.findOutgoingMessage<RevokeAndAck>()
 
@@ -114,8 +115,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 5: alice ---> revoke_and_ack ---> bob
 
-        processResult = bob.process(ChannelCommand.MessageReceived(aliceRev))
-        bob = processResult.first as Normal
+        processResult = bob.processSameState(ChannelCommand.MessageReceived(aliceRev))
+        bob = processResult.first
         actions = processResult.second
         assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
         assertTrue { actions.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().size == 1 }
