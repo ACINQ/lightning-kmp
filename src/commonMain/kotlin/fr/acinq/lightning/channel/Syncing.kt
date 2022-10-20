@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.channel.Channel.handleSync
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.toByteVector
@@ -29,7 +29,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 waitForTheirReestablishMessage -> {
                     val nextState = if (!cmd.message.channelData.isEmpty()) {
                         logger.info { "c:$channelId channel_reestablish includes a peer backup" }
-                        when (val decrypted = runTrying { Serialization.decrypt(staticParams.nodeParams.nodePrivateKey.value, cmd.message.channelData) }) {
+                        when (val decrypted = runTrying { ChannelStateWithCommitments.from(staticParams.nodeParams.nodePrivateKey, cmd.message.channelData) }) {
                             is Try.Success -> {
                                 if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
                                     logger.warning { "c:$channelId they have a more recent commitment, using it instead" }

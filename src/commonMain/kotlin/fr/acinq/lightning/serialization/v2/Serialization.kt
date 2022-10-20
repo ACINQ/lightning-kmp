@@ -120,26 +120,6 @@ object Serialization {
         }
     }
 
-    internal fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
-        val bin = serialize(state)
-        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
-        // See https://en.wikipedia.org/wiki/Birthday_attack
-        val nonce = Crypto.sha256(bin).take(12).toByteArray()
-        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
-    }
-
-    fun encrypt(key: ByteVector32, ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData {
-        val bin = serialize(ctx, state)
-        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
-        // See https://en.wikipedia.org/wiki/Birthday_attack
-        val nonce = Crypto.sha256(bin).take(12).toByteArray()
-        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
-    }
-
-    fun encrypt(key: PrivateKey, ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, ctx, state)
-
     fun decrypt(key: ByteVector32, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)

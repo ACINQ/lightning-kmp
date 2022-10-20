@@ -20,6 +20,7 @@ import fr.acinq.lightning.channel.TestsHelper.signAndRevack
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.weight2fee
@@ -719,7 +720,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob2, actions2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
         assertIs<LNChannel<Normal>>(bob2)
-        val blob = Serialization.encrypt(bob.staticParams.nodeParams.nodePrivateKey.value, bob2.ctx, bob2.state)
+        val blob = EncryptedChannelData.from(bob.staticParams.nodeParams.nodePrivateKey, bob2.ctx, bob2.state)
         assertEquals(blob, commitSig.channelData)
     }
 
@@ -967,7 +968,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob4, actions5) = bob3.processEx(ChannelCommand.MessageReceived(commitSig1))
         val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
         assertIs<LNChannel<Normal>>(bob4)
-        val blob = Serialization.encrypt(bob4.staticParams.nodeParams.nodePrivateKey.value, bob4.ctx, bob4.state)
+        val blob = EncryptedChannelData.from(bob4.staticParams.nodeParams.nodePrivateKey, bob4.ctx, bob4.state)
         assertEquals(blob, revack1.channelData)
     }
 

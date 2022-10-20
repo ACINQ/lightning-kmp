@@ -4,8 +4,10 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.wire.CommitSig
+import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.secp256k1.Hex
 import kotlin.math.max
@@ -28,27 +30,27 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     @Test
     fun `encrypt - decrypt normal state`() {
         val (alice, bob) = TestsHelper.reachNormal()
-        val priv = randomKey().value
-        val bytes = Serialization.encrypt(priv, alice.ctx, alice.state)
-        val check = Serialization.decrypt(priv, bytes)
+        val priv = randomKey()
+        val bytes = EncryptedChannelData.from(priv, alice.ctx, alice.state)
+        val check = ChannelStateWithCommitments.from(priv, bytes)
         assertEquals(alice.state, check)
 
-        val bytes1 = Serialization.encrypt(priv, bob.ctx, bob.state)
-        val check1 = Serialization.decrypt(priv, bytes1)
+        val bytes1 = EncryptedChannelData.from(priv, bob.ctx, bob.state)
+        val check1 = ChannelStateWithCommitments.from(priv, bytes1)
         assertEquals(bob.state, check1)
     }
 
     @Ignore
     fun `don't restore data from a different chain`() {
         val (alice, _) = TestsHelper.reachNormal()
-        val priv = randomKey().value
-        val bytes = Serialization.encrypt(priv, alice.ctx, alice.state)
-        val check = Serialization.decrypt(priv, bytes)
+        val priv = randomKey()
+        val bytes = EncryptedChannelData.from(priv, alice.ctx, alice.state)
+        val check = ChannelStateWithCommitments.from(priv, bytes)
         assertEquals(alice.state, check)
 
         // we cannot test the exception's error message anymore because v2 serialization will fail (invalid chain) then we'll try v1 serialization which will return a different error
         assertFails {
-            Serialization.decrypt(priv, bytes)
+            ChannelStateWithCommitments.from(priv, bytes)
         }
     }
 

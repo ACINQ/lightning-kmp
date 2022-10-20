@@ -14,7 +14,7 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.OutgoingPayment
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
@@ -242,10 +242,10 @@ sealed class ChannelState {
         this@ChannelState is WaitForChannelReady -> actions
         this@ChannelState is ChannelStateWithCommitments && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
-                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this, this@ChannelState)))
-                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this, this@ChannelState)))
-                it is ChannelAction.Message.Send && it.message is Shutdown -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this, this@ChannelState)))
-                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.withChannelData(Serialization.encrypt(privateKey.value, this, this@ChannelState)))
+                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this, this@ChannelState)))
+                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this, this@ChannelState)))
+                it is ChannelAction.Message.Send && it.message is Shutdown -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this, this@ChannelState)))
+                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this, this@ChannelState)))
                 else -> it
             }
         }
@@ -520,6 +520,10 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 }
             }
         }
+    }
+
+    companion object {
+
     }
 }
 
