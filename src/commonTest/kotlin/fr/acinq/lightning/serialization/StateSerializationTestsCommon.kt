@@ -18,11 +18,11 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     @Test
     fun `serialize normal state`() {
         val (alice, bob) = TestsHelper.reachNormal()
-        val bytes = Serialization.serialize(alice.ctx, alice.state)
+        val bytes = Serialization.serialize(alice.state)
         val check = Serialization.deserialize(bytes)
         assertEquals(alice.state, check)
 
-        val bytes1 = Serialization.serialize(bob.ctx, bob.state)
+        val bytes1 = Serialization.serialize(bob.state)
         val check1 = Serialization.deserialize(bytes1)
         assertEquals(bob.state, check1)
     }
@@ -31,20 +31,21 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     fun `encrypt - decrypt normal state`() {
         val (alice, bob) = TestsHelper.reachNormal()
         val priv = randomKey()
-        val bytes = EncryptedChannelData.from(priv, alice.ctx, alice.state)
+        val bytes = EncryptedChannelData.from(priv, alice.state)
         val check = ChannelStateWithCommitments.from(priv, bytes)
         assertEquals(alice.state, check)
 
-        val bytes1 = EncryptedChannelData.from(priv, bob.ctx, bob.state)
+        val bytes1 = EncryptedChannelData.from(priv, bob.state)
         val check1 = ChannelStateWithCommitments.from(priv, bytes1)
         assertEquals(bob.state, check1)
     }
-
+    
     @Ignore
+    @Test
     fun `don't restore data from a different chain`() {
         val (alice, _) = TestsHelper.reachNormal()
         val priv = randomKey()
-        val bytes = EncryptedChannelData.from(priv, alice.ctx, alice.state)
+        val bytes = EncryptedChannelData.from(priv, alice.state)
         val check = ChannelStateWithCommitments.from(priv, bytes)
         assertEquals(alice.state, check)
 

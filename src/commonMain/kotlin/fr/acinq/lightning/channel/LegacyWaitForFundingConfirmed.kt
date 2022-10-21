@@ -19,7 +19,7 @@ data class LegacyWaitForFundingConfirmed(
     override val commitments: Commitments,
     val fundingTx: Transaction?,
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
-    val deferred: FundingLocked?,
+    val deferred: ChannelReady?,
     val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -27,7 +27,7 @@ data class LegacyWaitForFundingConfirmed(
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
-                is ChannelReady -> Pair(this@LegacyWaitForFundingConfirmed.copy(deferred = FundingLocked(cmd.message.channelId, cmd.message.nextPerCommitmentPoint)), listOf())
+                is ChannelReady -> Pair(this@LegacyWaitForFundingConfirmed.copy(deferred = cmd.message), listOf())
                 is Error -> handleRemoteError(cmd.message)
                 else -> Pair(this@LegacyWaitForFundingConfirmed, listOf())
             }
@@ -49,7 +49,7 @@ data class LegacyWaitForFundingConfirmed(
                         val blockHeight = cmd.watch.blockHeight
                         val txIndex = cmd.watch.txIndex
                         val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
-                        val nextState = LegacyWaitForFundingLocked(commitments, shortChannelId, FundingLocked(commitments.channelId, nextPerCommitmentPoint))
+                        val nextState = LegacyWaitForFundingLocked(commitments, shortChannelId, channelReady)
                         val actions = listOf(
                             ChannelAction.Message.Send(channelReady),
                             ChannelAction.Storage.StoreState(nextState)

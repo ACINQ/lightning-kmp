@@ -720,7 +720,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob2, actions2) = bob1.processEx(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
         assertIs<LNChannel<Normal>>(bob2)
-        val blob = EncryptedChannelData.from(bob.staticParams.nodeParams.nodePrivateKey, bob2.ctx, bob2.state)
+        val blob = EncryptedChannelData.from(bob.staticParams.nodeParams.nodePrivateKey, bob2.state)
         assertEquals(blob, commitSig.channelData)
     }
 
@@ -968,7 +968,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob4, actions5) = bob3.processEx(ChannelCommand.MessageReceived(commitSig1))
         val revack1 = actions5.findOutgoingMessage<RevokeAndAck>()
         assertIs<LNChannel<Normal>>(bob4)
-        val blob = EncryptedChannelData.from(bob4.staticParams.nodeParams.nodePrivateKey, bob4.ctx, bob4.state)
+        val blob = EncryptedChannelData.from(bob4.staticParams.nodeParams.nodePrivateKey, bob4.state)
         assertEquals(blob, revack1.channelData)
     }
 

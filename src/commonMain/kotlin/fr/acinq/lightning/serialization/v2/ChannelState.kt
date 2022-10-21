@@ -420,7 +420,7 @@ internal data class WaitForFundingConfirmed(
         Commitments(from.commitments),
         from.fundingTx,
         from.waitingSinceBlock,
-        from.deferred,
+        from.deferred?.let { FundingLocked(it.channelId, it.nextPerCommitmentPoint) },
         from.lastSent
     )
 
@@ -428,7 +428,7 @@ internal data class WaitForFundingConfirmed(
         commitments.export(),
         fundingTx,
         waitingSinceBlock,
-        deferred,
+        deferred?.let { ChannelReady(it.channelId, it.nextPerCommitmentPoint) },
         lastSent
     )
 }
@@ -448,13 +448,13 @@ internal data class WaitForFundingLocked(
         OnChainFeerates(ctx.currentOnChainFeerates),
         Commitments(from.commitments),
         from.shortChannelId,
-        from.lastSent
+        FundingLocked(from.lastSent.channelId, from.lastSent.nextPerCommitmentPoint)
     )
 
     override fun export() = fr.acinq.lightning.channel.LegacyWaitForFundingLocked(
         commitments.export(),
         shortChannelId,
-        lastSent
+        ChannelReady(lastSent.channelId, lastSent.nextPerCommitmentPoint)
     )
 }
 

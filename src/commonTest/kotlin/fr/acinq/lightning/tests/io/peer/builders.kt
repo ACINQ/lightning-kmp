@@ -1,6 +1,7 @@
 package fr.acinq.lightning.tests.io.peer
 
 import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.NodeParams
@@ -164,12 +165,13 @@ public fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
     walletParams: WalletParams,
-    databases: InMemoryDatabases = InMemoryDatabases()
+    databases: InMemoryDatabases = InMemoryDatabases(),
+    currentTip: Pair<Int, BlockHeader> = 0 to Block.RegtestGenesisBlock.header
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope, LoggerFactory.default)
     val watcher = ElectrumWatcher(electrum.Caller(), scope, LoggerFactory.default)
     val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
-    peer.currentTipFlow.value = 0 to Block.RegtestGenesisBlock.header
+    peer.currentTipFlow.value = currentTip
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
         claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),

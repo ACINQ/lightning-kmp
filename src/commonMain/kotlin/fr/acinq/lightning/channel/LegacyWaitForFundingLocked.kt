@@ -19,7 +19,7 @@ import fr.acinq.lightning.wire.FundingLocked
 data class LegacyWaitForFundingLocked(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
-    val lastSent: FundingLocked
+    val lastSent: ChannelReady
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 

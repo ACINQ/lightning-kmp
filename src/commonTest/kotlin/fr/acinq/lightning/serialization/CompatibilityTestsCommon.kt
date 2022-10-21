@@ -33,14 +33,14 @@ class CompatibilityTestsCommon {
             Triple(alice1, bob0, fundingTx)
         }
         println("funding_tx: ${Transaction.write(fundingTx).byteVector().toHex()}")
-        val bin = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob.ctx, bob.state)
+        val bin = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob.state)
         println("wait_for_funding_confirmed: ${bin.data}")
 
         val (bob1, actionsBob) = bob.processEx(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)), minVersion = 3)
         val channelReady = actionsBob.findOutgoingMessage<ChannelReady>()
         assertIs<LNChannel<WaitForChannelReady>>(bob1)
 
-        val bin1 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob1.ctx, bob1.state)
+        val bin1 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob1.state)
         println("wait_for_channel_ready: ${bin1.data}")
 
         val (alice1, actionsAlice) = alice.processEx(ChannelCommand.MessageReceived(channelReady), minVersion = 3)
@@ -53,7 +53,7 @@ class CompatibilityTestsCommon {
         val (bob2, _) = bob1.processEx(ChannelCommand.MessageReceived(channelReadyAlice), minVersion = 3)
         assertIs<LNChannel<Normal>>(bob2)
 
-        val bin2 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob2.ctx, bob2.state)
+        val bin2 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob2.state)
         println("normal: ${bin2.data}")
 
         val add1 = CMD_ADD_HTLC(
@@ -82,7 +82,7 @@ class CompatibilityTestsCommon {
 
         assertIs<LNChannel<Normal>>(bob6)
 
-        val bin3 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob6.ctx, bob6.state)
+        val bin3 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob6.state)
         println("normal_with_htlcs: ${bin3.data}")
     }
 

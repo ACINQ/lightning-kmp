@@ -3,9 +3,9 @@ package fr.acinq.lightning.serialization
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.channel.ChannelContext
 import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
+import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.EncryptedChannelData
 
@@ -34,17 +34,22 @@ object Encryption {
     /**
      * Convenience method that builds an [EncryptedChannelData] from a [ChannelStateWithCommitments]
      */
-    fun EncryptedChannelData.Companion.from(key: PrivateKey, ctx: ChannelContext, state: ChannelStateWithCommitments): EncryptedChannelData {
-        val bin = Serialization.serialize(ctx, state)
+    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: ChannelStateWithCommitments): EncryptedChannelData {
+        val bin = Serialization.serialize(state)
         val encrypted = encrypt(key.value, bin)
-        return EncryptedChannelData(encrypted.toByteVector())
+        // we copy the first 2 bytes as meta-info on the serialization version
+        val data = bin.copyOfRange(0, 2) + encrypted
+        return EncryptedChannelData(data.toByteVector())
     }
 
     /**
      * Convenience method that decrypts and deserializes a [ChannelStateWithCommitments] from an [EncryptedChannelData]
      */
     fun ChannelStateWithCommitments.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): ChannelStateWithCommitments {
-        val decrypted = decrypt(key.value, encryptedChannelData.data.toByteArray())
+        // we first assume that channel data is prefixed by 2 bytes of serialization meta-info
+        val decrypted = runTrying { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
+            .recoverWith { runTrying { decrypt(key.value, encryptedChannelData.data.toByteArray()) } }
+            .get()
         val state = Serialization.deserialize(decrypted)
         return state
     }

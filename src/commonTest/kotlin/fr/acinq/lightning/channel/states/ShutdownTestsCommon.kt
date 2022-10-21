@@ -363,7 +363,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         assertFalse(bob0.commitments.channelFeatures.hasFeature(Feature.ChannelBackupClient)) // this isn't a permanent channel feature
         val (bob1, actions1) = bob0.processEx(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
         assertIs<LNChannel<Normal>>(bob1)
-        val blob = EncryptedChannelData.from(bob1.staticParams.nodeParams.nodePrivateKey, bob1.ctx, bob1.state)
+        val blob = EncryptedChannelData.from(bob1.staticParams.nodeParams.nodePrivateKey, bob1.state)
         val shutdown = actions1.findOutgoingMessage<Shutdown>()
         assertEquals(blob, shutdown.channelData)
     }

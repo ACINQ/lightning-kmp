@@ -165,7 +165,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     actions.add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
                                 }
 
-                                logger.info { "c:$channelId switching to ${state::class}" }
+                                logger.info { "c:$channelId switching to ${state::class.simpleName}" }
                                 Pair(state.copy(commitments = commitments1), actions)
                             } catch (e: RevocationSyncError) {
                                 val error = Error(channelId, e.message)

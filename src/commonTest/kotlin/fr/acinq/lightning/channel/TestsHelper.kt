@@ -17,11 +17,6 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import fr.acinq.secp256k1.Hex
-import org.kodein.memory.file.FileSystem
-import org.kodein.memory.file.Path
-import org.kodein.memory.file.openWriteableFile
-import org.kodein.memory.file.resolve
 import kotlin.test.*
 
 // LN Message
@@ -432,26 +427,21 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments/*, minVersion: Int = 2, saveFiles: Boolean = false*/) {
-        fun save(blob: ByteArray, suffix: String) {
-            val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
-            val file: Path = FileSystem.workingDir().resolve(name)
-            file.openWriteableFile(false).putBytes(blob)
-        }
+    private fun checkSerialization(state: ChannelStateWithCommitments) {
 
-        // Before v3, we had a single set of hard-coded channel features, so they will not match if the test added new channel features that weren't supported then.
-        fun maskChannelFeatures(state: ChannelStateWithCommitments): ChannelStateWithCommitments =  when (state) {
-            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Normal -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is ShuttingDown -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Negotiating -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Closing -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features))))
-            is ErrorInformationLeak -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
+        // We never persist remote channel data.
+        fun removeChannelData(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
+            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Normal -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is ShuttingDown -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Negotiating -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty)))
+            is ErrorInformationLeak -> state
         }
 
         // We never persist a funding RBF attempt.
@@ -460,32 +450,21 @@ object TestsHelper {
             else -> state
         }
 
-//        if (saveFiles) {
-//            if (minVersion <= 2) save(fr.acinq.lightning.serialization.v2.Serialization.serialize(channel.ctx, channel.state), "v2")
-//            if (minVersion <= 3) save(fr.acinq.lightning.serialization.v3.Serialization.serialize(channel.ctx, channel.state), "v3")
-//        }
-//
-//        if (minVersion <= 2) {
-//            val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(channel.ctx, channel.state)
-//            val deserializedv2 = Serialization.deserialize(serializedv2)
-//            assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(channel.state), "serialization error (v2)")
-//        }
-//        if (minVersion <= 3) {
-//            val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(channel.ctx, channel.state)
-//            val deserializedv3 = Serialization.deserialize(serializedv3)
-//            assertEquals(deserializedv3, removeRbfAttempt(channel.state), "serialization error (v3)")
-//        }
+        val serialized = Serialization.serialize(state)
+        val deserialized = Serialization.deserialize(serialized)
+
+        assertEquals(removeChannelData(removeRbfAttempt(state)), deserialized, "serialization error")
     }
 
-//    private fun checkSerialization(actions: List<ChannelAction>, minVersion: Int = 2) {
-//        // we check that serialization works everytime we're supposed to persist channel data
-//        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data, minVersion) }
-//    }
+    private fun checkSerialization(actions: List<ChannelAction>) {
+        // we check that serialization works everytime we're supposed to persist channel data
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
+    }
 
     // test-specific extension that allows for extra checks during tests
     fun LNChannel<ChannelState>.processEx(event: ChannelCommand, @Suppress("UNUSED_PARAMETER") minVersion: Int = 1): Pair<LNChannel<ChannelState>, List<ChannelAction>> {
         val result = this.process(event)
-        //checkSerialization(result.second, minVersion)
+        checkSerialization(result.second)
         return result
     }
 
