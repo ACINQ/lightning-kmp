@@ -30,6 +30,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         assertEquals(actionsAlice1.size, 3)
         val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
+        assertEquals(fundingTx.txid, txSigsAlice.txId)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
@@ -521,6 +522,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                     actionsAlice3.has<ChannelAction.Storage.StoreState>()
                     actionsAlice3.hasOutgoingMessage<TxSignatures>()
                     val fundingTx = actionsAlice3.find<ChannelAction.Blockchain.PublishTx>().tx
+                    assertEquals(fundingTx.hash, txSigsBob.txHash)
                     assertEquals(watchAlice.txId, fundingTx.txid)
                     assertEquals(watchBob.txId, fundingTx.txid)
                     Pair(alice3, bob3)

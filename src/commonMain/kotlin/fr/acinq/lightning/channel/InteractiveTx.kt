@@ -161,7 +161,7 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
                 ?.let { input -> WalletState.signInput(keyManager, unsignedTx, i, input.previousTx.txOut[input.previousTxOutput.toInt()]).second }
         }.filterNotNull()
         return when (localSigs.size) {
-            localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx.txid, localSigs))
+            localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx, localSigs))
             else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of utxos.
         }
     }

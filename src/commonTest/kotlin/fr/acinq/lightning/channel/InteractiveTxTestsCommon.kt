@@ -76,7 +76,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNull(sharedTxB.sharedTx.sign(keyManagerA, f.channelId))
 
         // Alice detects invalid signatures from Bob.
-        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
+        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txHash = randomBytes32())))
         assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
         assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig)))))
 
@@ -574,14 +574,14 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
                 ByteVector("82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87")
             )
         )
-        val initiatorSigs = TxSignatures(channelId, unsignedTx.txid, listOf(initiatorWitness))
+        val initiatorSigs = TxSignatures(channelId, unsignedTx, listOf(initiatorWitness))
         val nonInitiatorWitness = ScriptWitness(
             listOf(
                 ByteVector("304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01"),
                 ByteVector("034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484")
             )
         )
-        val nonInitiatorSigs = TxSignatures(channelId, unsignedTx.txid, listOf(nonInitiatorWitness))
+        val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, listOf(nonInitiatorWitness))
         val initiatorSignedTx = FullySignedSharedTransaction(initiatorTx, initiatorSigs, nonInitiatorSigs)
         assertEquals(initiatorSignedTx.feerate, FeeratePerKw(262.sat))
         val nonInitiatorSignedTx = FullySignedSharedTransaction(nonInitiatorTx, nonInitiatorSigs, initiatorSigs)
