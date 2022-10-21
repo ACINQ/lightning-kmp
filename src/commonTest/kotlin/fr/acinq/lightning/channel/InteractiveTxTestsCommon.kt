@@ -33,6 +33,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
         val (alice1, inputA1) = sendMessage<TxAddInput>(alice0)
+        assertEquals(0xfffffffdU, inputA1.sequence)
         // Alice <-- tx_add_input --- Bob
         val (bob1, inputB1) = receiveMessage<TxAddInput>(bob0, inputA1)
         // Alice --- tx_add_input --> Bob
@@ -328,15 +329,18 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val previousOutputs = listOf(
             TxOut(2500.sat, Script.pay2wpkh(randomKey().publicKey())),
             TxOut(2500.sat, Script.pay2pkh(randomKey().publicKey())),
+            TxOut(2500.sat, Script.pay2wpkh(randomKey().publicKey())),
         )
         val previousTx = Transaction(2, listOf(), previousOutputs, 0)
         val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
-            TxAddInput(f.channelId, 0, previousTx, 0, 0u) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
-            TxAddInput(f.channelId, 1, previousTx, 0, 0u) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
-            TxAddInput(f.channelId, 3, previousTx, 0, 0u) to InteractiveTxSessionAction.DuplicateInput(f.channelId, 3, previousTx.txid, 0),
-            TxAddInput(f.channelId, 5, previousTx, 2, 0u) to InteractiveTxSessionAction.InputOutOfBounds(f.channelId, 5, previousTx.txid, 2),
-            TxAddInput(f.channelId, 7, previousTx, 1, 0u) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
+            TxAddInput(f.channelId, 0, previousTx, 0, 0U) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
+            TxAddInput(f.channelId, 1, previousTx, 0, 0U) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
+            TxAddInput(f.channelId, 3, previousTx, 0, 0U) to InteractiveTxSessionAction.DuplicateInput(f.channelId, 3, previousTx.txid, 0),
+            TxAddInput(f.channelId, 5, previousTx, 3, 0U) to InteractiveTxSessionAction.InputOutOfBounds(f.channelId, 5, previousTx.txid, 3),
+            TxAddInput(f.channelId, 7, previousTx, 1, 0U) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
+            TxAddInput(f.channelId, 9, previousTx, 2, 0xfffffffeU) to InteractiveTxSessionAction.NonReplaceableInput(f.channelId, 9, previousTx.txid, 2, 0xfffffffe),
+            TxAddInput(f.channelId, 9, previousTx, 2, 0xffffffffU) to InteractiveTxSessionAction.NonReplaceableInput(f.channelId, 9, previousTx.txid, 2, 0xffffffff),
         )
         testCases.forEach { (input, expected) ->
             val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
