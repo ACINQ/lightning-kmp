@@ -283,6 +283,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultOpen to defaultEncoded,
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)))) to (defaultEncoded + ByteVector("0103101000")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(25_000.msat)))) to (defaultEncoded + ByteVector("0103101000 fe470000070261a8")),
+            defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv))) to (defaultEncoded + ByteVector("0103101000 fe4000000100")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), listOf(GenericTlv(321, ByteVector("2a2a")), GenericTlv(325, ByteVector("02"))))) to (defaultEncoded + ByteVector("0103101000 fd0141022a2a fd01450102")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat))))) to (defaultEncoded + ByteVector("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2")),
             defaultOpen.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 1_234_567.msat))))) to (defaultEncoded + ByteVector("fe47000005 2a 0004 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000012d687")),
@@ -306,8 +307,9 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultAccept to defaultEncoded,
             defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey)))) to (defaultEncoded + ByteVector("01021000")),
             defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("01abcdef")), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)))) to (defaultEncoded + ByteVector("000401abcdef 0103101000")),
+            defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(1729.msat)))) to (defaultEncoded + ByteVector("0103101000 fe470000070206c1")),
+            defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv))) to (defaultEncoded + ByteVector("0103101000 fe4000000100")),
             defaultAccept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), listOf(GenericTlv(113, ByteVector("deadbeef"))))) to (defaultEncoded + ByteVector("0103101000 7104deadbeef")),
-
         )
         // @formatter:on
         testCases.forEach { (accept, bin) ->

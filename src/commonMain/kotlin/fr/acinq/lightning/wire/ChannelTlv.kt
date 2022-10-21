@@ -60,6 +60,14 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
+    object RequireConfirmedInputsTlv : ChannelTlv(), TlvValueReader<RequireConfirmedInputsTlv> {
+        override val tag: Long get() = 0x40000001
+
+        override fun write(out: Output) = Unit
+
+        override fun read(input: Input): RequireConfirmedInputsTlv = this
+    }
+
     data class ChannelOriginTlv(val channelOrigin: ChannelOrigin) : ChannelTlv() {
         override val tag: Long get() = ChannelOriginTlv.tag
 
