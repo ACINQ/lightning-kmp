@@ -55,16 +55,16 @@ object IncomingPaymentPacket {
 
     private fun validate(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
-            add.amountMsat != payload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
-            add.cltvExpiry != payload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+            add.amountMsat < payload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
+            add.cltvExpiry < payload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
             else -> Either.Right(payload)
         }
     }
 
     private fun validate(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.FinalPayload): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
-            add.amountMsat != outerPayload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
-            add.cltvExpiry != outerPayload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+            add.amountMsat < outerPayload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
+            add.cltvExpiry < outerPayload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
             // previous trampoline didn't forward the right expiry
             outerPayload.expiry != innerPayload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
             // previous trampoline didn't forward the right amount
