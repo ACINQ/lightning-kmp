@@ -1,16 +1,10 @@
 package fr.acinq.lightning.serialization.v3
 
 import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.readNBytes
-import fr.acinq.lightning.channel.ChannelContext
-import fr.acinq.lightning.crypto.ChaCha20Poly1305
-import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -94,22 +88,6 @@ object Serialization {
     // used by the "test node" JSON API
     internal val lightningSerializersModule = SerializersModule {
         include(serializationModules)
-    }
-
-    internal fun serialize(state: ChannelStateWithCommitments): ByteArray {
-        val output = ByteArrayOutput()
-        val encoder = DataOutputEncoder(output)
-        encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)
-        val bytes = output.toByteArray()
-        val versioned = SerializedData(version = versionMagic, data = bytes.toByteVector())
-        val output1 = ByteArrayOutput()
-        val encoder1 = DataOutputEncoder(output1)
-        encoder1.encodeSerializableValue(SerializedData.serializer(), versioned)
-        return output1.toByteArray()
-    }
-
-    fun serialize(ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
-        return serialize(ChannelStateWithCommitments.import(ctx, state))
     }
 
     @OptIn(ExperimentalSerializationApi::class)

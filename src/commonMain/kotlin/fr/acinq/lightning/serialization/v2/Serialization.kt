@@ -23,7 +23,7 @@ import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.modules.*
 
 object Serialization {
-    private val versionMagic = 2
+    private const val versionMagic = 2
 
     /**
      * Versioned serialized data.
@@ -87,22 +87,6 @@ object Serialization {
     // used by the "test node" JSON API
     private val lightningSerializersModule = SerializersModule {
         include(serializationModules)
-    }
-
-    private fun serialize(state: ChannelStateWithCommitments): ByteArray {
-        val output = ByteArrayOutput()
-        val encoder = DataOutputEncoder(output)
-        encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)
-        val bytes = output.toByteArray()
-        val versioned = SerializedData(version = versionMagic, data = bytes.toByteVector())
-        val output1 = ByteArrayOutput()
-        val encoder1 = DataOutputEncoder(output1)
-        encoder1.encodeSerializableValue(SerializedData.serializer(), versioned)
-        return output1.toByteArray()
-    }
-
-    fun serialize(ctx: ChannelContext, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
-        return serialize(ChannelStateWithCommitments.import(ctx, state))
     }
 
     @OptIn(ExperimentalSerializationApi::class)
