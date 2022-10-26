@@ -40,9 +40,11 @@ data class ClosingFees(val preferred: Satoshi, val min: Satoshi, val max: Satosh
 }
 
 data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw) {
-    constructor(preferred: FeeratePerKw) : this(preferred, preferred / 2, preferred * 2)
-
     fun computeFees(closingTxWeight: Int): ClosingFees = ClosingFees(weight2fee(preferred, closingTxWeight), weight2fee(min, closingTxWeight), weight2fee(max, closingTxWeight))
+
+    companion object {
+        operator fun invoke(preferred: FeeratePerKw): ClosingFeerates = ClosingFeerates(preferred, preferred / 2, preferred * 2)
+    }
 }
 
 sealed class CloseCommand : Command()
