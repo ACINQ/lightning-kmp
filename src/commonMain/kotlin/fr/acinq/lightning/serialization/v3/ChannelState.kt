@@ -373,15 +373,13 @@ internal sealed class ChannelStateWithCommitments {
         fun import(ctx: ChannelContext, from: fr.acinq.lightning.channel.ChannelStateWithCommitments): ChannelStateWithCommitments = when (from) {
             is fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment -> WaitForRemotePublishFutureCommitment(ctx, from)
             is fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed -> WaitForFundingConfirmed(ctx, from)
-            is fr.acinq.lightning.channel.WaitForFundingConfirmed -> WaitForFundingConfirmed2(ctx, from)
             is fr.acinq.lightning.channel.LegacyWaitForFundingLocked -> WaitForFundingLocked(ctx, from)
-            is fr.acinq.lightning.channel.WaitForChannelReady -> WaitForChannelReady(ctx, from)
             is fr.acinq.lightning.channel.Normal -> Normal(ctx, from)
             is fr.acinq.lightning.channel.ShuttingDown -> ShuttingDown(ctx, from)
             is fr.acinq.lightning.channel.Negotiating -> Negotiating(ctx, from)
-            is fr.acinq.lightning.channel.Closing -> Closing2(ctx, from)
             is fr.acinq.lightning.channel.Closed -> Closed(ctx, from)
             is fr.acinq.lightning.channel.ErrorInformationLeak -> ErrorInformationLeak(ctx, from)
+            else -> throw RuntimeException("unexpected state ${from::class}")
         }
     }
 }
@@ -404,100 +402,6 @@ internal data class WaitForRemotePublishFutureCommitment(
 
     override fun export() =
         fr.acinq.lightning.channel.WaitForRemotePublishFutureCommitment(commitments.export(), remoteChannelReestablish)
-}
-
-@Serializable
-internal data class UnspentItem(@Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32, val outputIndex: Int, val value: Long, val blockHeight: Long) {
-    constructor(from: fr.acinq.lightning.blockchain.electrum.UnspentItem) : this(from.txid, from.outputIndex, from.value, from.blockHeight)
-}
-
-@Serializable
-internal data class WalletState(
-    val addresses: Map<String, List<UnspentItem>>,
-    val parentTxs: Map<@Serializable(with = ByteVector32KSerializer::class) ByteVector32, @Serializable(with = TransactionKSerializer::class) Transaction>
-) {
-    constructor(from: fr.acinq.lightning.blockchain.electrum.WalletState) : this(from.addresses.mapValues { it.value.map { item -> UnspentItem(item) } }, from.parentTxs)
-}
-
-@Serializable
-internal data class InteractiveTxParams(
-    @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
-    val isInitiator: Boolean,
-    @Serializable(with = SatoshiKSerializer::class) val localAmount: Satoshi,
-    @Serializable(with = SatoshiKSerializer::class) val remoteAmount: Satoshi,
-    @Serializable(with = ByteVectorKSerializer::class) val fundingPubkeyScript: ByteVector,
-    val lockTime: Long,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
-    val targetFeerate: FeeratePerKw
-) {
-    constructor(from: fr.acinq.lightning.channel.InteractiveTxParams) : this(
-        from.channelId,
-        from.isInitiator,
-        from.localAmount,
-        from.remoteAmount,
-        from.fundingPubkeyScript,
-        from.lockTime,
-        from.dustLimit,
-        from.targetFeerate
-    )
-
-    fun export() = fr.acinq.lightning.channel.InteractiveTxParams(channelId, isInitiator, localAmount, remoteAmount, fundingPubkeyScript, lockTime, dustLimit, targetFeerate)
-}
-
-@Serializable
-internal data class RemoteTxAddInput(
-    val serialId: Long,
-    @Serializable(with = OutPointKSerializer::class) val outPoint: OutPoint,
-    @Serializable(with = TxOutKSerializer::class) val txOut: TxOut,
-    val sequence: Long
-) {
-    constructor(from: fr.acinq.lightning.channel.RemoteTxAddInput) : this(from.serialId, from.outPoint, from.txOut, from.sequence)
-
-    fun export() = fr.acinq.lightning.channel.RemoteTxAddInput(serialId, outPoint, txOut, sequence)
-}
-
-@Serializable
-internal data class RemoteTxAddOutput(
-    val serialId: Long,
-    @Serializable(with = SatoshiKSerializer::class) val amount: Satoshi,
-    @Serializable(with = ByteVectorKSerializer::class) val pubkeyScript: ByteVector
-) {
-    constructor(from: fr.acinq.lightning.channel.RemoteTxAddOutput) : this(from.serialId, from.amount, from.pubkeyScript)
-
-    fun export() = fr.acinq.lightning.channel.RemoteTxAddOutput(serialId, amount, pubkeyScript)
-}
-
-@Serializable
-internal data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs: List<RemoteTxAddInput>, val localOutputs: List<TxAddOutput>, val remoteOutputs: List<RemoteTxAddOutput>, val lockTime: Long) {
-    constructor(from: fr.acinq.lightning.channel.SharedTransaction) : this(from.localInputs, from.remoteInputs.map { RemoteTxAddInput(it) }, from.localOutputs, from.remoteOutputs.map { RemoteTxAddOutput(it) }, from.lockTime)
-
-    fun export() = fr.acinq.lightning.channel.SharedTransaction(localInputs, remoteInputs.map { it.export() }, localOutputs, remoteOutputs.map { it.export() }, lockTime)
-}
-
-@Serializable
-internal sealed class SignedSharedTransaction {
-    abstract fun export(): fr.acinq.lightning.channel.SignedSharedTransaction
-
-    companion object {
-        fun import(from: fr.acinq.lightning.channel.SignedSharedTransaction): SignedSharedTransaction = when (from) {
-            is fr.acinq.lightning.channel.PartiallySignedSharedTransaction -> PartiallySignedSharedTransaction(from)
-            is fr.acinq.lightning.channel.FullySignedSharedTransaction -> FullySignedSharedTransaction(from)
-        }
-    }
-}
-
-@Serializable
-internal data class PartiallySignedSharedTransaction(val tx: SharedTransaction, val localSigs: TxSignatures) : SignedSharedTransaction() {
-    constructor(from: fr.acinq.lightning.channel.PartiallySignedSharedTransaction) : this(SharedTransaction(from.tx), from.localSigs)
-
-    override fun export() = fr.acinq.lightning.channel.PartiallySignedSharedTransaction(tx.export(), localSigs)
-}
-
-@Serializable
-internal data class FullySignedSharedTransaction(val tx: SharedTransaction, val localSigs: TxSignatures, val remoteSigs: TxSignatures) : SignedSharedTransaction() {
-    constructor(from: fr.acinq.lightning.channel.FullySignedSharedTransaction) : this(SharedTransaction(from.tx), from.localSigs, from.remoteSigs)
-
-    override fun export() = fr.acinq.lightning.channel.FullySignedSharedTransaction(tx.export(), localSigs, remoteSigs)
 }
 
 /**
@@ -535,46 +439,6 @@ internal data class WaitForFundingConfirmed(
     )
 }
 
-@Serializable
-internal data class WaitForFundingConfirmed2(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
-    override val commitments: Commitments,
-    val fundingParams: InteractiveTxParams,
-    val localPushAmount: MilliSatoshi,
-    val remotePushAmount: MilliSatoshi,
-    val fundingTx: SignedSharedTransaction,
-    val previousFundingTxs: List<Pair<SignedSharedTransaction, Commitments>>,
-    val waitingSinceBlock: Long,
-    val deferred: ChannelReady?,
-) : ChannelStateWithCommitments() {
-    constructor(ctx: ChannelContext, from: fr.acinq.lightning.channel.WaitForFundingConfirmed) : this(
-        StaticParams(ctx.staticParams),
-        ctx.currentTip,
-        OnChainFeerates(ctx.currentOnChainFeerates),
-        Commitments(from.commitments),
-        InteractiveTxParams(from.fundingParams),
-        from.localPushAmount,
-        from.remotePushAmount,
-        SignedSharedTransaction.import(from.fundingTx),
-        from.previousFundingTxs.map { Pair(SignedSharedTransaction.import(it.first), Commitments(it.second)) },
-        from.waitingSinceBlock,
-        from.deferred,
-    )
-
-    override fun export() = fr.acinq.lightning.channel.WaitForFundingConfirmed(
-        commitments.export(),
-        fundingParams.export(),
-        localPushAmount,
-        remotePushAmount,
-        fundingTx.export(),
-        previousFundingTxs.map { Pair(it.first.export(), it.second.export()) },
-        waitingSinceBlock,
-        deferred,
-    )
-}
-
 /**
  * This class contains data used for channels opened before the migration to dual-funding.
  * We cannot update it or rename it otherwise we would break serialization backwards-compatibility.
@@ -601,37 +465,6 @@ internal data class WaitForFundingLocked(
         commitments.export(),
         shortChannelId,
         ChannelReady(lastSent.channelId, lastSent.nextPerCommitmentPoint)
-    )
-}
-
-@Serializable
-internal data class WaitForChannelReady(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
-    override val commitments: Commitments,
-    val fundingParams: InteractiveTxParams,
-    val fundingTx: SignedSharedTransaction,
-    val shortChannelId: ShortChannelId,
-    val lastSent: ChannelReady
-) : ChannelStateWithCommitments() {
-    constructor(ctx: ChannelContext, from: fr.acinq.lightning.channel.WaitForChannelReady) : this(
-        StaticParams(ctx.staticParams),
-        ctx.currentTip,
-        OnChainFeerates(ctx.currentOnChainFeerates),
-        Commitments(from.commitments),
-        InteractiveTxParams(from.fundingParams),
-        SignedSharedTransaction.import(from.fundingTx),
-        from.shortChannelId,
-        from.lastSent
-    )
-
-    override fun export() = fr.acinq.lightning.channel.WaitForChannelReady(
-        commitments.export(),
-        fundingParams.export(),
-        fundingTx.export(),
-        shortChannelId,
-        lastSent
     )
 }
 
@@ -782,55 +615,6 @@ internal data class Closing(
         fundingTx,
         waitingSinceBlock,
         listOf(),
-        mutualCloseProposed,
-        mutualClosePublished,
-        localCommitPublished?.export(),
-        remoteCommitPublished?.export(),
-        nextRemoteCommitPublished?.export(),
-        futureRemoteCommitPublished?.export(),
-        revokedCommitPublished.map { it.export() }
-    )
-}
-
-@Serializable
-internal data class Closing2(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
-    override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
-    val waitingSinceBlock: Long,
-    val alternativeCommitments: List<Commitments> = emptyList(),
-    val mutualCloseProposed: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
-    val mutualClosePublished: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
-    val localCommitPublished: LocalCommitPublished? = null,
-    val remoteCommitPublished: RemoteCommitPublished? = null,
-    val nextRemoteCommitPublished: RemoteCommitPublished? = null,
-    val futureRemoteCommitPublished: RemoteCommitPublished? = null,
-    val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
-) : ChannelStateWithCommitments() {
-    constructor(ctx: ChannelContext, from: fr.acinq.lightning.channel.Closing) : this(
-        StaticParams(ctx.staticParams),
-        ctx.currentTip,
-        OnChainFeerates(ctx.currentOnChainFeerates),
-        Commitments(from.commitments),
-        from.fundingTx,
-        from.waitingSinceBlock,
-        from.alternativeCommitments.map { Commitments(it) },
-        from.mutualCloseProposed,
-        from.mutualClosePublished,
-        from.localCommitPublished?.let { LocalCommitPublished(it) },
-        from.remoteCommitPublished?.let { RemoteCommitPublished(it) },
-        from.nextRemoteCommitPublished?.let { RemoteCommitPublished(it) },
-        from.futureRemoteCommitPublished?.let { RemoteCommitPublished(it) },
-        from.revokedCommitPublished.map { RevokedCommitPublished(it) }
-    )
-
-    override fun export() = fr.acinq.lightning.channel.Closing(
-        commitments.export(),
-        fundingTx,
-        waitingSinceBlock,
-        alternativeCommitments.map { it.export() },
         mutualCloseProposed,
         mutualClosePublished,
         localCommitPublished?.export(),
