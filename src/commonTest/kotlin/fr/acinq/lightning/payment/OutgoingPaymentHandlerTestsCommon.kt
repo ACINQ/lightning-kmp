@@ -53,7 +53,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Feature.DualFunding to FeatureSupport.Mandatory
         )
         // The following invoice requires payment_metadata.
-        val invoice1 = PaymentRequestTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
+        val invoice1 =
+            PaymentRequestTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
         // The following invoice requires unknown feature bit 188.
         val invoice2 = PaymentRequestTestsCommon.createInvoiceUnsafe(features = Features(mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), setOf(UnknownFeature(188))))
         for (invoice in listOf(invoice1, invoice2)) {
@@ -416,6 +417,37 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 10_000.msat, partsCount = 2)
+    }
+
+    @Test
+    fun `successful first attempt -- random final expiry`() = runSuspendTest {
+        val channels = makeChannels()
+        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(25.sat, 0, CltvExpiryDelta(48))))
+        val recipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(144), CltvExpiryDelta(288))
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.copy(paymentRecipientExpiryParams = recipientExpiryParams), walletParams, InMemoryPaymentsDb())
+        val recipientKey = randomKey()
+        val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
+        val payment = SendPaymentNormal(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
+
+        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val adds = filterAddHtlcCommands(result)
+        assertEquals(2, adds.size)
+
+        adds.forEach { (channelId, add) ->
+            // The trampoline node should receive the right forwarding information.
+            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
+            assertEquals(add.amount, outerB.amount)
+            val minFinalExpiry = CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA + recipientExpiryParams.min
+            assertTrue(minFinalExpiry + CltvExpiryDelta(48) <= outerB.expiry)
+            assertTrue(minFinalExpiry <= innerB.outgoingCltv)
+
+            // The recipient should receive the right amount and expiry.
+            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
+            val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
+            assertEquals(300_000.msat, payloadC.amount)
+            assertTrue(minFinalExpiry <= payloadC.expiry)
+            assertEquals(innerB.outgoingCltv, payloadC.expiry)
+        }
     }
 
     @Test

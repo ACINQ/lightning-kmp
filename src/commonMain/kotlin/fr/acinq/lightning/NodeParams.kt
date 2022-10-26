@@ -42,6 +42,22 @@ data class WalletParams(
 )
 
 /**
+ * When sending a payment, if the expiry used for the last node is very close to the current block height,
+ * it lets intermediate nodes figure out their position in the route. To protect against this, a random
+ * delta between min and max will be added to the current block height, which makes it look like there
+ * are more hops after the final node.
+ */
+data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpiryDelta) {
+    fun computeFinalExpiry(currentBlockHeight: Int, minFinalExpiryDelta: CltvExpiryDelta): CltvExpiry {
+        val randomDelay = when {
+            min < max -> Lightning.secureRandom.nextLong(min.toLong(), max.toLong()).toInt()
+            else -> max.toInt()
+        }
+        return (minFinalExpiryDelta + randomDelay).toCltvExpiry(currentBlockHeight.toLong())
+    }
+}
+
+/**
  * @param keyManager derive private keys and secrets from your seed.
  * @param alias name of the lightning node.
  * @param features features supported by the lightning node.
@@ -75,6 +91,7 @@ data class WalletParams(
  * @param minFundingSatoshis minimum channel size.
  * @param maxFundingSatoshis maximum channel size.
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
+ * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param enableTrampolinePayment enable trampoline payments.
  */
@@ -113,6 +130,7 @@ data class NodeParams(
     val minFundingSatoshis: Satoshi,
     val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
+    val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val enableTrampolinePayment: Boolean,
 ) {
