@@ -87,7 +87,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         assertEquals(actionsBob1.size, 5)
         actionsBob1.hasOutgoingMessage<TxSignatures>()
         actionsBob1.has<ChannelAction.Storage.StoreState>()
-        actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.alicePushAmount, setOf(), channelOrigin))
+        actionsBob1.contains(ChannelAction.Storage.StoreIncomingAmount(TestConstants.alicePushAmount, 0.sat, setOf(), channelOrigin))
         actionsBob1.hasWatch<WatchConfirmed>()
         actionsBob1.has<ChannelAction.EmitEvent>()
     }
