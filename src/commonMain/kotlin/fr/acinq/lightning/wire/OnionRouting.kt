@@ -8,15 +8,13 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector32
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
-@Serializable
+
 data class OnionRoutingPacket(
     val version: Int,
-    @Contextual val publicKey: ByteVector,
-    @Contextual val payload: ByteVector,
-    @Contextual val hmac: ByteVector32
+     val publicKey: ByteVector,
+     val payload: ByteVector,
+     val hmac: ByteVector32
 ) {
     companion object {
         const val PaymentPacketLength = 1300

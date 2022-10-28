@@ -1,10 +1,8 @@
 package fr.acinq.lightning.utils
 
 import fr.acinq.bitcoin.crypto.Pack
-import kotlinx.serialization.Serializable
 import kotlin.random.Random
 
-@Serializable
 class UUID(val mostSignificantBits: Long, val leastSignificantBits: Long) : Comparable<UUID> {
 
     fun version(): Int =

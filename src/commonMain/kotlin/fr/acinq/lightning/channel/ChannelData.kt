@@ -12,7 +12,6 @@ import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.LoggingContext
 import fr.acinq.lightning.wire.ClosingSigned
-import kotlinx.serialization.Serializable
 
 /**
  * Details about a force-close where we published our commitment.
@@ -419,7 +418,6 @@ object ChannelFlags {
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
 /** This gives the reason for creating a new channel. */
-@Serializable
 sealed class ChannelOrigin {
     data class PayToOpenOrigin(val paymentHash: ByteVector32, val fee: Satoshi) : ChannelOrigin()
     data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val fee: MilliSatoshi) : ChannelOrigin()

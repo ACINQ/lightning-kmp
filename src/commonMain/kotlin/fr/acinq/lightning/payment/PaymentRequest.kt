@@ -8,48 +8,34 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LightningCodecs
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import kotlin.experimental.and
 
-@Serializable
 data class PaymentRequest(
     val prefix: String,
     val amount: MilliSatoshi?,
     val timestampSeconds: Long,
-    @Contextual val nodeId: PublicKey,
+    val nodeId: PublicKey,
     val tags: List<TaggedField>,
-    @Contextual val signature: ByteVector
+    val signature: ByteVector
 ) {
-    @Transient
     val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
 
-    @Transient
     val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
 
-    @Transient
     val paymentMetadata: ByteVector? = tags.find { it is TaggedField.PaymentMetadata }?.run { (this as TaggedField.PaymentMetadata).data }
 
-    @Transient
     val description: String? = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
 
-    @Transient
     val descriptionHash: ByteVector32? = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
 
-    @Transient
     val expirySeconds: Long? = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
 
-    @Transient
     val minFinalExpiryDelta: CltvExpiryDelta? = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiry.toInt()) }
 
-    @Transient
     val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
 
-    @Transient
     val features: ByteVector = tags.find { it is TaggedField.Features }.run { (this as TaggedField.Features).bits }
 
-    @Transient
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
     init {
@@ -241,6 +227,7 @@ data class PaymentRequest(
                     require(input.endsWith("0p")) { "invalid sub-millisatoshi precision" }
                     MilliSatoshi(input.dropLast(1).toLong() / 10L)
                 }
+
                 input.last() == 'n' -> MilliSatoshi(input.dropLast(1).toLong() * 100L)
                 input.last() == 'u' -> MilliSatoshi(input.dropLast(1).toLong() * 100000L)
                 input.last() == 'm' -> MilliSatoshi(input.dropLast(1).toLong() * 100000000L)
@@ -282,13 +269,12 @@ data class PaymentRequest(
         )
     }
 
-    @Serializable
     sealed class TaggedField {
         abstract val tag: Int5
         abstract fun encode(): List<Int5>
 
         /** @param description a free-format string that will be included in the payment request */
-        @Serializable
+
         data class Description(val description: String) : TaggedField() {
             override val tag: Int5 = Description.tag
             override fun encode(): List<Int5> = Bech32.eight2five(description.encodeToByteArray()).toList()
@@ -300,8 +286,8 @@ data class PaymentRequest(
         }
 
         /** @param hash sha256 hash of an associated description */
-        @Serializable
-        data class DescriptionHash(@Contextual val hash: ByteVector32) : TaggedField() {
+
+        data class DescriptionHash(val hash: ByteVector32) : TaggedField() {
             override val tag: Int5 = DescriptionHash.tag
             override fun encode(): List<Int5> = Bech32.eight2five(hash.toByteArray()).toList()
 
@@ -315,8 +301,8 @@ data class PaymentRequest(
         }
 
         /** @param hash payment hash */
-        @Serializable
-        data class PaymentHash(@Contextual val hash: ByteVector32) : TaggedField() {
+
+        data class PaymentHash(val hash: ByteVector32) : TaggedField() {
             override val tag: Int5 = PaymentHash.tag
             override fun encode(): List<Int5> = Bech32.eight2five(hash.toByteArray()).toList()
 
@@ -330,8 +316,8 @@ data class PaymentRequest(
         }
 
         /** @param secret payment secret */
-        @Serializable
-        data class PaymentSecret(@Contextual val secret: ByteVector32) : TaggedField() {
+
+        data class PaymentSecret(val secret: ByteVector32) : TaggedField() {
             override val tag: Int5 = PaymentSecret.tag
             override fun encode(): List<Int5> = Bech32.eight2five(secret.toByteArray()).toList()
 
@@ -344,8 +330,8 @@ data class PaymentRequest(
             }
         }
 
-        @Serializable
-        data class PaymentMetadata(@Contextual val data: ByteVector) : TaggedField() {
+
+        data class PaymentMetadata(val data: ByteVector) : TaggedField() {
             override val tag: Int5 = PaymentMetadata.tag
             override fun encode(): List<Int5> = Bech32.eight2five(data.toByteArray()).toList()
 
@@ -356,7 +342,7 @@ data class PaymentRequest(
         }
 
         /** @param expirySeconds payment expiry (in seconds) */
-        @Serializable
+
         data class Expiry(val expirySeconds: Long) : TaggedField() {
             override val tag: Int5 = Expiry.tag
             override fun encode(): List<Int5> {
@@ -377,7 +363,7 @@ data class PaymentRequest(
         }
 
         /** @param cltvExpiry minimum final expiry delta */
-        @Serializable
+
         data class MinFinalCltvExpiry(val cltvExpiry: Long) : TaggedField() {
             override val tag: Int5 = MinFinalCltvExpiry.tag
             override fun encode(): List<Int5> {
@@ -398,8 +384,8 @@ data class PaymentRequest(
         }
 
         /** Fallback on-chain payment address to be used if LN payment cannot be processed */
-        @Serializable
-        data class FallbackAddress(val version: Byte, @Contextual val data: ByteVector) : TaggedField() {
+
+        data class FallbackAddress(val version: Byte, val data: ByteVector) : TaggedField() {
             override val tag: Int5 = FallbackAddress.tag
             override fun encode(): List<Int5> = listOf(version) + Bech32.eight2five(data.toByteArray()).toList()
 
@@ -408,10 +394,12 @@ data class PaymentRequest(
                     "lnbc" -> Base58Check.encode(Base58.Prefix.PubkeyAddress, data)
                     else -> Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data)
                 }
+
                 18 -> when (prefix) {
                     "lnbc" -> Base58Check.encode(Base58.Prefix.ScriptAddress, data)
                     else -> Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data)
                 }
+
                 else -> when (prefix) {
                     "lnbc" -> Bech32.encodeWitnessAddress("bc", version, data.toByteArray())
                     "lntb" -> Bech32.encodeWitnessAddress("tb", version, data.toByteArray())
@@ -426,8 +414,8 @@ data class PaymentRequest(
             }
         }
 
-        @Serializable
-        data class Features(@Contextual val bits: ByteVector) : TaggedField() {
+
+        data class Features(val bits: ByteVector) : TaggedField() {
             override val tag: Int5 = Features.tag
 
             override fun encode(): List<Int5> {
@@ -464,9 +452,9 @@ data class PaymentRequest(
          * @param feeProportionalMillionths node proportional fee
          * @param cltvExpiryDelta node cltv expiry delta
          */
-        @Serializable
+
         data class ExtraHop(
-            @Contextual val nodeId: PublicKey,
+            val nodeId: PublicKey,
             val shortChannelId: ShortChannelId,
             val feeBase: MilliSatoshi,
             val feeProportionalMillionths: Long,
@@ -474,7 +462,7 @@ data class PaymentRequest(
         )
 
         /** @param hints extra routing information for a private route */
-        @Serializable
+
         data class RoutingInfo(val hints: List<ExtraHop>) : TaggedField() {
             override val tag: Int5 = RoutingInfo.tag
 
@@ -512,13 +500,13 @@ data class PaymentRequest(
         }
 
         /** Unknown tag (may or may not be valid) */
-        @Serializable
+
         data class UnknownTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
             override fun encode(): List<Int5> = value.toList()
         }
 
         /** Tag that we know is not valid (value is of the wrong length for example) */
-        @Serializable
+
         data class InvalidTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
             override fun encode(): List<Int5> = value.toList()
         }

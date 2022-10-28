@@ -158,56 +158,34 @@
         "remotePerCommitmentSecrets": "<redacted>",
         "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd"
     },
-    "shortChannelId": {
-        "id": 439962980784865280
-    },
+    "shortChannelId": "400144x1x0",
     "buried": false,
     "channelAnnouncement": null,
     "channelUpdate": {
         "signature": "56f0c4e423eaee2900b24ca45d1c4237aea3a7b17d4ef06b68cffea5e2a5c4a625389abb0be56386b9b0048b6c82b402c24732649b9235930594fb52083e82e8",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": {
-            "id": 439962980784865280
-        },
+        "shortChannelId": "400144x1x0",
         "timestampSeconds": 1666878671,
         "messageFlags": 1,
         "channelFlags": 0,
-        "cltvExpiryDelta": {
-            "underlying": 144
-        },
-        "htlcMinimumMsat": {
-            "msat": 0
-        },
-        "feeBaseMsat": {
-            "msat": 10
-        },
+        "cltvExpiryDelta": 144,
+        "htlcMinimumMsat": 0,
+        "feeBaseMsat": 10,
         "feeProportionalMillionths": 10,
-        "htlcMaximumMsat": {
-            "msat": 1000000000
-        }
+        "htlcMaximumMsat": 1000000000
     },
     "remoteChannelUpdate": {
         "signature": "54b4795e352ef76e38585b5d981300d051c995fba0ab61a9de91ede52d299438385a085b612c5ea67deb2d0a4cdd18fbc5fcb365af60a35ecac9d7612464224b",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": {
-            "id": 439962980784865280
-        },
+        "shortChannelId": "400144x1x0",
         "timestampSeconds": 1666878671,
         "messageFlags": 1,
         "channelFlags": 1,
-        "cltvExpiryDelta": {
-            "underlying": 36
-        },
-        "htlcMinimumMsat": {
-            "msat": 5
-        },
-        "feeBaseMsat": {
-            "msat": 15
-        },
+        "cltvExpiryDelta": 36,
+        "htlcMinimumMsat": 5,
+        "feeBaseMsat": 15,
         "feeProportionalMillionths": 150,
-        "htlcMaximumMsat": {
-            "msat": 150000
-        }
+        "htlcMaximumMsat": 150000
     },
     "localShutdown": null,
     "remoteShutdown": null,

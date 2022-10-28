@@ -3,16 +3,13 @@ package fr.acinq.lightning.serialization.v3
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
-import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.readNBytes
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.contextual
 import kotlinx.serialization.modules.polymorphic
@@ -35,34 +32,20 @@ object Serialization {
 
     private val updateSerializersModule = SerializersModule {
         polymorphic(UpdateMessage::class) {
-            subclass(UpdateAddHtlc.serializer())
-            subclass(UpdateFailHtlc.serializer())
-            subclass(UpdateFailMalformedHtlc.serializer())
-            subclass(UpdateFee.serializer())
-            subclass(UpdateFulfillHtlc.serializer())
+            subclass(UpdateAddHtlcSerializer)
+            subclass(UpdateFailHtlcSerializer)
+            subclass(UpdateFailMalformedHtlcSerializer)
+            subclass(UpdateFeeSerializer)
+            subclass(UpdateFulfillHtlcSerializer)
         }
     }
 
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
-            subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
-            subclass(ChannelTlv.ChannelTypeTlv.serializer())
-            subclass(ChannelTlv.ChannelOriginTlv.serializer())
-            subclass(ChannelTlv.PushAmountTlv.serializer())
-            subclass(ChannelReadyTlv.ShortChannelIdTlv.serializer())
-            subclass(ClosingSignedTlv.FeeRange.serializer())
-            subclass(InitTlv.Networks.serializer())
-            subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())
-            subclass(OnionPaymentPayloadTlv.AmountToForward.serializer())
-            subclass(OnionPaymentPayloadTlv.OutgoingCltv.serializer())
-            subclass(OnionPaymentPayloadTlv.OutgoingChannelId.serializer())
-            subclass(OnionPaymentPayloadTlv.PaymentData.serializer())
-            subclass(OnionPaymentPayloadTlv.PaymentMetadata.serializer())
-            subclass(OnionPaymentPayloadTlv.InvoiceFeatures.serializer())
-            subclass(OnionPaymentPayloadTlv.OutgoingNodeId.serializer())
-            subclass(OnionPaymentPayloadTlv.InvoiceRoutingInfo.serializer())
-            subclass(OnionPaymentPayloadTlv.TrampolineOnion.serializer())
-            subclass(GenericTlv.serializer())
+            subclass(ChannelReadyTlvShortChannelIdTlvSerializer)
+            subclass(ClosingSignedTlvFeeRangeSerializer)
+            subclass(ShutdownTlvChannelDataSerializer)
+            subclass(GenericTlvSerializer)
         }
     }
 
@@ -82,6 +65,7 @@ object Serialization {
             contextual(TxOutKSerializer)
             contextual(TransactionKSerializer)
             contextual(BlockHeaderKSerializer)
+            contextual(EncryptedChannelDataSerializer)
         })
     }
 
@@ -103,39 +87,6 @@ object Serialization {
             }
             else -> error("unknown serialization version ${versioned.version}")
         }
-    }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    class DataOutputEncoder(val output: ByteArrayOutput) : AbstractEncoder() {
-        override val serializersModule: SerializersModule = serializationModules
-        override fun encodeBoolean(value: Boolean) = output.write(if (value) 1 else 0)
-        override fun encodeByte(value: Byte) = output.write(value.toInt())
-        override fun encodeShort(value: Short) = output.write(Pack.writeInt16BE(value))
-        override fun encodeInt(value: Int) = output.write(Pack.writeInt32BE(value))
-        override fun encodeLong(value: Long) = output.write(Pack.writeInt64BE(value))
-        override fun encodeFloat(value: Float) {
-            TODO()
-        }
-
-        override fun encodeDouble(value: Double) {
-            TODO()
-        }
-
-        override fun encodeChar(value: Char) = output.write(value.code)
-        override fun encodeString(value: String) {
-            val bytes = value.encodeToByteArray()
-            encodeInt(bytes.size)
-            output.write(bytes)
-        }
-
-        override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) = output.write(index)
-        override fun beginCollection(descriptor: SerialDescriptor, collectionSize: Int): CompositeEncoder {
-            encodeInt(collectionSize)
-            return this
-        }
-
-        override fun encodeNull() = encodeBoolean(false)
-        override fun encodeNotNullMark() = encodeBoolean(true)
     }
 
     @OptIn(ExperimentalSerializationApi::class)

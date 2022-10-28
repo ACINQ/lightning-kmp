@@ -6,8 +6,6 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.secp256k1.Hex
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
 interface Tlv {
     /**
@@ -37,8 +35,7 @@ interface TlvValueReader<T : Tlv> {
  * @param tag tlv tag.
  * @param value tlv value (length is implicit, and encoded as a varint).
  */
-@Serializable
-data class GenericTlv(override val tag: Long, @Contextual val value: ByteVector) : Tlv {
+data class GenericTlv(override val tag: Long, val value: ByteVector) : Tlv {
     init {
         require(tag.rem(2L) != 0L) { "unknown even tag ($tag) " }
     }
@@ -133,7 +130,6 @@ class TlvStreamSerializer<T : Tlv>(private val lengthPrefixed: Boolean, private 
  * @param unknown unknown tlv records.
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
-@Serializable
 data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
     init {
         val tags = records.map { it.tag } + unknown.map { it.tag }

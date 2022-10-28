@@ -1,7 +1,6 @@
 package fr.acinq.lightning.serialization.v2
 
 import fr.acinq.bitcoin.*
-import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -10,7 +9,6 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.serializer
 
 internal object ByteVectorKSerializer : KSerializer<ByteVector> {
     @Serializable

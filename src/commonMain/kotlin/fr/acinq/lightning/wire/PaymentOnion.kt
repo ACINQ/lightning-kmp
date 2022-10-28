@@ -13,13 +13,11 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.msat
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
-@Serializable
+
 sealed class OnionPaymentPayloadTlv : Tlv {
     /** Amount to forward to the next node. */
-    @Serializable
+
     data class AmountToForward(val amount: MilliSatoshi) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = AmountToForward.tag
         override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
@@ -31,7 +29,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
     }
 
     /** CLTV value to use for the HTLC offered to the next node. */
-    @Serializable
+
     data class OutgoingCltv(val cltv: CltvExpiry) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = OutgoingCltv.tag
         override fun write(out: Output) = LightningCodecs.writeTU32(cltv.toLong().toInt(), out)
@@ -43,7 +41,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
     }
 
     /** Id of the channel to use to forward a payment to the next node. */
-    @Serializable
+
     data class OutgoingChannelId(val shortChannelId: ShortChannelId) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = OutgoingChannelId.tag
         override fun write(out: Output) = LightningCodecs.writeU64(shortChannelId.toLong(), out)
@@ -60,8 +58,8 @@ sealed class OnionPaymentPayloadTlv : Tlv {
      * @param secret payment secret specified in the Bolt 11 invoice.
      * @param totalAmount total amount in multi-part payments. When missing, assumed to be equal to AmountToForward.
      */
-    @Serializable
-    data class PaymentData(@Contextual val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionPaymentPayloadTlv() {
+
+    data class PaymentData(val secret: ByteVector32, val totalAmount: MilliSatoshi) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = PaymentData.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(secret, out)
@@ -78,8 +76,8 @@ sealed class OnionPaymentPayloadTlv : Tlv {
      * When payment metadata is included in a Bolt 9 invoice, we should send it as-is to the recipient.
      * This lets recipients generate invoices without having to store anything on their side until the invoice is paid.
      */
-    @Serializable
-    data class PaymentMetadata(@Contextual val data: ByteVector) : OnionPaymentPayloadTlv() {
+
+    data class PaymentMetadata(val data: ByteVector) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = PaymentMetadata.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
 
@@ -93,8 +91,8 @@ sealed class OnionPaymentPayloadTlv : Tlv {
      * Invoice feature bits. Only included for intermediate trampoline nodes when they should convert to a legacy payment
      * because the final recipient doesn't support trampoline.
      */
-    @Serializable
-    data class InvoiceFeatures(@Contextual val features: ByteVector) : OnionPaymentPayloadTlv() {
+
+    data class InvoiceFeatures(val features: ByteVector) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = InvoiceFeatures.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(features, out)
 
@@ -105,8 +103,8 @@ sealed class OnionPaymentPayloadTlv : Tlv {
     }
 
     /** Id of the next node. */
-    @Serializable
-    data class OutgoingNodeId(@Contextual val nodeId: PublicKey) : OnionPaymentPayloadTlv() {
+
+    data class OutgoingNodeId(val nodeId: PublicKey) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
 
@@ -120,7 +118,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
      * Invoice routing hints. Only included for intermediate trampoline nodes when they should convert to a legacy payment
      * because the final recipient doesn't support trampoline.
      */
-    @Serializable
+
     data class InvoiceRoutingInfo(val extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = InvoiceRoutingInfo.tag
         override fun write(out: Output) {
@@ -159,7 +157,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
     }
 
     /** An encrypted trampoline onion packet. */
-    @Serializable
+
     data class TrampolineOnion(val packet: OnionRoutingPacket) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = TrampolineOnion.tag
         override fun write(out: Output) = OnionRoutingPacketSerializer(OnionRoutingPacket.TrampolinePacketLength).write(packet, out)

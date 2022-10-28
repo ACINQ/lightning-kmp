@@ -1,3 +1,42 @@
+@file:OptIn(ExperimentalSerializationApi::class)
+@file:UseSerializers(
+    KeyPathKSerializer::class,
+    EitherSerializer::class,
+    ShaChainSerializer::class,
+    BlockHeaderKSerializer::class,
+    FundingSignedSerializer::class,
+    ChannelUpdateSerializer::class,
+    ByteVectorKSerializer::class,
+    ByteVector32KSerializer::class,
+    ByteVector64KSerializer::class,
+    ChannelAnnouncementSerializer::class,
+    PublicKeyKSerializer::class,
+    PrivateKeyKSerializer::class,
+    ShutdownSerializer::class,
+    ClosingSignedSerializer::class,
+    SatoshiKSerializer::class,
+    UpdateAddHtlcSerializer::class,
+    CommitSigSerializer::class,
+    EncryptedChannelDataSerializer::class,
+    ChannelReestablishDataSerializer::class,
+    FundingLockedSerializer::class,
+    FundingCreatedSerializer::class,
+    CommitSigTlvSerializer::class,
+    ShutdownTlvSerializer::class,
+    ClosingSignedTlvSerializer::class,
+    ChannelReadyTlvSerializer::class,
+    ChannelReestablishTlvSerializer::class,
+    TlvStreamSerializer::class,
+    GenericTlvSerializer::class,
+    OnionRoutingPacketSerializer::class,
+    FeeratePerKwSerializer::class,
+    MilliSatoshiSerializer::class,
+    UUIDSerializer::class,
+    OutPointKSerializer::class,
+    TxOutKSerializer::class,
+    TransactionKSerializer::class,
+)
+
 package fr.acinq.lightning.serialization.v2
 
 import fr.acinq.bitcoin.*
@@ -8,11 +47,108 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.*
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+
+@Serializer(forClass = FundingSigned::class)
+object FundingSignedSerializer
+
+@Serializer(forClass = Shutdown::class)
+object ShutdownSerializer
+
+@Serializer(forClass = ClosingSigned::class)
+object ClosingSignedSerializer
+
+@Serializer(forClass = ChannelUpdate::class)
+object ChannelUpdateSerializer
+
+@Serializer(forClass = ChannelAnnouncement::class)
+object ChannelAnnouncementSerializer
+
+@Serializer(forClass = UpdateAddHtlc::class)
+object UpdateAddHtlcSerializer
+
+@Serializer(forClass = UpdateFulfillHtlc::class)
+object UpdateFulfillHtlcSerializer
+
+@Serializer(forClass = UpdateFailHtlc::class)
+object UpdateFailHtlcSerializer
+
+@Serializer(forClass = UpdateFailMalformedHtlc::class)
+object UpdateFailMalformedHtlcSerializer
+
+@Serializer(forClass = UpdateFee::class)
+object UpdateFeeSerializer
+
+@Serializer(forClass = CommitSig::class)
+object CommitSigSerializer
+
+@Serializer(forClass = EncryptedChannelData::class)
+object EncryptedChannelDataSerializer
+
+@Serializer(forClass = ChannelReestablish::class)
+object ChannelReestablishDataSerializer
+
+@Serializer(forClass = FundingLocked::class)
+object FundingLockedSerializer
+
+@Serializer(forClass = FundingCreated::class)
+object FundingCreatedSerializer
+
+@Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
+object ChannelReadyTlvShortChannelIdTlvSerializer
+
+@Serializer(forClass = ClosingSignedTlv.FeeRange::class)
+object ClosingSignedTlvFeeRangeSerializer
+
+@Serializer(forClass = ShutdownTlv.ChannelData::class)
+object ShutdownTlvChannelDataSerializer
+
+@Serializer(forClass = ShutdownTlv::class)
+object ShutdownTlvSerializer
+
+@Serializer(forClass = CommitSigTlv::class)
+object CommitSigTlvSerializer
+
+@Serializer(forClass = ClosingSignedTlv::class)
+object ClosingSignedTlvSerializer
+
+@Serializer(forClass = ChannelReadyTlv::class)
+object ChannelReadyTlvSerializer
+
+@Serializer(forClass = ChannelReestablishTlv::class)
+object ChannelReestablishTlvSerializer
+
+@Serializable
+data class TlvStreamSurrogate(val records: List<Tlv>, val unknown: List<GenericTlv> = listOf())
+class TlvStreamSerializer<T : Tlv> : KSerializer<TlvStream<T>> {
+    private val delegateSerializer = TlvStreamSurrogate.serializer()
+    override val descriptor: SerialDescriptor = delegateSerializer.descriptor
+    override fun deserialize(decoder: Decoder): TlvStream<T> {
+        val o = delegateSerializer.deserialize(decoder)
+        @Suppress("UNCHECKED_CAST")
+        return TlvStream(o.records.map { it as T }, o.unknown)
+    }
+
+    override fun serialize(encoder: Encoder, value: TlvStream<T>) = TODO("Not yet implemented")
+}
+
+@Serializer(forClass = GenericTlv::class)
+object GenericTlvSerializer
+
+@Serializer(forClass = OnionRoutingPacket::class)
+object OnionRoutingPacketSerializer
+
+@Serializer(forClass = FeeratePerKw::class)
+object FeeratePerKwSerializer
+
+@Serializer(forClass = MilliSatoshi::class)
+object MilliSatoshiSerializer
+
+@Serializer(forClass = UUID::class)
+object UUIDSerializer
 
 @Serializable
 internal sealed class DirectedHtlc {
@@ -54,8 +190,8 @@ internal data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: 
 @Serializable
 internal data class HtlcTxAndSigs(
     val txinfo: Transactions.TransactionWithInputInfo.HtlcTx,
-    @Serializable(with = ByteVector64KSerializer::class) val localSig: ByteVector64,
-    @Serializable(with = ByteVector64KSerializer::class) val remoteSig: ByteVector64
+    val localSig: ByteVector64,
+    val remoteSig: ByteVector64
 ) {
     fun export() = fr.acinq.lightning.channel.HtlcTxAndSigs(txinfo, localSig, remoteSig)
 }
@@ -74,8 +210,8 @@ internal data class LocalCommit(val index: Long, val spec: CommitmentSpec, val p
 internal data class RemoteCommit(
     val index: Long,
     val spec: CommitmentSpec,
-    @Serializable(with = ByteVector32KSerializer::class) val txid: ByteVector32,
-    @Serializable(with = PublicKeyKSerializer::class) val remotePerCommitmentPoint: PublicKey
+    val txid: ByteVector32,
+    val remotePerCommitmentPoint: PublicKey
 ) {
     fun export() = fr.acinq.lightning.channel.RemoteCommit(index, spec.export(), txid, remotePerCommitmentPoint)
 }
@@ -87,36 +223,36 @@ internal data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val
 
 @Serializable
 internal data class LocalCommitPublished(
-    @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
+    val commitTx: Transaction,
     val claimMainDelayedOutputTx: Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx? = null,
-    val htlcTxs: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, Transactions.TransactionWithInputInfo.HtlcTx?> = emptyMap(),
+    val htlcTxs: Map<OutPoint, Transactions.TransactionWithInputInfo.HtlcTx?> = emptyMap(),
     val claimHtlcDelayedTxs: List<Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx> = emptyList(),
     val claimAnchorTxs: List<Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = TransactionKSerializer::class) Transaction> = emptyMap()
+    val irrevocablySpent: Map<OutPoint, Transaction> = emptyMap()
 ) {
     fun export() = fr.acinq.lightning.channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTx, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent)
 }
 
 @Serializable
 internal data class RemoteCommitPublished(
-    @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
+    val commitTx: Transaction,
     val claimMainOutputTx: Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx? = null,
-    val claimHtlcTxs: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, Transactions.TransactionWithInputInfo.ClaimHtlcTx?> = emptyMap(),
+    val claimHtlcTxs: Map<OutPoint, Transactions.TransactionWithInputInfo.ClaimHtlcTx?> = emptyMap(),
     val claimAnchorTxs: List<Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = TransactionKSerializer::class) Transaction> = emptyMap()
+    val irrevocablySpent: Map<OutPoint, Transaction> = emptyMap()
 ) {
     fun export() = fr.acinq.lightning.channel.RemoteCommitPublished(commitTx, claimMainOutputTx, claimHtlcTxs, claimAnchorTxs, irrevocablySpent)
 }
 
 @Serializable
 internal data class RevokedCommitPublished(
-    @Serializable(with = TransactionKSerializer::class) val commitTx: Transaction,
-    @Serializable(with = PrivateKeyKSerializer::class) val remotePerCommitmentSecret: PrivateKey,
+    val commitTx: Transaction,
+    val remotePerCommitmentSecret: PrivateKey,
     val claimMainOutputTx: Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx? = null,
     val mainPenaltyTx: Transactions.TransactionWithInputInfo.MainPenaltyTx? = null,
     val htlcPenaltyTxs: List<Transactions.TransactionWithInputInfo.HtlcPenaltyTx> = emptyList(),
     val claimHtlcDelayedPenaltyTxs: List<Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx> = emptyList(),
-    val irrevocablySpent: Map<@Serializable(with = OutPointKSerializer::class) OutPoint, @Serializable(with = TransactionKSerializer::class) Transaction> = emptyMap()
+    val irrevocablySpent: Map<OutPoint, Transaction> = emptyMap()
 ) {
     fun export() = fr.acinq.lightning.channel.RevokedCommitPublished(commitTx, remotePerCommitmentSecret, claimMainOutputTx, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent)
 }
@@ -128,16 +264,16 @@ internal data class RevokedCommitPublished(
  */
 @Serializable
 internal data class LocalParams constructor(
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
-    @Serializable(with = KeyPathKSerializer::class) val fundingKeyPath: KeyPath,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
+    val nodeId: PublicKey,
+    val fundingKeyPath: KeyPath,
+    val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long,
-    @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
+    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
     val isFunder: Boolean,
-    @Serializable(with = ByteVectorKSerializer::class) val defaultFinalScriptPubKey: ByteVector,
+    val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 ) {
     fun export() = fr.acinq.lightning.channel.LocalParams(
@@ -156,18 +292,18 @@ internal data class LocalParams constructor(
 
 @Serializable
 internal data class RemoteParams(
-    @Serializable(with = PublicKeyKSerializer::class) val nodeId: PublicKey,
-    @Serializable(with = SatoshiKSerializer::class) val dustLimit: Satoshi,
+    val nodeId: PublicKey,
+    val dustLimit: Satoshi,
     val maxHtlcValueInFlightMsat: Long,
-    @Serializable(with = SatoshiKSerializer::class) val channelReserve: Satoshi,
+    val channelReserve: Satoshi,
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    @Serializable(with = PublicKeyKSerializer::class) val fundingPubKey: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val revocationBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val paymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val delayedPaymentBasepoint: PublicKey,
-    @Serializable(with = PublicKeyKSerializer::class) val htlcBasepoint: PublicKey,
+    val fundingPubKey: PublicKey,
+    val revocationBasepoint: PublicKey,
+    val paymentBasepoint: PublicKey,
+    val delayedPaymentBasepoint: PublicKey,
+    val htlcBasepoint: PublicKey,
     val features: Features
 ) {
     fun export() = fr.acinq.lightning.channel.RemoteParams(
@@ -187,7 +323,7 @@ internal data class RemoteParams(
 }
 
 @Serializable
-internal data class ChannelVersion(@Serializable(with = ByteVectorKSerializer::class) val bits: ByteVector) {
+internal data class ChannelVersion(val bits: ByteVector) {
     init {
         require(bits.size() == 4) { "channel version takes 4 bytes" }
     }
@@ -230,10 +366,10 @@ internal data class Commitments(
     val localNextHtlcId: Long,
     val remoteNextHtlcId: Long,
     val payments: Map<Long, UUID>,
-    @Serializable(with = EitherSerializer::class) val remoteNextCommitInfo: Either<WaitingForRevocation, @Serializable(with = PublicKeyKSerializer::class) PublicKey>,
+    val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>,
     val commitInput: Transactions.InputInfo,
-    @Serializable(with = ShaChainSerializer::class) val remotePerCommitmentSecrets: ShaChain,
-    @Serializable(with = ByteVector32KSerializer::class) val channelId: ByteVector32,
+    val remotePerCommitmentSecrets: ShaChain,
+    val channelId: ByteVector32,
     val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     fun export() = fr.acinq.lightning.channel.Commitments(
@@ -261,7 +397,7 @@ internal data class Commitments(
 internal data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
 
 @Serializable
-internal data class StaticParams(@Serializable(with = ByteVector32KSerializer::class) val chainHash: ByteVector32, @Serializable(with = PublicKeyKSerializer::class) val remoteNodeId: PublicKey)
+internal data class StaticParams(val chainHash: ByteVector32, val remoteNodeId: PublicKey)
 
 @Serializable
 internal sealed class ChannelStateWithCommitments {
@@ -276,7 +412,7 @@ internal sealed class ChannelStateWithCommitments {
 @Serializable
 internal data class WaitForRemotePublishFutureCommitment(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish
@@ -288,13 +424,13 @@ internal data class WaitForRemotePublishFutureCommitment(
 @Serializable
 internal data class WaitForFundingConfirmed(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
+    val fundingTx: Transaction?,
     val waitingSinceBlock: Long, // how long have we been waiting for the funding tx to confirm
     val deferred: FundingLocked?,
-    @Serializable(with = EitherSerializer::class) val lastSent: Either<FundingCreated, FundingSigned>
+    val lastSent: Either<FundingCreated, FundingSigned>
 ) : ChannelStateWithCommitments() {
     override fun export() = fr.acinq.lightning.channel.LegacyWaitForFundingConfirmed(
         commitments.export(),
@@ -308,7 +444,7 @@ internal data class WaitForFundingConfirmed(
 @Serializable
 internal data class WaitForFundingLocked(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
@@ -324,7 +460,7 @@ internal data class WaitForFundingLocked(
 @Serializable
 internal data class Normal(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
@@ -351,7 +487,7 @@ internal data class Normal(
 @Serializable
 internal data class ShuttingDown(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
@@ -368,7 +504,7 @@ internal data class ShuttingDown(
 @Serializable
 internal data class Negotiating(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
     val localShutdown: Shutdown,
@@ -394,10 +530,10 @@ internal data class Negotiating(
 @Serializable
 internal data class Closing(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments,
-    @Serializable(with = TransactionKSerializer::class) val fundingTx: Transaction?,
+    val fundingTx: Transaction?,
     val waitingSinceBlock: Long,
     val mutualCloseProposed: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
     val mutualClosePublished: List<Transactions.TransactionWithInputInfo.ClosingTx> = emptyList(),
@@ -434,7 +570,7 @@ internal data class Closed(val state: Closing) : ChannelStateWithCommitments() {
 @Serializable
 internal data class ErrorInformationLeak(
     override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, @Serializable(with = BlockHeaderKSerializer::class) BlockHeader>,
+    override val currentTip: Pair<Int, BlockHeader>,
     override val currentOnChainFeerates: OnChainFeerates,
     override val commitments: Commitments
 ) : ChannelStateWithCommitments() {

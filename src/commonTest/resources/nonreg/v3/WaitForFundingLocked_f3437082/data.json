@@ -156,9 +156,7 @@
         "remotePerCommitmentSecrets": "<redacted>",
         "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd"
     },
-    "shortChannelId": {
-        "id": 439804651113152512
-    },
+    "shortChannelId": "400000x42x0",
     "lastSent": {
         "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
         "nextPerCommitmentPoint": "03c57839fd412868a398bea05d01678a752661126a2d1357a0f7cb6f0c60311125"

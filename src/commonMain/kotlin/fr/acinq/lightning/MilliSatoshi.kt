@@ -1,12 +1,10 @@
 package fr.acinq.lightning
 
 import fr.acinq.bitcoin.Satoshi
-import kotlinx.serialization.Serializable
 
 /**
  * One MilliSatoshi is a thousand of a Satoshi, the smallest unit usable in bitcoin
  */
-@Serializable
 data class MilliSatoshi(val msat: Long) : Comparable<MilliSatoshi> {
 
     constructor(sat: Satoshi) : this(sat.toLong() * 1000)

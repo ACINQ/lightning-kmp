@@ -5,14 +5,12 @@ import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
 /** Tlv types used inside Init messages. */
-@Serializable
+
 sealed class InitTlv : Tlv {
-    @Serializable
-    data class Networks(val chainHashes: List<@Contextual ByteVector32>) : InitTlv() {
+
+    data class Networks(val chainHashes: List<ByteVector32>) : InitTlv() {
         override val tag: Long get() = Networks.tag
 
         override fun write(out: Output) {
@@ -33,8 +31,7 @@ sealed class InitTlv : Tlv {
         }
     }
 
-    @Serializable
-    data class PhoenixAndroidLegacyNodeId(@Contextual val legacyNodeId: PublicKey, @Contextual val signature: ByteVector64) : InitTlv() {
+    data class PhoenixAndroidLegacyNodeId(val legacyNodeId: PublicKey, val signature: ByteVector64) : InitTlv() {
         override val tag: Long get() = PhoenixAndroidLegacyNodeId.tag
 
         override fun write(out: Output) {
