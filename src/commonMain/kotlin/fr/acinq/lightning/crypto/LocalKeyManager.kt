@@ -10,7 +10,7 @@ import fr.acinq.lightning.transactions.Transactions
 
 data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
 
-    private val master = DeterministicWallet.generate(seed)
+    val master = DeterministicWallet.generate(seed)
     override val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, eclairNodeKeyBasePath(chainHash))
     override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chainHash))
     override val nodeId: PublicKey get() = nodeKey.publicKey
