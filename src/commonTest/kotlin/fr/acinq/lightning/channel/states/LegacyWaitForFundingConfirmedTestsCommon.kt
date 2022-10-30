@@ -33,7 +33,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         assertEquals(state.commitments.fundingTxId, fundingTx.txid)
         val ctx = ChannelContext(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
-            TestConstants.defaultBlockHeight to BlockHeader(0, Lightning.randomBytes32(), Lightning.randomBytes32(), 0, 0, 0),
+            TestConstants.defaultBlockHeight ,
             OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).processEx(ChannelCommand.Restore(state))

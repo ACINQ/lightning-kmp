@@ -276,7 +276,7 @@ class PeerTest : LightningTestSuite() {
             alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
             TestConstants.Alice.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
-            currentTip = alice1.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())
+            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
         )
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }

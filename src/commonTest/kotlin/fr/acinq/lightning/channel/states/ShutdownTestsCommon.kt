@@ -385,7 +385,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val htlcExpiry = alice.commitments.localCommit.spec.htlcs.map { it.add.cltvExpiry }.first()
         val (alice1, actions1) = run {
-            val tmp = alice.copy(ctx = alice.ctx.copy(currentTip = htlcExpiry.toLong().toInt() to alice.ctx.currentTip.second))
+            val tmp = alice.copy(ctx = alice.ctx.copy(currentBlockHeight = htlcExpiry.toLong().toInt()))
             tmp.processEx(ChannelCommand.CheckHtlcTimeout)
         }
         assertIs<LNChannel<Closing>>(alice1)

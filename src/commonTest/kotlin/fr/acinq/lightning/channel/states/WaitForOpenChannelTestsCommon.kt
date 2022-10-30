@@ -29,7 +29,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val alice = LNChannel(
             ChannelContext(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
-                Pair(TestConstants.defaultBlockHeight, Block.RegtestGenesisBlock.header),
+                TestConstants.defaultBlockHeight,
                 OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             ),
             WaitForInit

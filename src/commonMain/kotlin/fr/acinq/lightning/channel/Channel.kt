@@ -140,10 +140,9 @@ data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 
 data class ChannelContext(
     val staticParams: StaticParams,
-    val currentTip: Pair<Int, BlockHeader>,
+    val currentBlockHeight: Int,
     val currentOnChainFeerates: OnChainFeerates
 ): LoggingContext {
-    val currentBlockHeight: Int get() = currentTip.first
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
 

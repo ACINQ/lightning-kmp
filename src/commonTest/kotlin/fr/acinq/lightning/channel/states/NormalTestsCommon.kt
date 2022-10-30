@@ -1979,7 +1979,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Normal>>(alice1)
 
         // alice restarted after the htlc timed out
-        val alice2 = alice1.copy(ctx = alice1.ctx.copy(currentTip = alice1.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())))
+        val alice2 = alice1.copy(ctx = alice1.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()))
         val (alice3, actions) = alice2.processEx(ChannelCommand.CheckHtlcTimeout)
         assertIs<LNChannel<Closing>>(alice3)
         assertNotNull(alice3.state.localCommitPublished)
@@ -2028,7 +2028,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // fulfilled htlc is close to timing out and alice still hasn't signed, so bob closes the channel
         val (bob4, actions4) = run {
-            val tmp = bob3.copy(ctx = bob3.ctx.copy(currentTip = htlc.cltvExpiry.toLong().toInt() - 3 to bob3.ctx.currentTip.second))
+            val tmp = bob3.copy(ctx = bob3.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt() - 3))
             tmp.processEx(ChannelCommand.CheckHtlcTimeout)
         }
         checkFulfillTimeout(bob4, actions4)
@@ -2044,7 +2044,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
 
         // bob restarts when the fulfilled htlc is close to timing out
-        val bob3 = bob2.copy(ctx = bob2.ctx.copy(currentTip = bob2.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt() - 3)))
+        val bob3 = bob2.copy(ctx = bob2.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt() - 3))
         // alice still hasn't signed, so bob closes the channel
         val (bob4, actions4) = bob3.processEx(ChannelCommand.CheckHtlcTimeout)
         checkFulfillTimeout(bob4, actions4)
@@ -2067,7 +2067,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // fulfilled htlc is close to timing out and alice has revoked her previous commitment but not signed the new one, so bob closes the channel
         val (bob5, actions5) = run {
-            val tmp = bob4.copy(ctx = bob4.ctx.copy(currentTip = htlc.cltvExpiry.toLong().toInt() - 3 to bob3.ctx.currentTip.second))
+            val tmp = bob4.copy(ctx = bob4.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt() - 3))
             tmp.processEx(ChannelCommand.CheckHtlcTimeout)
         }
         checkFulfillTimeout(bob5, actions5)

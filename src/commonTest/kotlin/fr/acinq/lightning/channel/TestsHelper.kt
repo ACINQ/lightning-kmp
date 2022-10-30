@@ -91,7 +91,7 @@ object TestsHelper {
         val alice = LNChannel(
             ChannelContext(
                 StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
-                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+                currentBlockHeight = currentHeight,
                 currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             ),
             WaitForInit
@@ -99,7 +99,7 @@ object TestsHelper {
         val bob = LNChannel(
             ChannelContext(
                 StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
-                currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
+                currentBlockHeight = currentHeight,
                 currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
             ),
             WaitForInit

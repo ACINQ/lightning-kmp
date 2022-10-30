@@ -1643,7 +1643,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         run {
-            val alice1 = aliceClosing.copy(ctx = alice.ctx.copy(currentTip = aliceClosing.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())))
+            val alice1 = aliceClosing.copy(ctx = alice.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()))
             val (alice2, actions) = alice1.processEx(ChannelCommand.CheckHtlcTimeout)
             assertEquals(alice1, alice2)
             assertTrue(actions.isEmpty())

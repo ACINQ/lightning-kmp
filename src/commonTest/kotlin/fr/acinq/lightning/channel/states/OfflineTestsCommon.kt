@@ -567,7 +567,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         // alice restarted after the htlc timed out
         val alice3 = alice2.copy(
-            ctx = alice2.ctx.copy(currentTip = alice2.ctx.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt())),
+            ctx = alice2.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()),
             state = alice2.state.state
         )
         val (alice4, actions) = alice3.processEx(ChannelCommand.CheckHtlcTimeout)
@@ -596,7 +596,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         // bob restarts when the fulfilled htlc is close to timing out: alice hasn't signed, so bob closes the channel
         val (bob4, actions4) = run {
-            val tmp = bob3.copy(ctx = bob3.ctx.copy(currentTip = htlc.cltvExpiry.toLong().toInt() to bob3.ctx.currentTip.second))
+            val tmp = bob3.copy(ctx = bob3.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()))
             tmp.processEx(ChannelCommand.CheckHtlcTimeout)
         }
         assertIs<LNChannel<Closing>>(bob4)

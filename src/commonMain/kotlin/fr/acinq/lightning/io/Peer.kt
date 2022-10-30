@@ -186,7 +186,7 @@ class Peer(
 
     private suspend fun channelContext() = ChannelContext(
         StaticParams(nodeParams, remoteNodeId),
-        currentTipFlow.filterNotNull().first(),
+        currentTipFlow.filterNotNull().first().first,
         onChainFeeratesFlow.filterNotNull().first()
     )
 
@@ -868,12 +868,7 @@ class Peer(
                     features
                 )
                 val state = WaitForInit
-                val channelContext = ChannelContext(
-                    StaticParams(nodeParams, remoteNodeId),
-                    currentTipFlow.filterNotNull().first(),
-                    onChainFeeratesFlow.filterNotNull().first()
-                )
-                val (state1, actions1) = state.run { channelContext.process(
+                val (state1, actions1) = state.run { channelContext().process(
                     ChannelCommand.InitInitiator(
                         cmd.fundingAmount,
                         cmd.pushAmount,
