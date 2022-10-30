@@ -529,31 +529,6 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
 sealed class PersistedChannelState : ChannelStateWithCommitments()
 
-data class LNChannel<out S : ChannelState>(
-    val ctx: ChannelContext,
-    val state: S
-) {
-    val staticParams = ctx.staticParams
-    val currentBlockHeight = ctx.currentBlockHeight
-    val channelId: ByteVector32 by lazy {
-        when (state) {
-            is ChannelStateWithCommitments -> state.channelId
-            is WaitForFundingCreated -> state.channelId
-            is WaitForFundingSigned -> state.channelId
-            else -> error("no channel id in state ${state::class}")
-        }
-    }
-    val commitments: Commitments by lazy {
-        when (state) {
-            is ChannelStateWithCommitments -> state.commitments
-            else -> error("no commitments in state ${state::class}")
-        }
-    }
-    fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
-        state.run { ctx.process(cmd) }
-            .let { (newState, actions) -> LNChannel(ctx, newState) to actions }
-}
-
 object Channel {
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
     const val ANNOUNCEMENTS_MINCONF = 6

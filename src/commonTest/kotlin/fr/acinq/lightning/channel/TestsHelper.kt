@@ -64,6 +64,79 @@ fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChan
 fun Features.add(vararg pairs: Pair<Feature, FeatureSupport>): Features = this.copy(activated = this.activated + mapOf(*pairs))
 fun Features.remove(vararg features: Feature): Features = this.copy(activated = activated.filterKeys { f -> !features.contains(f) })
 
+data class LNChannel<out S : ChannelState>(
+    val ctx: ChannelContext,
+    val state: S
+) {
+    val staticParams = ctx.staticParams
+    val currentBlockHeight = ctx.currentBlockHeight
+    val channelId: ByteVector32 by lazy {
+        when (state) {
+            is ChannelStateWithCommitments -> state.channelId
+            is WaitForFundingCreated -> state.channelId
+            is WaitForFundingSigned -> state.channelId
+            else -> error("no channel id in state ${state::class}")
+        }
+    }
+    val commitments: Commitments by lazy {
+        when (state) {
+            is ChannelStateWithCommitments -> state.commitments
+            else -> error("no commitments in state ${state::class}")
+        }
+    }
+
+    fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
+        state
+            .run { ctx.process(cmd) }
+            .let { (newState, actions) ->
+                checkSerialization(actions)
+                //JsonSerializers.json.encodeToString(result.first.state)
+                LNChannel(ctx, newState) to actions
+            }
+
+    // we check that serialization works by checking that deserialize(serialize(state)) == state
+    private fun checkSerialization(state: PersistedChannelState) {
+
+        // We never persist remote channel data.
+        fun removeChannelData(state: PersistedChannelState): PersistedChannelState = when (state) {
+            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Normal -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is ShuttingDown -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Negotiating -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty)))
+        }
+
+        // We never persist a funding RBF attempt.
+        fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
+            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
+            else -> state
+        }
+
+        val serialized = Serialization.serialize(state)
+        val deserialized = Serialization.deserialize(serialized)
+
+        assertEquals(removeChannelData(removeRbfAttempt(state)), deserialized, "serialization error")
+    }
+
+    private fun checkSerialization(actions: List<ChannelAction>) {
+        // we check that serialization works everytime we're supposed to persist channel data
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
+    }
+
+}
+
+// same as process but with added assumptions on exit state
+fun <T : ChannelState> LNChannel<T>.processSameState(event: ChannelCommand): Pair<LNChannel<T>, List<ChannelAction>> {
+    val (newState, actions) = this.process(event)
+    assertIs<LNChannel<T>>(newState)
+    return newState to actions
+}
+
 object TestsHelper {
 
     fun init(
@@ -312,14 +385,14 @@ object TestsHelper {
         return privKey to WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 0))), mapOf(parentTx.txid to parentTx))
     }
 
-    fun <T: ChannelState> addHtlc(amount: MilliSatoshi, payer: LNChannel<T>, payee: LNChannel<T>): Triple<Pair<LNChannel<T>, LNChannel<T>>, ByteVector32, UpdateAddHtlc> {
+    fun <T : ChannelState> addHtlc(amount: MilliSatoshi, payer: LNChannel<T>, payee: LNChannel<T>): Triple<Pair<LNChannel<T>, LNChannel<T>>, ByteVector32, UpdateAddHtlc> {
         val currentBlockHeight = payer.currentBlockHeight.toLong()
         val (paymentPreimage, cmd) = makeCmdAdd(amount, payee.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (sender0, receiver0, htlc) = addHtlc(cmd, payer, payee)
         return Triple(sender0 to receiver0, paymentPreimage, htlc)
     }
 
-    fun <T: ChannelState> addHtlc(cmdAdd: CMD_ADD_HTLC, payer: LNChannel<T>, payee: LNChannel<T>): Triple<LNChannel<T>, LNChannel<T>, UpdateAddHtlc> {
+    fun <T : ChannelState> addHtlc(cmdAdd: CMD_ADD_HTLC, payer: LNChannel<T>, payee: LNChannel<T>): Triple<LNChannel<T>, LNChannel<T>, UpdateAddHtlc> {
         val (sender0, senderActions0) = payer.process(ChannelCommand.ExecuteCommand(cmdAdd))
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
@@ -332,7 +405,7 @@ object TestsHelper {
         return Triple(sender0, receiver0, htlc)
     }
 
-    fun <T: ChannelState> fulfillHtlc(id: Long, paymentPreimage: ByteVector32, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
+    fun <T : ChannelState> fulfillHtlc(id: Long, paymentPreimage: ByteVector32, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
         val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
         val fulfillHtlc = payeeActions0.findOutgoingMessage<UpdateFulfillHtlc>()
 
@@ -345,7 +418,7 @@ object TestsHelper {
         return payer0 to payee0
     }
 
-    fun <T: ChannelState> failHtlc(id: Long, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
+    fun <T : ChannelState> failHtlc(id: Long, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
         val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure))))
         val failHtlc = payeeActions0.findOutgoingMessage<UpdateFailHtlc>()
 
@@ -361,7 +434,7 @@ object TestsHelper {
     /**
      * Cross sign nodes where nodeA initiate the signature exchange
      */
-    fun <T: ChannelStateWithCommitments> crossSign(nodeA: LNChannel<T>, nodeB: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
+    fun <T : ChannelStateWithCommitments> crossSign(nodeA: LNChannel<T>, nodeB: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
         val sCommitIndex = nodeA.state.commitments.localCommit.index
         val rCommitIndex = nodeB.state.commitments.localCommit.index
         val rHasChanges = nodeB.state.commitments.localHasChanges()
@@ -424,54 +497,6 @@ object TestsHelper {
 
     fun RemoteCommitPublished.claimHtlcTimeoutTxs(): List<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx> {
         return claimHtlcTxs.values.filterIsInstance<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx>()
-    }
-
-    // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: PersistedChannelState) {
-
-        // We never persist remote channel data.
-        fun removeChannelData(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Normal -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is ShuttingDown -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Negotiating -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty)))
-        }
-
-        // We never persist a funding RBF attempt.
-        fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
-            else -> state
-        }
-
-        val serialized = Serialization.serialize(state)
-        val deserialized = Serialization.deserialize(serialized)
-
-        assertEquals(removeChannelData(removeRbfAttempt(state)), deserialized, "serialization error")
-    }
-
-    private fun checkSerialization(actions: List<ChannelAction>) {
-        // we check that serialization works everytime we're supposed to persist channel data
-        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
-    }
-
-    // test-specific extension that allows for extra checks during tests
-    fun LNChannel<ChannelState>.processEx(event: ChannelCommand, @Suppress("UNUSED_PARAMETER") minVersion: Int = 1): Pair<LNChannel<ChannelState>, List<ChannelAction>> {
-        val result = this.process(event)
-        checkSerialization(result.second)
-        return result
-    }
-
-    // same as process but with added assumptions on exit state
-    fun <T : ChannelState> LNChannel<T>.processSameState(event: ChannelCommand): Pair<LNChannel<T>, List<ChannelAction>> {
-        val (newState, actions) = this.process(event)
-        assertIs<LNChannel<T>>(newState)
-        return newState to actions
     }
 
 }

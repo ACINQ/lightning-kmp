@@ -3,7 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.TestsHelper.processEx
+
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Scripts
@@ -22,7 +22,7 @@ class RecoveryTestsCommon {
         val (alice1, _) = TestsHelper.addHtlc(MilliSatoshi(50000), alice, bob).first
 
         // Alice force-closes the channel and publishes her commit tx
-        val (_, actions) = alice1.processEx(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (_, actions) = alice1.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
         val transactions = actions.findTxs()
         val commitTx = transactions[0]
         val aliceTx = transactions[1]
