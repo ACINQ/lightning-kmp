@@ -19,7 +19,6 @@
     CommitSigSerializer::class,
     EncryptedChannelDataSerializer::class,
     ChannelReestablishDataSerializer::class,
-    FundingLockedSerializer::class,
     FundingCreatedSerializer::class,
     CommitSigTlvSerializer::class,
     ShutdownTlvSerializer::class,
@@ -91,8 +90,11 @@ object EncryptedChannelDataSerializer
 @Serializer(forClass = ChannelReestablish::class)
 object ChannelReestablishDataSerializer
 
-@Serializer(forClass = FundingLocked::class)
-object FundingLockedSerializer
+@Serializable
+internal data class FundingLocked(
+    val channelId: ByteVector32,
+    val nextPerCommitmentPoint: PublicKey,
+)
 
 @Serializer(forClass = FundingCreated::class)
 object FundingCreatedSerializer
@@ -437,6 +439,7 @@ internal data class WaitForFundingConfirmed(
         lastSent
     )
 }
+
 
 /**
  * This class contains data used for channels opened before the migration to dual-funding.

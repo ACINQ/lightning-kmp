@@ -746,28 +746,6 @@ data class FundingSigned(
     }
 }
 
-// DEPRECATED: use ChannelReady instead, but necessary for serialization backwards-compatibility.
-data class FundingLocked(
-    override val channelId: ByteVector32,
-    val nextPerCommitmentPoint: PublicKey,
-) : ChannelMessage, HasChannelId {
-    override val type: Long get() = FundingLocked.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(channelId, out)
-        LightningCodecs.writeBytes(nextPerCommitmentPoint.value, out)
-    }
-
-    companion object : LightningMessageReader<FundingLocked> {
-        const val type: Long = 36
-
-        override fun read(input: Input) = FundingLocked(
-            ByteVector32(LightningCodecs.bytes(input, 32)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-        )
-    }
-}
-
 data class ChannelReady(
     override val channelId: ByteVector32,
     val nextPerCommitmentPoint: PublicKey,

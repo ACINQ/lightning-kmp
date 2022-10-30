@@ -63,7 +63,6 @@
     JsonSerializers.CommitSigSerializer::class,
     JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ChannelReestablishDataSerializer::class,
-    JsonSerializers.FundingLockedSerializer::class,
     JsonSerializers.FundingCreatedSerializer::class,
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
@@ -357,9 +356,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReestablish::class)
     object ChannelReestablishDataSerializer
-
-    @Serializer(forClass = FundingLocked::class)
-    object FundingLockedSerializer
 
     @Serializer(forClass = FundingCreated::class)
     object FundingCreatedSerializer

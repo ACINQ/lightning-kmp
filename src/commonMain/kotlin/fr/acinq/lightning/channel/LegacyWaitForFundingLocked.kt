@@ -9,7 +9,6 @@ import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.FundingLocked
 
 /**
  * We changed the channel funding flow to use dual funding, and removed the ability to open legacy channels.
