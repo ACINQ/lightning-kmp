@@ -20,7 +20,7 @@ data class LegacyWaitForFundingLocked(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val lastSent: ChannelReady
-) : ChannelStateWithCommitments() {
+) : PersistedChannelState() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {

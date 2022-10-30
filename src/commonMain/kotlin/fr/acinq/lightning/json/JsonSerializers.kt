@@ -119,7 +119,7 @@ object JsonSerializers {
     val json = Json {
         prettyPrint = true
         serializersModule = SerializersModule {
-            polymorphic(ChannelStateWithCommitments::class) {
+            polymorphic(PersistedChannelState::class) {
                 subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
                 subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
                 subclass(WaitForChannelReady::class, WaitForChannelReadySerializer)
@@ -141,7 +141,7 @@ object JsonSerializers {
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
             }
-            contextual(PolymorphicSerializer(ChannelStateWithCommitments::class))
+            contextual(PolymorphicSerializer(PersistedChannelState::class))
             contextual(PolymorphicSerializer(UpdateMessage::class))
             contextual(PolymorphicSerializer(DirectedHtlc::class))
             // TODO following are serializers defined as @Contextual in project

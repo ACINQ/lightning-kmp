@@ -16,14 +16,14 @@ import fr.acinq.lightning.wire.*
 
 object Deserialization {
 
-    fun ByteArray.fromBinV4(): ChannelStateWithCommitments {
+    fun ByteArray.fromBinV4(): PersistedChannelState {
         val input = ByteArrayInput(this)
         val version = input.read()
         require(version == Serialization.versionMagic) { "incorrect version $version, expected ${Serialization.versionMagic}" }
-        return input.readChannelState()
+        return input.readPersistedChannelState()
     }
 
-    private fun Input.readChannelState(): ChannelStateWithCommitments = when (val discriminator = read()) {
+    private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
         0x08 -> readLegacyWaitForFundingConfirmed()
         0x09 -> readLegacyWaitForFundingLocked()
         0x00 -> readWaitForFundingConfirmed()
@@ -34,7 +34,7 @@ object Deserialization {
         0x05 -> readClosing()
         0x06 -> readWaitForRemotePublishFutureCommitment()
         0x07 -> readClosed()
-        else -> error("unknown discriminator $discriminator for class ${ChannelStateWithCommitments::class}")
+        else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
     }
 
     private fun Input.readLegacyWaitForFundingConfirmed() = LegacyWaitForFundingConfirmed(

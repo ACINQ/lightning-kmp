@@ -75,7 +75,7 @@ object Serialization {
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun deserialize(bin: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+    fun deserialize(bin: ByteArray): fr.acinq.lightning.channel.PersistedChannelState {
         val input = ByteArrayInput(bin)
         val decoder = DataInputDecoder(input)
         val versioned = decoder.decodeSerializableValue(SerializedData.serializer())

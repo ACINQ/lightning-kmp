@@ -86,7 +86,7 @@ sealed class ChannelAction {
     }
 
     sealed class Storage : ChannelAction() {
-        data class StoreState(val data: ChannelStateWithCommitments) : Storage()
+        data class StoreState(val data: PersistedChannelState) : Storage()
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
@@ -240,7 +240,7 @@ sealed class ChannelState {
         // We don't add an encrypted backup while the funding tx is unconfirmed, as it contains potentially too much data.
         this@ChannelState is WaitForFundingConfirmed -> actions
         this@ChannelState is WaitForChannelReady -> actions
-        this@ChannelState is ChannelStateWithCommitments && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
+        this@ChannelState is PersistedChannelState && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
                 it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState)))
                 it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState)))
@@ -527,6 +527,8 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
     }
 }
+
+sealed class PersistedChannelState : ChannelStateWithCommitments()
 
 data class LNChannel<out S : ChannelState>(
     val ctx: ChannelContext,

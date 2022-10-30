@@ -1,11 +1,9 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
@@ -18,7 +16,7 @@ data class WaitForChannelReady(
     val fundingTx: SignedSharedTransaction,
     val shortChannelId: ShortChannelId,
     val lastSent: ChannelReady
-) : ChannelStateWithCommitments() {
+) : PersistedChannelState() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {

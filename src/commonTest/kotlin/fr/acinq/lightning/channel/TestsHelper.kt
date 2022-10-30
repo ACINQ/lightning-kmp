@@ -427,10 +427,10 @@ object TestsHelper {
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments) {
+    private fun checkSerialization(state: PersistedChannelState) {
 
         // We never persist remote channel data.
-        fun removeChannelData(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
+        fun removeChannelData(state: PersistedChannelState): PersistedChannelState = when (state) {
             is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
             is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
             is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
@@ -441,11 +441,10 @@ object TestsHelper {
             is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
             is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
             is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty)))
-            is ErrorInformationLeak -> state
         }
 
         // We never persist a funding RBF attempt.
-        fun removeRbfAttempt(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
+        fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
             is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
             else -> state
         }

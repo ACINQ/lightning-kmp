@@ -37,14 +37,14 @@ object Serialization {
 
     const val versionMagic = 4
 
-    fun ChannelStateWithCommitments.toBinV4(): ByteArray {
+    fun PersistedChannelState.toBinV4(): ByteArray {
         val out = ByteArrayOutput()
         out.write(versionMagic)
-        out.writeChannelStateWithCommitments(this)
+        out.writePersistedChannelState(this)
         return out.toByteArray()
     }
 
-    private fun Output.writeChannelStateWithCommitments(o: ChannelStateWithCommitments) = when (o) {
+    private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
         is LegacyWaitForFundingConfirmed -> {
             write(0x08); writeLegacyWaitForFundingConfirmed(o)
         }
@@ -75,7 +75,6 @@ object Serialization {
         is Closed -> {
             write(0x07); writeClosed(o)
         }
-        is ErrorInformationLeak -> error("cannot serialize final state ${o::class}")
     }
 
     private fun Output.writeLegacyWaitForFundingConfirmed(o: LegacyWaitForFundingConfirmed) = o.run {

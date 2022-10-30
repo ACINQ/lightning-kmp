@@ -20,7 +20,7 @@ data class WaitForFundingConfirmed(
     // We can have at most one ongoing RBF attempt.
     // It doesn't need to be persisted: if we disconnect before signing, the rbf attempt is discarded.
     val rbfStatus: RbfStatus = RbfStatus.None
-) : ChannelStateWithCommitments() {
+) : PersistedChannelState() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {

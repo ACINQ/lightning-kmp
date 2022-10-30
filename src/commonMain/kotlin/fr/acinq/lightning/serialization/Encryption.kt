@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.channel.ChannelStateWithCommitments
+import fr.acinq.lightning.channel.PersistedChannelState
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.toByteVector
@@ -34,7 +35,7 @@ object Encryption {
     /**
      * Convenience method that builds an [EncryptedChannelData] from a [ChannelStateWithCommitments]
      */
-    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: ChannelStateWithCommitments): EncryptedChannelData {
+    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: PersistedChannelState): EncryptedChannelData {
         val bin = Serialization.serialize(state)
         val encrypted = encrypt(key.value, bin)
         // we copy the first 2 bytes as meta-info on the serialization version

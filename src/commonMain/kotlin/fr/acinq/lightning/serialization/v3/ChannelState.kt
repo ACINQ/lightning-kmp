@@ -399,7 +399,7 @@ internal sealed class ChannelStateWithCommitments {
     abstract val currentOnChainFeerates: OnChainFeerates
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
-    abstract fun export(): fr.acinq.lightning.channel.ChannelStateWithCommitments
+    abstract fun export(): fr.acinq.lightning.channel.PersistedChannelState
 }
 
 @Serializable
@@ -569,18 +569,6 @@ internal data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val currentTip: Pair<Int, BlockHeader> get() = state.currentTip
     override val currentOnChainFeerates: OnChainFeerates get() = state.currentOnChainFeerates
     override fun export() = fr.acinq.lightning.channel.Closed(state.export())
-}
-
-@Serializable
-internal data class ErrorInformationLeak(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
-    override val commitments: Commitments
-) : ChannelStateWithCommitments() {
-    override fun export() = fr.acinq.lightning.channel.ErrorInformationLeak(
-        commitments.export()
-    )
 }
 
 internal object ShaChainSerializer : KSerializer<ShaChain> {
