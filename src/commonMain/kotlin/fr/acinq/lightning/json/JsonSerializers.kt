@@ -76,6 +76,7 @@
     JsonSerializers.ChannelReadyTlvSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
+    JsonSerializers.ClosingSerializer::class,
 )
 
 package fr.acinq.lightning.json
@@ -115,7 +116,15 @@ import kotlinx.serialization.modules.polymorphic
  */
 object JsonSerializers {
 
-    val json = Json {
+    fun toJsonString(state: ChannelState): String {
+        return when(state) {
+            is PersistedChannelState -> json.encodeToString(state)
+            else -> json.encodeToString(ChannelStateSurrogate(state::class.qualifiedName!!))
+        }
+    }
+
+
+    private val json = Json {
         prettyPrint = true
         serializersModule = SerializersModule {
             polymorphic(PersistedChannelState::class) {
@@ -128,6 +137,7 @@ object JsonSerializers {
                 subclass(Negotiating::class, NegotiatingSerializer)
                 subclass(Closing::class, ClosingSerializer)
                 subclass(WaitForRemotePublishFutureCommitment::class, WaitForRemotePublishFutureCommitmentSerializer)
+                subclass(Closed::class, ClosedSerializer)
             }
             polymorphic(UpdateMessage::class) {
                 subclass(UpdateAddHtlc::class, UpdateAddHtlcSerializer)
@@ -137,6 +147,7 @@ object JsonSerializers {
                 subclass(UpdateFee::class, UpdateFeeSerializer)
             }
             polymorphic(Tlv::class) {
+                subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
             }
@@ -161,6 +172,8 @@ object JsonSerializers {
             contextual(ChannelUpdateSerializer)
         }
     }
+    @Serializable
+    data class ChannelStateSurrogate(val type: String)
 
     @Serializer(forClass = LegacyWaitForFundingConfirmed::class)
     object LegacyWaitForFundingConfirmedSerializer
@@ -188,6 +201,9 @@ object JsonSerializers {
 
     @Serializer(forClass = WaitForRemotePublishFutureCommitment::class)
     object WaitForRemotePublishFutureCommitmentSerializer
+
+    @Serializer(forClass = Closed::class)
+    object ClosedSerializer
 
     @Serializer(forClass = InteractiveTxParams::class)
     object InteractiveTxParamsSerializer

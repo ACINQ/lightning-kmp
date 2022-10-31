@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -90,7 +91,7 @@ data class LNChannel<out S : ChannelState>(
             .run { ctx.process(cmd) }
             .let { (newState, actions) ->
                 checkSerialization(actions)
-                //JsonSerializers.json.encodeToString(result.first.state)
+                JsonSerializers.toJsonString(newState)
                 LNChannel(ctx, newState) to actions
             }
 
