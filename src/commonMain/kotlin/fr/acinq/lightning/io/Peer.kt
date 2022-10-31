@@ -215,10 +215,10 @@ class Peer(
         }
         launch {
             finalWallet.walletStateFlow
-                .distinctUntilChangedBy {
-                    Pair(it.balance(includingUnconfirmed = true), it.unconfirmedBalance())
-                }.collect { wallet ->
-                    logger.info { "${wallet.balance(includingUnconfirmed = true)} available on final wallet (${wallet.unconfirmedBalance()} unconfirmed)" }
+                .distinctUntilChangedBy { Pair(it.unconfirmedBalance, it.confirmedBalance) }
+                .collect { wallet ->
+                    logger.info { "${wallet.totalBalance} available on final wallet (${wallet.unconfirmedBalance} unconfirmed)" }
+                }
                 }
         }
         launch {
