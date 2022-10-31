@@ -80,7 +80,8 @@ sealed class ChannelTlv : Tlv {
                 is ChannelOrigin.PleaseOpenChannelOrigin -> {
                     LightningCodecs.writeU16(4, out)
                     LightningCodecs.writeBytes(channelOrigin.requestId, out)
-                    LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
+                    LightningCodecs.writeU64(channelOrigin.serviceFee.toLong(), out)
+                    LightningCodecs.writeU64(channelOrigin.fundingFee.toLong(), out)
                 }
             }
         }
@@ -97,7 +98,8 @@ sealed class ChannelTlv : Tlv {
 
                     4 -> ChannelOrigin.PleaseOpenChannelOrigin(
                         requestId = LightningCodecs.bytes(input, 32).byteVector32(),
-                        fee = LightningCodecs.u64(input).msat,
+                        serviceFee = LightningCodecs.u64(input).msat,
+                        fundingFee = LightningCodecs.u64(input).sat,
                     )
 
                     else -> TODO("Unsupported channel origin discriminator")

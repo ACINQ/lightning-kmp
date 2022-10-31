@@ -228,7 +228,7 @@ class PeerTest : LightningTestSuite() {
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         alice.send(OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
-            tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve), ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, openFees))))
+            tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve), ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, openFees, 100.sat))))
         )
         bob.forward(open)
         val accept = bob2alice.expect<AcceptDualFundedChannel>()

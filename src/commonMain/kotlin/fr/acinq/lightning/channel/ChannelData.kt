@@ -419,5 +419,5 @@ data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: 
 @Serializable
 sealed class ChannelOrigin {
     data class PayToOpenOrigin(val paymentHash: ByteVector32, val fee: Satoshi) : ChannelOrigin()
-    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val fee: MilliSatoshi) : ChannelOrigin()
+    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val fundingFee: Satoshi) : ChannelOrigin()
 }

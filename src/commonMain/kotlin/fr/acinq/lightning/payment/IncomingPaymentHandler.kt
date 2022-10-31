@@ -133,8 +133,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         IncomingPayment.ReceivedWith.NewChannel(
                             id = UUID.randomUUID(),
                             amount = action.amount,
-                            serviceFee = action.origin.fee,
-                            fundingFee = action.fundingFee,
+                            serviceFee = action.origin.serviceFee,
+                            fundingFee = action.origin.fundingFee,
                             channelId = channelId
                         )
                     )
