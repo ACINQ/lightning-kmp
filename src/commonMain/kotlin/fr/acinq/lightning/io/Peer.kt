@@ -215,25 +215,27 @@ class Peer(
         }
         launch {
             finalWallet.walletStateFlow
-                .distinctUntilChangedBy { it.balance }
-                .collect { wallet ->
-                    logger.info { "${wallet.balance} available on final wallet" }
+                .distinctUntilChangedBy {
+                    Pair(it.balance(includingUnconfirmed = true), it.unconfirmedBalance())
+                }.collect { wallet ->
+                    logger.info { "${wallet.balance(includingUnconfirmed = true)} available on final wallet (${wallet.unconfirmedBalance()} unconfirmed)" }
                 }
         }
         launch {
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
                 .fold(false) { swapAlreadyAttempted, wallet ->
-                    if (wallet.balance > 10_000.sat) {
+                    val balance = wallet.balance(includingUnconfirmed = false)
+                    if (balance > 10_000.sat) {
                         if (swapAlreadyAttempted) {
-                            logger.info { "${wallet.balance} available on swap-in wallet but swap-in already attempted: not doing anything" }
+                            logger.info { "$balance available on swap-in wallet but swap-in already attempted: not doing anything" }
                         } else {
-                            logger.info { "${wallet.balance} available on swap-in wallet: requesting channel" }
+                            logger.info { "$balance available on swap-in wallet: requesting channel" }
                             input.send(RequestChannelOpen(Lightning.randomBytes32(), wallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
                         }
                         true
                     } else {
-                        logger.info { "${wallet.balance} available on swap-in wallet but amount insufficient: waiting for more" }
+                        logger.info { "$balance available on swap-in wallet but amount insufficient: waiting for more" }
                         swapAlreadyAttempted
                     }
                 }
@@ -677,7 +679,7 @@ class Peer(
                                 is RequestChannelOpen -> {
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                     val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.utxos.size * Transactions.p2wpkhInputWeight)
-                                    val fundingAmount = request.wallet.balance - fundingFee
+                                    val fundingAmount = request.wallet.balance(includingUnconfirmed = false) - fundingFee
                                     nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, fundingFee, origin.fee))
                                     Triple(request.wallet, fundingAmount, origin.fee)
                                 }
@@ -837,7 +839,7 @@ class Peer(
             cmd is RequestChannelOpen -> {
                 // We currently only support p2wpkh inputs.
                 val utxos = cmd.wallet.utxos
-                val balance = cmd.wallet.balance
+                val balance = cmd.wallet.balance(includingUnconfirmed = false)
                 val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
                 val pleaseOpenChannel = PleaseOpenChannel(
                     nodeParams.chainHash,
