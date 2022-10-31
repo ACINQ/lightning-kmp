@@ -158,7 +158,7 @@ class ElectrumMiniWallet(
                                     // request new parent txs
                                     newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
-                                    logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance(true)}" }
+                                    logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.totalBalance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
                                     _walletStateFlow.value = walletState

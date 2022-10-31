@@ -28,7 +28,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
             .first()
 
         assertEquals(0, walletState.utxos.size)
-        assertEquals(0.sat, walletState.balance(true))
+        assertEquals(0.sat, walletState.totalBalance)
 
         client.stop()
     }
@@ -44,7 +44,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
             .first()
 
         assertEquals(6, walletState.utxos.size)
-        assertEquals(30_000_000.sat, walletState.balance(true))
+        assertEquals(30_000_000.sat, walletState.totalBalance)
 
         client.stop()
     }
@@ -63,7 +63,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
 
         // this has been checked on the blockchain
         assertEquals(4 + 6 + 1, walletState.utxos.size)
-        assertEquals(72_000_000.sat + 30_000_000.sat + 2_000_000.sat, walletState.balance(true))
+        assertEquals(72_000_000.sat + 30_000_000.sat + 2_000_000.sat, walletState.totalBalance)
         assertEquals(11, walletState.utxos.size)
         // make sure txid is correct has electrum api is confusing
         walletState.parentTxs.forEach { assertEquals(it.key, it.value.txid) }
@@ -111,8 +111,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val walletState1 = wallet1.walletStateFlow.filter { it.parentTxs.size == 4 }.first()
         val walletState2 = wallet2.walletStateFlow.filter { it.parentTxs.size == 6 }.first()
 
-        assertEquals(7200_0000.sat, walletState1.balance(true))
-        assertEquals(3000_0000.sat, walletState2.balance(true))
+        assertEquals(7200_0000.sat, walletState1.totalBalance)
+        assertEquals(3000_0000.sat, walletState2.totalBalance)
 
         assertEquals(4, walletState1.parentTxs.size)
         assertEquals(6, walletState2.parentTxs.size)

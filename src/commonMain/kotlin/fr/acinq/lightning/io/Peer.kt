@@ -219,13 +219,12 @@ class Peer(
                 .collect { wallet ->
                     logger.info { "${wallet.totalBalance} available on final wallet (${wallet.unconfirmedBalance} unconfirmed)" }
                 }
-                }
         }
         launch {
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
                 .fold(false) { swapAlreadyAttempted, wallet ->
-                    val balance = wallet.balance(includingUnconfirmed = false)
+                    val balance = wallet.confirmedBalance
                     if (balance > 10_000.sat) {
                         if (swapAlreadyAttempted) {
                             logger.info { "$balance available on swap-in wallet but swap-in already attempted: not doing anything" }
@@ -679,7 +678,7 @@ class Peer(
                                 is RequestChannelOpen -> {
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                     val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.utxos.size * Transactions.p2wpkhInputWeight)
-                                    val fundingAmount = request.wallet.balance(includingUnconfirmed = false) - fundingFee
+                                    val fundingAmount = request.wallet.confirmedBalance - fundingFee
                                     nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, fundingFee, origin.fee))
                                     Triple(request.wallet, fundingAmount, origin.fee)
                                 }
@@ -839,7 +838,7 @@ class Peer(
             cmd is RequestChannelOpen -> {
                 // We currently only support p2wpkh inputs.
                 val utxos = cmd.wallet.utxos
-                val balance = cmd.wallet.balance(includingUnconfirmed = false)
+                val balance = cmd.wallet.confirmedBalance
                 val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
                 val pleaseOpenChannel = PleaseOpenChannel(
                     nodeParams.chainHash,
