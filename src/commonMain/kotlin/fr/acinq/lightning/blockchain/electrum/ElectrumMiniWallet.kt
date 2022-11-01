@@ -23,7 +23,15 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         .flatMap { it.value }
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
-    val balance: Satoshi = utxos.map { it.amount }.sum()
+
+    val confirmedBalance = balance(includingUnconfirmed = false, includingConfirmed = true)
+    val unconfirmedBalance = balance(includingUnconfirmed = true, includingConfirmed = false)
+    val totalBalance = confirmedBalance + unconfirmedBalance
+    private fun balance(includingUnconfirmed: Boolean, includingConfirmed: Boolean): Satoshi =
+        utxos
+            .filter { (includingUnconfirmed && it.blockHeight == 0L) || (includingConfirmed && it.blockHeight > 0L) }
+            .map { it.amount }
+            .sum()
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
@@ -150,7 +158,7 @@ class ElectrumMiniWallet(
                                     // request new parent txs
                                     newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
                                     val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
-                                    logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.balance}" }
+                                    logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.totalBalance}" }
                                     msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                                     // publish the updated balance
                                     _walletStateFlow.value = walletState
