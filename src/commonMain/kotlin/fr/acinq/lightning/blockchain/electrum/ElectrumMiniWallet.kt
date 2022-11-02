@@ -24,19 +24,30 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
 
-    val confirmedBalance = balance(includingUnconfirmed = false, includingConfirmed = true)
-    val unconfirmedBalance = balance(includingUnconfirmed = true, includingConfirmed = false)
+    val confirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight > 0L }
+    val unconfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight == 0L }
+
+    val confirmedBalance = confirmedUtxos.map { it.amount }.sum()
+    val unconfirmedBalance = unconfirmedUtxos.map { it.amount }.sum()
     val totalBalance = confirmedBalance + unconfirmedBalance
-    private fun balance(includingUnconfirmed: Boolean, includingConfirmed: Boolean): Satoshi =
-        utxos
-            .filter { (includingUnconfirmed && it.blockHeight == 0L) || (includingConfirmed && it.blockHeight > 0L) }
-            .map { it.amount }
-            .sum()
+
+    fun drop(reserved: Set<Utxo>): WalletState {
+        val reservedIds = reserved.map {
+            UnspentItemId(it.previousTx.txid, it.outputIndex)
+        }.toSet()
+        return copy(addresses = addresses.mapValues {
+            it.value.filter { item ->
+                !reservedIds.contains(UnspentItemId(item.txid, item.outputIndex))
+            }
+        })
+    }
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
+
+    data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
