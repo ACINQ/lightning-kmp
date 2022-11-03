@@ -15,10 +15,11 @@ import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.db.sqlite.SqliteChannelsDb
 import fr.acinq.lightning.io.*
+import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.payment.PaymentRequest
-import fr.acinq.lightning.serialization.v3.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.wire.FCMToken
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -33,7 +34,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import java.io.File
@@ -197,8 +197,8 @@ object Node {
             channelFlags = 0,
             paymentRequestExpirySeconds = 3600,
             multiPartPaymentExpirySeconds = 60,
-            minFundingSatoshis = 100000.sat,
-            maxFundingSatoshis = 16777215.sat,
+            minFundingSatoshis = 20_000.sat,
+            maxFundingSatoshis = 10.btc,
             maxPaymentAttempts = 5,
             zeroConfPeers = setOf(),
             enableTrampolinePayment = true
@@ -214,6 +214,7 @@ object Node {
         suspend fun connectLoop(peer: Peer) {
             peer.connectionState.collect {
                 logger.info { "Connected: $it" }
+                peer.sendToPeer(FCMToken("deadbeef"))
             }
         }
 
@@ -231,10 +232,7 @@ object Node {
                     }
                 }
                 install(ContentNegotiation) {
-                    json(Json {
-                        serializersModule = Serialization.lightningSerializersModule
-                        allowStructuredMapKeys = true
-                    })
+                    json(JsonSerializers.json)
                 }
                 routing {
                     post("/ping") {

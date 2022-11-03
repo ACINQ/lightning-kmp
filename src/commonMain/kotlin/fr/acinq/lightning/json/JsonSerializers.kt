@@ -120,8 +120,8 @@ object JsonSerializers {
         }
     }
 
-
-    private val json = Json {
+    /** Only use this if you know what you are doing, otherwise use [toJsonString] */
+    val json = Json {
         prettyPrint = true
         serializersModule = SerializersModule {
             // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
