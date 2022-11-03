@@ -11,6 +11,10 @@ import kotlin.test.assertEquals
 
 class StateSerializationNonRegTestsCommon {
 
+    /**
+     * If test doesn't pass, set debug to `true`, run the test again and look for the `actual.json` file next to `data.json` in the resources. Then just
+     * compare the two json files (easy within IntelliJ) and see what the difference is.
+     */
     fun regtest(dir: String, debug: Boolean) {
         val resourceDir = Environment.findVariable("TEST_RESOURCES_PATH")?.let { Path(it) } ?: FileSystem.workingDir().resolve("src/commonTest/resources")
         val file = resourceDir.resolve("bolt3_anchor_outputs_test_vectors.json")
@@ -40,19 +44,11 @@ class StateSerializationNonRegTestsCommon {
 
     @Test
     fun `non-reg test with v2 serialization`() {
-        regtest("v2", debug = true)
+        regtest("v2", debug = false)
     }
 
     @Test
     fun `non-reg test with v3 serialization`() {
-        regtest("v3", debug = true)
-    }
-
-    companion object {
-        fun fileFor(dir1: String, dir2: String, name: String): WriteableFile {
-            val file: Path = FileSystem.workingDir().resolve("nonreg", dir1, dir2, name)
-            file.parent().createDirs()
-            return file.openWriteableFile(false)
-        }
+        regtest("v3", debug = false)
     }
 }

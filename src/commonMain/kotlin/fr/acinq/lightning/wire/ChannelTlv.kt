@@ -18,7 +18,6 @@ import fr.acinq.lightning.utils.toByteVector32
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
-
     data class UpfrontShutdownScriptTlv(val scriptPubkey: ByteVector) : ChannelTlv() {
         val isEmpty: Boolean get() = scriptPubkey.isEmpty()
 

@@ -95,6 +95,13 @@ data class LNChannel<out S : ChannelState>(
                 LNChannel(ctx, newState) to actions
             }
 
+    /** same as [process] but with the added assumption that we stay in the same state */
+    fun processSameState(event: ChannelCommand): Pair<LNChannel<S>, List<ChannelAction>> {
+        val (newState, actions) = this.process(event)
+        assertIs<LNChannel<S>>(newState)
+        return newState to actions
+    }
+
     // we check that serialization works by checking that deserialize(serialize(state)) == state
     private fun checkSerialization(state: PersistedChannelState) {
 
@@ -129,13 +136,6 @@ data class LNChannel<out S : ChannelState>(
         actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
     }
 
-}
-
-// same as process but with added assumptions on exit state
-fun <T : ChannelState> LNChannel<T>.processSameState(event: ChannelCommand): Pair<LNChannel<T>, List<ChannelAction>> {
-    val (newState, actions) = this.process(event)
-    assertIs<LNChannel<T>>(newState)
-    return newState to actions
 }
 
 object TestsHelper {

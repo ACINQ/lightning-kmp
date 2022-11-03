@@ -182,7 +182,7 @@ object Serialization {
         writeNullable(claimMainOutputTx) { writeTransactionWithInputInfo(it) }
         writeCollection(claimHtlcTxs.entries) {
             writeBtcObject(it.key)
-            writeNullable(it.value) { writeTransactionWithInputInfo(it) }
+            writeNullable(it.value) { claimHtlcTx -> writeTransactionWithInputInfo(claimHtlcTx) }
         }
         writeCollection(claimAnchorTxs) { writeTransactionWithInputInfo(it) }
         writeIrrevocablySpent(irrevocablySpent)

@@ -3,7 +3,6 @@ package fr.acinq.lightning.serialization
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.PersistedChannelState
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.runTrying
@@ -33,7 +32,7 @@ object Encryption {
     }
 
     /**
-     * Convenience method that builds an [EncryptedChannelData] from a [ChannelStateWithCommitments]
+     * Convenience method that builds an [EncryptedChannelData] from a [PersistedChannelState]
      */
     fun EncryptedChannelData.Companion.from(key: PrivateKey, state: PersistedChannelState): EncryptedChannelData {
         val bin = Serialization.serialize(state)
@@ -44,9 +43,9 @@ object Encryption {
     }
 
     /**
-     * Convenience method that decrypts and deserializes a [ChannelStateWithCommitments] from an [EncryptedChannelData]
+     * Convenience method that decrypts and deserializes a [PersistedChannelState] from an [EncryptedChannelData]
      */
-    fun ChannelStateWithCommitments.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): ChannelStateWithCommitments {
+    fun PersistedChannelState.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): PersistedChannelState {
         // we first assume that channel data is prefixed by 2 bytes of serialization meta-info
         val decrypted = runTrying { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
             .recoverWith { runTrying { decrypt(key.value, encryptedChannelData.data.toByteArray()) } }

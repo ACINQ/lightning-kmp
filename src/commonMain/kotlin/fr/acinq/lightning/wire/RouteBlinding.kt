@@ -10,7 +10,6 @@ import fr.acinq.bitcoin.io.Output
 
 sealed class RouteBlindingEncryptedDataTlv : Tlv {
     /** Some padding can be added to ensure all payloads are the same size to improve privacy. */
-
     data class Padding(val dummy: ByteVector) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = Padding.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(dummy, out)
@@ -23,7 +22,6 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Id of the next node. */
-
     data class OutgoingNodeId(val nodeId: PublicKey) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
@@ -41,7 +39,6 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
      * It should use that field to detect when blinded routes are used outside of their intended use (malicious probing)
      * and react accordingly (ignore the message or send an error depending on the use-case).
      */
-
     data class PathId(val data: ByteVector) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = PathId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
@@ -54,7 +51,6 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Blinding override for the rest of the route. */
-
     data class NextBlinding(val blinding: PublicKey) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = NextBlinding.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(blinding.value, out)

@@ -274,7 +274,6 @@ data class PaymentRequest(
         abstract fun encode(): List<Int5>
 
         /** @param description a free-format string that will be included in the payment request */
-
         data class Description(val description: String) : TaggedField() {
             override val tag: Int5 = Description.tag
             override fun encode(): List<Int5> = Bech32.eight2five(description.encodeToByteArray()).toList()
@@ -286,7 +285,6 @@ data class PaymentRequest(
         }
 
         /** @param hash sha256 hash of an associated description */
-
         data class DescriptionHash(val hash: ByteVector32) : TaggedField() {
             override val tag: Int5 = DescriptionHash.tag
             override fun encode(): List<Int5> = Bech32.eight2five(hash.toByteArray()).toList()
@@ -301,7 +299,6 @@ data class PaymentRequest(
         }
 
         /** @param hash payment hash */
-
         data class PaymentHash(val hash: ByteVector32) : TaggedField() {
             override val tag: Int5 = PaymentHash.tag
             override fun encode(): List<Int5> = Bech32.eight2five(hash.toByteArray()).toList()
@@ -316,7 +313,6 @@ data class PaymentRequest(
         }
 
         /** @param secret payment secret */
-
         data class PaymentSecret(val secret: ByteVector32) : TaggedField() {
             override val tag: Int5 = PaymentSecret.tag
             override fun encode(): List<Int5> = Bech32.eight2five(secret.toByteArray()).toList()
@@ -342,7 +338,6 @@ data class PaymentRequest(
         }
 
         /** @param expirySeconds payment expiry (in seconds) */
-
         data class Expiry(val expirySeconds: Long) : TaggedField() {
             override val tag: Int5 = Expiry.tag
             override fun encode(): List<Int5> {
@@ -363,7 +358,6 @@ data class PaymentRequest(
         }
 
         /** @param cltvExpiry minimum final expiry delta */
-
         data class MinFinalCltvExpiry(val cltvExpiry: Long) : TaggedField() {
             override val tag: Int5 = MinFinalCltvExpiry.tag
             override fun encode(): List<Int5> {
@@ -384,7 +378,6 @@ data class PaymentRequest(
         }
 
         /** Fallback on-chain payment address to be used if LN payment cannot be processed */
-
         data class FallbackAddress(val version: Byte, val data: ByteVector) : TaggedField() {
             override val tag: Int5 = FallbackAddress.tag
             override fun encode(): List<Int5> = listOf(version) + Bech32.eight2five(data.toByteArray()).toList()
@@ -452,7 +445,6 @@ data class PaymentRequest(
          * @param feeProportionalMillionths node proportional fee
          * @param cltvExpiryDelta node cltv expiry delta
          */
-
         data class ExtraHop(
             val nodeId: PublicKey,
             val shortChannelId: ShortChannelId,
@@ -462,7 +454,6 @@ data class PaymentRequest(
         )
 
         /** @param hints extra routing information for a private route */
-
         data class RoutingInfo(val hints: List<ExtraHop>) : TaggedField() {
             override val tag: Int5 = RoutingInfo.tag
 
@@ -500,13 +491,11 @@ data class PaymentRequest(
         }
 
         /** Unknown tag (may or may not be valid) */
-
         data class UnknownTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
             override fun encode(): List<Int5> = value.toList()
         }
 
         /** Tag that we know is not valid (value is of the wrong length for example) */
-
         data class InvalidTag(override val tag: Int5, val value: List<Int5>) : TaggedField() {
             override fun encode(): List<Int5> = value.toList()
         }

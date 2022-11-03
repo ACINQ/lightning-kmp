@@ -110,7 +110,7 @@ data class WaitForAcceptChannel(
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$temporaryChannelId error on event ${cmd::class} in state ${this::class}" }
-        val error = Error(init.temporaryChannelId(keyManager), t.message)
+        val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }
 }

@@ -32,27 +32,12 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val priv = randomKey()
         val bytes = EncryptedChannelData.from(priv, alice.state)
-        val check = ChannelStateWithCommitments.from(priv, bytes)
+        val check = PersistedChannelState.from(priv, bytes)
         assertEquals(alice.state, check)
 
         val bytes1 = EncryptedChannelData.from(priv, bob.state)
-        val check1 = ChannelStateWithCommitments.from(priv, bytes1)
+        val check1 = PersistedChannelState.from(priv, bytes1)
         assertEquals(bob.state, check1)
-    }
-    
-    @Ignore
-    @Test
-    fun `don't restore data from a different chain`() {
-        val (alice, _) = TestsHelper.reachNormal()
-        val priv = randomKey()
-        val bytes = EncryptedChannelData.from(priv, alice.state)
-        val check = ChannelStateWithCommitments.from(priv, bytes)
-        assertEquals(alice.state, check)
-
-        // we cannot test the exception's error message anymore because v2 serialization will fail (invalid chain) then we'll try v1 serialization which will return a different error
-        assertFails {
-            ChannelStateWithCommitments.from(priv, bytes)
-        }
     }
 
     @Test

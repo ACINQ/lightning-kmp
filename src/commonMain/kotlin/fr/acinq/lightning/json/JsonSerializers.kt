@@ -33,9 +33,6 @@
     JsonSerializers.ChannelFeaturesSerializer::class,
     JsonSerializers.FeaturesSerializer::class,
     JsonSerializers.ShortChannelIdSerializer::class,
-    JsonSerializers.StaticParamsSerializer::class,
-    JsonSerializers.BlockHeaderSerializer::class,
-    JsonSerializers.OnChainFeeratesSerializer::class,
     JsonSerializers.ChannelKeysSerializer::class,
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
@@ -127,6 +124,8 @@ object JsonSerializers {
     private val json = Json {
         prettyPrint = true
         serializersModule = SerializersModule {
+            // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
+            contextual(PolymorphicSerializer(PersistedChannelState::class))
             polymorphic(PersistedChannelState::class) {
                 subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
                 subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
@@ -151,25 +150,15 @@ object JsonSerializers {
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
             }
-            contextual(PolymorphicSerializer(PersistedChannelState::class))
-            contextual(PolymorphicSerializer(UpdateMessage::class))
-            contextual(PolymorphicSerializer(DirectedHtlc::class))
-            // TODO following are serializers defined as @Contextual in project
-            //   classes, which is why they must be explicitly set here. Once the
-            //   @Contextual annotations have been removed this should be cleaned up
+            // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
+            //  depend themselves on @Contextual serializers. Once we get rid of v2/v3 serialization and we
+            //  define our own context-less serializers in this file, we will be able to clean up
+            //  those declarations.
             contextual(OutPointSerializer)
             contextual(TxOutSerializer)
             contextual(TransactionSerializer)
-            contextual(SatoshiSerializer)
             contextual(ByteVectorSerializer)
             contextual(ByteVector32Serializer)
-            contextual(ByteVector64Serializer)
-            contextual(ChannelConfigSerializer)
-            contextual(PrivateKeySerializer)
-            contextual(PublicKeySerializer)
-            contextual(MilliSatoshiSerializer)
-            contextual(UpdateAddHtlcSerializer)
-            contextual(ChannelUpdateSerializer)
         }
     }
     @Serializable
@@ -246,15 +235,11 @@ object JsonSerializers {
     sealed class SurrogateSerializer<T, S>(val transform: (T) -> S, private val delegateSerializer: KSerializer<S>) : KSerializer<T> {
         override val descriptor: SerialDescriptor get() = delegateSerializer.descriptor
         override fun serialize(encoder: Encoder, value: T) = delegateSerializer.serialize(encoder, transform(value))
-        override fun deserialize(decoder: Decoder): T = TODO("Not yet implemented")
+        override fun deserialize(decoder: Decoder): T = TODO("json deserialization is not supported")
     }
 
     sealed class StringSerializer<T>(toString: (T) -> String = { it.toString() }) : SurrogateSerializer<T, String>(toString, String.serializer())
     sealed class LongSerializer<T>(toLong: (T) -> Long) : SurrogateSerializer<T, Long>(toLong, Long.serializer())
-
-    object StaticParamsSerializer : StringSerializer<StaticParams>({ "<skipped>" })
-    object BlockHeaderSerializer : StringSerializer<BlockHeader>({ "<skipped>" })
-    object OnChainFeeratesSerializer : StringSerializer<OnChainFeerates>({ "<skipped>" })
 
     object ShaChainSerializer : StringSerializer<ShaChain>({ "<redacted>" })
     object PrivateKeySerializer : StringSerializer<PrivateKey>({ "<redacted>" })
@@ -413,7 +398,7 @@ object JsonSerializers {
         override val descriptor: SerialDescriptor = delegateSerializer.descriptor
         override fun serialize(encoder: Encoder, value: TlvStream<T>) =
             delegateSerializer.serialize(encoder, TlvStreamSurrogate(value.records, value.unknown))
-        override fun deserialize(decoder: Decoder): TlvStream<T> = TODO()
+        override fun deserialize(decoder: Decoder): TlvStream<T> = TODO("json deserialization is not supported")
     }
 
     class EitherSerializer<A : Any, B : Any>(val aSer: KSerializer<A>, val bSer: KSerializer<B>) : KSerializer<Either<A, B>> {
@@ -427,7 +412,7 @@ object JsonSerializers {
             return encoder.encodeSerializableValue(Surrogate.serializer(aSer, bSer), surrogate)
         }
 
-        override fun deserialize(decoder: Decoder): Either<A, B> = TODO()
+        override fun deserialize(decoder: Decoder): Either<A, B> = TODO("json deserialization is not supported")
     }
 
     @Serializer(forClass = WaitingForRevocation::class)

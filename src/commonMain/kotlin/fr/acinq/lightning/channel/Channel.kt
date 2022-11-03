@@ -61,7 +61,6 @@ sealed class ChannelCommand {
     data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
     data class ExecuteCommand(val command: Command) : ChannelCommand()
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelCommand()
-    //data class NewBlock(val height: Int, val Header: BlockHeader) : ChannelCommand()
     object Disconnected : ChannelCommand()
     data class Connected(val localInit: Init, val remoteInit: Init) : ChannelCommand()
 }
@@ -521,13 +520,13 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
-
-    companion object {
-
-    }
 }
 
-sealed class PersistedChannelState : ChannelStateWithCommitments()
+sealed class PersistedChannelState : ChannelStateWithCommitments() {
+    companion object {
+        // this companion object is used by static extended function `fun PersistedChannelState.Companion.from` in Encryption.kt
+    }
+}
 
 object Channel {
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
@@ -554,7 +553,7 @@ object Channel {
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
-    fun ChannelContext.handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
+    fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
         // first we clean up unacknowledged updates
         log.debug { "discarding proposed OUT: ${d.commitments.localChanges.proposed}" }

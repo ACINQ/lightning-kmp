@@ -14,5 +14,3 @@ fun <T1, T2, T3, C : MutableCollection<in Triple<T1, T2, T3>>> Triple<Iterable<T
 
 fun <T1, T2, T3> Triple<Iterable<T1>, Iterable<T2>, Iterable<T3>>.zipped(): List<Triple<T1, T2, T3>> =
     zippedTo(ArrayList())
-
-fun <K, V> Map<K, V>.reverse() = this.entries.associateBy({ it.value }) { it.key }

@@ -2,9 +2,7 @@ package fr.acinq.lightning.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.channel.ChannelContext
-import fr.acinq.lightning.channel.ChannelStateWithCommitments
+import fr.acinq.lightning.channel.PersistedChannelState
 import fr.acinq.lightning.db.ChannelsDb
 import fr.acinq.lightning.serialization.Serialization
 import kotlinx.coroutines.Dispatchers
@@ -13,7 +11,7 @@ import java.sql.Connection
 import java.sql.Statement
 
 
-class SqliteChannelsDb(val nodeParams: NodeParams, val sqlite: Connection) : ChannelsDb {
+class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
     /**
      * This helper makes sure statements are correctly closed.
      *
@@ -51,22 +49,21 @@ class SqliteChannelsDb(val nodeParams: NodeParams, val sqlite: Connection) : Cha
 
     }
 
-    override suspend fun addOrUpdateChannel(state: ChannelStateWithCommitments) {
-        error("not implemented")
-//        withContext(Dispatchers.IO) {
-//            val data = Serialization.serialize(null as ChannelContext, state)
-//            using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
-//                update.setBytes(1, data)
-//                update.setBytes(2, state.channelId.toByteArray())
-//                if (update.executeUpdate() == 0) {
-//                    using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement ->
-//                        statement.setBytes(1, state.channelId.toByteArray())
-//                        statement.setBytes(2, data)
-//                        statement.executeUpdate()
-//                    }
-//                }
-//            }
-//        }
+    override suspend fun addOrUpdateChannel(state: PersistedChannelState) {
+        withContext(Dispatchers.IO) {
+            val data = Serialization.serialize(state)
+            using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
+                update.setBytes(1, data)
+                update.setBytes(2, state.channelId.toByteArray())
+                if (update.executeUpdate() == 0) {
+                    using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement ->
+                        statement.setBytes(1, state.channelId.toByteArray())
+                        statement.setBytes(2, data)
+                        statement.executeUpdate()
+                    }
+                }
+            }
+        }
     }
 
     override suspend fun removeChannel(channelId: ByteVector32) {
@@ -88,11 +85,11 @@ class SqliteChannelsDb(val nodeParams: NodeParams, val sqlite: Connection) : Cha
         }
     }
 
-    override suspend fun listLocalChannels(): List<ChannelStateWithCommitments> {
+    override suspend fun listLocalChannels(): List<PersistedChannelState> {
         return withContext(Dispatchers.IO) {
             using(sqlite.createStatement()) { statement ->
                 val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-                val result = ArrayList<ChannelStateWithCommitments>()
+                val result = ArrayList<PersistedChannelState>()
                 while (rs.next()) {
                     result.add(Serialization.deserialize(rs.getBytes("data")))
                 }

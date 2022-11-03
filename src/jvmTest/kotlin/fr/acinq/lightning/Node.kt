@@ -205,7 +205,7 @@ object Node {
         )
 
         val db = object : Databases {
-            override val channels = SqliteChannelsDb(nodeParams, DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
+            override val channels = SqliteChannelsDb(DriverManager.getConnection("jdbc:sqlite:${File(chaindir, "phoenix.sqlite")}"))
             override val payments = InMemoryPaymentsDb()
         }
 

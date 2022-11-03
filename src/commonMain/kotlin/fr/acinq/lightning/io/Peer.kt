@@ -625,7 +625,6 @@ class Peer(
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
                                 _channels = _channels.mapValues { entry ->
-
                                     val (state1, actions) = entry.value.run { channelContext().process(ChannelCommand.Connected(ourInit, theirInit!!)) }
                                     processActions(entry.key, actions)
                                     state1
@@ -728,7 +727,7 @@ class Peer(
                         if (msg.channelData.isEmpty()) {
                             sendToPeer(Error(msg.channelId, "unknown channel"))
                         } else {
-                            when (val decrypted = runTrying { ChannelStateWithCommitments.from(nodeParams.nodePrivateKey, msg.channelData) }) {
+                            when (val decrypted = runTrying { PersistedChannelState.from(nodeParams.nodePrivateKey, msg.channelData) }) {
                                 is Try.Success -> {
                                     logger.warning { "n:$remoteNodeId restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result

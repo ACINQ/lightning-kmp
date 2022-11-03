@@ -1,6 +1,5 @@
 package fr.acinq.lightning.serialization
 
-import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.PersistedChannelState
 import fr.acinq.lightning.serialization.v4.Deserialization.fromBinV4
 import fr.acinq.lightning.serialization.v4.Serialization.toBinV4

@@ -11,10 +11,7 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.channel.ChannelStateWithCommitments
-import fr.acinq.lightning.channel.LNChannel
-import fr.acinq.lightning.channel.Normal
-import fr.acinq.lightning.channel.Syncing
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.Peer
@@ -34,11 +31,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 
-public suspend fun newPeers(
+suspend fun newPeers(
     scope: CoroutineScope,
     nodeParams: Pair<NodeParams, NodeParams>,
     walletParams: Pair<WalletParams, WalletParams>,
-    initChannels: List<Pair<LNChannel<ChannelStateWithCommitments>, LNChannel<ChannelStateWithCommitments>>> = emptyList(),
+    initChannels: List<Pair<LNChannel<PersistedChannelState>, LNChannel<PersistedChannelState>>> = emptyList(),
     automateMessaging: Boolean = true
 ): PeerTuple {
     // Create Alice and Bob peers
@@ -114,7 +111,7 @@ public suspend fun newPeers(
     return PeerTuple(alice, bob, alice2bob, bob2alice)
 }
 
-public suspend fun CoroutineScope.newPeer(
+suspend fun CoroutineScope.newPeer(
     nodeParams: NodeParams,
     walletParams: WalletParams,
     remotedNodeChannelState: LNChannel<ChannelStateWithCommitments>? = null,
@@ -161,7 +158,7 @@ public suspend fun CoroutineScope.newPeer(
     return peer
 }
 
-public fun buildPeer(
+fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
     walletParams: WalletParams,

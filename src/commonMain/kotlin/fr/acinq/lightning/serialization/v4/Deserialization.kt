@@ -208,7 +208,7 @@ object Deserialization {
             localSigs = readLightningMessage() as TxSignatures,
             remoteSigs = readLightningMessage() as TxSignatures
         )
-        else -> error("unknown discriminator $discriminator for class ${ChannelStateWithCommitments::class}")
+        else -> error("unknown discriminator $discriminator for class ${SignedSharedTransaction::class}")
     }
 
     private fun Input.readCommitments(): Commitments = Commitments(
