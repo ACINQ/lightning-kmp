@@ -152,25 +152,26 @@ object LightningCodecs {
         }
     }
 
-    @JvmStatic
-    fun writeBigSize(input: Long, out: Output) {
-        require(input >= 0) { "negative value $input cannot be encoded with varint"}
+    private fun writeBigSize(input: ULong, out: Output) {
         when {
-            input < 0xfdL -> writeByte(input.toInt(), out)
-            input < 0x10000 -> {
+            input < 0xfdu -> writeByte(input.toInt(), out)
+            input < 0x10000u -> {
                 out.write(0xfd)
                 writeU16(input.toInt(), out)
             }
-            input < 0x100000000 -> {
+            input < 0x100000000u -> {
                 out.write(0xfe)
                 writeU32(input.toInt(), out)
             }
             else -> {
                 out.write(0xff)
-                writeU64(input, out)
+                writeU64(input.toLong(), out)
             }
         }
     }
+
+    /** the varint codec only works on positive values, this is for backward compat */
+    fun writeBigSize(input: Long, out: Output) = writeBigSize(input.toULong(), out)
 
     @JvmStatic
     fun bytes(input: Input, size: Int): ByteArray {
