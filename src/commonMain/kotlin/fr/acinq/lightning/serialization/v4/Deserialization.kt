@@ -177,7 +177,7 @@ object Deserialization {
         serialId = readNumber(),
         outPoint = readOutPoint(),
         txOut = TxOut.read(readDelimitedByteArray()),
-        sequence = readNumber()
+        sequence = readNumber().toUInt()
     )
 
     private fun Input.readRemoteTxAddOutput() = RemoteTxAddOutput(

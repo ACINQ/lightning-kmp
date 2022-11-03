@@ -227,7 +227,7 @@ object Serialization {
         writeNumber(serialId)
         writeBtcObject(outPoint)
         writeBtcObject(txOut)
-        writeNumber(sequence)
+        writeNumber(sequence.toLong())
     }
 
     private fun Output.writeRemoteTxAddOutput(o: RemoteTxAddOutput) = o.run {

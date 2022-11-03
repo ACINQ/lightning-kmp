@@ -292,7 +292,7 @@ data class TxAddInput(
     override val serialId: Long,
     val previousTx: Transaction,
     val previousTxOutput: Long,
-    val sequence: Long,
+    val sequence: UInt,
     val tlvs: TlvStream<TxAddInputTlv> = TlvStream.empty()
 ) : InteractiveTxConstructionMessage(), HasChannelId, HasSerialId {
     override val type: Long get() = TxAddInput.type
@@ -315,7 +315,7 @@ data class TxAddInput(
             LightningCodecs.u64(input),
             Transaction.read(LightningCodecs.bytes(input, LightningCodecs.u16(input))),
             LightningCodecs.u32(input).toLong(),
-            LightningCodecs.u32(input).toLong(),
+            LightningCodecs.u32(input).toUInt(),
         )
     }
 }

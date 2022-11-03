@@ -230,7 +230,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         // Alice --- tx_add_input --> Bob
         val (alice1, inputA) = sendMessage<TxAddInput>(alice0)
         // Alice <-- tx_add_input --- Bob
-        val inputB = TxAddInput(f.channelId, 1, Transaction(2, listOf(), listOf(TxOut(250_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0), 0, 0)
+        val inputB = TxAddInput(f.channelId, 1, Transaction(2, listOf(), listOf(TxOut(250_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0), 0, 0u)
         // Alice --- tx_add_output --> Bob
         val (alice2, _) = receiveMessage<TxAddOutput>(alice1, inputB)
         // Alice <-- tx_add_output --- Bob
@@ -332,18 +332,18 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val previousTx = Transaction(2, listOf(), previousOutputs, 0)
         val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
-            TxAddInput(f.channelId, 0, previousTx, 0, 0) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
-            TxAddInput(f.channelId, 1, previousTx, 0, 0) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
-            TxAddInput(f.channelId, 3, previousTx, 0, 0) to InteractiveTxSessionAction.DuplicateInput(f.channelId, 3, previousTx.txid, 0),
-            TxAddInput(f.channelId, 5, previousTx, 2, 0) to InteractiveTxSessionAction.InputOutOfBounds(f.channelId, 5, previousTx.txid, 2),
-            TxAddInput(f.channelId, 7, previousTx, 1, 0) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
+            TxAddInput(f.channelId, 0, previousTx, 0, 0u) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
+            TxAddInput(f.channelId, 1, previousTx, 0, 0u) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
+            TxAddInput(f.channelId, 3, previousTx, 0, 0u) to InteractiveTxSessionAction.DuplicateInput(f.channelId, 3, previousTx.txid, 0),
+            TxAddInput(f.channelId, 5, previousTx, 2, 0u) to InteractiveTxSessionAction.InputOutOfBounds(f.channelId, 5, previousTx.txid, 2),
+            TxAddInput(f.channelId, 7, previousTx, 1, 0u) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
         )
         testCases.forEach { (input, expected) ->
             val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
             // Alice --- tx_add_input --> Bob
             val (alice1, _) = sendMessage<TxAddInput>(alice0)
             // Alice <-- tx_add_input --- Bob
-            val (alice2, _) = receiveMessage<TxAddOutput>(alice1, TxAddInput(f.channelId, 1, previousTx, 0, 0))
+            val (alice2, _) = receiveMessage<TxAddOutput>(alice1, TxAddInput(f.channelId, 1, previousTx, 0, 0u))
             // Alice <-- tx_add_input --- Bob
             val failure = receiveInvalidMessage(alice2, input)
             assertEquals(failure, expected)
@@ -523,17 +523,17 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val previousTx2 = Transaction(2, listOf(), listOf(TxOut(160_000.sat, Script.pay2wpkh(randomKey().publicKey())), TxOut(175_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val firstAttempt = FullySignedSharedTransaction(
-            SharedTransaction(listOf(), listOf(RemoteTxAddInput(2, OutPoint(previousTx1, 0), TxOut(125_000.sat, validScript), 0)), listOf(), listOf(), 0),
+            SharedTransaction(listOf(), listOf(RemoteTxAddInput(2, OutPoint(previousTx1, 0), TxOut(125_000.sat, validScript), 0u)), listOf(), listOf(), 0),
             TxSignatures(f.channelId, randomBytes32(), listOf()),
             TxSignatures(f.channelId, randomBytes32(), listOf(Script.witnessPay2wpkh(randomKey().publicKey(), ByteVector64.Zeroes)))
         )
         val secondAttempt = PartiallySignedSharedTransaction(
-            SharedTransaction(listOf(), firstAttempt.tx.remoteInputs + listOf(RemoteTxAddInput(4, OutPoint(previousTx2, 1), TxOut(150_000.sat, validScript), 0)), listOf(), listOf(), 0),
+            SharedTransaction(listOf(), firstAttempt.tx.remoteInputs + listOf(RemoteTxAddInput(4, OutPoint(previousTx2, 1), TxOut(150_000.sat, validScript), 0u)), listOf(), listOf(), 0),
             TxSignatures(f.channelId, randomBytes32(), listOf()),
         )
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB, listOf(firstAttempt, secondAttempt))
         // Alice --- tx_add_input --> Bob
-        val (bob1, _) = receiveMessage<TxComplete>(bob0, TxAddInput(f.channelId, 4, previousTx2, 1, 0))
+        val (bob1, _) = receiveMessage<TxComplete>(bob0, TxAddInput(f.channelId, 4, previousTx2, 1, 0u))
         // Alice --- tx_add_output --> Bob
         val (bob2, _) = receiveMessage<TxComplete>(bob1, TxAddOutput(f.channelId, 6, f.fundingParamsB.fundingAmount, f.fundingParamsB.fundingPubkeyScript))
         // Alice --- tx_add_output --> Bob
@@ -549,10 +549,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val parentTx = Transaction.read(
             "02000000000101f86fd1d0db3ac5a72df968622f31e6b5e6566a09e29206d7c7a55df90e181de800000000171600141fb9623ffd0d422eacc450fd1e967efc477b83ccffffffff0580b2e60e00000000220020fd89acf65485df89797d9ba7ba7a33624ac4452f00db08107f34257d33e5b94680b2e60e0000000017a9146a235d064786b49e7043e4a042d4cc429f7eb6948780b2e60e00000000160014fbb4db9d85fba5e301f4399e3038928e44e37d3280b2e60e0000000017a9147ecd1b519326bc13b0ec716e469b58ed02b112a087f0006bee0000000017a914f856a70093da3a5b5c4302ade033d4c2171705d387024730440220696f6cee2929f1feb3fd6adf024ca0f9aa2f4920ed6d35fb9ec5b78c8408475302201641afae11242160101c6f9932aeb4fcd1f13a9c6df5d1386def000ea259a35001210381d7d5b1bc0d7600565d827242576d9cb793bfe0754334af82289ee8b65d137600000000"
         )
-        val initiatorInput = TxAddInput(channelId, 20, parentTx, 0, 4294967293L)
+        val initiatorInput = TxAddInput(channelId, 20, parentTx, 0, 4294967293u)
         val initiatorOutput = TxAddOutput(channelId, 30, 49999845.sat, ByteVector("00141ca1cca8855bad6bc1ea5436edd8cff10b7e448b"))
         val sharedOutput = TxAddOutput(channelId, 44, 400000000.sat, ByteVector("0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5"))
-        val nonInitiatorInput = TxAddInput(channelId, 11, parentTx, 2, 4294967293L)
+        val nonInitiatorInput = TxAddInput(channelId, 11, parentTx, 2, 4294967293u)
         val nonInitiatorOutput = TxAddOutput(channelId, 33, 49999900.sat, ByteVector("001444cb0c39f93ecc372b5851725bd29d865d333b10"))
 
         val initiatorParams = InteractiveTxParams(channelId, isInitiator = true, 200_000_000.sat, 200_000_000.sat, ByteVector("0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5"), 120, 330.sat, FeeratePerKw(253.sat))
@@ -658,7 +658,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(amount, Script.pay2wpkh(randomKey().publicKey()))), 0)
-            return TxAddInput(channelId, serialId, previousTx, 0, 0)
+            return TxAddInput(channelId, serialId, previousTx, 0, 0u)
         }
     }
 }

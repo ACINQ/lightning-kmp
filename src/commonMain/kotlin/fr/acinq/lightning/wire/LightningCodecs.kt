@@ -154,6 +154,7 @@ object LightningCodecs {
 
     @JvmStatic
     fun writeBigSize(input: Long, out: Output) {
+        require(input >= 0) { "negative value $input cannot be encoded with varint"}
         when {
             input < 0xfdL -> writeByte(input.toInt(), out)
             input < 0x10000 -> {
