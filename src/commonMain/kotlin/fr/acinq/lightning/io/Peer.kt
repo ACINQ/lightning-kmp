@@ -232,7 +232,7 @@ class Peer(
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
                         reservedUtxos.union(availableWallet.confirmedUtxos)
                     } else {
-                        logger.info { "$balance available on swap-in wallet but amount insufficient: waiting for more" }
+                        logger.info { "insufficient balance on swap-in wallet ($balance, ${availableWallet.unconfirmedBalance} unconfirmed): waiting for more" }
                         reservedUtxos
                     }.intersect(wallet.utxos) // drop utxos no longer in wallet
                 }
