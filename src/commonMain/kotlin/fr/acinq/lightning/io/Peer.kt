@@ -225,7 +225,7 @@ class Peer(
                 .filter { it.consistent }
                 .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
                     // reservedUtxos are part of a previously issued RequestChannelOpen command
-                    val availableWallet = wallet.drop(reservedUtxos)
+                    val availableWallet = wallet.minus(reservedUtxos)
                     val balance = availableWallet.confirmedBalance
                     if (balance > 10_000.sat) {
                         logger.info { "$balance available on swap-in wallet: requesting channel" }
