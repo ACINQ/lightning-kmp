@@ -18,6 +18,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.encodeToString
 import kotlin.test.*
 
 // LN Message
@@ -91,7 +92,7 @@ data class LNChannel<out S : ChannelState>(
             .run { ctx.process(cmd) }
             .let { (newState, actions) ->
                 checkSerialization(actions)
-                JsonSerializers.toJsonString(newState)
+                JsonSerializers.json.encodeToString(newState)
                 LNChannel(ctx, newState) to actions
             }
 

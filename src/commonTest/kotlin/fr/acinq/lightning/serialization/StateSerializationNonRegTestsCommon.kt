@@ -2,6 +2,7 @@ package fr.acinq.lightning.serialization
 
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.encodeToString
 import org.kodein.memory.file.*
 import org.kodein.memory.system.Environment
 import org.kodein.memory.text.putString
@@ -27,7 +28,7 @@ class StateSerializationNonRegTestsCommon {
                 val bin = path.resolve("data.bin").openReadableFile().run { readString(sizeBytes = remaining) }
                 val ref = path.resolve("data.json").openReadableFile().run { readString(sizeBytes = remaining) }
                 val state = Serialization.deserialize(Hex.decode(bin))
-                val json = JsonSerializers.toJsonString(state)
+                val json = JsonSerializers.json.encodeToString(state)
                 val tmpFile = path.resolve("actual.json")
                 if (debug) {
                     tmpFile.openWriteableFile().run {
