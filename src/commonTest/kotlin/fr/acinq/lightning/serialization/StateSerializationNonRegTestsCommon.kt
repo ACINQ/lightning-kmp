@@ -17,10 +17,6 @@ class StateSerializationNonRegTestsCommon {
      * compare the two json files (easy within IntelliJ) and see what the difference is.
      */
     fun regtest(dir: String, debug: Boolean) {
-        val resourceDir = Environment.findVariable("TEST_RESOURCES_PATH")?.let { Path(it) } ?: FileSystem.workingDir().resolve("src/commonTest/resources")
-        val file = resourceDir.resolve("bolt3_anchor_outputs_test_vectors.json")
-        file.openReadableFile().run { readString(sizeBytes = remaining) }
-
         Path(Environment.findVariable("TEST_RESOURCES_PATH")!!)
             .resolve("nonreg", dir)
             .listDir() // list all test cases

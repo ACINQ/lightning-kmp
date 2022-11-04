@@ -141,7 +141,7 @@ object Deserialization {
 
     private fun Input.readRevokedCommitPublished(): RevokedCommitPublished = RevokedCommitPublished(
         commitTx = readTransaction(),
-        remotePerCommitmentSecret = PrivateKey(readByteArray(32)),
+        remotePerCommitmentSecret = PrivateKey(readByteVector32()),
         claimMainOutputTx = readNullable { readTransactionWithInputInfo() as ClaimRemoteCommitMainOutputTx },
         mainPenaltyTx = readNullable { readTransactionWithInputInfo() as MainPenaltyTx },
         htlcPenaltyTxs = readCollection { readTransactionWithInputInfo() as HtlcPenaltyTx }.toList(),
@@ -163,7 +163,7 @@ object Deserialization {
     )
 
     private fun Input.readInteractiveTxParams() = InteractiveTxParams(
-        channelId = readByteArray(32).toByteVector32(),
+        channelId = readByteVector32(),
         isInitiator = readBoolean(),
         localAmount = readNumber().sat,
         remoteAmount = readNumber().sat,
@@ -249,8 +249,8 @@ object Deserialization {
                 htlcTxsAndSigs = readCollection {
                     HtlcTxAndSigs(
                         txinfo = readTransactionWithInputInfo() as HtlcTx,
-                        localSig = readByteArray(64).toByteVector64(),
-                        remoteSig = readByteArray(64).toByteVector64()
+                        localSig = readByteVector64(),
+                        remoteSig = readByteVector64()
                     )
                 }.toList()
             )
@@ -258,7 +258,7 @@ object Deserialization {
         remoteCommit = RemoteCommit(
             index = readNumber(),
             spec = readCommitmentSpec(),
-            txid = readByteArray(32).toByteVector32(),
+            txid = readByteVector32(),
             remotePerCommitmentPoint = readPublicKey()
         ),
         localChanges = LocalChanges(
@@ -282,7 +282,7 @@ object Deserialization {
                     nextRemoteCommit = RemoteCommit(
                         index = readNumber(),
                         spec = readCommitmentSpec(),
-                        txid = readByteArray(32).toByteVector32(),
+                        txid = readByteVector32(),
                         remotePerCommitmentPoint = readPublicKey()
                     ),
                     sent = readLightningMessage() as CommitSig,
@@ -295,11 +295,11 @@ object Deserialization {
         commitInput = readInputInfo(),
         remotePerCommitmentSecrets = ShaChain(
             knownHashes = readCollection {
-                readCollection { readBoolean() }.toList() to readByteArray(32).toByteVector32()
+                readCollection { readBoolean() }.toList() to readByteVector32()
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         ),
-        channelId = readByteArray(32).toByteVector32()
+        channelId = readByteVector32()
     )
 
     private fun Input.readCommitmentSpec(): CommitmentSpec = CommitmentSpec(
@@ -327,7 +327,7 @@ object Deserialization {
 
     private fun Input.readTransactionWithInputInfo(): Transactions.TransactionWithInputInfo = when (val discriminator = read()) {
         0x00 -> CommitTx(input = readInputInfo(), tx = readTransaction())
-        0x01 -> HtlcTx.HtlcSuccessTx(input = readInputInfo(), tx = readTransaction(), paymentHash = ByteVector32(readByteArray(32)), htlcId = readNumber())
+        0x01 -> HtlcTx.HtlcSuccessTx(input = readInputInfo(), tx = readTransaction(), paymentHash = readByteVector32(), htlcId = readNumber())
         0x02 -> HtlcTx.HtlcTimeoutTx(input = readInputInfo(), tx = readTransaction(), htlcId = readNumber())
         0x03 -> ClaimHtlcTx.ClaimHtlcSuccessTx(input = readInputInfo(), tx = readTransaction(), htlcId = readNumber())
         0x04 -> ClaimHtlcTx.ClaimHtlcTimeoutTx(input = readInputInfo(), tx = readTransaction(), htlcId = readNumber())
@@ -356,13 +356,15 @@ object Deserialization {
 
     private fun Input.readString(): String = readDelimitedByteArray().decodeToString()
 
-    private fun Input.readPublicKey() = PublicKey(readByteArray(33))
+    private fun Input.readByteVector32(): ByteVector32 = ByteVector32(ByteArray(32).also { read(it, 0, it.size) })
 
-    private fun Input.readByteArray(size: Int): ByteArray = ByteArray(size).also { read(it, 0, size) }
+    private fun Input.readByteVector64(): ByteVector64 = ByteVector64(ByteArray(64).also { read(it, 0, it.size) })
+
+    private fun Input.readPublicKey() = PublicKey(ByteArray(33).also { read(it, 0, it.size) })
 
     private fun Input.readDelimitedByteArray(): ByteArray {
         val size = readNumber().toInt()
-        return readByteArray(size)
+        return ByteArray(size).also { read(it, 0, size) }
     }
 
     private fun Input.readLightningMessage() = LightningMessage.decode(readDelimitedByteArray())

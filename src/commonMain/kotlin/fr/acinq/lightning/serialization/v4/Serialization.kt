@@ -190,7 +190,7 @@ object Serialization {
 
     private fun Output.writeRevokedCommitPublished(o: RevokedCommitPublished) = o.run {
         writeBtcObject(commitTx)
-        write(remotePerCommitmentSecret.value.toByteArray())
+        writeByteVector32(remotePerCommitmentSecret.value)
         writeNullable(claimMainOutputTx) { writeTransactionWithInputInfo(it) }
         writeNullable(mainPenaltyTx) { writeTransactionWithInputInfo(it) }
         writeCollection(htlcPenaltyTxs) { writeTransactionWithInputInfo(it) }
@@ -213,7 +213,7 @@ object Serialization {
     }
 
     private fun Output.writeInteractiveTxParams(o: InteractiveTxParams) = o.run {
-        write(channelId.toByteArray())
+        writeByteVector32(channelId)
         writeBoolean(isInitiator)
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())
@@ -299,15 +299,15 @@ object Serialization {
                 writeTransactionWithInputInfo(commitTx)
                 writeCollection(htlcTxsAndSigs) { htlc ->
                     writeTransactionWithInputInfo(htlc.txinfo)
-                    write(htlc.localSig.toByteArray())
-                    write(htlc.remoteSig.toByteArray())
+                    writeByteVector64(htlc.localSig)
+                    writeByteVector64(htlc.remoteSig)
                 }
             }
         }
         o.remoteCommit.run {
             writeNumber(index)
             write(spec)
-            write(txid.toByteArray())
+            writeByteVector32(txid)
             writePublicKey(remotePerCommitmentPoint)
         }
         o.localChanges.run {
@@ -332,7 +332,7 @@ object Serialization {
                     nextRemoteCommit.run {
                         writeNumber(index)
                         write(spec)
-                        write(txid.toByteArray())
+                        writeByteVector32(txid)
                         writePublicKey(remotePerCommitmentPoint)
                     }
                     writeLightningMessage(sent)
@@ -346,7 +346,7 @@ object Serialization {
         remotePerCommitmentSecrets.run {
             writeCollection(knownHashes.entries) { entry ->
                 writeCollection(entry.key) { writeBoolean(it) }
-                write(entry.value.toByteArray())
+                writeByteVector32(entry.value)
             }
             writeNullable(lastIndex) { writeNumber(it) }
         }
@@ -378,7 +378,7 @@ object Serialization {
                 write(0x00); writeInputInfo(o.input); writeBtcObject(o.tx)
             }
             is HtlcTx.HtlcSuccessTx -> {
-                write(0x01); writeInputInfo(o.input); writeBtcObject(o.tx); write(o.paymentHash.toByteArray()); writeNumber(o.htlcId)
+                write(0x01); writeInputInfo(o.input); writeBtcObject(o.tx); writeByteVector32(o.paymentHash); writeNumber(o.htlcId)
             }
             is HtlcTx.HtlcTimeoutTx -> {
                 write(0x02); writeInputInfo(o.input); writeBtcObject(o.tx); writeNumber(o.htlcId)
@@ -430,6 +430,10 @@ object Serialization {
     private fun Output.writeBoolean(o: Boolean): Unit = if (o) write(1) else write(0)
 
     private fun Output.writeString(o: String): Unit = writeDelimited(o.encodeToByteArray())
+
+    private fun Output.writeByteVector32(o: ByteVector32) = write(o.toByteArray())
+
+    private fun Output.writeByteVector64(o: ByteVector64) = write(o.toByteArray())
 
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
