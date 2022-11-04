@@ -227,12 +227,12 @@ class Peer(
                     // reservedUtxos are part of a previously issued RequestChannelOpen command
                     val availableWallet = wallet.minus(reservedUtxos)
                     val balance = availableWallet.confirmedBalance
+                    logger.info { "swap-in wallet balance: $balance, ${availableWallet.unconfirmedBalance} unconfirmed" }
                     if (balance > 10_000.sat) {
-                        logger.info { "$balance available on swap-in wallet: requesting channel" }
+                        logger.info { "swap-in wallet: requesting channel using confirmed balance: $balance" }
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
                         reservedUtxos.union(availableWallet.confirmedUtxos)
                     } else {
-                        logger.info { "insufficient balance on swap-in wallet ($balance, ${availableWallet.unconfirmedBalance} unconfirmed): waiting for more" }
                         reservedUtxos
                     }.intersect(wallet.utxos) // drop utxos no longer in wallet
                 }
