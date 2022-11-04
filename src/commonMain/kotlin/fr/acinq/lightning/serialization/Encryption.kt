@@ -35,10 +35,10 @@ object Encryption {
      * Convenience method that builds an [EncryptedChannelData] from a [PersistedChannelState]
      */
     fun EncryptedChannelData.Companion.from(key: PrivateKey, state: PersistedChannelState): EncryptedChannelData {
-        val bin = Serialization.serialize(state)
-        val encrypted = encrypt(key.value, bin)
+        val serialized = Serialization.serialize(state)
+        val encrypted = encrypt(key.value, serialized.data)
         // we copy the first 2 bytes as meta-info on the serialization version
-        val data = bin.copyOfRange(0, 2) + encrypted
+        val data = byteArrayOf(serialized.versionByte, serialized.stateByte) + encrypted
         return EncryptedChannelData(data.toByteVector())
     }
 

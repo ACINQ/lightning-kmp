@@ -19,11 +19,11 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     fun `serialize normal state`() {
         val (alice, bob) = TestsHelper.reachNormal()
         val bytes = Serialization.serialize(alice.state)
-        val check = Serialization.deserialize(bytes)
+        val check = Serialization.deserialize(bytes.data)
         assertEquals(alice.state, check)
 
         val bytes1 = Serialization.serialize(bob.state)
-        val check1 = Serialization.deserialize(bytes1)
+        val check1 = Serialization.deserialize(bytes1.data)
         assertEquals(bob.state, check1)
     }
 

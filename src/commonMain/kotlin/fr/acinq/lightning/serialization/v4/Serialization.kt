@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.serialization.SerializedChannelState
 import fr.acinq.lightning.serialization.v4.Serialization.write
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.IncomingHtlc
@@ -37,11 +38,12 @@ object Serialization {
 
     const val versionMagic = 4
 
-    fun PersistedChannelState.toBinV4(): ByteArray {
+    fun PersistedChannelState.serialize(): SerializedChannelState {
         val out = ByteArrayOutput()
         out.write(versionMagic)
         out.writePersistedChannelState(this)
-        return out.toByteArray()
+        val bytes = out.toByteArray()
+        return SerializedChannelState(bytes[0], bytes[1], bytes)
     }
 
     private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
