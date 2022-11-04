@@ -230,11 +230,11 @@ class Peer(
                     if (balance > 10_000.sat) {
                         logger.info { "$balance available on swap-in wallet: requesting channel" }
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
-                        reservedUtxos + availableWallet.confirmedUtxos
+                        reservedUtxos.union(availableWallet.confirmedUtxos)
                     } else {
                         logger.info { "$balance available on swap-in wallet but amount insufficient: waiting for more" }
-                        reservedUtxos.intersect(wallet.utxos) // drop items from reservedUtxos that are no longer in wallet
-                    }
+                        reservedUtxos
+                    }.intersect(wallet.utxos) // drop utxos no longer in wallet
                 }
         }
         launch {
