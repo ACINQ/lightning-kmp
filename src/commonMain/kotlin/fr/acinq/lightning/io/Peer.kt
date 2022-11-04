@@ -223,7 +223,7 @@ class Peer(
         launch {
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
-                .fold(setOf<WalletState.Utxo>()) { reservedUtxos, wallet ->
+                .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
                     // reservedUtxos are part of a previously issued RequestChannelOpen command
                     val availableWallet = wallet.drop(reservedUtxos)
                     val balance = availableWallet.confirmedBalance
