@@ -51,7 +51,7 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
 
     override suspend fun addOrUpdateChannel(state: PersistedChannelState) {
         withContext(Dispatchers.IO) {
-            val data = Serialization.serialize(state).data
+            val data = Serialization.serialize(state)
             using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
                 update.setBytes(1, data)
                 update.setBytes(2, state.channelId.toByteArray())
