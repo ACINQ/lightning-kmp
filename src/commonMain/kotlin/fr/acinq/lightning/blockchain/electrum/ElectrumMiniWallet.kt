@@ -31,7 +31,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     val unconfirmedBalance = unconfirmedUtxos.map { it.amount }.sum()
     val totalBalance = confirmedBalance + unconfirmedBalance
 
-    fun drop(reserved: Set<Utxo>): WalletState {
+    fun minus(reserved: Set<Utxo>): WalletState {
         val reservedIds = reserved.map {
             UnspentItemId(it.previousTx.txid, it.outputIndex)
         }.toSet()
