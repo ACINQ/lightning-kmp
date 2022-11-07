@@ -7,17 +7,14 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.crypto.RouteBlinding
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
-@Serializable
+
 sealed class OnionMessagePayloadTlv : Tlv {
     /**
      * Onion messages may provide a reply path, allowing the recipient to send a message back to the original sender.
      * The reply path uses route blinding, which ensures that the sender doesn't leak its identity to the recipient.
      */
-    @Serializable
-    data class ReplyPath(@Contextual val blindedRoute: RouteBlinding.BlindedRoute) : OnionMessagePayloadTlv() {
+    data class ReplyPath(val blindedRoute: RouteBlinding.BlindedRoute) : OnionMessagePayloadTlv() {
         override val tag: Long get() = ReplyPath.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(blindedRoute.introductionNodeId.value, out)
@@ -51,8 +48,7 @@ sealed class OnionMessagePayloadTlv : Tlv {
      * This ensures that intermediate nodes can't know whether they're forwarding a message or its reply.
      * The sender must provide some encrypted data for each intermediate node which lets them locate the next node.
      */
-    @Serializable
-    data class EncryptedData(@Contextual val data: ByteVector) : OnionMessagePayloadTlv() {
+    data class EncryptedData(val data: ByteVector) : OnionMessagePayloadTlv() {
         override val tag: Long get() = EncryptedData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
 

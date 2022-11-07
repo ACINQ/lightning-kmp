@@ -15,14 +15,10 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector32
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
-@Serializable
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
-    @Serializable
-    data class UpfrontShutdownScriptTlv(@Contextual val scriptPubkey: ByteVector) : ChannelTlv() {
+    data class UpfrontShutdownScriptTlv(val scriptPubkey: ByteVector) : ChannelTlv() {
         val isEmpty: Boolean get() = scriptPubkey.isEmpty()
 
         override val tag: Long get() = UpfrontShutdownScriptTlv.tag
@@ -42,7 +38,6 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
-    @Serializable
     data class ChannelTypeTlv(val channelType: ChannelType) : ChannelTlv() {
         override val tag: Long get() = ChannelTypeTlv.tag
 
@@ -65,7 +60,6 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
-    @Serializable
     data class ChannelOriginTlv(val channelOrigin: ChannelOrigin) : ChannelTlv() {
         override val tag: Long get() = ChannelOriginTlv.tag
 
@@ -108,8 +102,7 @@ sealed class ChannelTlv : Tlv {
     }
 
     /** Amount that will be offered by the initiator of a dual-funded channel to the non-initiator. */
-    @Serializable
-    data class PushAmountTlv(@Contextual val amount: MilliSatoshi) : ChannelTlv() {
+    data class PushAmountTlv(val amount: MilliSatoshi) : ChannelTlv() {
         override val tag: Long get() = PushAmountTlv.tag
 
         override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
@@ -122,9 +115,7 @@ sealed class ChannelTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class ChannelReadyTlv : Tlv {
-    @Serializable
     data class ShortChannelIdTlv(val alias: ShortChannelId) : ChannelReadyTlv() {
         override val tag: Long get() = ShortChannelIdTlv.tag
         override fun write(out: Output) = LightningCodecs.writeU64(alias.toLong(), out)
@@ -136,10 +127,8 @@ sealed class ChannelReadyTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class CommitSigTlv : Tlv {
-    @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : CommitSigTlv() {
+    data class ChannelData(val ecb: EncryptedChannelData) : CommitSigTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -150,10 +139,8 @@ sealed class CommitSigTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class RevokeAndAckTlv : Tlv {
-    @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : RevokeAndAckTlv() {
+    data class ChannelData(val ecb: EncryptedChannelData) : RevokeAndAckTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -164,10 +151,8 @@ sealed class RevokeAndAckTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class ChannelReestablishTlv : Tlv {
-    @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
+    data class ChannelData(val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -178,10 +163,8 @@ sealed class ChannelReestablishTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class ShutdownTlv : Tlv {
-    @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ShutdownTlv() {
+    data class ChannelData(val ecb: EncryptedChannelData) : ShutdownTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -192,10 +175,8 @@ sealed class ShutdownTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class ClosingSignedTlv : Tlv {
-    @Serializable
-    data class FeeRange(@Contextual val min: Satoshi, @Contextual val max: Satoshi) : ClosingSignedTlv() {
+    data class FeeRange(val min: Satoshi, val max: Satoshi) : ClosingSignedTlv() {
         override val tag: Long get() = FeeRange.tag
 
         override fun write(out: Output) {
@@ -209,8 +190,7 @@ sealed class ClosingSignedTlv : Tlv {
         }
     }
 
-    @Serializable
-    data class ChannelData(@Contextual val ecb: EncryptedChannelData) : ClosingSignedTlv() {
+    data class ChannelData(val ecb: EncryptedChannelData) : ClosingSignedTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
 
@@ -221,10 +201,8 @@ sealed class ClosingSignedTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class PleaseOpenChannelTlv : Tlv {
-    @Serializable
-    data class MaxFees(val basisPoints: Int, @Contextual val floor: Satoshi) : PleaseOpenChannelTlv() {
+    data class MaxFees(val basisPoints: Int, val floor: Satoshi) : PleaseOpenChannelTlv() {
         override val tag: Long get() = MaxFees.tag
         override fun write(out: Output) {
             LightningCodecs.writeU16(basisPoints, out)
@@ -243,8 +221,7 @@ sealed class PleaseOpenChannelTlv : Tlv {
     }
 
     // NB: this is a temporary tlv that is only used to ensure a smooth migration to lightning-kmp for the android version of Phoenix.
-    @Serializable
-    data class GrandParents(val outpoints: List<@Contextual OutPoint>) : PleaseOpenChannelTlv() {
+    data class GrandParents(val outpoints: List<OutPoint>) : PleaseOpenChannelTlv() {
         override val tag: Long get() = GrandParents.tag
         override fun write(out: Output) {
             outpoints.forEach { outpoint ->
@@ -264,10 +241,8 @@ sealed class PleaseOpenChannelTlv : Tlv {
     }
 }
 
-@Serializable
 sealed class PleaseOpenChannelRejectedTlv : Tlv {
-    @Serializable
-    data class ExpectedFees(@Contextual val fees: MilliSatoshi) : PleaseOpenChannelRejectedTlv() {
+    data class ExpectedFees(val fees: MilliSatoshi) : PleaseOpenChannelRejectedTlv() {
         override val tag: Long get() = ExpectedFees.tag
         override fun write(out: Output) = LightningCodecs.writeTU64(fees.toLong(), out)
 

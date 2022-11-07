@@ -99,7 +99,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
             val serialIdParity = if (params.isInitiator) 0 else 1
 
             // We add a change output if necessary and finalize our funding contributions.
-            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0) }
+            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0u) }
             val sharedOutput = TxAddOutput(params.channelId, 2 * utxos.size.toLong() + serialIdParity, params.fundingAmount, params.fundingPubkeyScript)
             val changeOutput = when (changePubKey) {
                 null -> listOf()
@@ -122,7 +122,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
 }
 
 /** A lighter version of our peer's TxAddInput that avoids storing potentially large messages in our DB. */
-data class RemoteTxAddInput(val serialId: Long, val outPoint: OutPoint, val txOut: TxOut, val sequence: Long) {
+data class RemoteTxAddInput(val serialId: Long, val outPoint: OutPoint, val txOut: TxOut, val sequence: UInt) {
     constructor(i: TxAddInput) : this(i.serialId, OutPoint(i.previousTx, i.previousTxOutput), i.previousTx.txOut[i.previousTxOutput.toInt()], i.sequence)
 }
 
@@ -144,8 +144,8 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
     }
 
     fun buildUnsignedTx(): Transaction {
-        val localTxIn = localInputs.map { i -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence)) }
-        val remoteTxIn = remoteInputs.map { i -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence)) }
+        val localTxIn = localInputs.map { i -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong())) }
+        val remoteTxIn = remoteInputs.map { i -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong())) }
         val inputs = (localTxIn + remoteTxIn).sortedBy { (serialId, _) -> serialId }.map { (_, txIn) -> txIn }
         val localTxOut = localOutputs.map { o -> Pair(o.serialId, TxOut(o.amount, o.pubkeyScript)) }
         val remoteTxOut = remoteOutputs.map { o -> Pair(o.serialId, TxOut(o.amount, o.pubkeyScript)) }
@@ -199,8 +199,8 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
     override val signedTx = run {
         require(localSigs.witnesses.size == tx.localInputs.size) { "the number of local signatures does not match the number of local inputs" }
         require(remoteSigs.witnesses.size == tx.remoteInputs.size) { "the number of remote signatures does not match the number of remote inputs" }
-        val signedLocalInputs = tx.localInputs.sortedBy { i -> i.serialId }.zip(localSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence, w)) }
-        val signedRemoteInputs = tx.remoteInputs.sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence, w)) }
+        val signedLocalInputs = tx.localInputs.sortedBy { i -> i.serialId }.zip(localSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), w)) }
+        val signedRemoteInputs = tx.remoteInputs.sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), w)) }
         val inputs = (signedLocalInputs + signedRemoteInputs).sortedBy { (serialId, _) -> serialId }.map { (_, i) -> i }
         val localTxOut = tx.localOutputs.map { o -> Pair(o.serialId, TxOut(o.amount, o.pubkeyScript)) }
         val remoteTxOut = tx.remoteOutputs.map { o -> Pair(o.serialId, TxOut(o.amount, o.pubkeyScript)) }

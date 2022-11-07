@@ -316,10 +316,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val outgoingPayment = OutgoingPayment.LightningPart(
             id = childId,
             amount = route.amount,
-            route = listOf(HopDesc(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.shortChannelId), HopDesc(route.channel.staticParams.remoteNodeId, request.recipient)),
+            route = listOf(HopDesc(nodeParams.nodeId, route.channel.commitments.remoteParams.nodeId, route.channel.shortChannelId), HopDesc(route.channel.commitments.remoteParams.nodeId, request.recipient)),
             status = OutgoingPayment.LightningPart.Status.Pending
         )
-        val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.staticParams.remoteNodeId, route.channel.channelUpdate))
+        val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.commitments.remoteParams.nodeId, route.channel.channelUpdate))
         val (add, secrets) = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
         return Triple(outgoingPayment, secrets, WrappedChannelCommand(route.channel.channelId, ChannelCommand.ExecuteCommand(add)))
     }

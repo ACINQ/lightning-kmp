@@ -12,7 +12,7 @@ import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
-import fr.acinq.lightning.channel.TestsHelper.processEx
+
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.InputInfo
@@ -271,16 +271,16 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             val (bob5, alice5) = nodes5
             val (bob6, alice6) = crossSign(bob5, alice5)
             // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-            val (alice7, _) = alice6.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob.id, preimageBob)))
-            val (bob7, _) = bob6.processEx(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice.id, preimageAlice)))
+            val (alice7, _) = alice6.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob.id, preimageBob)))
+            val (bob7, _) = bob6.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice.id, preimageAlice)))
             // Alice publishes her commitment.
-            val (aliceClosing, _) = alice7.processEx(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
-            assertTrue(aliceClosing is Closing)
-            val lcp = aliceClosing.localCommitPublished
+            val (aliceClosing, _) = alice7.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+            assertIs<LNChannel<Closing>>(aliceClosing)
+            val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)
-            val (bobClosing, _) = bob7.processEx(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
-            assertTrue(bobClosing is Closing)
-            val rcp = bobClosing.remoteCommitPublished
+            val (bobClosing, _) = bob7.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.state.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            assertIs<LNChannel<Closing>>(bobClosing)
+            val rcp = bobClosing.state.remoteCommitPublished
             assertNotNull(rcp)
             Pair(lcp, rcp)
         }

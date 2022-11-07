@@ -6,14 +6,11 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
-@Serializable
+
 sealed class RouteBlindingEncryptedDataTlv : Tlv {
     /** Some padding can be added to ensure all payloads are the same size to improve privacy. */
-    @Serializable
-    data class Padding(@Contextual val dummy: ByteVector) : RouteBlindingEncryptedDataTlv() {
+    data class Padding(val dummy: ByteVector) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = Padding.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(dummy, out)
 
@@ -25,8 +22,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Id of the next node. */
-    @Serializable
-    data class OutgoingNodeId(@Contextual val nodeId: PublicKey) : RouteBlindingEncryptedDataTlv() {
+    data class OutgoingNodeId(val nodeId: PublicKey) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
 
@@ -43,8 +39,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
      * It should use that field to detect when blinded routes are used outside of their intended use (malicious probing)
      * and react accordingly (ignore the message or send an error depending on the use-case).
      */
-    @Serializable
-    data class PathId(@Contextual val data: ByteVector) : RouteBlindingEncryptedDataTlv() {
+    data class PathId(val data: ByteVector) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = PathId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
 
@@ -56,8 +51,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Blinding override for the rest of the route. */
-    @Serializable
-    data class NextBlinding(@Contextual val blinding: PublicKey) : RouteBlindingEncryptedDataTlv() {
+    data class NextBlinding(val blinding: PublicKey) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = NextBlinding.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(blinding.value, out)
 

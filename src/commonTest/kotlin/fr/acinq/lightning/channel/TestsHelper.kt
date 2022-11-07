@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -17,11 +18,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import fr.acinq.secp256k1.Hex
-import org.kodein.memory.file.FileSystem
-import org.kodein.memory.file.Path
-import org.kodein.memory.file.openWriteableFile
-import org.kodein.memory.file.resolve
+import kotlinx.serialization.encodeToString
 import kotlin.test.*
 
 // LN Message
@@ -64,11 +61,83 @@ internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = fin
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.doesNotHave() = assertTrue { none { it is T } }
 
-fun Normal.updateFeerate(feerate: FeeratePerKw): Normal = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
-fun Negotiating.updateFeerate(feerate: FeeratePerKw): Negotiating = this.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate))
+fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate)))
 
 fun Features.add(vararg pairs: Pair<Feature, FeatureSupport>): Features = this.copy(activated = this.activated + mapOf(*pairs))
 fun Features.remove(vararg features: Feature): Features = this.copy(activated = activated.filterKeys { f -> !features.contains(f) })
+
+data class LNChannel<out S : ChannelState>(
+    val ctx: ChannelContext,
+    val state: S
+) {
+    val staticParams = ctx.staticParams
+    val currentBlockHeight = ctx.currentBlockHeight
+    val channelId: ByteVector32 by lazy {
+        when (state) {
+            is ChannelStateWithCommitments -> state.channelId
+            is WaitForFundingCreated -> state.channelId
+            is WaitForFundingSigned -> state.channelId
+            else -> error("no channel id in state ${state::class}")
+        }
+    }
+    val commitments: Commitments by lazy {
+        when (state) {
+            is ChannelStateWithCommitments -> state.commitments
+            else -> error("no commitments in state ${state::class}")
+        }
+    }
+
+    fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
+        state
+            .run { ctx.process(cmd) }
+            .let { (newState, actions) ->
+                checkSerialization(actions)
+                JsonSerializers.json.encodeToString(newState)
+                LNChannel(ctx, newState) to actions
+            }
+
+    /** same as [process] but with the added assumption that we stay in the same state */
+    fun processSameState(event: ChannelCommand): Pair<LNChannel<S>, List<ChannelAction>> {
+        val (newState, actions) = this.process(event)
+        assertIs<LNChannel<S>>(newState)
+        return newState to actions
+    }
+
+    // we check that serialization works by checking that deserialize(serialize(state)) == state
+    private fun checkSerialization(state: PersistedChannelState) {
+
+        // We never persist remote channel data.
+        fun removeChannelData(state: PersistedChannelState): PersistedChannelState = when (state) {
+            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Normal -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is ShuttingDown -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Negotiating -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty)))
+        }
+
+        // We never persist a funding RBF attempt.
+        fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
+            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
+            else -> state
+        }
+
+        val serialized = Serialization.serialize(state)
+        val deserialized = Serialization.deserialize(serialized)
+
+        assertEquals(removeChannelData(removeRbfAttempt(state)), deserialized, "serialization error")
+    }
+
+    private fun checkSerialization(actions: List<ChannelAction>) {
+        // we check that serialization works everytime we're supposed to persist channel data
+        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data) }
+    }
+
+}
 
 object TestsHelper {
 
@@ -83,7 +152,7 @@ object TestsHelper {
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
         channelOrigin: ChannelOrigin? = null
-    ): Triple<WaitForAcceptChannel, WaitForOpenChannel, OpenDualFundedChannel> {
+    ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(
                 TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId)),
@@ -94,16 +163,23 @@ object TestsHelper {
                 TestConstants.Bob.nodeParams.copy(features = bobFeatures)
             )
         }
-        val alice = WaitForInit(
-            StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
-            currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-            currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+        val alice = LNChannel(
+            ChannelContext(
+                StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
+                currentBlockHeight = currentHeight,
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+            ),
+            WaitForInit
         )
-        val bob = WaitForInit(
-            StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
-            currentTip = Pair(currentHeight, Block.RegtestGenesisBlock.header),
-            currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+        val bob = LNChannel(
+            ChannelContext(
+                StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
+                currentBlockHeight = currentHeight,
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+            ),
+            WaitForInit
         )
+
         val channelFlags = 0.toByte()
         val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures)
         val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
@@ -124,10 +200,10 @@ object TestsHelper {
                 channelOrigin
             )
         )
-        assertIs<WaitForAcceptChannel>(alice1)
+        assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else WalletState.empty
-        val (bob1, _) = bob.process(ChannelCommand.InitNonInitiator(aliceChannelParams.channelKeys.temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
-        assertIs<WaitForOpenChannel>(bob1)
+        val (bob1, _) = bob.process(ChannelCommand.InitNonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        assertIs<LNChannel<WaitForOpenChannel>>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
     }
@@ -142,64 +218,64 @@ object TestsHelper {
         alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
-    ): Triple<Normal, Normal, Transaction> {
+    ): Triple<LNChannel<Normal>, LNChannel<Normal>, Transaction> {
         val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
-        assertIs<Normal>(alice1)
+        assertIs<LNChannel<Normal>>(alice1)
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(channelReadyAlice))
-        assertIs<Normal>(bob1)
+        assertIs<LNChannel<Normal>>(bob1)
         assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
-        return Triple(alice1, bob1, alice.fundingTx.tx.buildUnsignedTx())
+        return Triple(alice1, bob1, alice.state.fundingTx.tx.buildUnsignedTx())
     }
 
-    fun mutualCloseAlice(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
+    fun mutualCloseAlice(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
-        assertTrue(alice1 is Normal)
+        assertIs<LNChannel<Normal>>(alice1)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingSigned>())
 
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
-        assertTrue(bob1 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(bob1)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
-        assertTrue(alice2 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(alice2)
         val closingSignedAlice = actionsAlice2.findOutgoingMessage<ClosingSigned>()
         return Triple(alice2, bob1, closingSignedAlice)
     }
 
-    fun mutualCloseBob(alice: Normal, bob: Normal, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<Negotiating, Negotiating, ClosingSigned> {
+    fun mutualCloseBob(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
         val (bob1, actionsBob1) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
-        assertTrue(bob1 is Normal)
+        assertIs<LNChannel<Normal>>(bob1)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(shutdownBob))
-        assertTrue(alice1 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(alice1)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         val closingSignedAlice = actionsAlice1.findOutgoingMessage<ClosingSigned>()
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(shutdownAlice))
-        assertTrue(bob2 is Negotiating)
+        assertIs<LNChannel<Negotiating>>(bob2)
         assertNull(actionsBob2.findOutgoingMessageOpt<ClosingSigned>())
         return Triple(alice1, bob2, closingSignedAlice)
     }
 
-    fun localClose(s: ChannelState): Pair<Closing, LocalCommitPublished> {
-        assertTrue(s is ChannelStateWithCommitments)
-        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.commitments.channelFeatures.channelType)
+    fun localClose(s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, LocalCommitPublished> {
+        assertIs<LNChannel<ChannelStateWithCommitments>>(s)
+        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.channelFeatures.channelType)
         // an error occurs and s publishes their commit tx
-        val commitTx = s.commitments.localCommit.publishableTxs.commitTx.tx
+        val commitTx = s.state.commitments.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertTrue(s1 is Closing)
+        assertIs<LNChannel<Closing>>(s1)
         actions1.has<ChannelAction.Storage.StoreState>()
         actions1.has<ChannelAction.Storage.StoreChannelClosing>()
 
-        val localCommitPublished = s1.localCommitPublished
+        val localCommitPublished = s1.state.localCommitPublished
         assertNotNull(localCommitPublished)
         assertEquals(commitTx, localCommitPublished.commitTx)
         actions1.hasTx(commitTx)
@@ -233,23 +309,23 @@ object TestsHelper {
         return s1 to localCommitPublished
     }
 
-    fun remoteClose(rCommitTx: Transaction, s: ChannelState): Pair<Closing, RemoteCommitPublished> {
-        assertTrue(s is ChannelStateWithCommitments)
-        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.commitments.channelFeatures.channelType)
+    fun remoteClose(rCommitTx: Transaction, s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, RemoteCommitPublished> {
+        assertIs<LNChannel<ChannelStateWithCommitments>>(s)
+        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.channelFeatures.channelType)
         // we make s believe r unilaterally closed the channel
-        val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
-        assertTrue(s1 is Closing)
+        val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.state.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
+        assertIs<LNChannel<Closing>>(s1)
 
-        if (s !is Closing) {
-            val channelBalance = s.commitments.localCommit.spec.toLocal
+        if (s.state !is Closing) {
+            val channelBalance = s.state.commitments.localCommit.spec.toLocal
             if (channelBalance > 0.msat) {
                 actions1.has<ChannelAction.Storage.StoreChannelClosing>()
             }
         }
 
-        val remoteCommitPublished = s1.remoteCommitPublished ?: s1.nextRemoteCommitPublished ?: s1.futureRemoteCommitPublished
+        val remoteCommitPublished = s1.state.remoteCommitPublished ?: s1.state.nextRemoteCommitPublished ?: s1.state.futureRemoteCommitPublished
         assertNotNull(remoteCommitPublished)
-        assertNull(s1.localCommitPublished)
+        assertNull(s1.state.localCommitPublished)
 
         // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
         remoteCommitPublished.claimMainOutputTx?.let { claimMain ->
@@ -281,7 +357,7 @@ object TestsHelper {
         return s1 to remoteCommitPublished
     }
 
-    fun signAndRevack(alice: ChannelState, bob: ChannelState): Pair<ChannelState, ChannelState> {
+    fun signAndRevack(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ChannelState>, LNChannel<ChannelState>> {
         val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig = actions1.findOutgoingMessage<CommitSig>()
         val (bob1, actions2) = bob.process(ChannelCommand.MessageReceived(commitSig))
@@ -311,56 +387,59 @@ object TestsHelper {
         return privKey to WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 654321))), mapOf(parentTx.txid to parentTx))
     }
 
-    fun addHtlc(amount: MilliSatoshi, payer: ChannelState, payee: ChannelState): Triple<Pair<ChannelState, ChannelState>, ByteVector32, UpdateAddHtlc> {
+    fun <T : ChannelState> addHtlc(amount: MilliSatoshi, payer: LNChannel<T>, payee: LNChannel<T>): Triple<Pair<LNChannel<T>, LNChannel<T>>, ByteVector32, UpdateAddHtlc> {
         val currentBlockHeight = payer.currentBlockHeight.toLong()
         val (paymentPreimage, cmd) = makeCmdAdd(amount, payee.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (sender0, receiver0, htlc) = addHtlc(cmd, payer, payee)
         return Triple(sender0 to receiver0, paymentPreimage, htlc)
     }
 
-    fun addHtlc(cmdAdd: CMD_ADD_HTLC, payer: ChannelState, payee: ChannelState): Triple<ChannelState, ChannelState, UpdateAddHtlc> {
+    fun <T : ChannelState> addHtlc(cmdAdd: CMD_ADD_HTLC, payer: LNChannel<T>, payee: LNChannel<T>): Triple<LNChannel<T>, LNChannel<T>, UpdateAddHtlc> {
         val (sender0, senderActions0) = payer.process(ChannelCommand.ExecuteCommand(cmdAdd))
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
         val (receiver0, _) = payee.process(ChannelCommand.MessageReceived(htlc))
-        assertTrue(receiver0 is ChannelStateWithCommitments)
-        assertTrue(receiver0.commitments.remoteChanges.proposed.contains(htlc))
+        assertIs<LNChannel<ChannelStateWithCommitments>>(receiver0)
+        assertTrue(receiver0.state.commitments.remoteChanges.proposed.contains(htlc))
 
+        assertIs<LNChannel<T>>(sender0)
+        assertIs<LNChannel<T>>(receiver0)
         return Triple(sender0, receiver0, htlc)
     }
 
-    fun fulfillHtlc(id: Long, paymentPreimage: ByteVector32, payer: ChannelState, payee: ChannelState): Pair<ChannelState, ChannelState> {
+    fun <T : ChannelState> fulfillHtlc(id: Long, paymentPreimage: ByteVector32, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
         val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
         val fulfillHtlc = payeeActions0.findOutgoingMessage<UpdateFulfillHtlc>()
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(fulfillHtlc))
-        assertTrue(payer0 is ChannelStateWithCommitments)
-        assertTrue(payer0.commitments.remoteChanges.proposed.contains(fulfillHtlc))
+        assertIs<LNChannel<ChannelStateWithCommitments>>(payer0)
+        assertTrue(payer0.state.commitments.remoteChanges.proposed.contains(fulfillHtlc))
 
+        assertIs<LNChannel<T>>(payer0)
+        assertIs<LNChannel<T>>(payee0)
         return payer0 to payee0
     }
 
-    fun failHtlc(id: Long, payer: ChannelState, payee: ChannelState): Pair<ChannelState, ChannelState> {
+    fun <T : ChannelState> failHtlc(id: Long, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
         val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure))))
         val failHtlc = payeeActions0.findOutgoingMessage<UpdateFailHtlc>()
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(failHtlc))
-        assertTrue(payer0 is ChannelStateWithCommitments)
-        assertTrue(payer0.commitments.remoteChanges.proposed.contains(failHtlc))
+        assertIs<LNChannel<ChannelStateWithCommitments>>(payer0)
+        assertTrue(payer0.state.commitments.remoteChanges.proposed.contains(failHtlc))
 
+        assertIs<LNChannel<T>>(payer0)
+        assertIs<LNChannel<T>>(payee0)
         return payer0 to payee0
     }
 
     /**
      * Cross sign nodes where nodeA initiate the signature exchange
      */
-    fun crossSign(nodeA: ChannelState, nodeB: ChannelState): Pair<ChannelState, ChannelState> {
-        assertTrue(nodeA is ChannelStateWithCommitments)
-        assertTrue(nodeB is ChannelStateWithCommitments)
-
-        val sCommitIndex = nodeA.commitments.localCommit.index
-        val rCommitIndex = nodeB.commitments.localCommit.index
-        val rHasChanges = nodeB.commitments.localHasChanges()
+    fun <T : ChannelStateWithCommitments> crossSign(nodeA: LNChannel<T>, nodeB: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
+        val sCommitIndex = nodeA.state.commitments.localCommit.index
+        val rCommitIndex = nodeB.state.commitments.localCommit.index
+        val rHasChanges = nodeB.state.commitments.localHasChanges()
 
         val (sender0, sActions0) = nodeA.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
@@ -386,7 +465,8 @@ object TestsHelper {
             val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
             val (sender4, _) = sender3.process(ChannelCommand.MessageReceived(revokeAndAck2))
 
-            sender4 as ChannelStateWithCommitments; receiver3 as ChannelStateWithCommitments
+            assertIs<LNChannel<T>>(sender4)
+            assertIs<LNChannel<T>>(receiver3)
             assertEquals(sCommitIndex + 1, sender4.commitments.localCommit.index)
             assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommit.index)
             assertEquals(rCommitIndex + 2, receiver3.commitments.localCommit.index)
@@ -394,7 +474,8 @@ object TestsHelper {
 
             return sender4 to receiver3
         } else {
-            sender2 as ChannelStateWithCommitments; receiver2 as ChannelStateWithCommitments
+            assertIs<LNChannel<T>>(sender2)
+            assertIs<LNChannel<T>>(receiver2)
             assertEquals(sCommitIndex + 1, sender2.commitments.localCommit.index)
             assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommit.index)
             assertEquals(rCommitIndex + 1, receiver2.commitments.localCommit.index)
@@ -418,70 +499,6 @@ object TestsHelper {
 
     fun RemoteCommitPublished.claimHtlcTimeoutTxs(): List<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx> {
         return claimHtlcTxs.values.filterIsInstance<Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx>()
-    }
-
-    // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: ChannelStateWithCommitments, minVersion: Int = 1, saveFiles: Boolean = false) {
-        fun save(blob: ByteArray, suffix: String) {
-            val name = (state::class.simpleName ?: "serialized") + "_${Hex.encode(Crypto.sha256(blob).take(8).toByteArray())}.$suffix"
-            val file: Path = FileSystem.workingDir().resolve(name)
-            file.openWriteableFile(false).putBytes(blob)
-        }
-
-        // Before v3, we had a single set of hard-coded channel features, so they will not match if the test added new channel features that weren't supported then.
-        fun maskChannelFeatures(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
-            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Normal -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is ShuttingDown -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Negotiating -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Closing -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features))))
-            is ErrorInformationLeak -> state.copy(commitments = state.commitments.copy(channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features)))
-        }
-
-        // We never persist a funding RBF attempt.
-        fun removeRbfAttempt(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
-            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
-            else -> state
-        }
-
-        if (saveFiles) {
-            if (minVersion <= 1) save(fr.acinq.lightning.serialization.v1.Serialization.serialize(state), "v1")
-            if (minVersion <= 2) save(fr.acinq.lightning.serialization.v2.Serialization.serialize(state), "v2")
-            if (minVersion <= 3) save(fr.acinq.lightning.serialization.v3.Serialization.serialize(state), "v3")
-        }
-
-        if (minVersion <= 1) {
-            val serializedv1 = fr.acinq.lightning.serialization.v1.Serialization.serialize(state)
-            val deserializedv1 = Serialization.deserialize(serializedv1, state.staticParams.nodeParams)
-            assertEquals(maskChannelFeatures(deserializedv1), maskChannelFeatures(state), "serialization error (v1)")
-        }
-        if (minVersion <= 2) {
-            val serializedv2 = fr.acinq.lightning.serialization.v2.Serialization.serialize(state)
-            val deserializedv2 = Serialization.deserialize(serializedv2, state.staticParams.nodeParams)
-            assertEquals(maskChannelFeatures(deserializedv2), maskChannelFeatures(state), "serialization error (v2)")
-        }
-        if (minVersion <= 3) {
-            val serializedv3 = fr.acinq.lightning.serialization.v3.Serialization.serialize(state)
-            val deserializedv3 = Serialization.deserialize(serializedv3, state.staticParams.nodeParams)
-            assertEquals(deserializedv3, removeRbfAttempt(state), "serialization error (v3)")
-        }
-    }
-
-    private fun checkSerialization(actions: List<ChannelAction>, minVersion: Int = 1) {
-        // we check that serialization works everytime we're suppose to persist channel data
-        actions.filterIsInstance<ChannelAction.Storage.StoreState>().forEach { checkSerialization(it.data, minVersion) }
-    }
-
-    // test-specific extension that allows for extra checks during tests
-    fun ChannelState.processEx(event: ChannelCommand, minVersion: Int = 1): Pair<ChannelState, List<ChannelAction>> {
-        val result = this.process(event)
-        checkSerialization(result.second, minVersion)
-        return result
     }
 
 }

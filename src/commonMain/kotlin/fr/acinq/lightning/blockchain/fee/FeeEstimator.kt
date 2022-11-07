@@ -2,8 +2,6 @@ package fr.acinq.lightning.blockchain.fee
 
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.utils.sat
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
 
 interface FeeEstimator {
     fun getFeerate(target: Int): FeeratePerKw
@@ -42,9 +40,8 @@ data class FeeratePerKB(val feerate: Satoshi) : Comparable<FeeratePerKB> {
     override fun toString(): String = "$feerate/kB"
 }
 
-@Serializable
 /** Fee rate in satoshi-per-kilo-weight. */
-data class FeeratePerKw(@Contextual val feerate: Satoshi) : Comparable<FeeratePerKw> {
+data class FeeratePerKw(val feerate: Satoshi) : Comparable<FeeratePerKw> {
     constructor(feeratePerKB: FeeratePerKB) : this(MinimumFeeratePerKw.feerate.max(feeratePerKB.feerate / 4))
     constructor(feeratePerByte: FeeratePerByte) : this(FeeratePerKB(feeratePerByte))
 

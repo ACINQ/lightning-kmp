@@ -2,13 +2,11 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.lightning.utils.BitField
-import kotlinx.serialization.Serializable
 
 /**
  * Internal configuration option impacting the channel's structure or behavior.
  * This must be set when creating the channel and cannot be changed afterwards.
  */
-@Serializable
 sealed class ChannelConfigOption {
 
     abstract val name: String
@@ -21,7 +19,6 @@ sealed class ChannelConfigOption {
      *  - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
      *  - recompute your channel keys and spend your output
      */
-    @Serializable
     object FundingPubKeyBasedChannelKeyPath : ChannelConfigOption() {
         override val name: String get() = "funding_pubkey_based_channel_keypath"
         override val supportBit: Int get() = 0
@@ -29,7 +26,6 @@ sealed class ChannelConfigOption {
 
 }
 
-@Serializable
 data class ChannelConfig(val options: Set<ChannelConfigOption>) {
 
     fun hasOption(option: ChannelConfigOption): Boolean = options.contains(option)

@@ -102,7 +102,7 @@ class PeerTest : LightningTestSuite() {
         alice.forward(open3)
         alice2bob.expect<AcceptDualFundedChannel>()
 
-        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.channelKeys.fundingKeyPath }.toSet().size)
+        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.fundingKeyPath }.toSet().size)
     }
 
     @Test
@@ -269,16 +269,20 @@ class PeerTest : LightningTestSuite() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
-        assertTrue(alice1 is Normal)
-        val alice2 = alice1.copy(currentTip = alice1.currentTip.copy(first = htlc.cltvExpiry.toLong().toInt()))
+        assertIs<LNChannel<Normal>>(alice1)
+        val channelId = alice0.channelId
 
-        val db = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice2) }
-        val peer = buildPeer(this, alice2.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5), TestConstants.Alice.walletParams, db)
+        val peer = buildPeer(this,
+            alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            TestConstants.Alice.walletParams,
+            databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
+            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+        )
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }
         assertEquals(1, initChannels.size)
-        assertEquals(alice2.channelId, initChannels.keys.first())
-        assertTrue(initChannels.values.first() is Offline)
+        assertEquals(channelId, initChannels.keys.first())
+        assertIs<Offline>(initChannels.values.first())
 
         // send Init from remote node
         val theirInit = Init(features = bob0.staticParams.nodeParams.features.toByteArray().toByteVector())
@@ -291,7 +295,7 @@ class PeerTest : LightningTestSuite() {
         val syncChannels = peer.channelsFlow
             .first { it.values.size == 1 && it.values.all { channelState -> channelState is Syncing } }
             .map { it.value as Syncing }
-        assertEquals(alice2.channelId, syncChannels.first().state.channelId)
+        assertEquals(channelId, syncChannels.first().state.channelId)
 
         val syncState = syncChannels.first()
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
@@ -311,11 +315,11 @@ class PeerTest : LightningTestSuite() {
 
         // Wait until the channels are Reestablished(=Normal)
         val reestablishChannels = peer.channelsFlow.first { it.values.isNotEmpty() && it.values.all { channelState -> channelState is Normal } }
-        assertEquals(alice2.channelId, reestablishChannels.keys.first())
+        assertEquals(channelId, reestablishChannels.keys.first())
 
         // Wait until alice detects the HTLC-timeout and closes
         val closingChannels = peer.channelsFlow.first { it.values.isNotEmpty() && it.values.all { channelState -> channelState is Closing } }
-        assertEquals(alice2.channelId, closingChannels.keys.first())
+        assertEquals(channelId, closingChannels.keys.first())
     }
 
     @Test
@@ -326,8 +330,8 @@ class PeerTest : LightningTestSuite() {
 
     @Test
     fun `invoice parameters`() = runSuspendTest {
-        val nodeParams = TestConstants.Alice.nodeParams
-        val walletParams = TestConstants.Alice.walletParams
+        val nodeParams = TestConstants.Bob.nodeParams
+        val walletParams = TestConstants.Bob.walletParams
         val bob = newPeer(nodeParams, walletParams)
 
         run {
@@ -344,11 +348,8 @@ class PeerTest : LightningTestSuite() {
     fun `invoice routing hints`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
-        val walletParams = Pair(
-            // Alice must declare Bob as her trampoline node to enable direct payments.
-            TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)),
-            TestConstants.Bob.walletParams
-        )
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+
         val (_, bob, _, _) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
         run {
@@ -362,7 +363,7 @@ class PeerTest : LightningTestSuite() {
             assertEquals(TestConstants.Bob.walletParams.invoiceDefaultRoutingFees, InvoiceDefaultRoutingFees(extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta))
         }
         run {
-            val aliceUpdate = Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.privateKey, alice0.staticParams.remoteNodeId, alice0.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
+            val aliceUpdate = Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
             bob.forward(aliceUpdate)
 
             val deferredInvoice = CompletableDeferred<PaymentRequest>()

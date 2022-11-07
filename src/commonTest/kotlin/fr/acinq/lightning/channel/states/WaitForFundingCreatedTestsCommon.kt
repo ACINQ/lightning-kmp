@@ -56,11 +56,11 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         assertTrue(commitSigAlice.channelData.isEmpty())
         assertTrue(commitSigBob.htlcSignatures.isEmpty())
         assertTrue(commitSigBob.channelData.isEmpty())
-        assertIs<WaitForFundingSigned>(alice2)
-        assertIs<WaitForFundingSigned>(bob3)
-        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        verifyCommits(alice2.firstCommitTx, bob3.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.alicePushAmount)
+        assertIs<LNChannel<WaitForFundingSigned>>(alice2)
+        assertIs<LNChannel<WaitForFundingSigned>>(bob3)
+        assertEquals(alice2.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob3.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        verifyCommits(alice2.state.firstCommitTx, bob3.state.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.alicePushAmount)
     }
 
     @Test
@@ -79,11 +79,11 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val commitSigAlice = actionsAlice2.findOutgoingMessage<CommitSig>()
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
-        assertIs<WaitForFundingSigned>(alice2)
-        assertIs<WaitForFundingSigned>(bob3)
-        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        verifyCommits(alice2.firstCommitTx, bob3.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount)
+        assertIs<LNChannel<WaitForFundingSigned>>(alice2)
+        assertIs<LNChannel<WaitForFundingSigned>>(bob3)
+        assertEquals(alice2.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob3.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        verifyCommits(alice2.state.firstCommitTx, bob3.state.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount)
     }
 
     @Test
@@ -102,11 +102,11 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val commitSigAlice = actionsAlice2.findOutgoingMessage<CommitSig>()
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
-        assertIs<WaitForFundingSigned>(alice2)
-        assertIs<WaitForFundingSigned>(bob3)
-        assertEquals(alice2.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
-        assertEquals(bob3.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
-        verifyCommits(alice2.firstCommitTx, bob3.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi(), TestConstants.bobFundingAmount.toMilliSatoshi())
+        assertIs<LNChannel<WaitForFundingSigned>>(alice2)
+        assertIs<LNChannel<WaitForFundingSigned>>(bob3)
+        assertEquals(alice2.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(bob3.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        verifyCommits(alice2.state.firstCommitTx, bob3.state.firstCommitTx, TestConstants.aliceFundingAmount.toMilliSatoshi(), TestConstants.bobFundingAmount.toMilliSatoshi())
     }
 
     @Test
@@ -120,11 +120,11 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
         // Alice <--- tx_complete ----- Bob
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
-        assertIs<WaitForFundingSigned>(alice2)
+        assertIs<LNChannel<WaitForFundingSigned>>(alice2)
         // Alice ---- tx_complete ----> Bob
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
         actionsBob3.hasOutgoingMessage<Error>()
-        assertIs<Aborted>(bob3)
+        assertIs<LNChannel<Aborted>>(bob3)
     }
 
     @Test
@@ -134,14 +134,14 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             // Invalid serial_id.
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice.copy(serialId = 1)))
             actionsBob1.hasOutgoingMessage<Error>()
-            assertIs<Aborted>(bob1)
+            assertIs<LNChannel<Aborted>>(bob1)
         }
         run {
             // Below dust.
             val txAddOutput = TxAddOutput(inputAlice.channelId, 2, 100.sat, Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector())
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txAddOutput))
             actionsBob1.hasOutgoingMessage<Error>()
-            assertIs<Aborted>(bob1)
+            assertIs<LNChannel<Aborted>>(bob1)
         }
     }
 
@@ -151,12 +151,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(CommitSig(alice.channelId, ByteVector64.Zeroes, listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(alice.channelId).message)
-            assertIs<Aborted>(alice1)
+            assertIs<LNChannel<Aborted>>(alice1)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(CommitSig(bob.channelId, ByteVector64.Zeroes, listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(bob.channelId).message)
-            assertIs<Aborted>(bob1)
+            assertIs<LNChannel<Aborted>>(bob1)
         }
     }
 
@@ -166,12 +166,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, randomBytes32(), listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(alice.channelId).message)
-            assertIs<Aborted>(alice1)
+            assertIs<LNChannel<Aborted>>(alice1)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxSignatures(bob.channelId, randomBytes32(), listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(bob.channelId).message)
-            assertIs<Aborted>(bob1)
+            assertIs<LNChannel<Aborted>>(bob1)
         }
     }
 
@@ -181,12 +181,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "changed my mind")))
             assertTrue(actionsAlice1.isEmpty())
-            assertIs<Aborted>(alice1)
+            assertIs<LNChannel<Aborted>>(alice1)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxAbort(bob.channelId, "changed my mind")))
             assertTrue(actionsBob1.isEmpty())
-            assertIs<Aborted>(bob1)
+            assertIs<LNChannel<Aborted>>(bob1)
         }
     }
 
@@ -228,7 +228,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv Error`() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertIs<Aborted>(bob1)
+        assertIs<LNChannel<Aborted>>(bob1)
         assertTrue(actions1.isEmpty())
     }
 
@@ -237,7 +237,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
         assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ChannelFundingError(bob.channelId).message)
-        assertIs<Aborted>(bob1)
+        assertIs<LNChannel<Aborted>>(bob1)
     }
 
     @Test
@@ -245,16 +245,16 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
         assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ChannelFundingError(bob.channelId).message)
-        assertIs<Aborted>(bob1)
+        assertIs<LNChannel<Aborted>>(bob1)
     }
 
     @Test
     fun `recv Disconnected`() {
         val (_, bob, txAddInput) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(txAddInput))
-        assertIs<WaitForFundingCreated>(bob1)
+        assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         val (bob2, actions2) = bob1.process(ChannelCommand.Disconnected)
-        assertIs<Aborted>(bob2)
+        assertIs<LNChannel<Aborted>>(bob2)
         assertTrue(actions2.isEmpty())
     }
 
@@ -270,14 +270,14 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             zeroConf: Boolean = false,
             channelOrigin: ChannelOrigin? = null
-        ): Triple<WaitForFundingCreated, WaitForFundingCreated, TxAddInput> {
+        ): Triple<LNChannel<WaitForFundingCreated>, LNChannel<WaitForFundingCreated>, TxAddInput> {
             val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf, channelOrigin)
             val (b1, actions) = b.process(ChannelCommand.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
-            assertIs<WaitForFundingCreated>(b1)
+            assertIs<LNChannel<WaitForFundingCreated>>(b1)
             val (a1, actions2) = a.process(ChannelCommand.MessageReceived(accept))
             val aliceInput = actions2.findOutgoingMessage<TxAddInput>()
-            assertIs<WaitForFundingCreated>(a1)
+            assertIs<LNChannel<WaitForFundingCreated>>(a1)
             return Triple(a1, b1, aliceInput)
         }
     }

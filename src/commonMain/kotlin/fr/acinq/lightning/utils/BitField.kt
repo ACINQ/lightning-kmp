@@ -2,7 +2,6 @@ package fr.acinq.lightning.utils
 
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -11,7 +10,6 @@ import kotlinx.serialization.encoding.Encoder
 import kotlin.experimental.and
 import kotlin.experimental.or
 
-@Serializable(with = BitField.Serializer::class)
 class BitField private constructor(val bytes: ByteArray) {
     constructor(sizeBytes: Int) : this(ByteArray(sizeBytes))
 

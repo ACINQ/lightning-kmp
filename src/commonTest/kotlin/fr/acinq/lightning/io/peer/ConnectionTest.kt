@@ -17,7 +17,7 @@ class ConnectionTest : LightningTestSuite() {
     @Test
     fun `connection lost`() = runSuspendTest {
         val (alice0, bob0) = reachNormal()
-        val peer = newPeer(alice0.staticParams.nodeParams, TestConstants.Alice.walletParams, bob0) { channels.addOrUpdateChannel(alice0) }
+        val peer = newPeer(alice0.staticParams.nodeParams, TestConstants.Alice.walletParams, bob0) { channels.addOrUpdateChannel(alice0.state) }
 
         peer.send(Disconnected)
         // Wait until alice is Offline

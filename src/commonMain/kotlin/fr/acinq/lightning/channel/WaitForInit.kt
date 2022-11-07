@@ -1,24 +1,19 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelTlv
 import fr.acinq.lightning.wire.OpenDualFundedChannel
 import fr.acinq.lightning.wire.TlvStream
 
-data class WaitForInit(override val staticParams: StaticParams, override val currentTip: Pair<Int, BlockHeader>, override val currentOnChainFeerates: OnChainFeerates) : ChannelState() {
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+object WaitForInit : ChannelState() {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.InitNonInitiator -> {
                 val nextState = WaitForOpenChannel(
-                    staticParams,
-                    currentTip,
-                    currentOnChainFeerates,
                     cmd.temporaryChannelId,
                     cmd.fundingAmount,
                     cmd.pushAmount,
@@ -32,7 +27,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
             cmd is ChannelCommand.InitInitiator && isValidChannelType(cmd.channelType) -> {
                 val open = OpenDualFundedChannel(
                     chainHash = staticParams.nodeParams.chainHash,
-                    temporaryChannelId = cmd.temporaryChannelId,
+                    temporaryChannelId = cmd.temporaryChannelId(keyManager),
                     fundingFeerate = cmd.fundingTxFeerate,
                     commitmentFeerate = cmd.commitTxFeerate,
                     fundingAmount = cmd.fundingAmount,
@@ -42,12 +37,12 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                     toSelfDelay = cmd.localParams.toSelfDelay,
                     maxAcceptedHtlcs = cmd.localParams.maxAcceptedHtlcs,
                     lockTime = currentBlockHeight.toLong(),
-                    fundingPubkey = cmd.localParams.channelKeys.fundingPubKey,
-                    revocationBasepoint = cmd.localParams.channelKeys.revocationBasepoint,
-                    paymentBasepoint = cmd.localParams.channelKeys.paymentBasepoint,
-                    delayedPaymentBasepoint = cmd.localParams.channelKeys.delayedPaymentBasepoint,
-                    htlcBasepoint = cmd.localParams.channelKeys.htlcBasepoint,
-                    firstPerCommitmentPoint = keyManager.commitmentPoint(cmd.localParams.channelKeys.shaSeed, 0),
+                    fundingPubkey = cmd.localParams.channelKeys(keyManager).fundingPubKey,
+                    revocationBasepoint = cmd.localParams.channelKeys(keyManager).revocationBasepoint,
+                    paymentBasepoint = cmd.localParams.channelKeys(keyManager).paymentBasepoint,
+                    delayedPaymentBasepoint = cmd.localParams.channelKeys(keyManager).delayedPaymentBasepoint,
+                    htlcBasepoint = cmd.localParams.channelKeys(keyManager).htlcBasepoint,
+                    firstPerCommitmentPoint = keyManager.commitmentPoint(cmd.localParams.channelKeys(keyManager).shaSeed, 0),
                     channelFlags = cmd.channelFlags,
                     tlvStream = TlvStream(
                         buildList {
@@ -57,12 +52,12 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         }
                     )
                 )
-                val nextState = WaitForAcceptChannel(staticParams, currentTip, currentOnChainFeerates, cmd, open)
+                val nextState = WaitForAcceptChannel(cmd, open)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
             cmd is ChannelCommand.InitInitiator -> {
-                logger.warning { "c:${cmd.temporaryChannelId} cannot open channel with invalid channel_type=${cmd.channelType.name}" }
-                Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+                logger.warning { "c:${cmd.temporaryChannelId(keyManager)} cannot open channel with invalid channel_type=${cmd.channelType.name}" }
+                Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.nothingAtStake() -> {
                 logger.info { "c:${cmd.state.channelId} we have nothing at stake, going straight to CLOSED" }
@@ -80,19 +75,19 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                         Pair(cmd.state, doPublish(closingType.tx, cmd.state.channelId))
                     }
                     is LocalClose -> {
-                        val actions = closingType.localCommitPublished.run { doPublish(cmd.state.channelId, cmd.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
+                        val actions = closingType.localCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(cmd.state, actions)
                     }
                     is RemoteClose -> {
-                        val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, cmd.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
+                        val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(cmd.state, actions)
                     }
                     is RevokedClose -> {
-                        val actions = closingType.revokedCommitPublished.run { doPublish(cmd.state.channelId, cmd.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
+                        val actions = closingType.revokedCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(cmd.state, actions)
                     }
                     is RecoveryClose -> {
-                        val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, cmd.state.staticParams.nodeParams.minDepthBlocks.toLong()) }
+                        val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
                         Pair(cmd.state, actions)
                     }
                     null -> {
@@ -109,7 +104,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                                 )
                             ),
                         )
-                        val minDepth = cmd.state.staticParams.nodeParams.minDepthBlocks.toLong()
+                        val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
                         cmd.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, cmd.state.channelId)) }
                         cmd.state.localCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
                         cmd.state.remoteCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
@@ -145,7 +140,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 logger.info { "c:${cmd.state.channelId} restoring channel" }
                 // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
                 val fundingTx = when {
-                    cmd.state is WaitForChannelReady && cmd.state.staticParams.useZeroConf -> cmd.state.fundingTx.signedTx
+                    cmd.state is WaitForChannelReady && staticParams.useZeroConf -> cmd.state.fundingTx.signedTx
                     else -> null
                 }
                 val watchSpent = WatchSpent(
@@ -164,9 +159,7 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
                 }
                 Pair(Offline(cmd.state), actions)
             }
-            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
-            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
         }
     }
@@ -179,8 +172,8 @@ data class WaitForInit(override val staticParams: StaticParams, override val cur
         }
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
-        return Pair(this, listOf(ChannelAction.ProcessLocalError(t, cmd)))
+        return Pair(this@WaitForInit, listOf(ChannelAction.ProcessLocalError(t, cmd)))
     }
 }

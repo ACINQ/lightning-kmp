@@ -11,6 +11,7 @@ import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RemoteParams
 import fr.acinq.lightning.crypto.Generators
+import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
@@ -87,9 +88,10 @@ class AnchorOutputsTestsCommon {
 
     // high level tests which calls Commitments methods to generate transactions
     private fun runHighLevelTest(testCase: TestCase) {
+        val channelKeys = ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32())
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
-            ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32()),
+            KeyPath.empty,
             546.sat, 1000000000L, 0.msat, CltvExpiryDelta(144), 1000, true,
             Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector(),
             TestConstants.Alice.nodeParams.features,
@@ -136,6 +138,7 @@ class AnchorOutputsTestsCommon {
         */
 
         val (commitTx, htlcTxs) = Commitments.makeLocalTxs(
+            channelKeys,
             42, localParams, remoteParams,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,

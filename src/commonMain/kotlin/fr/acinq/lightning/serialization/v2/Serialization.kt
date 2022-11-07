@@ -2,30 +2,21 @@ package fr.acinq.lightning.serialization.v2
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
-import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.readNBytes
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
-import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.contextual
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
+import kotlinx.serialization.modules.*
 
 object Serialization {
-    private val versionMagic = 2
+    private const val versionMagic = 2
 
     /**
      * Versioned serialized data.
@@ -41,44 +32,20 @@ object Serialization {
 
     private val updateSerializersModule = SerializersModule {
         polymorphic(UpdateMessage::class) {
-            subclass(UpdateAddHtlc.serializer())
-            subclass(UpdateFailHtlc.serializer())
-            subclass(UpdateFailMalformedHtlc.serializer())
-            subclass(UpdateFee.serializer())
-            subclass(UpdateFulfillHtlc.serializer())
+            subclass(UpdateAddHtlcSerializer)
+            subclass(UpdateFailHtlcSerializer)
+            subclass(UpdateFailMalformedHtlcSerializer)
+            subclass(UpdateFeeSerializer)
+            subclass(UpdateFulfillHtlcSerializer)
         }
     }
 
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
-            subclass(ChannelTlv.UpfrontShutdownScriptTlv.serializer())
-            subclass(ChannelTlv.ChannelOriginTlv.serializer())
-            subclass(InitTlv.Networks.serializer())
-            subclass(InitTlv.PhoenixAndroidLegacyNodeId.serializer())
-            subclass(OnionPaymentPayloadTlv.AmountToForward.serializer())
-            subclass(OnionPaymentPayloadTlv.OutgoingCltv.serializer())
-            subclass(OnionPaymentPayloadTlv.OutgoingChannelId.serializer())
-            subclass(OnionPaymentPayloadTlv.PaymentData.serializer())
-            subclass(OnionPaymentPayloadTlv.PaymentMetadata.serializer())
-            subclass(OnionPaymentPayloadTlv.InvoiceFeatures.serializer())
-            subclass(OnionPaymentPayloadTlv.OutgoingNodeId.serializer())
-            subclass(OnionPaymentPayloadTlv.InvoiceRoutingInfo.serializer())
-            subclass(OnionPaymentPayloadTlv.TrampolineOnion.serializer())
-            subclass(GenericTlv.serializer())
-        }
-    }
-
-    private val serializersModule = SerializersModule {
-        polymorphic(ChannelStateWithCommitments::class) {
-            subclass(Normal::class)
-            subclass(WaitForFundingConfirmed::class)
-            subclass(WaitForFundingLocked::class)
-            subclass(WaitForRemotePublishFutureCommitment::class)
-            subclass(ShuttingDown::class)
-            subclass(Negotiating::class)
-            subclass(Closing::class)
-            subclass(Closed::class)
-            subclass(ErrorInformationLeak::class)
+            subclass(ChannelReadyTlvShortChannelIdTlvSerializer)
+            subclass(ClosingSignedTlvFeeRangeSerializer)
+            subclass(ShutdownTlvChannelDataSerializer)
+            subclass(GenericTlvSerializer)
         }
     }
 
@@ -101,29 +68,12 @@ object Serialization {
     }
 
     // used by the "test node" JSON API
-    val lightningSerializersModule = SerializersModule {
-        include(serializersModule)
+    private val lightningSerializersModule = SerializersModule {
         include(serializationModules)
     }
 
-    fun serialize(state: ChannelStateWithCommitments): ByteArray {
-        val output = ByteArrayOutput()
-        val encoder = DataOutputEncoder(output)
-        encoder.encodeSerializableValue(ChannelStateWithCommitments.serializer(), state)
-        val bytes = output.toByteArray()
-        val versioned = SerializedData(version = versionMagic, data = bytes.toByteVector())
-        val output1 = ByteArrayOutput()
-        val encoder1 = DataOutputEncoder(output1)
-        encoder1.encodeSerializableValue(SerializedData.serializer(), versioned)
-        return output1.toByteArray()
-    }
-
-    fun serialize(state: fr.acinq.lightning.channel.ChannelStateWithCommitments): ByteArray {
-        return serialize(ChannelStateWithCommitments.import(state))
-    }
-
     @OptIn(ExperimentalSerializationApi::class)
-    fun deserialize(bin: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+    fun deserialize(bin: ByteArray): fr.acinq.lightning.channel.PersistedChannelState {
         val input = ByteArrayInput(bin)
         val decoder = DataInputDecoder(input)
         val versioned = decoder.decodeSerializableValue(SerializedData.serializer())
@@ -131,78 +81,23 @@ object Serialization {
             versionMagic -> {
                 val input1 = ByteArrayInput(versioned.data.toByteArray())
                 val decoder1 = DataInputDecoder(input1)
-                decoder1.decodeSerializableValue(ChannelStateWithCommitments.serializer()).export(nodeParams)
+                decoder1.decodeSerializableValue(ChannelStateWithCommitments.serializer()).export()
             }
             else -> error("unknown serialization version ${versioned.version}")
         }
     }
 
-    private fun deserialize(bin: ByteVector, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = deserialize(bin.toByteArray(), nodeParams)
-
-    fun encrypt(key: ByteVector32, state: ChannelStateWithCommitments): EncryptedChannelData {
-        val bin = serialize(state)
-        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
-        // See https://en.wikipedia.org/wiki/Birthday_attack
-        val nonce = Crypto.sha256(bin).take(12).toByteArray()
-        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
-    }
-
-    fun encrypt(key: ByteVector32, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData {
-        val bin = serialize(state)
-        // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
-        // See https://en.wikipedia.org/wiki/Birthday_attack
-        val nonce = Crypto.sha256(bin).take(12).toByteArray()
-        val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key.toByteArray(), nonce, bin, ByteArray(0))
-        return EncryptedChannelData((ciphertext + nonce + tag).toByteVector())
-    }
-
-    fun encrypt(key: PrivateKey, state: fr.acinq.lightning.channel.ChannelStateWithCommitments): EncryptedChannelData = encrypt(key.value, state)
-
-    fun decrypt(key: ByteVector32, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+    fun decrypt(key: ByteVector32, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)
         val nonce = data.takeLast(12 + 16).take(12)
         val tag = data.takeLast(16)
         val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
-        return deserialize(plaintext, nodeParams)
+        return deserialize(plaintext)
     }
 
-    fun decrypt(key: PrivateKey, data: ByteArray, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data, nodeParams)
-    fun decrypt(key: PrivateKey, backup: EncryptedChannelData, nodeParams: NodeParams): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray(), nodeParams)
-
-    @OptIn(ExperimentalSerializationApi::class)
-    class DataOutputEncoder(val output: ByteArrayOutput) : AbstractEncoder() {
-        override val serializersModule: SerializersModule = serializationModules
-        override fun encodeBoolean(value: Boolean) = output.write(if (value) 1 else 0)
-        override fun encodeByte(value: Byte) = output.write(value.toInt())
-        override fun encodeShort(value: Short) = output.write(Pack.writeInt16BE(value))
-        override fun encodeInt(value: Int) = output.write(Pack.writeInt32BE(value))
-        override fun encodeLong(value: Long) = output.write(Pack.writeInt64BE(value))
-        override fun encodeFloat(value: Float) {
-            TODO()
-        }
-
-        override fun encodeDouble(value: Double) {
-            TODO()
-        }
-
-        override fun encodeChar(value: Char) = output.write(value.code)
-        override fun encodeString(value: String) {
-            val bytes = value.encodeToByteArray()
-            encodeInt(bytes.size)
-            output.write(bytes)
-        }
-
-        override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) = output.write(index)
-        override fun beginCollection(descriptor: SerialDescriptor, collectionSize: Int): CompositeEncoder {
-            encodeInt(collectionSize)
-            return this
-        }
-
-        override fun encodeNull() = encodeBoolean(false)
-        override fun encodeNotNullMark() = encodeBoolean(true)
-    }
+    fun decrypt(key: PrivateKey, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data)
+    fun decrypt(key: PrivateKey, backup: EncryptedChannelData): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray())
 
     @OptIn(ExperimentalSerializationApi::class)
     @ExperimentalSerializationApi

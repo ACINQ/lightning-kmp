@@ -1,11 +1,13 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.Script
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
@@ -22,9 +24,6 @@ import fr.acinq.lightning.wire.*
  *         |--------------------------->|
  */
 data class WaitForOpenChannel(
-    override val staticParams: StaticParams,
-    override val currentTip: Pair<Int, BlockHeader>,
-    override val currentOnChainFeerates: OnChainFeerates,
     val temporaryChannelId: ByteVector32,
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
@@ -33,7 +32,7 @@ data class WaitForOpenChannel(
     val channelConfig: ChannelConfig,
     val remoteInit: Init
 ) : ChannelState() {
-    override fun processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived ->
                 when (cmd.message) {
@@ -52,11 +51,11 @@ data class WaitForOpenChannel(
                                     minimumDepth = minimumDepth.toLong(),
                                     toSelfDelay = localParams.toSelfDelay,
                                     maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-                                    fundingPubkey = localParams.channelKeys.fundingPubKey,
-                                    revocationBasepoint = localParams.channelKeys.revocationBasepoint,
-                                    paymentBasepoint = localParams.channelKeys.paymentBasepoint,
-                                    delayedPaymentBasepoint = localParams.channelKeys.delayedPaymentBasepoint,
-                                    htlcBasepoint = localParams.channelKeys.htlcBasepoint,
+                                    fundingPubkey = localParams.channelKeys(keyManager).fundingPubKey,
+                                    revocationBasepoint = localParams.channelKeys(keyManager).revocationBasepoint,
+                                    paymentBasepoint = localParams.channelKeys(keyManager).paymentBasepoint,
+                                    delayedPaymentBasepoint = localParams.channelKeys(keyManager).delayedPaymentBasepoint,
+                                    htlcBasepoint = localParams.channelKeys(keyManager).htlcBasepoint,
                                     firstPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelConfig), 0),
                                     tlvStream = TlvStream(
                                         buildList {
@@ -81,21 +80,18 @@ data class WaitForOpenChannel(
                                 )
                                 val channelId = computeChannelId(open, accept)
                                 val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId)
-                                val localFundingPubkey = localParams.channelKeys.fundingPubKey
+                                val localFundingPubkey = localParams.channelKeys(keyManager).fundingPubKey
                                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                                 val dustLimit = open.dustLimit.max(localParams.dustLimit)
                                 val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
                                 when (val fundingContributions = FundingContributions.create(fundingParams, wallet.utxos)) {
                                     is Either.Left -> {
                                         logger.error { "c:$temporaryChannelId could not fund channel: ${fundingContributions.value}" }
-                                        Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
+                                        Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                     }
                                     is Either.Right -> {
                                         val interactiveTxSession = InteractiveTxSession(fundingParams, fundingContributions.value)
                                         val nextState = WaitForFundingCreated(
-                                            staticParams,
-                                            currentTip,
-                                            currentOnChainFeerates,
                                             localParams,
                                             remoteParams,
                                             wallet,
@@ -120,28 +116,26 @@ data class WaitForOpenChannel(
                             }
                             is Either.Left -> {
                                 logger.error(res.value) { "c:$temporaryChannelId invalid ${cmd.message::class} in state ${this::class}" }
-                                Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
+                                Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
                             }
                         }
                     }
                     is Error -> {
                         logger.error { "c:$temporaryChannelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
-                        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
+                        return Pair(Aborted, listOf())
                     }
                     else -> unhandled(cmd)
                 }
 
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf())
-            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this, listOf())
-            cmd is ChannelCommand.NewBlock -> Pair(this.copy(currentTip = Pair(cmd.height, cmd.Header)), listOf())
-            cmd is ChannelCommand.SetOnChainFeerates -> Pair(this.copy(currentOnChainFeerates = cmd.feerates), listOf())
+            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
+            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForOpenChannel, listOf())
             else -> unhandled(cmd)
         }
     }
 
-    override fun handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "c:$temporaryChannelId error on event ${cmd::class} in state ${this::class}" }
         val error = Error(temporaryChannelId, t.message)
-        return Pair(Aborted(staticParams, currentTip, currentOnChainFeerates), listOf(ChannelAction.Message.Send(error)))
+        return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }
 }

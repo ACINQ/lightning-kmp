@@ -4,14 +4,12 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.secp256k1.Hex
-import kotlinx.serialization.Serializable
 
 /**
  * Subset of Bolt 9 features used to configure a channel and applicable over the lifetime of that channel.
  * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
  * channel is upgraded or closed.
  */
-@Serializable
 data class ChannelFeatures(val features: Set<Feature>) {
 
     val channelType: ChannelType.SupportedChannelType = when {
@@ -28,7 +26,6 @@ data class ChannelFeatures(val features: Set<Feature>) {
 }
 
 /** A channel type is a specific set of feature bits that represent persistent channel features as defined in Bolt 2. */
-@Serializable
 sealed class ChannelType {
 
     abstract val name: String
@@ -36,30 +33,25 @@ sealed class ChannelType {
 
     override fun toString(): String = name
 
-    @Serializable
     sealed class SupportedChannelType : ChannelType() {
 
         fun toFeatures(): Features = Features(features.associateWith { FeatureSupport.Mandatory })
 
-        @Serializable
         object Standard : SupportedChannelType() {
             override val name: String get() = "standard"
             override val features: Set<Feature> get() = setOf()
         }
 
-        @Serializable
         object StaticRemoteKey : SupportedChannelType() {
             override val name: String get() = "static_remotekey"
             override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey)
         }
 
-        @Serializable
         object AnchorOutputs : SupportedChannelType() {
             override val name: String get() = "anchor_outputs"
             override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)
         }
 
-        @Serializable
         object AnchorOutputsZeroReserve : SupportedChannelType() {
             override val name: String get() = "anchor_outputs_zero_reserve"
             override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)
@@ -67,7 +59,6 @@ sealed class ChannelType {
 
     }
 
-    @Serializable
     data class UnsupportedChannelType(val featureBits: Features) : ChannelType() {
         override val name: String get() = "0x${Hex.encode(featureBits.toByteArray())}"
         override val features: Set<Feature> get() = featureBits.activated.keys
