@@ -1,6 +1,8 @@
 package fr.acinq.lightning.serialization
 
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.json.JsonSerializers
+import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.encodeToString
 import org.kodein.memory.file.*
@@ -36,6 +38,20 @@ class StateSerializationNonRegTestsCommon {
                 if (debug) {
                     tmpFile.delete()
                 }
+                val state1 = when (state) {
+                    is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is Normal -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is ShuttingDown -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is Negotiating -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
+                    is Closed -> state
+                }
+                val state2 = Serialization.deserialize(Serialization.serialize(state))
+                assertEquals(state1, state2, path.toString())
             }
     }
 

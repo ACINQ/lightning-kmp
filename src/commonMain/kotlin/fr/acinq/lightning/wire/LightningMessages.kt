@@ -50,6 +50,8 @@ interface LightningMessage {
                 Pong.type -> Pong.read(stream)
                 OpenDualFundedChannel.type -> OpenDualFundedChannel.read(stream)
                 AcceptDualFundedChannel.type -> AcceptDualFundedChannel.read(stream)
+                FundingCreated.type -> FundingCreated.read(stream)
+                FundingSigned.type -> FundingSigned.read(stream)
                 ChannelReady.type -> ChannelReady.read(stream)
                 TxAddInput.type -> TxAddInput.read(stream)
                 TxAddOutput.type -> TxAddOutput.read(stream)
