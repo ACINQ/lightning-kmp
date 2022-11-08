@@ -138,7 +138,7 @@ class Peer(
 
     var socketBuilder: TcpSocket.Builder? = socketBuilder
         set(value) {
-            logger.debug { "n:$remoteNodeId swap socket builder=$value" }
+            logger.debug { "swap socket builder=$value" }
             field = value
         }
 
@@ -148,7 +148,7 @@ class Peer(
     private var output = Channel<ByteArray>(BUFFERED)
     val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
-    private val logger = nodeParams.loggerFactory.newLogger(this::class)
+    private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
     // The channels map, as initially loaded from the database at "boot" (on Peer.init).
     // As the channelsFlow is unavailable until the electrum connection is up-and-running,
@@ -217,7 +217,7 @@ class Peer(
         }
         launch {
             watcher.openWatchNotificationsFlow().collect {
-                logger.debug { "n:$remoteNodeId notification: $it" }
+                logger.debug { "notification: $it" }
                 input.send(WrappedChannelCommand(it.channelId, ChannelCommand.WatchReceived(it)))
             }
         }
@@ -251,20 +251,20 @@ class Peer(
             _bootChannelsFlow.value = bootChannels.map { it.channelId to it }.toMap()
             // restore channels (nb: suspends on currentTipFlow & onChainFeeratesFlow)
             val channelIds = bootChannels.map {
-                logger.info { "n:$remoteNodeId restoring ${it.channelId}" }
+                logger.info { "restoring ${it.channelId}" }
                 val state = WaitForInit
                 val (state1, actions) = state.run { channelContext().process(ChannelCommand.Restore(it as ChannelState)) }
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
                 it.channelId
             }
-            logger.info { "n:$remoteNodeId restored channels: ${channelIds.joinToString(", ")}" }
+            logger.info { "restored channels: ${channelIds.joinToString(", ")}" }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
                 // We give them a bit of time after we reconnect to send us their latest htlc updates.
                 delay(timeMillis = nodeParams.checkHtlcTimeoutAfterStartupDelaySeconds.toLong() * 1000)
-                logger.info { "n:$remoteNodeId checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
+                logger.info { "checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
                 channelIds.forEach { input.send(WrappedChannelCommand(it, ChannelCommand.CheckHtlcTimeout)) }
             }
             run()
@@ -272,7 +272,7 @@ class Peer(
         launch {
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
-                logger.info { "n:$remoteNodeId connection state changed: $it" }
+                logger.info { "connection state changed: $it" }
                 if (it is Connection.CLOSED) input.send(Disconnected)
                 previousState = it
             }
@@ -318,7 +318,7 @@ class Peer(
     // Except from the disconnect() one that check if the lateinit var has been initialized
     private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
-        logger.info { "n:$remoteNodeId connecting to ${walletParams.trampolineNode.host}" }
+        logger.info { "connecting to ${walletParams.trampolineNode.host}" }
         _connectionState.value = Connection.ESTABLISHING
         socket = try {
             socketBuilder?.connect(
@@ -328,7 +328,7 @@ class Peer(
                 loggerFactory = nodeParams.loggerFactory
             ) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
-            logger.warning { "n:$remoteNodeId TCP connect: ${ex.message}" }
+            logger.warning { "TCP connect: ${ex.message}" }
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
@@ -356,7 +356,7 @@ class Peer(
                 { b -> socket.send(b) }
             )
         } catch (ex: TcpSocket.IOException) {
-            logger.warning { "n:$remoteNodeId TCP handshake: ${ex.message}" }
+            logger.warning { "TCP handshake: ${ex.message}" }
             closeSocket(ex)
             return@launch
         }
@@ -366,12 +366,12 @@ class Peer(
             try {
                 session.send(message) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { "n:$remoteNodeId TCP send: ${ex.message}" }
+                logger.warning { "TCP send: ${ex.message}" }
                 closeSocket(ex)
             }
         }
 
-        logger.info { "n:$remoteNodeId sending init $ourInit" }
+        logger.info { "sending init $ourInit" }
         send(LightningMessage.encode(ourInit))
 
         suspend fun doPing() {
@@ -397,7 +397,7 @@ class Peer(
                 }
                 closeSocket(null)
             } catch (ex: TcpSocket.IOException) {
-                logger.warning { "n:$remoteNodeId TCP receive: ${ex.message}" }
+                logger.warning { "TCP receive: ${ex.message}" }
                 closeSocket(ex)
             }
         }
@@ -423,7 +423,7 @@ class Peer(
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pings/pongs
-        if (msg !is Ping && msg !is Pong) logger.info { "n:$remoteNodeId sending $msg" }
+        if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
         if (!output.isClosedForSend) output.send(encoded)
     }
 
@@ -445,7 +445,7 @@ class Peer(
                 action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
                 action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
                 action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
-                action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "n:$remoteNodeId c:$actualChannelId command not executed" }
+                action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "c:$actualChannelId command not executed" }
                 action is ChannelAction.ProcessCmdRes.AddFailed -> {
                     when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
                         is OutgoingPaymentHandler.Progress -> {
@@ -454,7 +454,7 @@ class Peer(
                         }
 
                         is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
-                        null -> logger.debug { "n:$remoteNodeId c:$actualChannelId non-final error, more partial payments are still pending: ${action.error.message}" }
+                        null -> logger.debug { "c:$actualChannelId non-final error, more partial payments are still pending: ${action.error.message}" }
                     }
                 }
 
@@ -468,20 +468,20 @@ class Peer(
 
                         is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
                         is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
-                        null -> logger.debug { "n:$remoteNodeId c:$actualChannelId non-final error, more partial payments are still pending: ${action.result}" }
+                        null -> logger.debug { "c:$actualChannelId non-final error, more partial payments are still pending: ${action.result}" }
                     }
                 }
 
                 action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                     when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                         is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
-                        is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "n:$remoteNodeId c:$actualChannelId p:${result.request.paymentId} payment preimage received: ${result.preimage}" }
-                        null -> logger.debug { "n:$remoteNodeId c:$actualChannelId unknown payment" }
+                        is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "c:$actualChannelId p:${result.request.paymentId} payment preimage received: ${result.preimage}" }
+                        null -> logger.debug { "c:$actualChannelId unknown payment" }
                     }
                 }
 
                 action is ChannelAction.Storage.StoreState -> {
-                    logger.info { "n:$remoteNodeId c:$actualChannelId storing state=${action.data::class}" }
+                    logger.info { "c:$actualChannelId storing state=${action.data::class}" }
                     db.channels.addOrUpdateChannel(action.data)
                 }
 
@@ -490,7 +490,7 @@ class Peer(
                 }
 
                 action is ChannelAction.Storage.StoreIncomingAmount -> {
-                    logger.info { "n:$remoteNodeId c:$channelId storing incoming amount=${action.amount} with origin=${action.origin}" }
+                    logger.info { "c:$channelId storing incoming amount=${action.amount} with origin=${action.origin}" }
                     incomingPaymentHandler.process(actualChannelId, action)
                 }
 
@@ -525,7 +525,7 @@ class Peer(
                 }
 
                 action is ChannelAction.ChannelId.IdAssigned -> {
-                    logger.info { "n:$remoteNodeId c:$actualChannelId switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
+                    logger.info { "c:$actualChannelId switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
                     actualChannelId = action.channelId
                     _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                 }
@@ -534,7 +534,7 @@ class Peer(
 
                 action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
 
-                else -> logger.warning { "n:$remoteNodeId c:$actualChannelId unhandled action: ${action::class}" }
+                else -> logger.warning { "c:$actualChannelId unhandled action: ${action::class}" }
             }
         }
     }
@@ -598,7 +598,7 @@ class Peer(
     )
 
     private suspend fun run() {
-        logger.info { "n:$remoteNodeId peer is active" }
+        logger.info { "peer is active" }
         for (event in input) {
             processEvent(event)
         }
@@ -608,7 +608,7 @@ class Peer(
         when {
             cmd is BytesReceived -> {
                 val msg = LightningMessage.decode(cmd.data)
-                msg.let { if (it !is Ping && it !is Pong) logger.info { "n:$remoteNodeId received $it" } }
+                msg.let { if (it !is Ping && it !is Pong) logger.info { "received $it" } }
                 when {
                     msg is UnknownMessage -> {
                         logger.warning { "unhandled code=${msg.type}, cannot decode input=${Hex.encode(cmd.data)}" }
@@ -616,10 +616,10 @@ class Peer(
 
                     msg is Init -> {
                         val theirFeatures = Features(msg.features)
-                        logger.info { "n:$remoteNodeId peer is using features $theirFeatures" }
+                        logger.info { "peer is using features $theirFeatures" }
                         when (val error = Features.validateFeatureGraph(features)) {
                             is Features.Companion.FeatureException -> {
-                                logger.error(error)
+                                logger.error(error) { "feature validation error" }
                                 // TODO: disconnect peer
                             }
 
@@ -641,23 +641,23 @@ class Peer(
                     }
 
                     msg is Pong -> {
-                        logger.debug { "n:$remoteNodeId received pong" }
+                        logger.debug { "received pong" }
                     }
 
                     msg is Warning -> {
                         // NB: we don't forward warnings to the channel because it shouldn't take any automatic action,
                         // these warnings are meant for humans.
-                        logger.warning { "n:$remoteNodeId c:${msg.channelId} peer sent warning: ${msg.toAscii()}" }
+                        logger.warning { "c:${msg.channelId} peer sent warning: ${msg.toAscii()}" }
                     }
 
                     msg is Error && msg.channelId == ByteVector32.Zeroes -> {
-                        logger.error { "n:$remoteNodeId connection error: ${msg.toAscii()}" }
+                        logger.error { "connection error: ${msg.toAscii()}" }
                     }
 
                     msg is PleaseOpenChannelRejected -> {
                         when (val request = channelRequests[msg.requestId]) {
                             is RequestChannelOpen -> {
-                                logger.error { "n:$remoteNodeId peer rejected channel with failure=${msg.failure} (request=$request)" }
+                                logger.error { "peer rejected channel with failure=${msg.failure} (request=$request)" }
                                 nodeParams._nodeEvents.emit(SwapInEvents.Rejected(msg.requestId, msg.failure, msg.expectedFees))
                                 channelRequests = channelRequests - msg.requestId
                             }
@@ -667,11 +667,11 @@ class Peer(
                     }
 
                     msg is OpenDualFundedChannel && theirInit == null -> {
-                        logger.error { "n:$remoteNodeId they sent open_channel before init" }
+                        logger.error { "they sent open_channel before init" }
                     }
 
                     msg is OpenDualFundedChannel && _channels.containsKey(msg.temporaryChannelId) -> {
-                        logger.warning { "n:$remoteNodeId ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
+                        logger.warning { "ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
                     }
 
                     msg is OpenDualFundedChannel -> {
@@ -701,7 +701,7 @@ class Peer(
                             else -> Triple(WalletState.empty, 0.sat, 0.msat)
                         }
                         if (fundingAmount.toMilliSatoshi() < pushAmount) {
-                            logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
+                            logger.warning { "c:${msg.temporaryChannelId} rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
                             sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
                         } else {
                             val fundingKeyPath = randomKeyPath(4)
@@ -731,7 +731,7 @@ class Peer(
                                 else -> Unit
                             }
                             processActions(msg.temporaryChannelId, actions1 + actions2)
-                            logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state2::class}" }
+                            logger.info { "c:${msg.temporaryChannelId} new state: ${state2::class}" }
                         }
                     }
 
@@ -741,7 +741,7 @@ class Peer(
                         } else {
                             when (val decrypted = runTrying { PersistedChannelState.from(nodeParams.nodePrivateKey, msg.channelData) }) {
                                 is Try.Success -> {
-                                    logger.warning { "n:$remoteNodeId restoring channelId=${msg.channelId} from peer backup" }
+                                    logger.warning { "restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
                                     val state = WaitForInit
                                     val event1 = ChannelCommand.Restore(backup as ChannelState)
@@ -759,7 +759,7 @@ class Peer(
                                 }
 
                                 is Try.Failure -> {
-                                    logger.error(decrypted.error) { "n:$remoteNodeId failed to restore channelId=${msg.channelId} from peer backup" }
+                                    logger.error(decrypted.error) { "failed to restore channelId=${msg.channelId} from peer backup" }
                                     sendToPeer(Error(msg.channelId, "unknown channel"))
                                 }
                             }
@@ -767,37 +767,37 @@ class Peer(
                     }
 
                     msg is HasTemporaryChannelId && !_channels.containsKey(msg.temporaryChannelId) -> {
-                        logger.error { "n:$remoteNodeId received ${msg::class} for unknown temporary channel ${msg.temporaryChannelId}" }
+                        logger.error { "received ${msg::class} for unknown temporary channel ${msg.temporaryChannelId}" }
                         sendToPeer(Error(msg.temporaryChannelId, "unknown channel"))
                     }
 
                     msg is HasTemporaryChannelId -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} for temporary channel ${msg.temporaryChannelId}" }
+                        logger.info { "received ${msg::class} for temporary channel ${msg.temporaryChannelId}" }
                         val state = _channels[msg.temporaryChannelId] ?: error("channel ${msg.temporaryChannelId} not found")
                         val event1 = ChannelCommand.MessageReceived(msg)
                         val (state1, actions) = state.run { channelContext().process(event1) }
                         _channels = _channels + (msg.temporaryChannelId to state1)
                         processActions(msg.temporaryChannelId, actions)
-                        logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state1::class}" }
+                        logger.info { "c:${msg.temporaryChannelId} new state: ${state1::class}" }
                     }
 
                     msg is HasChannelId && !_channels.containsKey(msg.channelId) -> {
-                        logger.error { "n:$remoteNodeId received ${msg::class} for unknown channel ${msg.channelId}" }
+                        logger.error { "received ${msg::class} for unknown channel ${msg.channelId}" }
                         sendToPeer(Error(msg.channelId, "unknown channel"))
                     }
 
                     msg is HasChannelId -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} for channel ${msg.channelId}" }
+                        logger.info { "received ${msg::class} for channel ${msg.channelId}" }
                         val state = _channels[msg.channelId] ?: error("channel ${msg.channelId} not found")
                         val event1 = ChannelCommand.MessageReceived(msg)
                         val (state1, actions) = state.run { channelContext().process(event1) }
                         processActions(msg.channelId, actions)
                         _channels = _channels + (msg.channelId to state1)
-                        logger.info { "n:$remoteNodeId c:${msg.channelId} new state: ${state1::class}" }
+                        logger.info { "c:${msg.channelId} new state: ${state1::class}" }
                     }
 
                     msg is ChannelUpdate -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} for channel ${msg.shortChannelId}" }
+                        logger.info { "received ${msg::class} for channel ${msg.shortChannelId}" }
                         _channels.values.filterIsInstance<Normal>().find { it.shortChannelId == msg.shortChannelId }?.let { state ->
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.run { channelContext().process(event1) }
@@ -807,31 +807,31 @@ class Peer(
                     }
 
                     msg is PayToOpenRequest -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class}" }
+                        logger.info { "received ${msg::class}" }
                         processIncomingPayment(Either.Left(msg))
                     }
 
                     msg is SwapOutResponse -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
+                        logger.info { "received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
                         _eventsFlow.emit(SwapOutResponseEvent(msg))
                     }
 
                     msg is PhoenixAndroidLegacyInfo -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class} hasChannels=${msg.hasChannels}" }
+                        logger.info { "received ${msg::class} hasChannels=${msg.hasChannels}" }
                         _eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
                     }
 
                     msg is OnionMessage -> {
-                        logger.info { "n:$remoteNodeId received ${msg::class}" }
+                        logger.info { "received ${msg::class}" }
                         // TODO: process onion message
                     }
 
-                    else -> logger.warning { "n:$remoteNodeId received unhandled message ${Hex.encode(cmd.data)}" }
+                    else -> logger.warning { "received unhandled message ${Hex.encode(cmd.data)}" }
                 }
             }
 
             cmd is WatchReceived && !_channels.containsKey(cmd.watch.channelId) -> {
-                logger.error { "n:$remoteNodeId received watch event ${cmd.watch} for unknown channel ${cmd.watch.channelId}}" }
+                logger.error { "received watch event ${cmd.watch} for unknown channel ${cmd.watch.channelId}}" }
             }
 
             cmd is WatchReceived -> {
@@ -840,7 +840,7 @@ class Peer(
                 val (state1, actions) = state.run { channelContext().process(event1) }
                 processActions(cmd.watch.channelId, actions)
                 _channels = _channels + (cmd.watch.channelId to state1)
-                logger.info { "n:$remoteNodeId c:${cmd.watch.channelId} new state: ${state1::class}" }
+                logger.info { "c:${cmd.watch.channelId} new state: ${state1::class}" }
             }
 
             cmd is RequestChannelOpen -> {
@@ -856,7 +856,7 @@ class Peer(
                     utxos.size * Transactions.p2wpkhInputWeight,
                     TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents)))
                 )
-                logger.info { "n:$remoteNodeId sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
+                logger.info { "sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
                 sendToPeer(pleaseOpenChannel)
                 nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
                 channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
@@ -879,24 +879,26 @@ class Peer(
                     features
                 )
                 val state = WaitForInit
-                val (state1, actions1) = state.run { channelContext().process(
-                    ChannelCommand.InitInitiator(
-                        cmd.fundingAmount,
-                        cmd.pushAmount,
-                        cmd.wallet,
-                        cmd.commitTxFeerate,
-                        cmd.fundingTxFeerate,
-                        localParams,
-                        theirInit!!,
-                        cmd.channelFlags,
-                        ChannelConfig.standard,
-                        cmd.channelType
+                val (state1, actions1) = state.run {
+                    channelContext().process(
+                        ChannelCommand.InitInitiator(
+                            cmd.fundingAmount,
+                            cmd.pushAmount,
+                            cmd.wallet,
+                            cmd.commitTxFeerate,
+                            cmd.fundingTxFeerate,
+                            localParams,
+                            theirInit!!,
+                            cmd.channelFlags,
+                            ChannelConfig.standard,
+                            cmd.channelType
+                        )
                     )
-                )}
+                }
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
                 processActions(msg.temporaryChannelId, actions1)
-                logger.info { "n:$remoteNodeId c:${msg.temporaryChannelId} new state: ${state1::class}" }
+                logger.info { "c:${msg.temporaryChannelId} new state: ${state1::class}" }
             }
 
             cmd is ReceivePayment -> {
@@ -927,7 +929,7 @@ class Peer(
             }
 
             cmd is PayToOpenResponseCommand -> {
-                logger.info { "n:$remoteNodeId sending ${cmd.payToOpenResponse::class}" }
+                logger.info { "sending ${cmd.payToOpenResponse::class}" }
                 sendToPeer(cmd.payToOpenResponse)
             }
 
@@ -954,7 +956,7 @@ class Peer(
 
             cmd is SendSwapOutRequest -> {
                 val msg = SwapOutRequest(nodeParams.chainHash, cmd.amount, cmd.bitcoinAddress, cmd.feePerKw)
-                logger.info { "n:$remoteNodeId sending ${msg::class}" }
+                logger.info { "sending ${msg::class}" }
                 sendToPeer(msg)
             }
 
@@ -968,7 +970,7 @@ class Peer(
             }
 
             cmd is WrappedChannelCommand -> when (val state = _channels[cmd.channelId]) {
-                null -> logger.error { "n:$remoteNodeId received ${cmd.channelCommand::class} for an unknown channel ${cmd.channelId}" }
+                null -> logger.error { "received ${cmd.channelCommand::class} for an unknown channel ${cmd.channelId}" }
                 else -> {
                     val (state1, actions) = state.run { channelContext().process(cmd.channelCommand) }
                     processActions(cmd.channelId, actions)
@@ -977,7 +979,7 @@ class Peer(
             }
 
             cmd is Disconnected -> {
-                logger.warning { "n:$remoteNodeId disconnecting channels" }
+                logger.warning { "disconnecting channels" }
                 _channels.forEach { (key, value) ->
                     val (state1, actions) = value.run { channelContext().process(ChannelCommand.Disconnected) }
                     processActions(key, actions)
