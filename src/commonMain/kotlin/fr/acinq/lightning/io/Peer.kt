@@ -228,20 +228,18 @@ class Peer(
         launch {
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
-                .fold(false) { swapAlreadyAttempted, wallet ->
-                    val balance = wallet.confirmedBalance
+                .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
+                    // reservedUtxos are part of a previously issued RequestChannelOpen command
+                    val availableWallet = wallet.minus(reservedUtxos)
+                    val balance = availableWallet.confirmedBalance
+                    logger.info { "swap-in wallet balance: $balance, ${availableWallet.unconfirmedBalance} unconfirmed" }
                     if (balance > 10_000.sat) {
-                        if (swapAlreadyAttempted) {
-                            logger.info { "$balance available on swap-in wallet but swap-in already attempted: not doing anything" }
-                        } else {
-                            logger.info { "$balance available on swap-in wallet: requesting channel" }
-                            input.send(RequestChannelOpen(Lightning.randomBytes32(), wallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
-                        }
-                        true
+                        logger.info { "swap-in wallet: requesting channel using confirmed balance: $balance" }
+                        input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
+                        reservedUtxos.union(availableWallet.confirmedUtxos)
                     } else {
-                        logger.info { "$balance available on swap-in wallet but amount insufficient: waiting for more" }
-                        swapAlreadyAttempted
-                    }
+                        reservedUtxos
+                    }.intersect(wallet.utxos) // drop utxos no longer in wallet
                 }
         }
         launch {
@@ -833,7 +831,7 @@ class Peer(
 
             cmd is RequestChannelOpen -> {
                 // We currently only support p2wpkh inputs.
-                val utxos = cmd.wallet.utxos
+                val utxos = cmd.wallet.confirmedUtxos
                 val balance = cmd.wallet.confirmedBalance
                 val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
                 val pleaseOpenChannel = PleaseOpenChannel(
