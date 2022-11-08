@@ -678,10 +678,9 @@ class Peer(
                             is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                 is RequestChannelOpen -> {
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                    val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.utxos.size * Transactions.p2wpkhInputWeight)
-                                    val fundingAmount = request.wallet.confirmedBalance - fundingFee
-                                    nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, fundingFee, origin.fee))
-                                    Triple(request.wallet, fundingAmount, origin.fee)
+                                    val fundingAmount = request.wallet.confirmedBalance - origin.fundingFee
+                                    nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, fundingFee = origin.fundingFee))
+                                    Triple(request.wallet, fundingAmount, origin.serviceFee)
                                 }
 
                                 else -> Triple(WalletState.empty, 0.sat, 0.msat)

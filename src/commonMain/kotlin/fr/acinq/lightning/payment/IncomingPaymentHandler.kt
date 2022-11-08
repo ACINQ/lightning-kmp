@@ -117,7 +117,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.SwapIn(address = ""),
-                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, fees = 0.msat, channelId = channelId))
+                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, serviceFee = 0.msat, channelId = channelId))
                 )
             }
             is ChannelOrigin.PayToOpenOrigin -> {
@@ -129,7 +129,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.DualSwapIn(action.localInputs),
-                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, fees = action.origin.fee, channelId = channelId))
+                    receivedWith = setOf(
+                        IncomingPayment.ReceivedWith.NewChannel(
+                            id = UUID.randomUUID(),
+                            amount = action.amount,
+                            serviceFee = action.origin.serviceFee,
+                            fundingFee = action.origin.fundingFee,
+                            channelId = channelId
+                        )
+                    )
                 )
             }
         }
@@ -278,7 +286,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                         // The part's amount is the full amount, including the fee. The fee must be subtracted.
                                         id = UUID.randomUUID(),
                                         amount = part.amount - part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
-                                        fees = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
+                                        serviceFee = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         // At that point we do not know the channel's id. It will be set later on.
                                         channelId = null
                                     )

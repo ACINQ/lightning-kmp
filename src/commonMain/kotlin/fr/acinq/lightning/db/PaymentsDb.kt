@@ -178,10 +178,19 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
          *
          * @param id identifies each parts that contributed to creating a new channel. A single channel may be created by several payment parts.
          * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
-         * @param fees Fees paid to open this channel.
+         * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
+         * @param fundingFee Feed paid to bitcoin miners for processing the L1 transaction.
          * @param channelId the long id of the channel created to receive this payment. May be null if the channel id is not known.
          */
-        data class NewChannel(val id: UUID, override val amount: MilliSatoshi, override val fees: MilliSatoshi, val channelId: ByteVector32?) : ReceivedWith()
+        data class NewChannel(
+            val id: UUID,
+            override val amount: MilliSatoshi,
+            val serviceFee: MilliSatoshi,
+            val fundingFee: Satoshi = 0.sat,
+            val channelId: ByteVector32?
+        ) : ReceivedWith() {
+            override val fees: MilliSatoshi = serviceFee + fundingFee.toMilliSatoshi()
+        }
     }
 
     /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */

@@ -165,7 +165,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val expectedFees = defaultAmount * 0.1 // 10% fees
         assertEquals(defaultAmount - expectedFees, result.received.amount)
         assertEquals(expectedFees, result.received.fees)
-        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = defaultAmount - expectedFees, fees = expectedFees, channelId = null)), result.received.receivedWith)
+        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = defaultAmount - expectedFees, serviceFee = expectedFees, channelId = null)), result.received.receivedWith)
 
         checkDbPayment(result.incomingPayment, paymentHandler.db)
     }
@@ -404,7 +404,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertTrue { dbPayment.origin is IncomingPayment.Origin.SwapIn }
         val newChannelUUID = dbPayment.received!!.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.NewChannel>().first().id
-        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = amountOrigin.amount, fees = 0.msat, channelId = channelId)), dbPayment.received?.receivedWith)
+        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = amountOrigin.amount, serviceFee = 0.msat, channelId = channelId)), dbPayment.received?.receivedWith)
         assertEquals(15_000_000.msat, dbPayment.received?.amount)
     }
 
@@ -421,13 +421,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // simulate payment processed as a pay-to-open
         handler.db.addIncomingPayment(preimage, IncomingPayment.Origin.KeySend)
         val newChannelUUID = UUID.randomUUID()
-        handler.db.receivePayment(preimage.sha256(), receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, fees = 1_000_000.msat, null)))
+        handler.db.receivePayment(preimage.sha256(), receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)))
         // process the amount origin which must reconcile with the existing line in the database
         handler.process(channelId, amountOrigin)
         val dbPayment = handler.db.getIncomingPayment(preimage.sha256())
         assertNotNull(dbPayment)
         assertIs<IncomingPayment.Origin.KeySend>(dbPayment.origin)
-        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, fees = 1_000_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
+        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
         assertEquals(15_000_000.msat, dbPayment.received?.amount)
         assertEquals(1_000_000.msat, dbPayment.received?.fees)
     }
@@ -438,7 +438,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 33_000_000.msat,
             localInputs = setOf(OutPoint(randomBytes32(), 7)),
-            origin = ChannelOrigin.PleaseOpenChannelOrigin(randomBytes32(), 1_200_000.msat)
+            origin = ChannelOrigin.PleaseOpenChannelOrigin(randomBytes32(), 1_200_000.msat, 0.sat)
         )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         handler.process(channelId, amountOrigin)
@@ -446,7 +446,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertIs<IncomingPayment.Origin.DualSwapIn>(dbPayment.origin)
         val newChannelUUID = dbPayment.received!!.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.NewChannel>().first().id
-        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 33_000_000.msat, fees = 1_200_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
+        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 33_000_000.msat, serviceFee = 1_200_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
         assertEquals(33_000_000.msat, dbPayment.received?.amount)
         assertEquals(1_200_000.msat, dbPayment.received?.fees)
     }
@@ -557,9 +557,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val (id1, id2) = result.received.receivedWith.map { (it as IncomingPayment.ReceivedWith.NewChannel).id }
             val (expectedActions, expectedReceivedWith) = setOf(
                 PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-                        to IncomingPayment.ReceivedWith.NewChannel(id = id1, amount1 - fee1, fee1, null),
+                        to IncomingPayment.ReceivedWith.NewChannel(id = id1, amount1 - fee1, fee1, channelId = null),
                 PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-                        to IncomingPayment.ReceivedWith.NewChannel(id = id2, amount2 - fee2, fee2, null)
+                        to IncomingPayment.ReceivedWith.NewChannel(id = id2, amount2 - fee2, fee2, channelId = null)
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             val expectedFees = 15_000.msat // 10% of 150_000 msat
@@ -601,7 +601,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true)))
                         to IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId, 0),
                 PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-                        to IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount2 - fee2, fee2, null),
+                        to IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount2 - fee2, fee2, channelId = null),
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             val expectedFees = 5_000.msat // 10% of the amount sent via pay-to-open (50 000 msat)
@@ -1226,7 +1226,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         delay(100)
         val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600,
             timestampSeconds = 100)
-        paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, fees = 1_000_000.msat, null)),
+        paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)),
             receivedAt = 101) // simulate incoming payment being paid before it expired
 
         // create unexpired payment
@@ -1314,7 +1314,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, uuid: UUID, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
             val fee = payToOpen.amountMsat * feeRatio
-            return IncomingPayment.ReceivedWith.NewChannel(id = uuid, amount = payToOpen.amountMsat - fee, fees = fee, channelId = null)
+            return IncomingPayment.ReceivedWith.NewChannel(id = uuid, amount = payToOpen.amountMsat - fee, serviceFee = fee, channelId = null)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

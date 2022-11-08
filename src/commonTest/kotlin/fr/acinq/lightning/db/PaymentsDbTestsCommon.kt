@@ -69,7 +69,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
             pr.paymentHash, setOf(
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
-                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, fees = 1_000.msat, id = UUID.randomUUID())
+                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, id = UUID.randomUUID())
             ), 110
         )
         val received = db.getIncomingPayment(pr.paymentHash)
@@ -143,7 +143,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                 IncomingPayment.ReceivedWith.NewChannel(
                     id = UUID.randomUUID(),
                     amount = 500_000.msat,
-                    fees = 15_000.msat,
+                    serviceFee = 15_000.msat,
                     channelId = randomBytes32()
                 )
             ), 110
@@ -160,7 +160,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val preimage = randomBytes32()
         val channelId = randomBytes32()
         val origin = IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 3)))
-        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, fees = MilliSatoshi(1234), channelId = channelId, id = UUID.randomUUID()))
+        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, serviceFee = 1_234.msat, channelId = channelId, id = UUID.randomUUID()))
         assertNull(db.getIncomingPayment(randomBytes32()))
 
         db.addAndReceivePayment(preimage = preimage, origin = origin, receivedWith = receivedWith)
@@ -582,12 +582,12 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.completeOutgoingPaymentOffchain(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
         val newChannelUUID1 = UUID.randomUUID()
-        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), receivedAt = 105)
-        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, fees = 2_500.msat, channelId = null)), 105))
+        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, serviceFee = 2_500.msat, channelId = null)), receivedAt = 105)
+        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, serviceFee = 2_500.msat, channelId = null)), 105))
         val channelId2 = randomBytes32()
         val newChannelUUID2 = UUID.randomUUID()
-        db.receivePayment(incoming5.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, fees = 1_500.msat, channelId = channelId2)), receivedAt = 106)
-        val inFinal5 = incoming5.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, fees = 1_500.msat, channelId = channelId2)), 106))
+        db.receivePayment(incoming5.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, serviceFee = 1_500.msat, channelId = channelId2)), receivedAt = 106)
+        val inFinal5 = incoming5.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, serviceFee = 1_500.msat, channelId = channelId2)), 106))
         db.completeOutgoingPaymentOffchain(outgoing3.id, randomBytes32(), completedAt = 107)
         val outFinal3 = db.getOutgoingPayment(outgoing3.id)!!
         val channelId4 = randomBytes32()
