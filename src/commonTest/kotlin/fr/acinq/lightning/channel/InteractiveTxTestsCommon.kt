@@ -33,6 +33,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val bob0 = InteractiveTxSession(f.fundingParamsB, f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
         val (alice1, inputA1) = sendMessage<TxAddInput>(alice0)
+        assertEquals(0xfffffffdU, inputA1.sequence)
         // Alice <-- tx_add_input --- Bob
         val (bob1, inputB1) = receiveMessage<TxAddInput>(bob0, inputA1)
         // Alice --- tx_add_input --> Bob
@@ -76,7 +77,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNull(sharedTxB.sharedTx.sign(keyManagerA, f.channelId))
 
         // Alice detects invalid signatures from Bob.
-        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txId = randomBytes32())))
+        assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(txHash = randomBytes32())))
         assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf())))
         assertNull(sharedTxA.sharedTx.sign(keyManagerA, f.channelId)?.addRemoteSigs(signedTxB.localSigs.copy(witnesses = listOf(Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig)))))
 
@@ -328,15 +329,18 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val previousOutputs = listOf(
             TxOut(2500.sat, Script.pay2wpkh(randomKey().publicKey())),
             TxOut(2500.sat, Script.pay2pkh(randomKey().publicKey())),
+            TxOut(2500.sat, Script.pay2wpkh(randomKey().publicKey())),
         )
         val previousTx = Transaction(2, listOf(), previousOutputs, 0)
         val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val testCases = mapOf(
-            TxAddInput(f.channelId, 0, previousTx, 0, 0u) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
-            TxAddInput(f.channelId, 1, previousTx, 0, 0u) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
-            TxAddInput(f.channelId, 3, previousTx, 0, 0u) to InteractiveTxSessionAction.DuplicateInput(f.channelId, 3, previousTx.txid, 0),
-            TxAddInput(f.channelId, 5, previousTx, 2, 0u) to InteractiveTxSessionAction.InputOutOfBounds(f.channelId, 5, previousTx.txid, 2),
-            TxAddInput(f.channelId, 7, previousTx, 1, 0u) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
+            TxAddInput(f.channelId, 0, previousTx, 0, 0U) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
+            TxAddInput(f.channelId, 1, previousTx, 0, 0U) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
+            TxAddInput(f.channelId, 3, previousTx, 0, 0U) to InteractiveTxSessionAction.DuplicateInput(f.channelId, 3, previousTx.txid, 0),
+            TxAddInput(f.channelId, 5, previousTx, 3, 0U) to InteractiveTxSessionAction.InputOutOfBounds(f.channelId, 5, previousTx.txid, 3),
+            TxAddInput(f.channelId, 7, previousTx, 1, 0U) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
+            TxAddInput(f.channelId, 9, previousTx, 2, 0xfffffffeU) to InteractiveTxSessionAction.NonReplaceableInput(f.channelId, 9, previousTx.txid, 2, 0xfffffffe),
+            TxAddInput(f.channelId, 9, previousTx, 2, 0xffffffffU) to InteractiveTxSessionAction.NonReplaceableInput(f.channelId, 9, previousTx.txid, 2, 0xffffffff),
         )
         testCases.forEach { (input, expected) ->
             val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
@@ -574,14 +578,14 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
                 ByteVector("82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87")
             )
         )
-        val initiatorSigs = TxSignatures(channelId, unsignedTx.txid, listOf(initiatorWitness))
+        val initiatorSigs = TxSignatures(channelId, unsignedTx, listOf(initiatorWitness))
         val nonInitiatorWitness = ScriptWitness(
             listOf(
                 ByteVector("304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01"),
                 ByteVector("034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484")
             )
         )
-        val nonInitiatorSigs = TxSignatures(channelId, unsignedTx.txid, listOf(nonInitiatorWitness))
+        val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, listOf(nonInitiatorWitness))
         val initiatorSignedTx = FullySignedSharedTransaction(initiatorTx, initiatorSigs, nonInitiatorSigs)
         assertEquals(initiatorSignedTx.feerate, FeeratePerKw(262.sat))
         val nonInitiatorSignedTx = FullySignedSharedTransaction(nonInitiatorTx, nonInitiatorSigs, initiatorSigs)

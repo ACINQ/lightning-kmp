@@ -488,6 +488,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingConfirmed>>(alice1)
         val txSigsAlice = actionsAlice1.findOutgoingMessage<TxSignatures>()
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
+        assertEquals(fundingTx.hash, txSigsAlice.txHash)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
         // Alice restarts:

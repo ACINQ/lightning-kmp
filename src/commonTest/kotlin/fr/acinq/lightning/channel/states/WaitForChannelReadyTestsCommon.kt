@@ -228,6 +228,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
                 val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(txSigsBob))
                 val txSigsAlice = actionsAlice1.hasOutgoingMessage<TxSignatures>()
                 val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
+                assertEquals(fundingTx.hash, txSigsAlice.txHash)
                 val (bob1, _) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
                 val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
                 assertIs<LNChannel<WaitForChannelReady>>(alice2)

@@ -99,7 +99,7 @@ data class FundingContributions(val inputs: List<TxAddInput>, val outputs: List<
             val serialIdParity = if (params.isInitiator) 0 else 1
 
             // We add a change output if necessary and finalize our funding contributions.
-            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0u) }
+            val inputs = utxos.mapIndexed { i, (tx, txOutput) -> TxAddInput(params.channelId, 2 * i.toLong() + serialIdParity, tx, txOutput.toLong(), 0xfffffffdU) }
             val sharedOutput = TxAddOutput(params.channelId, 2 * utxos.size.toLong() + serialIdParity, params.fundingAmount, params.fundingPubkeyScript)
             val changeOutput = when (changePubKey) {
                 null -> listOf()
@@ -161,7 +161,7 @@ data class SharedTransaction(val localInputs: List<TxAddInput>, val remoteInputs
                 ?.let { input -> WalletState.signInput(keyManager, unsignedTx, i, input.previousTx.txOut[input.previousTxOutput.toInt()]).second }
         }.filterNotNull()
         return when (localSigs.size) {
-            localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx.txid, localSigs))
+            localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(channelId, unsignedTx, localSigs))
             else -> null // We couldn't sign all of our inputs, most likely the caller didn't provide the right set of utxos.
         }
     }
@@ -221,6 +221,7 @@ sealed class InteractiveTxSessionAction {
     data class DuplicateSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "duplicate serial_id=$serialId" }
     data class DuplicateInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "duplicate input $previousTxId:$previousTxOutput (serial_id=$serialId)" }
     data class InputOutOfBounds(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "invalid input $previousTxId:$previousTxOutput (serial_id=$serialId)" }
+    data class NonReplaceableInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long, val sequence: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not replaceable (serial_id=$serialId, nSequence=$sequence)" }
     data class NonSegwitInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not a native segwit input (serial_id=$serialId)" }
     data class NonSegwitOutput(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "output with serial_id=$serialId is not a native segwit output" }
     data class OutputBelowDust(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val dustLimit: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid output amount=$amount below dust=$dustLimit (serial_id=$serialId)" }
@@ -291,6 +292,8 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.InputOutOfBounds(message.channelId, message.serialId, message.previousTx.txid, message.previousTxOutput))
                 } else if ((localInputs.map { i -> OutPoint(i.previousTx, i.previousTxOutput) } + remoteInputs.map { i -> OutPoint(i.previousTx, i.previousTxOutput) }).contains(OutPoint(message.previousTx, message.previousTxOutput))) {
                     Pair(this, InteractiveTxSessionAction.DuplicateInput(message.channelId, message.serialId, message.previousTx.txid, message.previousTxOutput))
+                } else if (message.sequence > 0xfffffffdU) {
+                    Pair(this, InteractiveTxSessionAction.NonReplaceableInput(message.channelId, message.serialId, message.previousTx.txid, message.previousTxOutput, message.sequence.toLong()))
                 } else if (!Script.isNativeWitnessScript(message.previousTx.txOut[message.previousTxOutput.toInt()].publicKeyScript)) {
                     Pair(this, InteractiveTxSessionAction.NonSegwitInput(message.channelId, message.serialId, message.previousTx.txid, message.previousTxOutput))
                 } else {

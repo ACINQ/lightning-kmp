@@ -410,15 +410,19 @@ data class TxComplete(
 
 data class TxSignatures(
     override val channelId: ByteVector32,
-    val txId: ByteVector32,
+    val txHash: ByteVector32,
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId {
+    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>) : this(channelId, tx.hash, witnesses)
+
     override val type: Long get() = TxSignatures.type
+
+    val txId: ByteVector32 get() = txHash.reversed()
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
-        LightningCodecs.writeBytes(txId.toByteArray(), out)
+        LightningCodecs.writeBytes(txHash.toByteArray(), out)
         LightningCodecs.writeU16(witnesses.size, out)
         witnesses.forEach { witness ->
             LightningCodecs.writeU16(witness.stack.size, out)
@@ -434,7 +438,7 @@ data class TxSignatures(
 
         override fun read(input: Input): TxSignatures {
             val channelId = LightningCodecs.bytes(input, 32).byteVector32()
-            val txId = LightningCodecs.bytes(input, 32).byteVector32()
+            val txHash = LightningCodecs.bytes(input, 32).byteVector32()
             val witnessCount = LightningCodecs.u16(input)
             val witnesses = ArrayList<ScriptWitness>(witnessCount)
             for (i in 1..witnessCount) {
@@ -446,7 +450,7 @@ data class TxSignatures(
                 }
                 witnesses += ScriptWitness(stack.toList())
             }
-            return TxSignatures(channelId, txId, witnesses)
+            return TxSignatures(channelId, txHash, witnesses)
         }
     }
 }
