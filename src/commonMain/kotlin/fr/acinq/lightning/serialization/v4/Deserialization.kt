@@ -16,8 +16,8 @@ import fr.acinq.lightning.wire.*
 
 object Deserialization {
 
-    fun ByteArray.fromBinV4(): PersistedChannelState {
-        val input = ByteArrayInput(this)
+    fun deserialize(bin: ByteArray): PersistedChannelState {
+        val input = ByteArrayInput(bin)
         val version = input.read()
         require(version == Serialization.versionMagic) { "incorrect version $version, expected ${Serialization.versionMagic}" }
         return input.readPersistedChannelState()
@@ -299,7 +299,8 @@ object Deserialization {
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         ),
-        channelId = readByteVector32()
+        channelId = readByteVector32(),
+        remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
     )
 
     private fun Input.readCommitmentSpec(): CommitmentSpec = CommitmentSpec(

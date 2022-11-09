@@ -37,10 +37,10 @@ object Serialization {
 
     const val versionMagic = 4
 
-    fun PersistedChannelState.toBinV4(): ByteArray {
+    fun serialize(o: PersistedChannelState): ByteArray {
         val out = ByteArrayOutput()
         out.write(versionMagic)
-        out.writePersistedChannelState(this)
+        out.writePersistedChannelState(o)
         return out.toByteArray()
     }
 
@@ -350,7 +350,8 @@ object Serialization {
             }
             writeNullable(lastIndex) { writeNumber(it) }
         }
-        write(channelId.toByteArray())
+        writeByteVector32(channelId)
+        writeDelimited(remoteChannelData.data.toByteArray())
     }
 
     private fun Output.write(o: CommitmentSpec): Unit = o.run {

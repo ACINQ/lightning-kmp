@@ -106,20 +106,6 @@ data class LNChannel<out S : ChannelState>(
     // we check that serialization works by checking that deserialize(serialize(state)) == state
     private fun checkSerialization(state: PersistedChannelState) {
 
-        // We never persist remote channel data.
-        fun removeChannelData(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is LegacyWaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is LegacyWaitForFundingLocked -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is WaitForFundingConfirmed -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is WaitForChannelReady -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Normal -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is ShuttingDown -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Negotiating -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Closing -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is WaitForRemotePublishFutureCommitment -> state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty))
-            is Closed -> state.copy(state = state.state.copy(commitments = state.commitments.copy(remoteChannelData = EncryptedChannelData.empty)))
-        }
-
         // We never persist a funding RBF attempt.
         fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
             is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
@@ -129,7 +115,7 @@ data class LNChannel<out S : ChannelState>(
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized)
 
-        assertEquals(removeChannelData(removeRbfAttempt(state)), deserialized, "serialization error")
+        assertEquals(removeRbfAttempt(state), deserialized, "serialization error")
     }
 
     private fun checkSerialization(actions: List<ChannelAction>) {
