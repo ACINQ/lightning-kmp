@@ -37,10 +37,10 @@ object Serialization {
 
     const val versionMagic = 4
 
-    fun PersistedChannelState.toBinV4(): ByteArray {
+    fun serialize(o: PersistedChannelState): ByteArray {
         val out = ByteArrayOutput()
         out.write(versionMagic)
-        out.writePersistedChannelState(this)
+        out.writePersistedChannelState(o)
         return out.toByteArray()
     }
 
