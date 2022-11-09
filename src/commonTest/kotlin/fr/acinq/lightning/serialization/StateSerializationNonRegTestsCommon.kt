@@ -32,10 +32,13 @@ class StateSerializationNonRegTestsCommon {
                         close()
                     }
                 }
+                // deserialized data must match static json reference file
                 assertEquals(ref, json, path.toString())
                 if (debug) {
                     tmpFile.delete()
                 }
+                // we also make sure that serialization round-trip is identity
+                assertEquals(state, Serialization.deserialize(Serialization.serialize(state)), path.toString())
             }
     }
 

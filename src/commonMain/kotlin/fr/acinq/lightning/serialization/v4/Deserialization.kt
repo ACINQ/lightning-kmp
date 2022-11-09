@@ -299,7 +299,8 @@ object Deserialization {
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         ),
-        channelId = readByteVector32()
+        channelId = readByteVector32(),
+        remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
     )
 
     private fun Input.readCommitmentSpec(): CommitmentSpec = CommitmentSpec(

@@ -350,7 +350,8 @@ object Serialization {
             }
             writeNullable(lastIndex) { writeNumber(it) }
         }
-        write(channelId.toByteArray())
+        writeByteVector32(channelId)
+        writeDelimited(remoteChannelData.data.toByteArray())
     }
 
     private fun Output.write(o: CommitmentSpec): Unit = o.run {
