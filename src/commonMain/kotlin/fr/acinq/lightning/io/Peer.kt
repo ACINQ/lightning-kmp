@@ -263,7 +263,6 @@ class Peer(
             // we don't restore closed channels
             val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
             _bootChannelsFlow.value = bootChannels.map { it.channelId to it }.toMap()
-            // restore channels (nb: suspends on currentTipFlow & onChainFeeratesFlow)
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
@@ -272,7 +271,7 @@ class Peer(
                 _channels = _channels + (it.channelId to state1)
                 it.channelId
             }
-            logger.info { "restored channels: ${channelIds.joinToString(", ")}" }
+            logger.info { "restored ${channelIds.size} channels" }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
@@ -286,7 +285,7 @@ class Peer(
         launch {
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
-                logger.info { "connection state changed: $it" }
+                logger.info { "connection state changed: ${it::class.simpleName}" }
                 if (it is Connection.CLOSED) input.send(Disconnected)
                 previousState = it
             }
@@ -497,7 +496,7 @@ class Peer(
                     }
 
                     action is ChannelAction.Storage.StoreState -> {
-                        logger.info { "storing state=${action.data::class}" }
+                        logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
                     }
 
@@ -781,12 +780,12 @@ class Peer(
                         }
 
                         msg is HasTemporaryChannelId && !_channels.containsKey(msg.temporaryChannelId) -> {
-                            logger.error { "received ${msg::class} for unknown temporary channel ${msg.temporaryChannelId}" }
+                            logger.error { "received ${msg::class.simpleName} for unknown temporary channel ${msg.temporaryChannelId}" }
                             sendToPeer(Error(msg.temporaryChannelId, "unknown channel"))
                         }
 
                         msg is HasTemporaryChannelId -> {
-                            logger.info { "received ${msg::class} for temporary channel ${msg.temporaryChannelId}" }
+                            logger.info { "received ${msg::class.simpleName} for temporary channel ${msg.temporaryChannelId}" }
                             val state = _channels[msg.temporaryChannelId] ?: error("channel ${msg.temporaryChannelId} not found")
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
@@ -795,12 +794,12 @@ class Peer(
                         }
 
                         msg is HasChannelId && !_channels.containsKey(msg.channelId) -> {
-                            logger.error { "received ${msg::class} for unknown channel ${msg.channelId}" }
+                            logger.error { "received ${msg::class.simpleName} for unknown channel ${msg.channelId}" }
                             sendToPeer(Error(msg.channelId, "unknown channel"))
                         }
 
                         msg is HasChannelId -> {
-                            logger.info { "received ${msg::class} for channel ${msg.channelId}" }
+                            logger.info { "received ${msg::class.simpleName} for channel ${msg.channelId}" }
                             val state = _channels[msg.channelId] ?: error("channel ${msg.channelId} not found")
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
@@ -809,7 +808,7 @@ class Peer(
                         }
 
                         msg is ChannelUpdate -> {
-                            logger.info { "received ${msg::class} for channel ${msg.shortChannelId}" }
+                            logger.info { "received ${msg::class.simpleName} for channel ${msg.shortChannelId}" }
                             _channels.values.filterIsInstance<Normal>().find { it.shortChannelId == msg.shortChannelId }?.let { state ->
                                 val event1 = ChannelCommand.MessageReceived(msg)
                                 val (state1, actions) = state.process(event1)
@@ -819,22 +818,22 @@ class Peer(
                         }
 
                         msg is PayToOpenRequest -> {
-                            logger.info { "received ${msg::class}" }
+                            logger.info { "received ${msg::class.simpleName}" }
                             processIncomingPayment(Either.Left(msg))
                         }
 
                         msg is SwapOutResponse -> {
-                            logger.info { "received ${msg::class} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
+                            logger.info { "received ${msg::class.simpleName} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
                             _eventsFlow.emit(SwapOutResponseEvent(msg))
                         }
 
                         msg is PhoenixAndroidLegacyInfo -> {
-                            logger.info { "received ${msg::class} hasChannels=${msg.hasChannels}" }
+                            logger.info { "received ${msg::class.simpleName} hasChannels=${msg.hasChannels}" }
                             _eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
                         }
 
                         msg is OnionMessage -> {
-                            logger.info { "received ${msg::class}" }
+                            logger.info { "received ${msg::class.simpleName}" }
                             // TODO: process onion message
                         }
 
@@ -938,7 +937,7 @@ class Peer(
             }
 
             cmd is PayToOpenResponseCommand -> {
-                logger.info { "sending ${cmd.payToOpenResponse::class}" }
+                logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }
                 sendToPeer(cmd.payToOpenResponse)
             }
 
@@ -965,7 +964,7 @@ class Peer(
 
             cmd is SendSwapOutRequest -> {
                 val msg = SwapOutRequest(nodeParams.chainHash, cmd.amount, cmd.bitcoinAddress, cmd.feePerKw)
-                logger.info { "sending ${msg::class}" }
+                logger.info { "sending ${msg::class.simpleName}" }
                 sendToPeer(msg)
             }
 
@@ -979,7 +978,7 @@ class Peer(
             }
 
             cmd is WrappedChannelCommand -> when (val state = _channels[cmd.channelId]) {
-                null -> logger.error { "received ${cmd.channelCommand::class} for an unknown channel ${cmd.channelId}" }
+                null -> logger.error { "received ${cmd.channelCommand::class.simpleName} for an unknown channel ${cmd.channelId}" }
                 else -> {
                     val (state1, actions) = state.process(cmd.channelCommand)
                     processActions(cmd.channelId, actions)
