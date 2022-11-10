@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel
 
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -60,7 +61,8 @@ data class LegacyWaitForFundingLocked(
                     )
                     val actions = listOf(
                         ChannelAction.Blockchain.SendWatch(watchConfirmed),
-                        ChannelAction.Storage.StoreState(nextState)
+                        ChannelAction.Storage.StoreState(nextState),
+                        ChannelAction.EmitEvent(ChannelEvents.Confirmed(nextState)),
                     )
                     Pair(nextState, actions)
                 }

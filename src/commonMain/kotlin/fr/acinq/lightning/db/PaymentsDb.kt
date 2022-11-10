@@ -180,14 +180,18 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
          * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
          * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
          * @param fundingFee Feed paid to bitcoin miners for processing the L1 transaction.
-         * @param channelId the long id of the channel created to receive this payment. May be null if the channel id is not known.
+         * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
+         * @param confirmed The newly created channel will not be immediately usable, its funding tx must first reach a certain number of confirmations
+         *                  in the blockchain. This boolean is provided here as a convenience in case the implementor chooses to use this class directly,
+         *                  but it is up to the implementor to listen to the correct channel event and update it when the channel is confirmed.
          */
         data class NewChannel(
             val id: UUID,
             override val amount: MilliSatoshi,
             val serviceFee: MilliSatoshi,
             val fundingFee: Satoshi = 0.sat,
-            val channelId: ByteVector32?
+            val channelId: ByteVector32?,
+            val confirmed: Boolean = false
         ) : ReceivedWith() {
             override val fees: MilliSatoshi = serviceFee + fundingFee.toMilliSatoshi()
         }

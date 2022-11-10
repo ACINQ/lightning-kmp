@@ -66,7 +66,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         // Our peer sends us funding_locked.
         val (state4, actions4) = state3.process(ChannelCommand.MessageReceived(ChannelReady(state.channelId, randomKey().publicKey())))
         assertIs<LNChannel<Normal>>(state4)
-        assertEquals(actions4.size, 2)
+        assertEquals(actions4.size, 3)
         val watchConfirmed = actions4.hasWatch<WatchConfirmed>()
         assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEEPLYBURIED)
         assertEquals(watchConfirmed.txId, fundingTx.txid)
