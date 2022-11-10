@@ -273,7 +273,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `reject swap-in (fee too high)`() = runSuspendTest {
+    fun `reject swap-in -- fee too high`() = runSuspendTest {
         val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
@@ -303,7 +303,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `reject swap-in (no associated channel request)`() = runSuspendTest {
+    fun `reject swap-in -- no associated channel request`() = runSuspendTest {
         val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
