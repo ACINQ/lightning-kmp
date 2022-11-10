@@ -24,12 +24,6 @@ sealed class PaymentPart {
     abstract val totalAmount: MilliSatoshi
     abstract val paymentHash: ByteVector32
     abstract val finalPayload: PaymentOnion.FinalPayload
-
-    fun mdc(): Map<String, Any> = mapOf(
-        "paymentHash" to paymentHash,
-        "amount" to amount,
-        "totalAmount" to totalAmount
-    )
 }
 
 data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {

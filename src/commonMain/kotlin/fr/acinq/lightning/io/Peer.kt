@@ -73,13 +73,6 @@ interface SendPayment {
     val trampolineFeesOverride: List<TrampolineFees>?
     val paymentRequest: PaymentRequest
     val paymentHash: ByteVector32 get() = details.paymentHash
-
-    fun mdc(): Map<String, Any> = mapOf(
-        "paymentId" to paymentId,
-        "paymentHash" to paymentHash,
-        "amount" to amount,
-        "recipient" to recipient
-    )
 }
 
 data class SendPaymentNormal(

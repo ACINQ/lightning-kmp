@@ -285,20 +285,6 @@ sealed class ChannelState {
             else -> Pair(Aborted, listOf())
         }
     }
-
-    fun mdc(): Map<String, Any> = buildMap {
-        this@ChannelState::class.simpleName?.let { put("state", it) }
-        when (val state = this@ChannelState) {
-            is WaitForOpenChannel -> put("temporaryChannelId", state.temporaryChannelId)
-            is WaitForAcceptChannel -> put("temporaryChannelId", state.temporaryChannelId)
-            is WaitForFundingCreated -> put("channelId", state.channelId)
-            is WaitForFundingSigned -> put("channelId", state.channelId)
-            is ChannelStateWithCommitments -> put("channelId", state.channelId)
-            is Offline -> put("channelId", state.state.channelId)
-            is Syncing -> put("channelId", state.state.channelId)
-            else -> {}
-        }
-    }
 }
 
 sealed class ChannelStateWithCommitments : ChannelState() {

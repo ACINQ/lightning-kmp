@@ -1,5 +1,9 @@
 package fr.acinq.lightning.utils
 
+import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.db.OutgoingPayment
+import fr.acinq.lightning.io.SendPayment
+import fr.acinq.lightning.payment.PaymentPart
 import org.kodein.log.Logger
 import org.kodein.log.Logger.Level.*
 
@@ -28,5 +32,46 @@ data class MDCLogger(val logger: Logger, val staticMdc: Map<String, Any> = empty
 
     inline fun error(ex: Throwable? = null, mdc: Map<String, Any> = emptyMap(), msgCreator: () -> String) {
         logger.log(level = ERROR, error = ex, msgCreator = msgCreator, meta = staticMdc + mdc)
+    }
+}
+
+/**
+ * Utility functions to build MDC for various objects without polluting main classes
+ */
+
+fun PaymentPart.mdc(): Map<String, Any> = mapOf(
+    "paymentHash" to paymentHash,
+    "amount" to amount,
+    "totalAmount" to totalAmount
+)
+
+fun SendPayment.mdc(): Map<String, Any> = mapOf(
+    "paymentId" to paymentId,
+    "paymentHash" to paymentHash,
+    "amount" to amount,
+    "recipient" to recipient
+)
+
+fun OutgoingPayment.mdc(): Map<String, Any> = mapOf(
+    "paymentId" to id,
+    "paymentHash" to paymentHash,
+    "amount" to amount,
+    "recipient" to recipient
+)
+
+fun ChannelState.mdc(): Map<String, Any> {
+    val state = this
+    return buildMap {
+        state::class.simpleName?.let { put("state", it) }
+        when (state) {
+            is WaitForOpenChannel -> put("temporaryChannelId", state.temporaryChannelId)
+            is WaitForAcceptChannel -> put("temporaryChannelId", state.temporaryChannelId)
+            is WaitForFundingCreated -> put("channelId", state.channelId)
+            is WaitForFundingSigned -> put("channelId", state.channelId)
+            is ChannelStateWithCommitments -> put("channelId", state.channelId)
+            is Offline -> put("channelId", state.state.channelId)
+            is Syncing -> put("channelId", state.state.channelId)
+            else -> {}
+        }
     }
 }
