@@ -24,6 +24,12 @@ sealed class PaymentPart {
     abstract val totalAmount: MilliSatoshi
     abstract val paymentHash: ByteVector32
     abstract val finalPayload: PaymentOnion.FinalPayload
+
+    fun mdc(): Map<String, Any> = mapOf(
+        "paymentHash" to paymentHash,
+        "amount" to amount,
+        "totalAmount" to totalAmount
+    )
 }
 
 data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
@@ -67,7 +73,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         fun add(part: PaymentPart): PendingPayment = copy(parts = parts + part)
     }
 
-    private val logger = nodeParams.loggerFactory.newLogger(this::class)
+    private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class))
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 
@@ -80,7 +86,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         timestampSeconds: Long = currentTimestampSeconds()
     ): PaymentRequest {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-        logger.debug { "h:$paymentHash using routing hints $extraHops" }
+        logger.debug(mapOf("paymentHash" to paymentHash)) { "using routing hints $extraHops" }
         val pr = PaymentRequest.create(
             nodeParams.chainHash,
             amount,
@@ -96,7 +102,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             extraHops,
             timestampSeconds
         )
-        logger.info { "h:$paymentHash generated payment request ${pr.write()}" }
+        logger.info(mapOf("paymentHash" to paymentHash)) { "generated payment request ${pr.write()}" }
         db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr))
         return pr
     }
@@ -157,7 +163,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         // However an error message here would differ from an error message below,
         // as we don't know the `onion.totalAmount` yet.
         // So to prevent any kind of information leakage, we always peel the onion first.
-        logger.info { "h:${htlc.paymentHash} received htlc amount=${htlc.amountMsat} expiry=${htlc.cltvExpiry}" }
         return when (val res = toPaymentPart(privateKey, htlc)) {
             is Either.Left -> res.value
             is Either.Right -> processPaymentPart(res.value, currentBlockHeight)
@@ -169,7 +174,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
      * This is very similar to the processing of an htlc.
      */
     suspend fun process(payToOpenRequest: PayToOpenRequest, currentBlockHeight: Int): ProcessAddResult {
-        logger.info { "h:${payToOpenRequest.paymentHash} received pay-to-open amount=${payToOpenRequest.amountMsat} funding=${payToOpenRequest.fundingSatoshis} fees=${payToOpenRequest.payToOpenFeeSatoshis}" }
         return when (val res = toPaymentPart(privateKey, payToOpenRequest)) {
             is Either.Left -> res.value
             is Either.Right -> processPaymentPart(res.value, currentBlockHeight)
@@ -178,6 +182,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
     /** Main payment processing, that handles payment parts. */
     private suspend fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): ProcessAddResult {
+        val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
+        when(paymentPart) {
+            is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
+            is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} funding=${paymentPart.payToOpenRequest.fundingSatoshis} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
+        }
         return when (val validationResult = validatePaymentPart(paymentPart, currentBlockHeight)) {
             is Either.Left -> validationResult.value
             is Either.Right -> {
@@ -196,17 +205,17 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             //    htlc can be safely rejected.
                             val htlcsMapInDb = incomingPayment.received.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
-                                logger.info { "h:${paymentPart.paymentHash} accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
+                                logger.info { "accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
                                 val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(paymentPart.htlc.id, incomingPayment.preimage, true)))
                                 ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.received)
                             } else {
-                                logger.info { "h:${paymentPart.paymentHash} rejecting htlc part for an invoice that has already been paid" }
+                                logger.info { "rejecting htlc part for an invoice that has already been paid" }
                                 val action = actionForFailureMessage(IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.htlc)
                                 ProcessAddResult.Rejected(listOf(action), incomingPayment)
                             }
                         }
                         is PayToOpenPart -> {
-                            logger.info { "h:${paymentPart.paymentHash} rejecting pay-to-open part for an invoice that has already been paid" }
+                            logger.info { "rejecting pay-to-open part for an invoice that has already been paid" }
                             val action = actionForPayToOpenFailure(privateKey, IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.payToOpenRequest)
                             ProcessAddResult.Rejected(listOf(action), incomingPayment)
                         }
@@ -219,7 +228,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         paymentPart.totalAmount != payment.totalAmount -> {
                             // Bolt 04:
                             // - SHOULD fail the entire HTLC set if `total_msat` is not the same for all HTLCs in the set.
-                            logger.warning { "h:${paymentPart.paymentHash} invalid total_amount_msat: $paymentPart.totalAmount, expected ${payment.totalAmount}" }
+                            logger.warning { "invalid total_amount_msat: ${paymentPart.totalAmount}, expected ${payment.totalAmount}" }
                             val actions = payment.parts.map { part ->
                                 val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                                 when (part) {
@@ -245,7 +254,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             //   regarding the failed pay-to-open
                             // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
                             // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
-                            logger.warning { "h:${paymentPart.paymentHash} amount too low for a pay-to-open: $payToOpenAmount, min is $payToOpenMinAmount" }
+                            logger.warning { "amount too low for a pay-to-open: $payToOpenAmount, min is $payToOpenMinAmount" }
                             val actions = payment.parts.map { part ->
                                 val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                                 when (part) {
@@ -259,8 +268,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         else -> {
                             // We have received all the payment parts.
                             when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
-                                null -> logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived}) without payment metadata" }
-                                else -> logger.info { "h:${paymentPart.paymentHash} payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
+                                null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
+                                else -> logger.info { "payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
                             }
                             val (actions, receivedWith) = payment.parts.map { part ->
                                 when (part) {
@@ -306,20 +315,21 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     }
 
     private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, IncomingPayment> {
+        val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
         val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
         return when {
             incomingPayment == null -> {
-                logger.warning { "h:${paymentPart.paymentHash} payment for which we don't have a preimage" }
+                logger.warning { "payment for which we don't have a preimage" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
             // Payments are rejected for expired invoices UNLESS invoice has already been paid
             // We must accept payments for already paid invoices, because it could be the channel replaying HTLCs that we already fulfilled
             incomingPayment.isExpired() && incomingPayment.received == null -> {
-                logger.warning { "h:${paymentPart.paymentHash} the invoice is expired" }
+                logger.warning { "the invoice is expired" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             incomingPayment.origin !is IncomingPayment.Origin.Invoice -> {
-                logger.warning { "h:${paymentPart.paymentHash} unsupported payment type: ${incomingPayment.origin::class}" }
+                logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             incomingPayment.origin.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {
@@ -332,7 +342,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
                 //
                 // NB: We always include a paymentSecret, and mark the feature as mandatory.
-                logger.warning { "h:${paymentPart.paymentHash} payment with invalid paymentSecret (${paymentPart.finalPayload.paymentSecret})" }
+                logger.warning { "payment with invalid paymentSecret (${paymentPart.finalPayload.paymentSecret})" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.origin.paymentRequest.amount -> {
@@ -340,7 +350,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 // - if the amount paid is less than the amount expected:
                 //   - MUST fail the HTLC.
                 //   - MUST return an incorrect_or_unknown_payment_details error.
-                logger.warning { "h:${paymentPart.paymentHash} invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.origin.paymentRequest.amount * 2 -> {
@@ -351,15 +361,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 //
                 //   Note: this allows the origin node to reduce information leakage by altering
                 //   the amount while not allowing for accidental gross overpayment.
-                logger.warning { "h:${paymentPart.paymentHash} invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
-                logger.warning { "h:${paymentPart.paymentHash} payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
+                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             paymentPart is PayToOpenPart && paymentPart.payToOpenRequest.fundingSatoshis < nodeParams.minFundingSatoshis -> {
-                logger.warning { "h:${paymentPart.payToOpenRequest.paymentHash} received invalid funding amount for a pay-to-open: ${paymentPart.payToOpenRequest.fundingSatoshis}, min is ${nodeParams.minFundingSatoshis}" }
+                logger.warning { "received invalid funding amount for a pay-to-open: ${paymentPart.payToOpenRequest.fundingSatoshis}, min is ${nodeParams.minFundingSatoshis}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             else -> Either.Right(incomingPayment)
