@@ -224,7 +224,7 @@ class ElectrumClient(
         launch {
             var previousState = _connectionState.value
             _connectionState.filter { it != previousState }.collect {
-                logger.info { "connection state changed: $it" }
+                logger.info { "connection state changed: ${it::class.simpleName}" }
                 if (it is Connection.CLOSED) mailbox.send(Disconnected)
                 previousState = it
             }
@@ -235,7 +235,7 @@ class ElectrumClient(
     private suspend fun run() {
         mailbox.consumeEach { cmd ->
 
-            logger.debug { "processing command $cmd in state ${state::class}" }
+            logger.debug { "processing command $cmd in state ${state::class.simpleName}" }
 
             val (newState, actions) = state.process(cmd, logger)
             state = newState

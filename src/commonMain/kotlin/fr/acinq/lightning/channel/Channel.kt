@@ -226,7 +226,7 @@ sealed class ChannelState {
     abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
     internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled event ${cmd::class} in state ${this@ChannelState::class}" }
+        logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
         return Pair(this@ChannelState, listOf())
     }
 
@@ -248,7 +248,7 @@ sealed class ChannelState {
     }
 
     internal fun ChannelContext.handleCommandError(cmd: Command, error: ChannelException, channelUpdate: ChannelUpdate? = null): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning(error) { "c:${error.channelId} processing ${cmd::class} in state ${this::class} failed" }
+        logger.warning(error) { "processing command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName} failed" }
         return when (cmd) {
             is CMD_ADD_HTLC -> Pair(this@ChannelState, listOf(ChannelAction.ProcessCmdRes.AddFailed(cmd, error, channelUpdate)))
             else -> Pair(this@ChannelState, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, error)))
@@ -262,7 +262,7 @@ sealed class ChannelState {
 
     fun ChannelContext.handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
-        logger.error { "c:${e.channelId} peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
+        logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
         return when {
             this@ChannelState is Closing -> Pair(this@ChannelState, listOf()) // nothing to do, there is already a spending tx published
             this@ChannelState is Negotiating && this@ChannelState.bestUnpublishedClosingTx != null -> {

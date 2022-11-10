@@ -56,16 +56,16 @@ object WaitForInit : ChannelState() {
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
             cmd is ChannelCommand.InitInitiator -> {
-                logger.warning { "c:${cmd.temporaryChannelId(keyManager)} cannot open channel with invalid channel_type=${cmd.channelType.name}" }
+                logger.warning { "cannot open channel with invalid channel_type=${cmd.channelType.name}" }
                 Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.nothingAtStake() -> {
-                logger.info { "c:${cmd.state.channelId} we have nothing at stake, going straight to CLOSED" }
+                logger.info { "we have nothing at stake, going straight to CLOSED" }
                 Pair(Closed(cmd.state), listOf())
             }
             cmd is ChannelCommand.Restore && cmd.state is Closing -> {
                 val closingType = cmd.state.closingTypeAlreadyKnown()
-                logger.info { "c:${cmd.state.channelId} channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"})" }
+                logger.info { "channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"})" }
                 // if the closing type is known:
                 // - there is no need to watch the funding tx because it has already been spent and the spending tx has
                 //   already reached mindepth
@@ -121,13 +121,13 @@ object WaitForInit : ChannelState() {
             }
             cmd is ChannelCommand.Restore && cmd.state is LegacyWaitForFundingConfirmed -> {
                 val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.commitments.fundingAmount)
-                logger.info { "c:${cmd.state.channelId} restoring legacy unconfirmed channel (waiting for $minDepth confirmations)" }
+                logger.info { "restoring legacy unconfirmed channel (waiting for $minDepth confirmations)" }
                 val watch = WatchConfirmed(cmd.state.channelId, cmd.state.commitments.fundingTxId, cmd.state.commitments.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                 Pair(Offline(cmd.state), listOf(ChannelAction.Blockchain.SendWatch(watch)))
             }
             cmd is ChannelCommand.Restore && cmd.state is WaitForFundingConfirmed -> {
                 val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.fundingParams.fundingAmount)
-                logger.info { "c:${cmd.state.channelId} restoring unconfirmed channel (waiting for $minDepth confirmations)" }
+                logger.info { "restoring unconfirmed channel (waiting for $minDepth confirmations)" }
                 val allCommitments = listOf(cmd.state.commitments) + cmd.state.previousFundingTxs.map { it.second }
                 val watches = allCommitments.map { WatchConfirmed(it.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
                 val actions = buildList {
@@ -137,7 +137,7 @@ object WaitForInit : ChannelState() {
                 Pair(Offline(cmd.state), actions)
             }
             cmd is ChannelCommand.Restore && cmd.state is ChannelStateWithCommitments -> {
-                logger.info { "c:${cmd.state.channelId} restoring channel" }
+                logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
                 // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
                 val fundingTx = when {
                     cmd.state is WaitForChannelReady && staticParams.useZeroConf -> cmd.state.fundingTx.signedTx
@@ -152,7 +152,7 @@ object WaitForInit : ChannelState() {
                 )
                 val actions = buildList {
                     fundingTx?.let {
-                        logger.info { "c:${cmd.state.channelId} republishing funding tx (txId=${it.txid})" }
+                        logger.info { "republishing funding tx (txId=${it.txid})" }
                         add(ChannelAction.Blockchain.PublishTx(it))
                     }
                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
@@ -173,7 +173,7 @@ object WaitForInit : ChannelState() {
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForInit::class.simpleName}" }
         return Pair(this@WaitForInit, listOf(ChannelAction.ProcessLocalError(t, cmd)))
     }
 }

@@ -126,7 +126,7 @@ data class WaitForFundingSigned(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForFundingSigned::class.simpleName}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }

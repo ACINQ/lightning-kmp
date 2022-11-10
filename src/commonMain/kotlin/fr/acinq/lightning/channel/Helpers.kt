@@ -733,7 +733,7 @@ object Helpers {
             // this tx has been published by remote, so we need to invert local/remote params
             val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isInitiator, commitments.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
             require(txNumber <= 0xffffffffffffL) { "txNumber must be lesser than 48 bits long" }
-            logger.warning { "c:${commitments.channelId} a revoked commit has been published with txNumber=$txNumber" }
+            logger.warning { "a revoked commit has been published with txNumber=$txNumber" }
             return txNumber
         }
 
@@ -813,7 +813,7 @@ object Helpers {
             val localHtlcPubkey = Generators.derivePubKey(commitments.localParams.channelKeys(keyManager).htlcBasepoint, remotePerCommitmentPoint)
 
             // we retrieve the information needed to rebuild htlc scripts
-            logger.info { "c:${commitments.channelId} found ${htlcInfos.size} htlcs for txid=${revokedCommitPublished.commitTx.txid}" }
+            logger.info { "found ${htlcInfos.size} htlcs for txid=${revokedCommitPublished.commitTx.txid}" }
             val htlcsRedeemScripts = htlcInfos.flatMap { htlcInfo ->
                 val htlcReceived = Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash), htlcInfo.cltvExpiry)
                 val htlcOffered = Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash))
@@ -869,7 +869,7 @@ object Helpers {
             }
             val isHtlcTx = htlcTx.txIn.any { it.outPoint.txid == revokedCommitPublished.commitTx.txid } && !claimTxs.any { it.tx.txid == htlcTx.txid }
             if (isHtlcTx) {
-                logger.info { "c:${commitments.channelId} looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
+                logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
                 val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)

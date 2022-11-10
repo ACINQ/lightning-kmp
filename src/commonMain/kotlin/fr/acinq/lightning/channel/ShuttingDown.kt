@@ -188,7 +188,7 @@ data class ShuttingDown(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@ShuttingDown::class.simpleName}" }
         val error = Error(channelId, t.message)
         return spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
     }

@@ -4,6 +4,9 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.payment.PaymentPart
+import fr.acinq.lightning.wire.HasChannelId
+import fr.acinq.lightning.wire.HasTemporaryChannelId
+import fr.acinq.lightning.wire.LightningMessage
 import org.kodein.log.Logger
 import org.kodein.log.Logger.Level.*
 
@@ -76,6 +79,17 @@ fun ChannelState.mdc(): Map<String, Any> {
             is ChannelStateWithCommitments -> put("channelId", state.channelId)
             is Offline -> put("channelId", state.state.channelId)
             is Syncing -> put("channelId", state.state.channelId)
+            else -> {}
+        }
+    }
+}
+
+fun LightningMessage.mdc(): Map<String, Any> {
+    val msg = this
+    return buildMap {
+        when(msg) {
+            is HasTemporaryChannelId -> put("temporaryChannelId", msg.temporaryChannelId)
+            is HasChannelId -> put("channelId", msg.channelId)
             else -> {}
         }
     }

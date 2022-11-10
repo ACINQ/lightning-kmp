@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.flow
 import org.kodein.log.LoggerFactory
 
 
-@OptIn(ExperimentalStdlibApi::class)
 interface TcpSocket {
 
     sealed class IOException(override val message: String, cause: Throwable? = null) : Exception(message, cause) {
