@@ -388,6 +388,13 @@ data class OutgoingPayment(
         val closingType: ChannelClosingType,
         override val createdAt: Long,
     ) : Part()
+
+    fun mdc(): Map<String, Any> = mapOf(
+        "paymentId" to id,
+        "paymentHash" to paymentHash,
+        "amount" to amount,
+        "recipient" to recipient
+    )
 }
 
 enum class ChannelClosingType {
