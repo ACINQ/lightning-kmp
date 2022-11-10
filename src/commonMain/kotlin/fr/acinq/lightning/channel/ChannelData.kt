@@ -108,7 +108,7 @@ data class LocalCommitPublished(
             addAll(htlcTxs.values.mapNotNull { it?.tx })
             addAll(claimHtlcDelayedTxs.map { it.tx })
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
@@ -213,7 +213,7 @@ data class RemoteCommitPublished(
             claimMainOutputTx?.let { add(it.tx) }
             addAll(claimHtlcTxs.values.mapNotNull { it?.tx })
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs
@@ -315,7 +315,7 @@ data class RevokedCommitPublished(
             addAll(htlcPenaltyTxs.map { it.tx })
             addAll(claimHtlcDelayedPenaltyTxs.map { it.tx })
         }
-        val publishList = publishIfNeeded(publishQueue, irrevocablySpent, channelId)
+        val publishList = publishIfNeeded(publishQueue, irrevocablySpent)
 
         // we watch:
         // - the commitment tx itself, so that we can handle the case where we don't have any outputs

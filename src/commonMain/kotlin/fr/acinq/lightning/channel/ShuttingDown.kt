@@ -131,16 +131,16 @@ data class ShuttingDown(
             }
             is ChannelCommand.ExecuteCommand -> when {
                 cmd.command is CMD_ADD_HTLC -> {
-                    logger.info { "c:$channelId rejecting htlc request in state=${this::class}" }
+                    logger.info { "rejecting htlc request in state=${this::class}" }
                     // we don't provide a channel_update: this will be a permanent channel failure
                     handleCommandError(cmd.command, ChannelUnavailable(channelId))
                 }
                 cmd.command is CMD_SIGN && !commitments.localHasChanges() -> {
-                    logger.debug { "c:$channelId ignoring CMD_SIGN (nothing to sign)" }
+                    logger.debug { "ignoring CMD_SIGN (nothing to sign)" }
                     Pair(this@ShuttingDown, listOf())
                 }
                 cmd.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
-                    logger.debug { "c:$channelId already in the process of signing, will sign again as soon as possible" }
+                    logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@ShuttingDown.copy(commitments = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))), listOf())
                 }
                 cmd.command is CMD_SIGN -> when (val result = commitments.sendCommit(keyManager, logger)) {
@@ -153,7 +153,7 @@ data class ShuttingDown(
                         // counterparty, so only htlcs above remote's dust_limit matter
                         val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
                         val htlcInfos = trimmedHtlcs.map { it.add }.map {
-                            logger.info { "c:$channelId adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
+                            logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                             ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                         }
                         val nextState = this@ShuttingDown.copy(commitments = commitments1)

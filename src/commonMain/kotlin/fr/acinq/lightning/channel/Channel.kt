@@ -19,8 +19,6 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Clo
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import org.kodein.log.Logger
-import org.kodein.log.newLogger
 
 /*
  * Channel is implemented as a finite state machine
@@ -140,12 +138,11 @@ data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 data class ChannelContext(
     val staticParams: StaticParams,
     val currentBlockHeight: Int,
-    val currentOnChainFeerates: OnChainFeerates
+    val currentOnChainFeerates: OnChainFeerates,
+    override val logger: MDCLogger
 ): LoggingContext {
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
-
-    override val logger: Logger get() = staticParams.nodeParams.loggerFactory.newLogger(this::class)
 }
 
 /** Channel state. */
@@ -288,6 +285,20 @@ sealed class ChannelState {
             else -> Pair(Aborted, listOf())
         }
     }
+
+    fun mdc(): Map<String, Any> = buildMap {
+        this@ChannelState::class.simpleName?.let { put("state", it) }
+        when (val state = this@ChannelState) {
+            is WaitForOpenChannel -> put("temporaryChannelId", state.temporaryChannelId)
+            is WaitForAcceptChannel -> put("temporaryChannelId", state.temporaryChannelId)
+            is WaitForFundingCreated -> put("channelId", state.channelId)
+            is WaitForFundingSigned -> put("channelId", state.channelId)
+            is ChannelStateWithCommitments -> put("channelId", state.channelId)
+            is Offline -> put("channelId", state.state.channelId)
+            is Syncing -> put("channelId", state.state.channelId)
+            else -> {}
+        }
+    }
 }
 
 sealed class ChannelStateWithCommitments : ChannelState() {
@@ -307,7 +318,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     internal fun ChannelContext.handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
-        logger.warning { "c:$channelId they published their current commit in txid=${commitTx.txid}" }
+        logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
 
         val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnChainFeerates)
@@ -345,7 +356,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     internal fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "c:$channelId they published their next commit in txid=${commitTx.txid}" }
+        logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitments.remoteNextCommitInfo.isLeft) { "next remote commit must be defined" }
         val remoteCommit = commitments.remoteNextCommitInfo.left?.nextRemoteCommit
         require(remoteCommit != null) { "remote commit must not be null" }
@@ -380,10 +391,10 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     internal fun ChannelContext.handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "c:$channelId funding tx spent in txid=${tx.txid}" }
+        logger.warning { "funding tx spent in txid=${tx.txid}" }
 
         return claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
-            logger.warning { "c:$channelId txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
+            logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
             val ex = FundingTxSpent(channelId, tx.txid)
             val error = Error(channelId, ex.message)
 
@@ -419,7 +430,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             })
         } ?: run {
             // the published tx was neither their current commitment nor a revoked one
-            logger.error { "c:$channelId couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
+            logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
             Pair(ErrorInformationLeak(commitments), listOf())
         }
     }
@@ -432,7 +443,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         }
 
         return if (outdatedCommitment) {
-            logger.warning { "c:$channelId we have an outdated commitment: will not publish our local tx" }
+            logger.warning { "we have an outdated commitment: will not publish our local tx" }
             Pair(this@ChannelStateWithCommitments as ChannelState, listOf())
         } else {
             val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
@@ -491,7 +502,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         return when (channelEx) {
             null -> Pair(this@ChannelStateWithCommitments, listOf())
             else -> {
-                logger.error { "c:$channelId ${channelEx.message}" }
+                logger.error { "${channelEx.message}" }
                 when {
                     this@ChannelStateWithCommitments is Closing -> Pair(this@ChannelStateWithCommitments, listOf()) // nothing to do, there is already a spending tx published
                     this@ChannelStateWithCommitments is Negotiating && this@ChannelStateWithCommitments.bestUnpublishedClosingTx != null -> {
@@ -553,7 +564,7 @@ object Channel {
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
-    fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: Logger): Pair<Commitments, List<ChannelAction>> {
+    fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: MDCLogger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
         // first we clean up unacknowledged updates
         log.debug { "discarding proposed OUT: ${d.commitments.localChanges.proposed}" }

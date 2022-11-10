@@ -76,7 +76,7 @@ data class Closing(
                                 )
                                 Pair(nextState, actions)
                             } else {
-                                logger.warning { "c:$channelId an unknown funding tx with txId=${watch.tx.txid} got confirmed, this should not happen" }
+                                logger.warning { "an unknown funding tx with txId=${watch.tx.txid} got confirmed, this should not happen" }
                                 Pair(this@Closing, listOf())
                             }
                             else -> {
@@ -91,7 +91,7 @@ data class Closing(
                                 //
                                 // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
                                 // to negotiate a mutual close.
-                                logger.info { "c:$channelId channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
+                                logger.info { "channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
                                 val watchSpent = WatchSpent(channelId, watch.tx, commitments1.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
                                 val commitTx = commitments1.localCommit.publishableTxs.commitTx.tx
                                 val localCommitPublished = claimCurrentLocalCommitTxOutputs(keyManager, commitments1, commitTx, currentOnChainFeerates)
@@ -138,17 +138,17 @@ data class Closing(
                         // when a remote or local commitment tx containing outgoing htlcs is published on the network,
                         // we watch it in order to extract payment preimage if funds are pulled by the counterparty
                         // we can then use these preimages to fulfill payments
-                        logger.info { "c:$channelId processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=${watch.tx}" }
+                        logger.info { "processing BITCOIN_OUTPUT_SPENT with txid=${watch.tx.txid} tx=${watch.tx}" }
                         val htlcSettledActions = mutableListOf<ChannelAction>()
                         extractPreimages(commitments.localCommit, watch.tx).forEach { (htlc, preimage) ->
                             when (val paymentId = commitments.payments[htlc.id]) {
                                 null -> {
                                     // if we don't have a reference to the payment, it means that we already have forwarded the fulfill so that's not a big deal.
                                     // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
-                                    logger.info { "c:$channelId cannot fulfill htlc #${htlc.id} paymentHash=${htlc.paymentHash} (payment not found)" }
+                                    logger.info { "cannot fulfill htlc #${htlc.id} paymentHash=${htlc.paymentHash} (payment not found)" }
                                 }
                                 else -> {
-                                    logger.info { "c:$channelId fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} paymentId=$paymentId" }
+                                    logger.info { "fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} paymentId=$paymentId" }
                                     htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFulfill(paymentId, htlc, ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
                                 }
                             }
@@ -176,7 +176,7 @@ data class Closing(
                         Pair(nextState, actions)
                     }
                     watch is WatchEventConfirmed && watch.event is BITCOIN_TX_CONFIRMED -> {
-                        logger.info { "c:$channelId txid=${watch.tx.txid} has reached mindepth, updating closing state" }
+                        logger.info { "txid=${watch.tx.txid} has reached mindepth, updating closing state" }
                         // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
                         val closing1 = this@Closing.copy(
                             localCommitPublished = localCommitPublished?.update(watch.tx),
@@ -197,10 +197,10 @@ data class Closing(
                             when (val paymentId = commitments.payments[add.id]) {
                                 null -> {
                                     // same as for fulfilling the htlc (no big deal)
-                                    logger.info { "c:$channelId cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                    logger.info { "cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                 }
                                 else -> {
-                                    logger.info { "c:$channelId failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: htlc timed out" }
+                                    logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: htlc timed out" }
                                     htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcsTimedOutDownstream(channelId, setOf(add))))
                                 }
                             }
@@ -211,10 +211,10 @@ data class Closing(
                             when (val paymentId = commitments.payments[add.id]) {
                                 null -> {
                                     // same as for fulfilling the htlc (no big deal)
-                                    logger.info { "c:$channelId cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                    logger.info { "cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                 }
                                 else -> {
-                                    logger.info { "c:$channelId failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
+                                    logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
                                     htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(channelId, add)))
                                 }
                             }
@@ -222,15 +222,15 @@ data class Closing(
 
                         // for our outgoing payments, let's log something if we know that they will settle on chain
                         onChainOutgoingHtlcs(commitments.localCommit, commitments.remoteCommit, commitments.remoteNextCommitInfo.left?.nextRemoteCommit, watch.tx).forEach { add ->
-                            commitments.payments[add.id]?.let { paymentId -> logger.info { "c:$channelId paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
+                            commitments.payments[add.id]?.let { paymentId -> logger.info { "paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
                         }
 
                         val (nextState, closedActions) = when (val closingType = closing1.isClosed(watch.tx)) {
                             null -> Pair(closing1, listOf())
                             else -> {
-                                logger.info { "c:$channelId channel is now closed" }
+                                logger.info { "channel is now closed" }
                                 if (closingType !is MutualClose) {
-                                    logger.debug { "c:$channelId last known remoteChannelData=${commitments.remoteChannelData}" }
+                                    logger.debug { "last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
                                 Pair(Closed(closing1), listOf(closing1.storeChannelClosed(watch.tx)))
                             }
@@ -256,7 +256,7 @@ data class Closing(
                     }
                     Pair(nextState, actions)
                 } else {
-                    logger.warning { "c:$channelId cannot find revoked commit with txid=${cmd.revokedCommitTxId}" }
+                    logger.warning { "cannot find revoked commit with txid=${cmd.revokedCommitTxId}" }
                     Pair(this@Closing, listOf())
                 }
             }
@@ -270,7 +270,7 @@ data class Closing(
                     Pair(this@Closing, listOf(ChannelAction.Message.Send(error)))
                 }
                 is Error -> {
-                    logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
+                    logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                     // nothing to do, there is already a spending tx published
                     Pair(this@Closing, listOf())
                 }
@@ -279,13 +279,13 @@ data class Closing(
             is ChannelCommand.ExecuteCommand -> when (cmd.command) {
                 is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
                 is CMD_ADD_HTLC -> {
-                    logger.info { "c:$channelId rejecting htlc request in state=${this::class}" }
+                    logger.info { "rejecting htlc request in state=${this::class}" }
                     // we don't provide a channel_update: this will be a permanent channel failure
                     handleCommandError(cmd.command, ChannelUnavailable(channelId))
                 }
                 is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(cmd.command)) {
                     is Either.Right -> {
-                        logger.info { "c:$channelId got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
+                        logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
                         val commitments1 = result.value.first
                         val localCommitPublished1 = localCommitPublished?.let {
                             claimCurrentLocalCommitTxOutputs(keyManager, commitments1, it.commitTx, currentOnChainFeerates)
@@ -326,7 +326,7 @@ data class Closing(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error processing ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error processing ${cmd::class} in state ${this::class}" }
         return localCommitPublished?.let {
             // we're already trying to claim our commitment, there's nothing more we can do
             Pair(this@Closing, listOf())

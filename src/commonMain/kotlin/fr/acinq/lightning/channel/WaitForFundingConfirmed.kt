@@ -28,13 +28,13 @@ data class WaitForFundingConfirmed(
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (fundingTx) {
                 is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(cmd.message)) {
                     null -> {
-                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${cmd.message.txId}" }
+                        logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
                         Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
 
                     else -> {
-                        logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
+                        logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                         val nextState = this@WaitForFundingConfirmed.copy(fundingTx = fullySignedTx)
                         val actions = buildList {
                             // If we haven't sent our signatures yet, we do it now.
@@ -48,12 +48,12 @@ data class WaitForFundingConfirmed(
 
                 is FullySignedSharedTransaction -> when (rbfStatus) {
                     RbfStatus.None -> {
-                        logger.info { "c:$channelId ignoring duplicate remote funding signatures" }
+                        logger.info { "ignoring duplicate remote funding signatures" }
                         Pair(this@WaitForFundingConfirmed, listOf())
                     }
 
                     else -> {
-                        logger.warning { "c:$channelId received rbf tx_signatures before commit_sig, aborting" }
+                        logger.warning { "received rbf tx_signatures before commit_sig, aborting" }
                         Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, UnexpectedFundingSignatures(channelId).message))))
                     }
                 }
@@ -61,28 +61,28 @@ data class WaitForFundingConfirmed(
 
             cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
                 if (isInitiator) {
-                    logger.info { "c:$channelId rejecting tx_init_rbf, we're the initiator, not them!" }
+                    logger.info { "rejecting tx_init_rbf, we're the initiator, not them!" }
                     Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfNonInitiator(channelId).message))))
                 } else {
                     val minNextFeerate = fundingParams.minNextFeerate
                     when {
                         rbfStatus != RbfStatus.None -> {
-                            logger.info { "c:$channelId rejecting rbf attempt: the current rbf attempt must be completed or aborted first" }
+                            logger.info { "rejecting rbf attempt: the current rbf attempt must be completed or aborted first" }
                             Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfAlreadyInProgress(channelId).message))))
                         }
 
                         cmd.message.feerate < minNextFeerate -> {
-                            logger.info { "c:$channelId rejecting rbf attempt: the new feerate must be at least $minNextFeerate (proposed=${cmd.message.feerate})" }
+                            logger.info { "rejecting rbf attempt: the new feerate must be at least $minNextFeerate (proposed=${cmd.message.feerate})" }
                             Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfFeerate(channelId, cmd.message.feerate, minNextFeerate).message))))
                         }
 
                         cmd.message.fundingContribution.toMilliSatoshi() < remotePushAmount -> {
-                            logger.info { "c:$channelId rejecting rbf attempt: invalid amount pushed (fundingAmount=${cmd.message.fundingContribution}, pushAmount=$remotePushAmount)" }
+                            logger.info { "rejecting rbf attempt: invalid amount pushed (fundingAmount=${cmd.message.fundingContribution}, pushAmount=$remotePushAmount)" }
                             Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidPushAmount(channelId, remotePushAmount, cmd.message.fundingContribution.toMilliSatoshi()).message))))
                         }
 
                         else -> {
-                            logger.info { "c:$channelId our peer wants to raise the feerate of the funding transaction (previous=${fundingParams.targetFeerate} target=${cmd.message.feerate})" }
+                            logger.info { "our peer wants to raise the feerate of the funding transaction (previous=${fundingParams.targetFeerate} target=${cmd.message.feerate})" }
                             val fundingParams = InteractiveTxParams(
                                 channelId,
                                 isInitiator,
@@ -107,7 +107,7 @@ data class WaitForFundingConfirmed(
 
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> when (rbfStatus) {
                 is RbfStatus.RbfRequested -> {
-                    logger.info { "c:$channelId our peer accepted our rbf attempt and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
+                    logger.info { "our peer accepted our rbf attempt and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                     val fundingParams = InteractiveTxParams(
                         channelId,
                         isInitiator,
@@ -120,7 +120,7 @@ data class WaitForFundingConfirmed(
                     )
                     when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.confirmedUtxos)) {
                         is Either.Left -> {
-                            logger.warning { "c:$channelId error creating funding contributions: ${contributions.value}" }
+                            logger.warning { "error creating funding contributions: ${contributions.value}" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
 
@@ -133,7 +133,7 @@ data class WaitForFundingConfirmed(
                                 }
 
                                 else -> {
-                                    logger.warning { "c:$channelId could not start rbf session: $action" }
+                                    logger.warning { "could not start rbf session: $action" }
                                     Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                 }
                             }
@@ -142,7 +142,7 @@ data class WaitForFundingConfirmed(
                 }
 
                 else -> {
-                    logger.info { "c:$channelId ignoring unexpected tx_ack_rbf" }
+                    logger.info { "ignoring unexpected tx_ack_rbf" }
                     Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message))))
                 }
             }
@@ -169,7 +169,7 @@ data class WaitForFundingConfirmed(
                             )
                             when (firstCommitTxRes) {
                                 is Either.Left -> {
-                                    logger.error(firstCommitTxRes.value) { "c:$channelId cannot create rbf commit tx" }
+                                    logger.error(firstCommitTxRes.value) { "cannot create rbf commit tx" }
                                     Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                 }
 
@@ -187,14 +187,14 @@ data class WaitForFundingConfirmed(
                         }
 
                         is InteractiveTxSessionAction.RemoteFailure -> {
-                            logger.warning { "c:$channelId rbf attempt failed: $interactiveTxAction" }
+                            logger.warning { "rbf attempt failed: $interactiveTxAction" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
                     }
                 }
 
                 else -> {
-                    logger.info { "c:$channelId ignoring unexpected interactive-tx message: ${cmd.message::class}" }
+                    logger.info { "ignoring unexpected interactive-tx message: ${cmd.message::class}" }
                     Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message))))
                 }
             }
@@ -209,20 +209,20 @@ data class WaitForFundingConfirmed(
                     )
                     when (firstCommitmentsRes) {
                         Helpers.Funding.InvalidRemoteCommitSig -> {
-                            logger.warning { "c:$channelId rbf attempt failed: invalid commit_sig" }
+                            logger.warning { "rbf attempt failed: invalid commit_sig" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidCommitmentSignature(channelId, rbfStatus.commitTx.localCommitTx.tx.txid).message))))
                         }
 
                         Helpers.Funding.FundingSigFailure -> {
-                            logger.warning { "c:$channelId could not sign rbf funding tx" }
+                            logger.warning { "could not sign rbf funding tx" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
 
                         is Helpers.Funding.FirstCommitments -> {
                             val (signedFundingTx, commitments1) = firstCommitmentsRes
-                            logger.info { "c:$channelId rbf funding tx created with txId=${commitments1.fundingTxId}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }
+                            logger.info { "rbf funding tx created with txId=${commitments1.fundingTxId}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }
                             val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, rbfStatus.fundingParams.fundingAmount)
-                            logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
+                            logger.info { "will wait for $fundingMinDepth confirmations" }
                             val watchConfirmed = WatchConfirmed(channelId, commitments1.fundingTxId, commitments1.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                             val nextState = WaitForFundingConfirmed(
                                 commitments1,
@@ -246,19 +246,19 @@ data class WaitForFundingConfirmed(
                 }
 
                 else -> {
-                    logger.info { "c:$channelId ignoring unexpected commit_sig" }
+                    logger.info { "ignoring unexpected commit_sig" }
                     Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedCommitSig(channelId).message))))
                 }
             }
 
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> when (rbfStatus) {
                 RbfStatus.None -> {
-                    logger.info { "c:$channelId ignoring unexpected tx_abort message" }
+                    logger.info { "ignoring unexpected tx_abort message" }
                     Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message))))
                 }
 
                 else -> {
-                    logger.info { "c:$channelId our peer aborted the rbf attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
+                    logger.info { "our peer aborted the rbf attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
                     Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf())
                 }
             }
@@ -269,12 +269,12 @@ data class WaitForFundingConfirmed(
                 val allFundingTxs = listOf(Pair(fundingTx, commitments)) + previousFundingTxs
                 when (val confirmedTx = allFundingTxs.find { it.second.fundingTxId == cmd.watch.tx.txid }) {
                     null -> {
-                        logger.error { "c:$channelId internal error: the funding tx that confirmed doesn't match any of our funding txs: ${cmd.watch.tx}" }
+                        logger.error { "internal error: the funding tx that confirmed doesn't match any of our funding txs: ${cmd.watch.tx}" }
                         Pair(this@WaitForFundingConfirmed, listOf())
                     }
 
                     else -> {
-                        logger.info { "c:$channelId was confirmed at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
+                        logger.info { "was confirmed at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
                         val (_, commitments) = confirmedTx
                         val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys(keyManager).shaSeed, 1)
@@ -291,7 +291,7 @@ data class WaitForFundingConfirmed(
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
                         if (deferred != null) {
-                            logger.info { "c:$channelId funding_locked has already been received" }
+                            logger.info { "funding_locked has already been received" }
                             val (nextState1, actions1) = nextState.run { process(ChannelCommand.MessageReceived(deferred)) }
                             Pair(nextState1, actions + actions1)
                         } else {
@@ -303,17 +303,17 @@ data class WaitForFundingConfirmed(
 
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_BUMP_FUNDING_FEE -> when {
                 !fundingParams.isInitiator -> {
-                    logger.warning { "c:$channelId cannot initiate rbf, we're not the initiator" }
+                    logger.warning { "cannot initiate rbf, we're not the initiator" }
                     Pair(this@WaitForFundingConfirmed, listOf())
                 }
 
                 rbfStatus != RbfStatus.None -> {
-                    logger.warning { "c:$channelId cannot initiate rbf, another one is already in progress" }
+                    logger.warning { "cannot initiate rbf, another one is already in progress" }
                     Pair(this@WaitForFundingConfirmed, listOf())
                 }
 
                 else -> {
-                    logger.info { "c:$channelId initiating rbf (current feerate = ${fundingParams.targetFeerate}, next feerate = ${cmd.command.targetFeerate})" }
+                    logger.info { "initiating rbf (current feerate = ${fundingParams.targetFeerate}, next feerate = ${cmd.command.targetFeerate})" }
                     val txInitRbf = TxInitRbf(channelId, cmd.command.lockTime, cmd.command.targetFeerate, cmd.command.fundingAmount)
                     Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfRequested(cmd.command)), listOf(ChannelAction.Message.Send(txInitRbf)))
                 }
@@ -332,7 +332,7 @@ data class WaitForFundingConfirmed(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return when {
             nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))

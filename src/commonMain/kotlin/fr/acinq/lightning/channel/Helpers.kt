@@ -228,11 +228,12 @@ object Helpers {
     }
 
     /** This helper method will publish txs only if they haven't yet reached minDepth. */
-    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.PublishTx> {
+    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>
+    ): List<ChannelAction.Blockchain.PublishTx> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx -> logger.info { "c:$channelId no need to republish txid=${tx.txid}, it has already been confirmed" } }
+        skip.forEach { tx -> logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx ->
-            logger.info { "c:$channelId publishing txid=${tx.txid}" }
+            logger.info { "publishing txid=${tx.txid}" }
             ChannelAction.Blockchain.PublishTx(tx)
         }
     }
@@ -240,14 +241,14 @@ object Helpers {
     /** This helper method will watch txs only if they haven't yet reached minDepth. */
     fun LoggingContext.watchConfirmedIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32, minDepth: Long): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx -> logger.info { "c:$channelId no need to watch txid=${tx.txid}, it has already been confirmed" } }
+        skip.forEach { tx -> logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx -> ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))) }
     }
 
     /** This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent. */
     fun LoggingContext.watchSpentIfNeeded(parentTx: Transaction, outputs: List<OutPoint>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = outputs.partition { irrevocablySpent.contains(it) }
-        skip.forEach { output -> logger.info { "c:$channelId no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent[output]?.txid}" } }
+        skip.forEach { output -> logger.info { "no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent[output]?.txid}" } }
         return process.map { output ->
             require(output.txid == parentTx.txid) { "output doesn't belong to the given parentTx: txid=${output.txid} but expected txid=${parentTx.txid}" }
             ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, parentTx, output.index.toInt(), BITCOIN_OUTPUT_SPENT))

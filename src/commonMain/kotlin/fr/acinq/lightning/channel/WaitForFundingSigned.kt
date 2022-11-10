@@ -51,14 +51,14 @@ data class WaitForFundingSigned(
                 when (firstCommitmentsRes) {
                     Helpers.Funding.InvalidRemoteCommitSig -> handleLocalError(cmd, InvalidCommitmentSignature(channelId, firstCommitTx.localCommitTx.tx.txid))
                     Helpers.Funding.FundingSigFailure -> {
-                        logger.warning { "c:$channelId could not sign funding tx" }
+                        logger.warning { "could not sign funding tx" }
                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                     }
                     is Helpers.Funding.FirstCommitments -> {
                         val (signedFundingTx, commitments) = firstCommitmentsRes
-                        logger.info { "c:$channelId funding tx created with txId=${commitments.fundingTxId}. ${fundingTx.localInputs.size} local inputs, ${fundingTx.remoteInputs.size} remote inputs, ${fundingTx.localOutputs.size} local outputs and ${fundingTx.remoteOutputs.size} remote outputs" }
+                        logger.info { "funding tx created with txId=${commitments.fundingTxId}. ${fundingTx.localInputs.size} local inputs, ${fundingTx.remoteInputs.size} remote inputs, ${fundingTx.localOutputs.size} local outputs and ${fundingTx.remoteOutputs.size} remote outputs" }
                         if (staticParams.useZeroConf) {
-                            logger.info { "c:$channelId channel is using 0-conf, we won't wait for the funding tx to confirm" }
+                            logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
                             val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                             val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys(keyManager).shaSeed, 1)
                             val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
@@ -76,7 +76,7 @@ data class WaitForFundingSigned(
                             Pair(nextState, actions)
                         } else {
                             val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, fundingParams.fundingAmount)
-                            logger.info { "c:$channelId will wait for $fundingMinDepth confirmations" }
+                            logger.info { "will wait for $fundingMinDepth confirmations" }
                             val watchConfirmed = WatchConfirmed(channelId, commitments.fundingTxId, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                             val nextState = WaitForFundingConfirmed(
                                 commitments,
@@ -99,23 +99,23 @@ data class WaitForFundingSigned(
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> {
-                logger.warning { "c:$channelId received tx_signatures before commit_sig, aborting" }
+                logger.warning { "received tx_signatures before commit_sig, aborting" }
                 handleLocalError(cmd, UnexpectedFundingSignatures(channelId))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
-                logger.info { "c:$channelId ignoring unexpected tx_init_rbf message" }
+                logger.info { "ignoring unexpected tx_init_rbf message" }
                 Pair(this@WaitForFundingSigned, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> {
-                logger.info { "c:$channelId ignoring unexpected tx_ack_rbf message" }
+                logger.info { "ignoring unexpected tx_ack_rbf message" }
                 Pair(this@WaitForFundingSigned, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
-                logger.warning { "c:$channelId our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
+                logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
-                logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
+                logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
@@ -126,7 +126,7 @@ data class WaitForFundingSigned(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }

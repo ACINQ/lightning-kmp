@@ -12,7 +12,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     val channelId = state.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "c:$channelId offline processing ${cmd::class}" }
+        logger.warning { "offline processing ${cmd::class}" }
         return when {
             cmd is ChannelCommand.Connected -> {
                 when {
@@ -26,7 +26,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     }
                     staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> {
                         // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
-                        logger.info { "c:$channelId syncing ${state::class}, waiting fo their channelReestablish message" }
+                        logger.info { "syncing ${state::class}, waiting fo their channelReestablish message" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
                         Pair(Syncing(nextState, true), listOf())
                     }
@@ -40,7 +40,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
                         ).withChannelData(state.commitments.remoteChannelData)
-                        logger.info { "c:$channelId syncing ${state::class}" }
+                        logger.info { "syncing ${state::class}" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
@@ -51,12 +51,12 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     val watchSpent = WatchSpent(channelId, cmd.watch.tx, state.commitments.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
                     val nextState = when {
                         state is WaitForFundingConfirmed && cmd.watch.tx.txid == state.commitments.fundingTxId -> {
-                            logger.info { "c:$channelId was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
+                            logger.info { "was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
                             state.copy(previousFundingTxs = listOf())
                         }
                         state is WaitForFundingConfirmed && state.previousFundingTxs.find { cmd.watch.tx.txid == it.second.fundingTxId } != null -> {
                             val (fundingTx, commitments) = state.previousFundingTxs.first { cmd.watch.tx.txid == it.second.fundingTxId }
-                            logger.info { "c:$channelId was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with a previous funding txid=${cmd.watch.tx.txid}" }
+                            logger.info { "was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with a previous funding txid=${cmd.watch.tx.txid}" }
                             state.copy(fundingTx = fundingTx, commitments = commitments, previousFundingTxs = listOf())
                         }
                         else -> state
@@ -68,7 +68,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
             }
             cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventSpent -> when {
                 state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == cmd.watch.tx.txid } -> {
-                    logger.info { "c:$channelId closing tx published: closingTxId=${cmd.watch.tx.txid}" }
+                    logger.info { "closing tx published: closingTxId=${cmd.watch.tx.txid}" }
                     val closingTx = state.getMutualClosePublished(cmd.watch.tx)
                     val nextState = Closing(
                         state.commitments,
@@ -112,7 +112,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on event ${cmd::class} in state ${this::class}" }
         return Pair(this@Offline, listOf(ChannelAction.ProcessLocalError(t, cmd)))
     }
 }
