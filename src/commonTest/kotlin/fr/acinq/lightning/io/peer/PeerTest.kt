@@ -219,21 +219,30 @@ class PeerTest : LightningTestSuite() {
 
         val requestId = randomBytes32()
         val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
-        bob.send(RequestChannelOpen(requestId, walletBob, 100, maxFeeFloor = 3_000.sat))
+        val internalRequestBob = RequestChannelOpen(requestId, walletBob, 100, maxFeeFloor = 3_000.sat)
+        bob.send(internalRequestBob)
         val request = bob2alice.expect<PleaseOpenChannel>()
         assertEquals(request.localFundingAmount, 260_000.sat)
 
-        // We have not implemented the LSP side, so we have to fake it here.
-        val openFees = 10_000_000.msat
+        val fundingFee = 100.sat
+        val serviceFee = (internalRequestBob.maxFee - fundingFee - 1.sat).toMilliSatoshi()
+        // total fee is below max acceptable
+        assert(fundingFee + serviceFee.truncateToSatoshi() < internalRequestBob.maxFee)
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
-        alice.send(OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        alice.send(openAlice)
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
-            tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve), ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, openFees, 100.sat))))
+            tlvStream = TlvStream(
+                listOf(
+                    ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
+                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, 100.sat))
+                )
+            )
         )
         bob.forward(open)
         val accept = bob2alice.expect<AcceptDualFundedChannel>()
         assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
-        assertEquals(accept.pushAmount, openFees)
+        assertEquals(accept.pushAmount, serviceFee)
         alice.forward(accept)
 
         val txAddInputAlice = alice2bob.expect<TxAddInput>()
@@ -255,13 +264,64 @@ class PeerTest : LightningTestSuite() {
         val txSigsBob = bob2alice.expect<TxSignatures>()
         alice.forward(txSigsBob)
         val (_, aliceState) = alice.expectState<WaitForFundingConfirmed>()
-        assertEquals(aliceState.commitments.localCommit.spec.toLocal, 50_000_000.msat)
+        assertEquals(aliceState.commitments.localCommit.spec.toLocal, openAlice.fundingAmount.toMilliSatoshi() + serviceFee)
         val (_, bobState) = bob.expectState<WaitForFundingConfirmed>()
         // Bob has to deduce from its balance:
         //  - the fees for the channel open (10 000 sat)
         //  - the miner fees for his input(s) in the funding transaction
-        assertTrue(bobState.commitments.localCommit.spec.toLocal < 250_000_000.msat)
-        assertTrue(bobState.commitments.localCommit.spec.toLocal > 249_000_000.msat)
+        assertEquals(bobState.commitments.localCommit.spec.toLocal, walletBob.confirmedBalance.toMilliSatoshi() - serviceFee - fundingFee.toMilliSatoshi())
+    }
+
+    @Test
+    fun `reject swap-in (fee too high)`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+
+        val requestId = randomBytes32()
+        val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
+        val internalRequestBob = RequestChannelOpen(requestId, walletBob, 100, maxFeeFloor = 3_000.sat)
+        bob.send(internalRequestBob)
+        val request = bob2alice.expect<PleaseOpenChannel>()
+        assertEquals(request.localFundingAmount, 260_000.sat)
+        val fundingFee = 100.sat
+        val serviceFee = (internalRequestBob.maxFee - fundingFee + 1.sat).toMilliSatoshi()
+        assert(fundingFee + serviceFee.truncateToSatoshi() > internalRequestBob.maxFee)
+        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
+        val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        alice.send(openAlice)
+        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
+            tlvStream = TlvStream(
+                listOf(
+                    ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
+                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, 100.sat))
+                )
+            )
+        )
+        bob.forward(open)
+        bob2alice.expect<Error>()
+    }
+
+    @Test
+    fun `reject swap-in (no associated channel request)`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+
+        val requestId = randomBytes32()
+        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
+        val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        alice.send(openAlice)
+        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
+            tlvStream = TlvStream(
+                listOf(
+                    ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
+                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat))
+                )
+            )
+        )
+        bob.forward(open)
+        bob2alice.expect<Error>()
     }
 
     @Test
@@ -272,7 +332,8 @@ class PeerTest : LightningTestSuite() {
         assertIs<LNChannel<Normal>>(alice1)
         val channelId = alice0.channelId
 
-        val peer = buildPeer(this,
+        val peer = buildPeer(
+            this,
             alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
             TestConstants.Alice.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
@@ -363,7 +424,8 @@ class PeerTest : LightningTestSuite() {
             assertEquals(TestConstants.Bob.walletParams.invoiceDefaultRoutingFees, InvoiceDefaultRoutingFees(extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta))
         }
         run {
-            val aliceUpdate = Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
+            val aliceUpdate =
+                Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
             bob.forward(aliceUpdate)
 
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
