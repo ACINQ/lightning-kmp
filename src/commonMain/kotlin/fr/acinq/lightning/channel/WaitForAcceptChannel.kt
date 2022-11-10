@@ -49,7 +49,6 @@ data class WaitForAcceptChannel(
                             features = Features(init.remoteInit.features)
                         )
                         val channelId = computeChannelId(lastSent, accept)
-                        val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId)
                         val localFundingPubkey = init.localParams.channelKeys(keyManager).fundingPubKey
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
@@ -79,7 +78,7 @@ data class WaitForAcceptChannel(
                                             null
                                         )
                                         val actions = listOf(
-                                            channelIdAssigned,
+                                            ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
                                             ChannelAction.Message.Send(interactiveTxAction.msg),
                                             ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
                                         )

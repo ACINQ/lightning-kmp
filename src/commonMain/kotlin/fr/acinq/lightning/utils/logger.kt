@@ -35,6 +35,11 @@ data class MDCLogger(val logger: Logger, val staticMdc: Map<String, Any> = empty
     }
 }
 
+suspend fun <T> MDCLogger.withMDC(mdc: Map<String, Any>, f: suspend (MDCLogger) -> T): T {
+    val logger = this.copy(staticMdc = this.staticMdc + mdc)
+    return f(logger)
+}
+
 /**
  * Utility functions to build MDC for various objects without polluting main classes
  */

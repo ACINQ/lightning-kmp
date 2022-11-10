@@ -445,105 +445,105 @@ class Peer(
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
-        var actualChannelId: ByteVector32 = channelId
-        actions.forEach { action ->
-            when {
-                action is ChannelAction.Message.Send && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
-                // sometimes channel actions include "self" command (such as CMD_SIGN)
-                action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.ExecuteCommand(action.command)))
-                action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
-                action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
-                action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
-                action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "c:$actualChannelId command not executed" }
-                action is ChannelAction.ProcessCmdRes.AddFailed -> {
-                    when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
-                        is OutgoingPaymentHandler.Progress -> {
-                            _eventsFlow.emit(PaymentProgress(result.request, result.fees))
-                            result.actions.forEach { input.send(it) }
+        // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
+        val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
+        logger.withMDC(mapOf("channelId" to actualChannelId)) { logger ->
+            actions.forEach { action ->
+                when {
+                    action is ChannelAction.Message.Send && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
+                    // sometimes channel actions include "self" command (such as CMD_SIGN)
+                    action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.ExecuteCommand(action.command)))
+                    action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
+                    action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
+                    action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
+                    action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "command not executed" }
+                    action is ChannelAction.ProcessCmdRes.AddFailed -> {
+                        when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
+                            is OutgoingPaymentHandler.Progress -> {
+                                _eventsFlow.emit(PaymentProgress(result.request, result.fees))
+                                result.actions.forEach { input.send(it) }
+                            }
+
+                            is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
+                            null -> logger.debug { "non-final error, more partial payments are still pending: ${action.error.message}" }
                         }
-
-                        is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
-                        null -> logger.debug { "c:$actualChannelId non-final error, more partial payments are still pending: ${action.error.message}" }
                     }
-                }
 
-                action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
-                    val currentTip = currentTipFlow.filterNotNull().first()
-                    when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
-                        is OutgoingPaymentHandler.Progress -> {
-                            _eventsFlow.emit(PaymentProgress(result.request, result.fees))
-                            result.actions.forEach { input.send(it) }
+                    action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
+                        val currentTip = currentTipFlow.filterNotNull().first()
+                        when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
+                            is OutgoingPaymentHandler.Progress -> {
+                                _eventsFlow.emit(PaymentProgress(result.request, result.fees))
+                                result.actions.forEach { input.send(it) }
+                            }
+
+                            is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
+                            is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
+                            null -> logger.debug { "non-final error, more partial payments are still pending: ${action.result}" }
                         }
-
-                        is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
-                        is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
-                        null -> logger.debug { "c:$actualChannelId non-final error, more partial payments are still pending: ${action.result}" }
                     }
-                }
 
-                action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
-                    when (val result = outgoingPaymentHandler.processAddSettled(action)) {
-                        is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
-                        is OutgoingPaymentHandler.PreimageReceived -> logger.debug { "c:$actualChannelId p:${result.request.paymentId} payment preimage received: ${result.preimage}" }
-                        null -> logger.debug { "c:$actualChannelId unknown payment" }
+                    action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
+                        when (val result = outgoingPaymentHandler.processAddSettled(action)) {
+                            is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
+                            is OutgoingPaymentHandler.PreimageReceived -> logger.debug(mapOf("paymentId" to result.request.paymentId)) { "payment preimage received: ${result.preimage}" }
+                            null -> logger.debug{ "unknown payment" }
+                        }
                     }
+
+                    action is ChannelAction.Storage.StoreState -> {
+                        logger.info { "storing state=${action.data::class}" }
+                        db.channels.addOrUpdateChannel(action.data)
+                    }
+
+                    action is ChannelAction.Storage.StoreHtlcInfos -> {
+                        action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
+                    }
+
+                    action is ChannelAction.Storage.StoreIncomingAmount -> {
+                        logger.info { "storing incoming amount=${action.amount} with origin=${action.origin}" }
+                        incomingPaymentHandler.process(actualChannelId, action)
+                    }
+
+                    action is ChannelAction.Storage.GetHtlcInfos -> {
+                        val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
+                        input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
+                    }
+
+                    action is ChannelAction.Storage.StoreChannelClosing -> {
+                        val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
+                        val recipient = if (action.isSentToDefaultAddress) nodeParams.nodeId else PublicKey.Generator
+                        val payment = OutgoingPayment(
+                            id = dbId,
+                            recipientAmount = action.amount,
+                            recipient = recipient,
+                            details = OutgoingPayment.Details.ChannelClosing(
+                                channelId = channelId,
+                                closingAddress = action.closingAddress,
+                                isSentToDefaultAddress = action.isSentToDefaultAddress
+                            ),
+                            parts = emptyList(),
+                            status = OutgoingPayment.Status.Pending
+                        )
+                        db.payments.addOutgoingPayment(payment)
+                        _eventsFlow.emit(ChannelClosing(channelId))
+                    }
+
+                    action is ChannelAction.Storage.StoreChannelClosed -> {
+                        val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
+                        db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
+                        _eventsFlow.emit(ChannelClosing(channelId))
+                    }
+
+                    action is ChannelAction.ChannelId.IdAssigned -> {
+                        logger.info { "switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
+                        _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
+                    }
+
+                    action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
+
+                    action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
                 }
-
-                action is ChannelAction.Storage.StoreState -> {
-                    logger.info { "c:$actualChannelId storing state=${action.data::class}" }
-                    db.channels.addOrUpdateChannel(action.data)
-                }
-
-                action is ChannelAction.Storage.StoreHtlcInfos -> {
-                    action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
-                }
-
-                action is ChannelAction.Storage.StoreIncomingAmount -> {
-                    logger.info { "storing incoming amount=${action.amount} with origin=${action.origin}" }
-                    incomingPaymentHandler.process(actualChannelId, action)
-                }
-
-                action is ChannelAction.Storage.GetHtlcInfos -> {
-                    val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
-                    input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
-                }
-
-                action is ChannelAction.Storage.StoreChannelClosing -> {
-                    val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                    val recipient = if (action.isSentToDefaultAddress) nodeParams.nodeId else PublicKey.Generator
-                    val payment = OutgoingPayment(
-                        id = dbId,
-                        recipientAmount = action.amount,
-                        recipient = recipient,
-                        details = OutgoingPayment.Details.ChannelClosing(
-                            channelId = channelId,
-                            closingAddress = action.closingAddress,
-                            isSentToDefaultAddress = action.isSentToDefaultAddress
-                        ),
-                        parts = emptyList(),
-                        status = OutgoingPayment.Status.Pending
-                    )
-                    db.payments.addOutgoingPayment(payment)
-                    _eventsFlow.emit(ChannelClosing(channelId))
-                }
-
-                action is ChannelAction.Storage.StoreChannelClosed -> {
-                    val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                    db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
-                    _eventsFlow.emit(ChannelClosing(channelId))
-                }
-
-                action is ChannelAction.ChannelId.IdAssigned -> {
-                    logger.info { "c:$actualChannelId switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
-                    actualChannelId = action.channelId
-                    _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
-                }
-
-                action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
-
-                action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
-
-                else -> logger.warning { "c:$actualChannelId unhandled action: ${action::class}" }
             }
         }
     }
