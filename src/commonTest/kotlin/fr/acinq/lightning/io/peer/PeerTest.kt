@@ -235,7 +235,7 @@ class PeerTest : LightningTestSuite() {
             tlvStream = TlvStream(
                 listOf(
                     ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, 100.sat))
+                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
                 )
             )
         )
@@ -294,7 +294,7 @@ class PeerTest : LightningTestSuite() {
             tlvStream = TlvStream(
                 listOf(
                     ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, 100.sat))
+                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
                 )
             )
         )
