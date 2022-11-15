@@ -135,7 +135,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             amount = action.amount,
                             serviceFee = action.origin.serviceFee,
                             fundingFee = action.origin.fundingFee,
-                            channelId = channelId
+                            channelId = channelId,
+                            confirmed = false // need to wait for ChannelEvents.Confirmed
                         )
                     )
                 )

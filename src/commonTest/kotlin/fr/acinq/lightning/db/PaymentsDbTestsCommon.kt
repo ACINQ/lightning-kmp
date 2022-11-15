@@ -210,11 +210,30 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.receivePayment(received1.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 180_000.msat, channelId = randomBytes32(), 1)), 50)
         val payment1 = db.getIncomingPayment(received1.paymentHash)!!
 
-        val preimage2 = randomBytes32()
-        val received2 = createInvoice(preimage2)
-        db.addIncomingPayment(preimage2, IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 0), OutPoint(randomBytes32(), 5))))
-        db.receivePayment(received2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(UUID.randomUUID(), 180_000.msat, 10_000.msat, channelId = null)), 60)
-        val payment2 = db.getIncomingPayment(received2.paymentHash)!!
+        val channelId2 = randomBytes32()
+        val preimage2 = channelId2.sha256()
+        val paymentHash2 = preimage2.sha256()
+        db.addAndReceivePayment(
+            preimage = preimage2,
+            origin = IncomingPayment.Origin.DualSwapIn(
+                setOf(
+                    OutPoint(randomBytes32(), 0),
+                    OutPoint(randomBytes32(), 5)
+                )
+            ),
+            receivedWith = setOf(
+                IncomingPayment.ReceivedWith.NewChannel(
+                    id = UUID.randomUUID(),
+                    amount = 180_000.msat,
+                    serviceFee = 10_000.msat,
+                    channelId = channelId2,
+                    confirmed = false
+                )
+            ),
+            receivedAt = 60
+        )
+        db.updateNewChannelConfirmed(preimage2, channelId2)
+        val payment2 = db.getIncomingPayment(paymentHash2)!!
 
         val preimage3 = randomBytes32()
         val received3 = createInvoice(preimage3)
@@ -223,6 +242,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val payment3 = db.getIncomingPayment(received3.paymentHash)!!
 
         val all = db.listReceivedPayments(count = 10, skip = 0)
+        print("all.size = ${all.size}")
         assertEquals(listOf(payment3, payment2, payment1), all)
         assertTrue(all.all { it.received != null })
 
@@ -574,27 +594,34 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         // Pending payments should not be listed.
         assertTrue(db.listPayments(count = 10, skip = 0).isEmpty())
 
-        val channelId1 = randomBytes32()
-        db.receivePayment(incoming1.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 20_000.msat, channelId = channelId1, 1)), receivedAt = 100)
-        val inFinal1 = incoming1.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 20_000.msat, channelId = channelId1, 1)), 100))
+        val received1 = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 20_000.msat, channelId = randomBytes32(), 1)), receivedAt = 100)
+        db.receivePayment(incoming1.paymentHash, received1.receivedWith, received1.receivedAt)
+        val inFinal1 = incoming1.copy(received = received1)
+
         db.completeOutgoingPaymentOffchain(outgoing1.id, randomBytes32(), completedAt = 102)
         val outFinal1 = db.getOutgoingPayment(outgoing1.id)!!
+
         db.completeOutgoingPaymentOffchain(outgoing2.id, FinalFailure.UnknownError, completedAt = 103)
         val outFinal2 = db.getOutgoingPayment(outgoing2.id)!!
-        val newChannelUUID1 = UUID.randomUUID()
-        db.receivePayment(incoming2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, serviceFee = 2_500.msat, channelId = null)), receivedAt = 105)
-        val inFinal2 = incoming2.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID1, amount = 25_000.msat, serviceFee = 2_500.msat, channelId = null)), 105))
-        val channelId2 = randomBytes32()
-        val newChannelUUID2 = UUID.randomUUID()
-        db.receivePayment(incoming5.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, serviceFee = 1_500.msat, channelId = channelId2)), receivedAt = 106)
-        val inFinal5 = incoming5.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID2, amount = 50_000.msat, serviceFee = 1_500.msat, channelId = channelId2)), 106))
+
+        val received2 = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 25_000.msat, serviceFee = 2_500.msat, channelId = randomBytes32(), confirmed = true)), receivedAt = 105)
+        db.receivePayment(incoming2.paymentHash, received2.receivedWith, received2.receivedAt)
+        val inFinal2 = incoming2.copy(received = received2)
+
+        val received5 = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 50_000.msat, serviceFee = 1_500.msat, channelId = randomBytes32(), confirmed = true)), receivedAt = 106)
+        db.receivePayment(incoming5.paymentHash, received5.receivedWith, received5.receivedAt)
+        val inFinal5 = incoming5.copy(received = received5)
+
         db.completeOutgoingPaymentOffchain(outgoing3.id, randomBytes32(), completedAt = 107)
         val outFinal3 = db.getOutgoingPayment(outgoing3.id)!!
-        val channelId4 = randomBytes32()
-        db.receivePayment(incoming4.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 10_000.msat, channelId = channelId4, 1)), receivedAt = 110)
-        val inFinal4 = incoming4.copy(received = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 10_000.msat, channelId = channelId4, 1)), 110))
+
+        val received4 = IncomingPayment.Received(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 10_000.msat, channelId = randomBytes32(), 1)), receivedAt = 110)
+        db.receivePayment(incoming4.paymentHash, received4.receivedWith, received4.receivedAt)
+        val inFinal4 = incoming4.copy(received = received4)
+
         db.completeOutgoingPaymentOffchain(outgoing5.id, randomBytes32(), completedAt = 112)
         val outFinal5 = db.getOutgoingPayment(outgoing5.id)!!
+
         // outgoing4 and incoming3 are still pending.
 
         assertEquals(listOf(outFinal5, inFinal4, outFinal3, inFinal5, inFinal2, outFinal2, outFinal1, inFinal1), db.listPayments(count = 10, skip = 0))
