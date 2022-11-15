@@ -40,6 +40,9 @@ interface IncomingPaymentsDb {
      * or if the payment has not received any payment parts yet, then this method is a no-op. */
     suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32)
 
+    /** Mark an IncomingPayment.Received.ReceivedWith.NewChannel as confirmed. */
+    suspend fun updateNewChannelConfirmed(preimage: ByteVector32, channelId: ByteVector32)
+
     /** List received payments (with most recent payments first). */
     suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
 
@@ -94,7 +97,19 @@ enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing 
 sealed class WalletPayment {
     /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
     fun completedAt(): Long = when (this) {
-        is IncomingPayment -> received?.receivedAt ?: 0
+        is IncomingPayment -> {
+            when (val received = received) {
+                null -> 0
+                else -> {
+                    if (received.receivedWith.all {
+                        when (it) {
+                            is IncomingPayment.ReceivedWith.NewChannel -> it.confirmed
+                            else -> true
+                        }
+                    }) received.receivedAt else 0
+                }
+            }
+        }
         is OutgoingPayment -> when (status) {
             is OutgoingPayment.Status.Completed -> status.completedAt
             else -> 0
