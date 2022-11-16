@@ -289,7 +289,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                         amount = part.amount - part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         serviceFee = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         // At that point we do not know the channel's id. It will be set later on.
-                                        channelId = null
+                                        channelId = null,
+                                        // And we need to wait for ChannelEvents.Confirmed
+                                        confirmed = false
                                     )
                                 }
                             }.unzip()

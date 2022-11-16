@@ -241,7 +241,6 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val payment3 = db.getIncomingPayment(received3.paymentHash)!!
 
         val all = db.listReceivedPayments(count = 10, skip = 0)
-        print("all.size = ${all.size}")
         assertEquals(listOf(payment3, payment2, payment1), all)
         assertTrue(all.all { it.received != null })
 
