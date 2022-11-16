@@ -41,7 +41,7 @@ interface IncomingPaymentsDb {
     suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32)
 
     /** Mark an IncomingPayment.Received.ReceivedWith.NewChannel as confirmed. */
-    suspend fun updateNewChannelConfirmed(preimage: ByteVector32, channelId: ByteVector32)
+    suspend fun updateNewChannelConfirmed(channelId: ByteVector32, receivedAt: Long = currentTimestampMillis())
 
     /** List received payments (with most recent payments first). */
     suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>

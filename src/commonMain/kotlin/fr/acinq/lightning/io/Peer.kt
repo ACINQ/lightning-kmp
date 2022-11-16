@@ -532,7 +532,6 @@ class Peer(
                 action is ChannelAction.EmitEvent -> {
                     if (action.event is ChannelEvents.Confirmed) {
                         db.payments.updateNewChannelConfirmed(
-                            preimage = action.event.state.channelId.sha256(),
                             channelId = action.event.state.channelId
                         )
                     }

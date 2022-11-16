@@ -57,21 +57,27 @@ class InMemoryPaymentsDb : PaymentsDb {
     }
 
     override suspend fun updateNewChannelConfirmed(
-        preimage: ByteVector32,
-        channelId: ByteVector32
+        channelId: ByteVector32,
+        receivedAt: Long
     ) {
-        val paymentHash = preimage.sha256()
-        val payment = incoming[paymentHash]
+        val payment = incoming.values.firstOrNull {
+            it.received?.receivedWith?.any { receivedWith ->
+                when (receivedWith) {
+                    is IncomingPayment.ReceivedWith.NewChannel -> receivedWith.channelId == channelId
+                    else -> false
+                }
+            } ?: false
+        }
         when (payment?.received?.receivedWith) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = run {
+            else -> incoming[payment.paymentHash] = run {
                 val receivedWith = payment.received.receivedWith.map {
                     when (it) {
                         is IncomingPayment.ReceivedWith.NewChannel -> it.copy(confirmed = true)
                         else -> it
                     }
                 }.toSet()
-                payment.copy(received = payment.received.copy(receivedWith = receivedWith))
+                payment.copy(received = payment.received.copy(receivedWith = receivedWith, receivedAt = receivedAt))
             }
         }
     }

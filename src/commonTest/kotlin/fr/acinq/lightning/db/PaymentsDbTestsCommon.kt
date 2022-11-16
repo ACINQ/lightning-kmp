@@ -229,10 +229,9 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                     channelId = channelId2,
                     confirmed = false
                 )
-            ),
-            receivedAt = 60
+            )
         )
-        db.updateNewChannelConfirmed(preimage2, channelId2)
+        db.updateNewChannelConfirmed(channelId2, receivedAt = 60)
         val payment2 = db.getIncomingPayment(paymentHash2)!!
 
         val preimage3 = randomBytes32()
