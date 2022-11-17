@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.Watch
@@ -54,6 +55,9 @@ sealed class ChannelCommand {
         val channelConfig: ChannelConfig,
         val remoteInit: Init
     ) : ChannelCommand()
+
+    // NB: the signatures must be der-encoded, ordered by input index.
+    data class FinalizeFundingFlow(val commitments: Commitments, val signatures: List<ByteVector>) : ChannelCommand()
 
     data class Restore(val state: ChannelState) : ChannelCommand()
     object CheckHtlcTimeout : ChannelCommand()
@@ -130,6 +134,8 @@ sealed class ChannelAction {
     }
 
     data class EmitEvent(val event: ChannelEvents) : ChannelAction()
+
+    data class RequestHardwareWalletSigs(val fundingPsbt: Psbt, val commitments: Commitments) : ChannelAction()
 }
 
 /** Channel static parameters. */

@@ -1,6 +1,7 @@
 package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomKeyPath
 import fr.acinq.lightning.blockchain.WatchEvent
@@ -105,6 +106,13 @@ data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerCommand()
 data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerEvent()
 
+data class GenerateSwapInAddress(val xpub: DeterministicWallet.ExtendedPublicKey) : PeerCommand()
+data class SwapInAddressGenerated(val address: String, val pubkey: PublicKey) : PeerEvent()
+
+data class SignFundingTxWithHardwareWallet(val fundingPsbt: Psbt, val commitments: Commitments) : PeerEvent()
+// NB: the signatures must be der-encoded, ordered by input index.
+data class FundingTxHardwareSigs(val commitments: Commitments, val signatures: List<ByteVector>) : PeerCommand()
+
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerEvent()
 
 /**
@@ -194,7 +202,6 @@ class Peer(
     val finalAddress: String = nodeParams.keyManager.bip84Address(account = 0L, addressIndex = 0L).also { finalWallet.addAddress(it) }
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
-    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { swapInWallet.addAddress(it) }
 
     init {
         launch {
@@ -531,6 +538,8 @@ class Peer(
 
                 action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
 
+                action is ChannelAction.RequestHardwareWalletSigs -> _eventsFlow.emit(SignFundingTxWithHardwareWallet(action.fundingPsbt, action.commitments))
+
                 else -> logger.warning { "n:$remoteNodeId c:$actualChannelId unhandled action: ${action::class}" }
             }
         }
@@ -865,20 +874,22 @@ class Peer(
                     features
                 )
                 val state = WaitForInit
-                val (state1, actions1) = state.run { channelContext().process(
-                    ChannelCommand.InitInitiator(
-                        cmd.fundingAmount,
-                        cmd.pushAmount,
-                        cmd.wallet,
-                        cmd.commitTxFeerate,
-                        cmd.fundingTxFeerate,
-                        localParams,
-                        theirInit!!,
-                        cmd.channelFlags,
-                        ChannelConfig.standard,
-                        cmd.channelType
+                val (state1, actions1) = state.run {
+                    channelContext().process(
+                        ChannelCommand.InitInitiator(
+                            cmd.fundingAmount,
+                            cmd.pushAmount,
+                            cmd.wallet,
+                            cmd.commitTxFeerate,
+                            cmd.fundingTxFeerate,
+                            localParams,
+                            theirInit!!,
+                            cmd.channelFlags,
+                            ChannelConfig.standard,
+                            cmd.channelType
+                        )
                     )
-                )}
+                }
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
                 processActions(msg.temporaryChannelId, actions1)
@@ -942,6 +953,26 @@ class Peer(
                 val msg = SwapOutRequest(nodeParams.chainHash, cmd.amount, cmd.bitcoinAddress, cmd.feePerKw)
                 logger.info { "n:$remoteNodeId sending ${msg::class}" }
                 sendToPeer(msg)
+            }
+
+            cmd is GenerateSwapInAddress -> {
+                // The hardware wallet should have generated a BIP 84 account (84'/<coin_type>'/<account>'), we derive a non-change address at index 0:
+                val derivationPath = KeyPath(listOf(0 /* change */, 0 /* index */))
+                val pubKey = DeterministicWallet.derivePublicKey(cmd.xpub, derivationPath).publicKey
+                val address = Bitcoin.computeP2WpkhAddress(pubKey, nodeParams.chainHash)
+                logger.info { "watching swap-in address=$address (xpub=${cmd.xpub}, path=$derivationPath)" }
+                swapInWallet.addAddress(address, cmd.xpub, derivationPath)
+                _eventsFlow.emit(SwapInAddressGenerated(address, pubKey))
+            }
+
+            cmd is FundingTxHardwareSigs -> {
+                val channelId = cmd.commitments.channelId
+                val state = _channels[channelId] ?: error("channel $channelId not found")
+                logger.info { "c:${channelId} received signed psbt from hardware wallet" }
+                val (state1, actions) = state.run { channelContext().process(ChannelCommand.FinalizeFundingFlow(cmd.commitments, cmd.signatures)) }
+                processActions(channelId, actions)
+                _channels = _channels + (channelId to state1)
+                logger.info { "n:$remoteNodeId c:$channelId new state: ${state1::class}" }
             }
 
             cmd is WrappedChannelCommand && cmd.channelId == ByteVector32.Zeroes -> {

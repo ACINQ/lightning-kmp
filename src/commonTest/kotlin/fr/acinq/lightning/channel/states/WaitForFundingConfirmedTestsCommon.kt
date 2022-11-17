@@ -461,6 +461,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 val wallet = WalletState(
                     walletAlice.addresses + (address to (walletAlice.addresses[address] ?: listOf()) + UnspentItem(parentTx.txid, 0, 30_000, 654321)),
                     walletAlice.parentTxs + (parentTx.txid to parentTx),
+                    emptyMap(),
                 )
                 CMD_BUMP_FUNDING_FEE(fundingTx.feerate * 1.1, alice0.state.fundingParams.localAmount + 20_000.sat, wallet, fundingTx.tx.lockTime + 1)
             }

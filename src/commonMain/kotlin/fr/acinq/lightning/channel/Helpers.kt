@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
+import fr.acinq.bitcoin.psbt.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.BITCOIN_OUTPUT_SPENT
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
@@ -332,6 +333,7 @@ object Helpers {
         data class FirstCommitments(val fundingTx: PartiallySignedSharedTransaction, val commitments: Commitments) : ReceiveFirstCommitResult()
         object InvalidRemoteCommitSig : ReceiveFirstCommitResult()
         object FundingSigFailure : ReceiveFirstCommitResult()
+        data class GetHardwareWalletSigs(val psbt: Psbt, val commitments: Commitments) : ReceiveFirstCommitResult()
 
         fun receiveFirstCommit(
             keyManager: KeyManager,
@@ -364,7 +366,28 @@ object Helpers {
                         commitInput, ShaChain.init, remoteCommit.channelId, remoteCommit.channelData
                     )
                     when (val signedFundingTx = fundingTx.sign(keyManager, remoteCommit.channelId)) {
-                        null -> FundingSigFailure
+                        null -> {
+                            // We need signatures from a hardware wallet.
+                            val tx = fundingTx.buildUnsignedTx()
+                            val channelKeys = localParams.channelKeys(keyManager)
+                            val firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeys.shaSeed, 0)
+                            val localDelayedPrivKey = Generators.derivePrivKey(channelKeys.delayedPaymentKey, firstPerCommitmentPoint)
+                            val revocationKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, firstPerCommitmentPoint)
+                            val extensions = listOf(
+                                // We include the fully signed commitment transaction (4c4e434f4d4d49545458 = LNCOMMITTX).
+                                DataEntry(ByteVector("fc000a4c4e434f4d4d49545458"), Transaction.write(signedLocalCommitTx.tx).toByteVector()),
+                                // We include the private key of our main output of the commit tx (4c4e44454c415945444b4559 = LNDELAYEDKEY).
+                                DataEntry(ByteVector("fc000c4c4e44454c415945444b4559"), localDelayedPrivKey.value),
+                                // We include the revocation public key of the commit tx (4c4e5245564f434154494f4e4b4559 = LNREVOCATIONKEY).
+                                DataEntry(ByteVector("fc000f4c4e5245564f434154494f4e4b4559"), revocationKey.value),
+                            )
+                            val fundingPsbt = Psbt(
+                                Global(Psbt.Version, tx.copy(txIn = tx.txIn.map { it.copy(signatureScript = ByteVector.empty, witness = ScriptWitness.empty) }), listOf(), extensions),
+                                tx.txIn.map { Input.PartiallySignedInputWithoutUtxo(null, mapOf(), setOf(), setOf(), setOf(), setOf(), listOf()) },
+                                tx.txOut.map { Output.UnspecifiedOutput(mapOf(), listOf()) }
+                            )
+                            GetHardwareWalletSigs(fundingPsbt, commitments)
+                        }
                         else -> FirstCommitments(signedFundingTx, commitments)
                     }
                 }

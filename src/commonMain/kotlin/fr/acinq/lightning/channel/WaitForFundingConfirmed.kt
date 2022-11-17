@@ -218,6 +218,11 @@ data class WaitForFundingConfirmed(
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
 
+                        is Helpers.Funding.GetHardwareWalletSigs -> {
+                            logger.warning { "c:$channelId hardware wallet signatures not supported in RBF" }
+                            Pair(this@WaitForFundingConfirmed, listOf())
+                        }
+
                         is Helpers.Funding.FirstCommitments -> {
                             val (signedFundingTx, commitments1) = firstCommitmentsRes
                             logger.info { "c:$channelId rbf funding tx created with txId=${commitments1.fundingTxId}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }

@@ -16,7 +16,7 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
+data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>, val xpub: Map<String, Pair<DeterministicWallet.ExtendedPublicKey, KeyPath>>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent*/
     val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
     val utxos: List<Utxo> = addresses
@@ -50,7 +50,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
-        val empty: WalletState = WalletState(emptyMap(), emptyMap())
+        val empty: WalletState = WalletState(emptyMap(), emptyMap(), emptyMap())
 
         /** Sign the given input if we have the corresponding private key (only works for P2WPKH scripts). */
         fun signInput(keyManager: KeyManager, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
@@ -91,7 +91,7 @@ private sealed interface WalletCommand {
     companion object {
         object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
-        data class AddAddress(val bitcoinAddress: String) : WalletCommand
+        data class AddAddress(val bitcoinAddress: String, val xpub: DeterministicWallet.ExtendedPublicKey?, val keyPath: KeyPath?) : WalletCommand
     }
 }
 
@@ -116,7 +116,7 @@ class ElectrumMiniWallet(
     }
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap(), emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -125,9 +125,9 @@ class ElectrumMiniWallet(
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
 
-    fun addAddress(bitcoinAddress: String) {
+    fun addAddress(bitcoinAddress: String, xpub: DeterministicWallet.ExtendedPublicKey? = null, keyPath: KeyPath? = null) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, xpub, keyPath))
         }
     }
 
@@ -180,7 +180,6 @@ class ElectrumMiniWallet(
                                 val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
                                 logger.mdcinfo { "received parent transaction with txid=${msg.tx.txid}" }
                                 _walletStateFlow.value = walletState
-
                             }
 
                             else -> {} // ignore other electrum msgs
@@ -190,6 +189,13 @@ class ElectrumMiniWallet(
                     is WalletCommand.Companion.AddAddress -> {
                         logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
                         scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
+                        it.xpub?.let { xpub ->
+                            it.keyPath?.let { keyPath ->
+                                val walletState = _walletStateFlow.value
+                                val walletState1 = walletState.copy(xpub = walletState.xpub + (it.bitcoinAddress to Pair(xpub, keyPath)))
+                                _walletStateFlow.value = walletState1
+                            }
+                        }
                     }
                 }
             }

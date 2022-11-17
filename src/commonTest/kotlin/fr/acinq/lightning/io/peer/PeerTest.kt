@@ -1,8 +1,7 @@
 package fr.acinq.lightning.io.peer
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.InvoiceDefaultRoutingFees
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -10,6 +9,8 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeUri
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.blockchain.electrum.UnspentItem
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
@@ -22,6 +23,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
@@ -265,6 +267,95 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
+    fun `swap funds into a channel from hardware wallet`() = runSuspendTest {
+        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+
+        // This xpriv is managed by an external hardware wallet.
+        val masterPriv = DeterministicWallet.generate(MnemonicCode.toSeed("gun please vital unable phone catalog explain raise erosion zoo truly exist", ""))
+        val accountPriv = DeterministicWallet.derivePrivateKey(masterPriv, listOf(DeterministicWallet.hardened(84), DeterministicWallet.hardened(1), DeterministicWallet.hardened(0)))
+        val accountPub = DeterministicWallet.publicKey(accountPriv)
+        bob.send(GenerateSwapInAddress(accountPub))
+        val swapInAddress = assertIs<SwapInAddressGenerated>(bob.eventsFlow.first())
+        val script = Bitcoin.addressToPublicKeyScript(nodeParams.first.chainHash, swapInAddress.address)
+
+        // Electrum detects a utxo on that address.
+        val requestId = randomBytes32()
+        val parentTx = Transaction(2, listOf(TxIn(OutPoint(ByteVector32("5e89af3094b134ffe3edfbaba666b8b59912dd912005e0830b2b464fdc99cf17"), 3), 0)), listOf(TxOut(250_000.sat, script)), 0)
+        val wallet = WalletState(
+            mapOf(swapInAddress.address to listOf(UnspentItem(parentTx.txid, 0, 250_000, 42))),
+            mapOf(parentTx.txid to parentTx),
+            mapOf(swapInAddress.address to Pair(accountPub, KeyPath(listOf(0, 0)))),
+        )
+        bob.send(RequestChannelOpen(requestId, wallet, 100, 3_000.sat))
+        val request = bob2alice.expect<PleaseOpenChannel>()
+        assertEquals(request.localFundingAmount, 250_000.sat)
+
+        // We have not implemented the LSP side, so we have to fake it here.
+        val openFees = 10_000_000.msat
+        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
+        alice.send(OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
+            tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve), ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, openFees, 100.sat))))
+        )
+        bob.forward(open)
+        val accept = bob2alice.expect<AcceptDualFundedChannel>()
+        assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
+        assertEquals(accept.pushAmount, openFees)
+        alice.forward(accept)
+
+        // Alice and Bob collaboratively build the funding transaction.
+        val txAddInputAlice = alice2bob.expect<TxAddInput>()
+        bob.forward(txAddInputAlice)
+        val txAddInputBob = bob2alice.expect<TxAddInput>()
+        alice.forward(txAddInputBob)
+        val txAddOutput = alice2bob.expect<TxAddOutput>()
+        bob.forward(txAddOutput)
+        val txCompleteBob = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob)
+        val txCompleteAlice = alice2bob.expect<TxComplete>()
+        bob.forward(txCompleteAlice)
+        val commitSigBob = bob2alice.expect<CommitSig>()
+        alice.forward(commitSigBob)
+        val commitSigAlice = alice2bob.expect<CommitSig>()
+        bob.forward(commitSigAlice)
+        val hardwareWalletSignRequest = assertIs<SignFundingTxWithHardwareWallet>(bob.eventsFlow.first())
+        val txSigsAlice = alice2bob.expect<TxSignatures>()
+        bob.forward(txSigsAlice)
+        assertEquals(hardwareWalletSignRequest.fundingPsbt.global.tx.txid, txSigsAlice.txId)
+
+        // We included the fully signed commit tx and corresponding metadata.
+        val unsignedPsbt = hardwareWalletSignRequest.fundingPsbt
+        assertEquals(unsignedPsbt.global.unknown.size, 3)
+        val signedCommitTx = Transaction.read(unsignedPsbt.global.unknown.first { it.key == ByteVector("fc000a4c4e434f4d4d49545458") }.value.toByteArray())
+        Transaction.correctlySpends(signedCommitTx, unsignedPsbt.global.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val delayedPrivKey = PrivateKey(unsignedPsbt.global.unknown.first { it.key == ByteVector("fc000c4c4e44454c415945444b4559") }.value)
+        val revocationKey = PublicKey(unsignedPsbt.global.unknown.first { it.key == ByteVector("fc000f4c4e5245564f434154494f4e4b4559") }.value)
+        val privKey = DeterministicWallet.derivePrivateKey(accountPriv, listOf(0 /* change */, 0 /* index */)).privateKey
+        assertEquals(privKey.publicKey(), swapInAddress.pubkey)
+        assertNotNull(signedCommitTx.txOut.find { txOut -> txOut.publicKeyScript == Script.write(Script.pay2wsh(Scripts.toLocalDelayed(revocationKey, nodeParams.first.toRemoteDelayBlocks, delayedPrivKey.publicKey()))).byteVector() })
+        // After verifying the validity of the commit tx, the hardware wallet signs the funding inputs.
+        val hardwareSig = unsignedPsbt.updateWitnessInputTx(parentTx, 0, witnessScript = Script.pay2pkh(swapInAddress.pubkey))
+            .flatMap { psbt -> psbt.sign(privKey, OutPoint(parentTx, 0)) }
+            .map { it.sig }
+            .right!!
+
+        bob.send(FundingTxHardwareSigs(hardwareWalletSignRequest.commitments, listOf(hardwareSig)))
+        val txSigsBob = bob2alice.expect<TxSignatures>()
+        alice.forward(txSigsBob)
+        val (_, aliceState) = alice.expectState<WaitForFundingConfirmed>()
+        assertEquals(aliceState.commitments.localCommit.spec.toLocal, 50_000_000.msat)
+        val (_, bobState) = bob.expectState<WaitForFundingConfirmed>()
+        // Bob has to deduce from its balance:
+        //  - the fees for the channel open (10 000 sat)
+        //  - the miner fees for his input(s) in the funding transaction
+        assertEquals(bobState.commitments.localCommit.spec.toLocal, 239_900_000.msat)
+        assertNotNull(bobState.fundingTx.signedTx)
+        Transaction.correctlySpends(bobState.fundingTx.signedTx!!, listOf(txAddInputAlice, txAddInputBob).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    @Test
     fun `restore channel`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
@@ -272,7 +363,8 @@ class PeerTest : LightningTestSuite() {
         assertIs<LNChannel<Normal>>(alice1)
         val channelId = alice0.channelId
 
-        val peer = buildPeer(this,
+        val peer = buildPeer(
+            this,
             alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
             TestConstants.Alice.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
@@ -363,7 +455,8 @@ class PeerTest : LightningTestSuite() {
             assertEquals(TestConstants.Bob.walletParams.invoiceDefaultRoutingFees, InvoiceDefaultRoutingFees(extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta))
         }
         run {
-            val aliceUpdate = Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
+            val aliceUpdate =
+                Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
             bob.forward(aliceUpdate)
 
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
