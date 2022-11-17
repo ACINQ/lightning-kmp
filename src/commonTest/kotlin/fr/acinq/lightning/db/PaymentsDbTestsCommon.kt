@@ -210,29 +210,11 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.receivePayment(received1.paymentHash, setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = 180_000.msat, channelId = randomBytes32(), 1)), 50)
         val payment1 = db.getIncomingPayment(received1.paymentHash)!!
 
-        val channelId2 = randomBytes32()
-        val preimage2 = channelId2.sha256()
-        val paymentHash2 = preimage2.sha256()
-        db.addAndReceivePayment(
-            preimage = preimage2,
-            origin = IncomingPayment.Origin.DualSwapIn(
-                setOf(
-                    OutPoint(randomBytes32(), 0),
-                    OutPoint(randomBytes32(), 5)
-                )
-            ),
-            receivedWith = setOf(
-                IncomingPayment.ReceivedWith.NewChannel(
-                    id = UUID.randomUUID(),
-                    amount = 180_000.msat,
-                    serviceFee = 10_000.msat,
-                    channelId = channelId2,
-                    confirmed = false
-                )
-            )
-        )
-        db.updateNewChannelConfirmed(channelId2, receivedAt = 60)
-        val payment2 = db.getIncomingPayment(paymentHash2)!!
+        val preimage2 = randomBytes32()
+        val received2 = createInvoice(preimage2)
+        db.addIncomingPayment(preimage2, IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 0), OutPoint(randomBytes32(), 5))))
+        db.receivePayment(received2.paymentHash, setOf(IncomingPayment.ReceivedWith.NewChannel(UUID.randomUUID(), 180_000.msat, 10_000.msat, channelId = null, confirmed = true)), 60)
+        val payment2 = db.getIncomingPayment(received2.paymentHash)!!
 
         val preimage3 = randomBytes32()
         val received3 = createInvoice(preimage3)

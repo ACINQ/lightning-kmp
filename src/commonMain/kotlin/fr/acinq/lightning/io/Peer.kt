@@ -529,14 +529,7 @@ class Peer(
 
                 action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
 
-                action is ChannelAction.EmitEvent -> {
-                    if (action.event is ChannelEvents.Confirmed) {
-                        db.payments.updateNewChannelConfirmed(
-                            channelId = action.event.state.channelId
-                        )
-                    }
-                    nodeParams._nodeEvents.emit(action.event)
-                }
+                action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
 
                 else -> logger.warning { "n:$remoteNodeId c:$actualChannelId unhandled action: ${action::class}" }
             }

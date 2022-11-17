@@ -135,8 +135,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             amount = action.amount,
                             serviceFee = action.origin.serviceFee,
                             fundingFee = action.origin.fundingFee,
-                            channelId = channelId,
-                            confirmed = false // need to wait for ChannelEvents.Confirmed
+                            channelId = channelId
                         )
                     )
                 )
@@ -289,9 +288,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                         amount = part.amount - part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         serviceFee = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
                                         // At that point we do not know the channel's id. It will be set later on.
-                                        channelId = null,
-                                        // And we need to wait for ChannelEvents.Confirmed
-                                        confirmed = false
+                                        channelId = null
                                     )
                                 }
                             }.unzip()
