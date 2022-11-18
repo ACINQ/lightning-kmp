@@ -186,10 +186,12 @@ object TestsHelper {
                 channelOrigin
             )
         )
-        assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
+        assertIs<WaitForAcceptChannel>(alice1.state)
+        assertIs<LNChannel<WaitForAcceptChannel>>(alice1) // for compiler: only tests LNChannel<Any>
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else WalletState.empty
         val (bob1, _) = bob.process(ChannelCommand.InitNonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
-        assertIs<LNChannel<WaitForOpenChannel>>(bob1)
+        assertIs<WaitForOpenChannel>(bob1.state)
+        assertIs<LNChannel<WaitForOpenChannel>>(bob1) // for compiler: only tests LNChannel<Any>
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
     }
@@ -207,11 +209,13 @@ object TestsHelper {
     ): Triple<LNChannel<Normal>, LNChannel<Normal>, Transaction> {
         val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
-        assertIs<LNChannel<Normal>>(alice1)
+        assertIs<Normal>(alice1.state)
+        assertIs<LNChannel<Normal>>(alice1) // for compiler: only tests LNChannel<Any>
         assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(channelReadyAlice))
-        assertIs<LNChannel<Normal>>(bob1)
+        assertIs<Normal>(bob1.state)
+        assertIs<LNChannel<Normal>>(bob1) // for compiler: only tests LNChannel<Any>
         assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         return Triple(alice1, bob1, alice.state.fundingTx.tx.buildUnsignedTx())
@@ -219,45 +223,50 @@ object TestsHelper {
 
     fun mutualCloseAlice(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
-        assertIs<LNChannel<Normal>>(alice1)
+        assertIs<Normal>(alice1.state)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingSigned>())
 
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
-        assertIs<LNChannel<Negotiating>>(bob1)
+        assertIs<Negotiating>(bob1.state)
+        assertIs<LNChannel<Negotiating>>(bob1) // for compiler: only tests LNChannel<Any>
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
-        assertIs<LNChannel<Negotiating>>(alice2)
+        assertIs<Negotiating>(alice2.state)
+        assertIs<LNChannel<Negotiating>>(alice2) // for compiler: only tests LNChannel<Any>
         val closingSignedAlice = actionsAlice2.findOutgoingMessage<ClosingSigned>()
         return Triple(alice2, bob1, closingSignedAlice)
     }
 
     fun mutualCloseBob(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
         val (bob1, actionsBob1) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
-        assertIs<LNChannel<Normal>>(bob1)
+        assertIs<Normal>(bob1.state)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(shutdownBob))
-        assertIs<LNChannel<Negotiating>>(alice1)
+        assertIs<Negotiating>(alice1.state)
+        assertIs<LNChannel<Negotiating>>(alice1) // for compiler: only tests LNChannel<Any>
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         val closingSignedAlice = actionsAlice1.findOutgoingMessage<ClosingSigned>()
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(shutdownAlice))
-        assertIs<LNChannel<Negotiating>>(bob2)
+        assertIs<Negotiating>(bob2.state)
+        assertIs<LNChannel<Negotiating>>(bob2) // for compiler: only tests LNChannel<Any>
         assertNull(actionsBob2.findOutgoingMessageOpt<ClosingSigned>())
         return Triple(alice1, bob2, closingSignedAlice)
     }
 
     fun localClose(s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, LocalCommitPublished> {
-        assertIs<LNChannel<ChannelStateWithCommitments>>(s)
+        assertIs<ChannelStateWithCommitments>(s.state)
         assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.channelFeatures.channelType)
         // an error occurs and s publishes their commit tx
         val commitTx = s.state.commitments.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
-        assertIs<LNChannel<Closing>>(s1)
+        assertIs<Closing>(s1.state)
+        assertIs<LNChannel<Closing>>(s1) // for compiler: only tests LNChannel<Any>
         actions1.has<ChannelAction.Storage.StoreState>()
         actions1.has<ChannelAction.Storage.StoreChannelClosing>()
 
@@ -296,11 +305,12 @@ object TestsHelper {
     }
 
     fun remoteClose(rCommitTx: Transaction, s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, RemoteCommitPublished> {
-        assertIs<LNChannel<ChannelStateWithCommitments>>(s)
+        assertIs<ChannelStateWithCommitments>(s.state)
         assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.channelFeatures.channelType)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.state.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
-        assertIs<LNChannel<Closing>>(s1)
+        assertIs<Closing>(s1.state)
+        assertIs<LNChannel<Closing>>(s1) // for compiler: only tests LNChannel<Any>
 
         if (s.state !is Closing) {
             val channelBalance = s.state.commitments.localCommit.spec.toLocal
@@ -385,7 +395,7 @@ object TestsHelper {
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
         val (receiver0, _) = payee.process(ChannelCommand.MessageReceived(htlc))
-        assertIs<LNChannel<ChannelStateWithCommitments>>(receiver0)
+        assertIs<ChannelStateWithCommitments>(receiver0.state)
         assertTrue(receiver0.state.commitments.remoteChanges.proposed.contains(htlc))
 
         assertIs<LNChannel<T>>(sender0)
@@ -398,7 +408,7 @@ object TestsHelper {
         val fulfillHtlc = payeeActions0.findOutgoingMessage<UpdateFulfillHtlc>()
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(fulfillHtlc))
-        assertIs<LNChannel<ChannelStateWithCommitments>>(payer0)
+        assertIs<ChannelStateWithCommitments>(payer0.state)
         assertTrue(payer0.state.commitments.remoteChanges.proposed.contains(fulfillHtlc))
 
         assertIs<LNChannel<T>>(payer0)
@@ -411,7 +421,7 @@ object TestsHelper {
         val failHtlc = payeeActions0.findOutgoingMessage<UpdateFailHtlc>()
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(failHtlc))
-        assertIs<LNChannel<ChannelStateWithCommitments>>(payer0)
+        assertIs<ChannelStateWithCommitments>(payer0.state)
         assertTrue(payer0.state.commitments.remoteChanges.proposed.contains(failHtlc))
 
         assertIs<LNChannel<T>>(payer0)

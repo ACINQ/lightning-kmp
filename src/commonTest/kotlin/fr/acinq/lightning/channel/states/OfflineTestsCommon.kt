@@ -27,10 +27,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val remoteInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         val channelReestablishA = actions.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actions1) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         val channelReestablishB = actions1.findOutgoingMessage<ChannelReestablish>()
 
         val bobCommitments = bob.commitments
@@ -75,10 +75,12 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (alice1, actions1) = alice0.process(ChannelCommand.ExecuteCommand(cmdAdd))
             val add = actions1.hasOutgoingMessage<UpdateAddHtlc>()
             val (alice2, actions2) = alice1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-            assertIs<LNChannel<Normal>>(alice2)
+            assertIs<Normal>(alice2.state)
+            assertIs<LNChannel<Normal>>(alice2) // for compiler: only tests LNChannel<Any>
             actions2.hasOutgoingMessage<CommitSig>()
             val (bob1, _) = bob0.process(ChannelCommand.MessageReceived(add))
-            assertIs<LNChannel<Normal>>(bob1)
+            assertIs<Normal>(bob1.state)
+            assertIs<LNChannel<Normal>>(bob1) // for compiler: only tests LNChannel<Any>
             // bob doesn't receive the sig
             Pair(alice2, bob1)
         }
@@ -88,10 +90,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val remoteInit = Init(ByteVector(bob0.commitments.localParams.features.toByteArray()))
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
 
         val bobCommitments = bob0.commitments
@@ -131,11 +133,11 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(revB))
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(sigB))
-        assertIs<LNChannel<Normal>>(alice5)
+        assertIs<Normal>(alice5.state)
         val revA = actionsAlice5.hasOutgoingMessage<RevokeAndAck>()
 
         val (bob7, _) = bob6.process(ChannelCommand.MessageReceived(revA))
-        assertIs<LNChannel<Normal>>(bob7)
+        assertIs<Normal>(bob7.state)
 
         assertEquals(1, alice5.commitments.localNextHtlcId)
         assertEquals(1, bob7.commitments.remoteNextHtlcId)
@@ -149,14 +151,16 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (alice1, actionsAlice1) = alice0.process(ChannelCommand.ExecuteCommand(cmdAdd))
             val add = actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-            assertIs<LNChannel<Normal>>(alice2)
+            assertIs<Normal>(alice2.state)
+            assertIs<LNChannel<Normal>>(alice2) // for compiler: only tests LNChannel<Any>
             val sig = actionsAlice2.hasOutgoingMessage<CommitSig>()
             val (bob1, _) = bob0.process(ChannelCommand.MessageReceived(add))
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(sig))
             actionsBob2.hasOutgoingMessage<RevokeAndAck>()
             actionsBob2.hasCommand<CMD_SIGN>()
             val (bob3, actionsBob3) = bob2.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-            assertIs<LNChannel<Normal>>(bob3)
+            assertIs<Normal>(bob3.state)
+            assertIs<LNChannel<Normal>>(bob3) // for compiler: only tests LNChannel<Any>
             actionsBob3.hasOutgoingMessage<CommitSig>()
             // bob received the sig, but alice didn't receive the revocation
             Pair(alice2, bob3)
@@ -167,10 +171,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val remoteInit = Init(ByteVector(bob0.commitments.localParams.features.toByteArray()))
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
 
         val bobCommitments = bob0.commitments
@@ -201,11 +205,11 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(revB))
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(sigB))
-        assertIs<LNChannel<Normal>>(alice5)
+        assertIs<Normal>(alice5.state)
         val revA = actionsAlice5.hasOutgoingMessage<RevokeAndAck>()
 
         val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(revA))
-        assertIs<LNChannel<Normal>>(bob4)
+        assertIs<Normal>(bob4.state)
 
         assertEquals(1, alice5.commitments.localNextHtlcId)
         assertEquals(1, bob4.commitments.remoteNextHtlcId)
@@ -226,8 +230,10 @@ class OfflineTestsCommon : LightningTestSuite() {
             val commitSig = actionsAlice.findOutgoingMessage<CommitSig>()
             val (bob6, actionsBob) = bob5.process(ChannelCommand.MessageReceived(commitSig))
             val revokeAndAck = actionsBob.findOutgoingMessage<RevokeAndAck>()
-            assertIs<LNChannel<Normal>>(alice6)
-            assertIs<LNChannel<Normal>>(bob6)
+            assertIs<Normal>(alice6.state)
+            assertIs<LNChannel<Normal>>(alice6) // for compiler: only tests LNChannel<Any>
+            assertIs<Normal>(bob6.state)
+            assertIs<LNChannel<Normal>>(bob6) // for compiler: only tests LNChannel<Any>
             Triple(alice6, bob6, revokeAndAck)
         }
 
@@ -235,10 +241,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val initA = Init(ByteVector(alice0.commitments.localParams.features.toByteArray()))
         val initB = Init(ByteVector(bob0.commitments.localParams.features.toByteArray()))
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(initA, initB))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(initB, initA))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
         assertEquals(channelReestablishA.nextLocalCommitmentNumber, 4)
         assertEquals(channelReestablishA.nextRemoteRevocationNumber, 3)
@@ -264,8 +270,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(revA))
         assertTrue(actionsBob5.filterIsInstance<ChannelAction.Message.Send>().isEmpty())
 
-        assertIs<LNChannel<Normal>>(alice5)
-        assertIs<LNChannel<Normal>>(bob5)
+        assertIs<Normal>(alice5.state)
+        assertIs<Normal>(bob5.state)
         assertEquals(4, alice5.commitments.localCommit.index)
         assertEquals(4, bob5.commitments.localCommit.index)
     }
@@ -280,7 +286,7 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (alice2, bob2) = TestsHelper.crossSign(nodes2.first, nodes2.second)
             val (nodes3, r3, htlc3) = TestsHelper.addHtlc(10_000.msat, alice2, bob2)
             val (alice3, bob3) = TestsHelper.crossSign(nodes3.first, nodes3.second)
-            assertIs<LNChannel<Normal>>(alice3)
+            assertIs<Normal>(alice3.state)
             // alice will lose the following updates
             val (alice4, bob4) = TestsHelper.fulfillHtlc(htlc1.id, r1, alice3, bob3)
             val (bob5, alice5) = TestsHelper.crossSign(bob4, alice4)
@@ -288,8 +294,8 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (bob7, alice7) = TestsHelper.crossSign(bob6, alice6)
             val (alice8, bob8) = TestsHelper.fulfillHtlc(htlc3.id, r3, alice7, bob7)
             val (bob9, alice9) = TestsHelper.crossSign(bob8, alice8)
-            assertIs<LNChannel<Normal>>(alice9)
-            assertIs<LNChannel<Normal>>(bob9)
+            assertIs<Normal>(alice9.state)
+            assertIs<Normal>(bob9.state)
             Triple(alice9, alice3, bob9)
         }
 
@@ -301,10 +307,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val remoteInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
 
         // alice realizes she has an old state...
@@ -312,18 +318,18 @@ class OfflineTestsCommon : LightningTestSuite() {
         // ...and asks bob to publish its current commitment
         val error = actionsAlice3.findOutgoingMessage<Error>()
         assertEquals(error.toAscii(), PleasePublishYourCommitment(aliceOld.channelId).message)
-        assertIs<LNChannel<WaitForRemotePublishFutureCommitment>>(alice3)
+        assertIs<WaitForRemotePublishFutureCommitment>(alice3.state)
 
         // bob is nice and publishes its commitment as soon as it detects that alice has an outdated commitment
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA))
-        assertIs<LNChannel<Closing>>(bob3)
+        assertIs<Closing>(bob3.state)
         assertNotNull(bob3.state.localCommitPublished)
         val bobCommitTx = bob3.state.localCommitPublished!!.commitTx
         actionsBob3.hasTx(bobCommitTx)
 
         // alice is able to claim her main output
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.WatchReceived(WatchEventSpent(aliceOld.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
-        assertIs<LNChannel<Closing>>(alice4)
+        assertIs<Closing>(alice4.state)
         assertNotNull(alice4.state.futureRemoteCommitPublished)
         assertEquals(bobCommitTx, alice4.state.futureRemoteCommitPublished!!.commitTx)
         assertNotNull(alice4.state.futureRemoteCommitPublished!!.claimMainOutputTx)
@@ -341,16 +347,16 @@ class OfflineTestsCommon : LightningTestSuite() {
         val remoteInit = Init(ByteVector(bob0.commitments.localParams.features.toByteArray()))
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         actionsAlice2.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         // let's forge a dishonest channel_reestablish
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>().copy(nextRemoteRevocationNumber = 42)
 
         // alice finds out bob is lying
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
-        assertIs<LNChannel<Closing>>(alice3)
+        assertIs<Closing>(alice3.state)
         assertNotNull(alice3.state.localCommitPublished)
         actionsAlice3.hasTx(alice3.state.localCommitPublished!!.commitTx)
         actionsAlice3.hasTx(alice3.state.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
@@ -375,27 +381,27 @@ class OfflineTestsCommon : LightningTestSuite() {
             // And some htlcs aren't signed yet: they will be dropped when disconnecting, and may be retransmitted later.
             val (bob7, alice7, _) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(50_000.msat, aliceId, currentBlockHeight, randomBytes32()).second, bob6, alice6)
             val (alice8, bob8, _) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(70_000.msat, bobId, currentBlockHeight, randomBytes32()).second, alice7, bob7)
-            assertIs<LNChannel<Normal>>(alice8)
-            assertIs<LNChannel<Normal>>(bob8)
+            assertIs<Normal>(alice8.state)
+            assertIs<Normal>(bob8.state)
             Triple(alice8, bob8, listOf(htlc1, htlc2, htlc3, htlc4, htlc5))
         }
 
         // Bob's wallet disconnects, but doesn't restart.
         val (bob1, _) = bob.process(ChannelCommand.Disconnected)
-        assertIs<LNChannel<Offline>>(bob1)
+        assertIs<Offline>(bob1.state)
 
         // Alice's wallet restarts.
         val initState = LNChannel(alice.ctx, WaitForInit)
         val (alice1, actions1) = initState.process(ChannelCommand.Restore(alice.state))
         assertEquals(1, actions1.size)
         actions1.hasWatch<WatchSpent>()
-        assertIs<LNChannel<Offline>>(alice1)
+        assertIs<Offline>(alice1.state)
 
         val localInit = Init(ByteVector(alice.commitments.localParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         assertTrue(actionsAlice2.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().isEmpty())
         val channelReestablishAlice = actionsAlice2.hasOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(localInit, remoteInit))
@@ -436,8 +442,10 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (bob7, _) = bob6.process(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(htlc1.id, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = false)))
             val (bob8, _) = bob7.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc2.id, preimage, commit = false)))
             val (bob9, _) = bob8.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-            assertIs<LNChannel<Normal>>(alice6)
-            assertIs<LNChannel<Normal>>(bob9)
+            assertIs<Normal>(alice6.state)
+            assertIs<LNChannel<Normal>>(alice6) // for compiler: only tests LNChannel<Any>
+            assertIs<Normal>(bob9.state)
+            assertIs<LNChannel<Normal>>(bob9) // for compiler: only tests LNChannel<Any>
             Triple(alice6, bob9, listOf(htlc1, htlc2, htlc3, htlc4, htlc5))
         }
 
@@ -448,8 +456,8 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val (alice2, actionsAlice) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
         val (bob2, _) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
-        assertIs<LNChannel<Syncing>>(alice2)
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(alice2.state)
+        assertIs<Syncing>(bob2.state)
         val channelReestablishAlice = actionsAlice.hasOutgoingMessage<ChannelReestablish>()
 
         // Bob resends htlc settlement messages to Alice and reprocesses unsettled htlcs.
@@ -473,10 +481,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val remoteInit = Init(ByteVector(bob.commitments.localParams.features.toByteArray()))
 
         val (alice2, actions) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(alice2)
+        assertIs<Syncing>(alice2.state)
         actions.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actions1) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<LNChannel<Syncing>>(bob2)
+        assertIs<Syncing>(bob2.state)
         // Bob waits to receive Alice's channel reestablish before sending his own.
         assertTrue(actions1.isEmpty())
     }
@@ -485,12 +493,12 @@ class OfflineTestsCommon : LightningTestSuite() {
     fun `republish unconfirmed funding tx after restart`() {
         val (alice, bob, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(txSigsBob))
-        assertIs<LNChannel<WaitForFundingConfirmed>>(alice1)
+        assertIs<WaitForFundingConfirmed>(alice1.state)
         val txSigsAlice = actionsAlice1.findOutgoingMessage<TxSignatures>()
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
         assertEquals(fundingTx.hash, txSigsAlice.txHash)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
-        assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
+        assertIs<WaitForFundingConfirmed>(bob1.state)
         // Alice restarts:
         val (alice2, actionsAlice2) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
         assertEquals(alice2.state, Offline(alice1.state))
@@ -527,7 +535,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         val previousFundingTx = alice1.state.previousFundingTxs.first().first.signedTx!!
         val (alice2, bob2) = disconnect(alice1, bob1)
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
-        assertIs<LNChannel<Offline>>(alice3)
+        assertIs<Offline>(alice3.state)
         val aliceState3 = alice3.state.state
         assertIs<WaitForFundingConfirmed>(aliceState3)
         assertEquals(aliceState3.commitments.fundingTxId, previousFundingTx.txid)
@@ -535,7 +543,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertEquals(actionsAlice3.size, 1)
         assertEquals(actionsAlice3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
-        assertIs<LNChannel<Offline>>(bob3)
+        assertIs<Offline>(bob3.state)
         val bobState3 = bob3.state.state
         assertIs<WaitForFundingConfirmed>(bobState3)
         assertEquals(bobState3.commitments.fundingTxId, previousFundingTx.txid)
@@ -550,10 +558,10 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (nodes, _, _) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
         val (alice2, _) = alice1.process(ChannelCommand.Disconnected)
-        assertIs<LNChannel<Offline>>(alice2)
+        assertIs<Offline>(alice2.state)
 
         val (alice3, actions3) = alice2.process(ChannelCommand.CheckHtlcTimeout)
-        assertIs<LNChannel<Offline>>(alice3)
+        assertIs<Offline>(alice3.state)
         assertEquals(alice2.state.state, alice3.state.state)
         assertTrue(actions3.isEmpty())
     }
@@ -564,7 +572,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
         val (alice2, _) = alice1.process(ChannelCommand.Disconnected)
-        assertIs<LNChannel<Offline>>(alice2)
+        assertIs<Offline>(alice2.state)
 
         // alice restarted after the htlc timed out
         val alice3 = alice2.copy(
@@ -572,7 +580,7 @@ class OfflineTestsCommon : LightningTestSuite() {
             state = alice2.state.state
         )
         val (alice4, actions) = alice3.process(ChannelCommand.CheckHtlcTimeout)
-        assertIs<LNChannel<Closing>>(alice4)
+        assertIs<Closing>(alice4.state)
         assertNotNull(alice4.state.localCommitPublished)
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
@@ -593,14 +601,14 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (bob2, actions2) = bob1.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
         actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
         val (bob3, _) = bob2.process(ChannelCommand.Disconnected)
-        assertIs<LNChannel<Offline>>(bob3)
+        assertIs<Offline>(bob3.state)
 
         // bob restarts when the fulfilled htlc is close to timing out: alice hasn't signed, so bob closes the channel
         val (bob4, actions4) = run {
             val tmp = bob3.copy(ctx = bob3.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()))
             tmp.process(ChannelCommand.CheckHtlcTimeout)
         }
-        assertIs<LNChannel<Closing>>(bob4)
+        assertIs<Closing>(bob4.state)
         assertNotNull(bob4.state.localCommitPublished)
         actions4.has<ChannelAction.Storage.StoreState>()
 
@@ -623,10 +631,10 @@ class OfflineTestsCommon : LightningTestSuite() {
     fun `recv CMD_FORCECLOSE`() {
         val (alice, _) = TestsHelper.reachNormal()
         val (alice1, _) = alice.process(ChannelCommand.Disconnected)
-        assertIs<LNChannel<Offline>>(alice1)
+        assertIs<Offline>(alice1.state)
         val commitTx = alice1.state.state.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice2, actions2) = alice1.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
-        assertIs<LNChannel<Closing>>(alice2)
+        assertIs<Closing>(alice2.state)
         actions2.hasTx(commitTx)
         assertNull(actions2.findOutgoingMessageOpt<Error>()) // we're offline so we shouldn't try to send messages
     }
@@ -637,14 +645,15 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (alice, bob) = TestsHelper.reachNormal()
             // alice publishes her commitment tx
             val (bob1, _) = bob.process(ChannelCommand.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, alice.commitments.localCommit.publishableTxs.commitTx.tx)))
-            assertIs<LNChannel<Closing>>(bob1)
+            assertIs<Closing>(bob1.state)
+            assertIs<LNChannel<Closing>>(bob1) // for compiler: only tests LNChannel<Any>
             assertNull(bob1.state.closingTypeAlreadyKnown())
             bob1
         }
 
         val state = LNChannel(bob.ctx, WaitForInit)
         val (state1, actions) = state.process(ChannelCommand.Restore(bob.state))
-        assertIs<LNChannel<Closing>>(state1)
+        assertIs<Closing>(state1.state)
         assertEquals(4, actions.size)
         val watchSpent = actions.hasWatch<WatchSpent>()
         assertEquals(bob.commitments.commitInput.outPoint.txid, watchSpent.txId)
@@ -663,9 +672,11 @@ class OfflineTestsCommon : LightningTestSuite() {
         fun disconnect(alice: LNChannel<ChannelStateWithCommitments>, bob: LNChannel<ChannelStateWithCommitments>): Pair<LNChannel<Offline>, LNChannel<Offline>> {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.Disconnected)
             val (bob1, actionsBob1) = bob.process(ChannelCommand.Disconnected)
-            assertIs<LNChannel<Offline>>(alice1)
+            assertIs<Offline>(alice1.state)
+            assertIs<LNChannel<Offline>>(alice1) // for compiler: only tests LNChannel<Any>
             assertTrue(actionsAlice1.isEmpty())
-            assertIs<LNChannel<Offline>>(bob1)
+            assertIs<Offline>(bob1.state)
+            assertIs<LNChannel<Offline>>(bob1) // for compiler: only tests LNChannel<Any>
             assertTrue(actionsBob1.isEmpty())
             return Pair(alice1, bob1)
         }

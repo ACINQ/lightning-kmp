@@ -37,7 +37,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (_, bob) = init()
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(add))
-        assertIs<LNChannel<ShuttingDown>>(bob1)
+        assertIs<ShuttingDown>(bob1.state)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
         assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
     }
@@ -47,7 +47,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (_, bob) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val add = CMD_ADD_HTLC(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(add))
-        assertIs<LNChannel<ShuttingDown>>(bob1)
+        assertIs<ShuttingDown>(bob1.state)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
         assertEquals(bob1.commitments.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
     }
@@ -94,7 +94,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         actions.hasOutgoingMessage<Error>()
         // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
         assertEquals(6, actions.findTxs().size)
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
     }
 
     @Test
@@ -104,7 +104,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         actions.hasOutgoingMessage<Error>()
         // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
         assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size)
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
     }
 
     @Test
@@ -164,7 +164,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice, _) = init()
         val commitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(UpdateFailHtlc(alice.channelId, 42, ByteVector.empty)))
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
         assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
@@ -187,7 +187,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice, _) = init()
         val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, ByteVector.empty.sha256(), 42)
         val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(fail))
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(alice1.state)))
         assertTrue(actions.contains(ChannelAction.Blockchain.PublishTx(alice.commitments.localCommit.publishableTxs.commitTx.tx)))
         assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
@@ -204,7 +204,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice1, _) = alice.process(ChannelCommand.MessageReceived(fulfill))
         val (_, alice2) = signAndRevack(bob1, alice1)
         val (alice3, actions3) = alice2.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertIs<LNChannel<ShuttingDown>>(alice3)
+        assertIs<ShuttingDown>(alice3.state)
         assertTrue(alice3.commitments.remoteNextCommitInfo.isLeft)
         actions3.hasOutgoingMessage<CommitSig>()
         actions3.has<ChannelAction.Storage.StoreState>()
@@ -228,13 +228,13 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         actions1.hasOutgoingMessage<UpdateFulfillHtlc>()
         val (bob2, actions2) = bob1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertIs<LNChannel<ShuttingDown>>(bob2)
+        assertIs<ShuttingDown>(bob2.state)
         actions2.hasOutgoingMessage<CommitSig>()
         assertNotNull(bob2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = bob2.commitments.remoteNextCommitInfo.left!!
         assertFalse(waitForRevocation.reSignAsap)
         val (bob3, actions3) = bob2.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertIs<LNChannel<ShuttingDown>>(bob3)
+        assertIs<ShuttingDown>(bob3.state)
         assertTrue(actions3.isEmpty())
         assertEquals(Either.Left(waitForRevocation), bob3.commitments.remoteNextCommitInfo)
     }
@@ -248,7 +248,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(sig))
-        assertIs<LNChannel<ShuttingDown>>(alice2)
+        assertIs<ShuttingDown>(alice2.state)
         actionsAlice2.hasOutgoingMessage<RevokeAndAck>()
     }
 
@@ -261,10 +261,10 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(sig))
-        assertIs<LNChannel<ShuttingDown>>(alice2)
+        assertIs<ShuttingDown>(alice2.state)
         // alice receives another commit signature
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(sig))
-        assertIs<LNChannel<Closing>>(alice3)
+        assertIs<Closing>(alice3.state)
         actionsAlice3.hasOutgoingMessage<Error>()
         assertNotNull(alice3.state.localCommitPublished)
         actionsAlice3.hasTx(alice2.commitments.localCommit.publishableTxs.commitTx.tx)
@@ -278,9 +278,9 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (_, actionsBob2) = bob1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
-        assertIs<LNChannel<ShuttingDown>>(alice1)
+        assertIs<ShuttingDown>(alice1.state)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(sig.copy(signature = ByteVector64.Zeroes)))
-        assertIs<LNChannel<Closing>>(alice2)
+        assertIs<Closing>(alice2.state)
         actionsAlice2.hasOutgoingMessage<Error>()
         assertNotNull(alice2.state.localCommitPublished)
         actionsAlice2.hasTx(alice1.commitments.localCommit.publishableTxs.commitTx.tx)
@@ -291,8 +291,8 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init()
         val (alice1, bob1) = fulfillHtlc(1, r2, alice0, bob0)
         val (bob2, alice2) = crossSign(bob1, alice1)
-        assertIs<LNChannel<ShuttingDown>>(alice2)
-        assertIs<LNChannel<ShuttingDown>>(bob2)
+        assertIs<ShuttingDown>(alice2.state)
+        assertIs<ShuttingDown>(bob2.state)
         assertEquals(1, alice2.commitments.localCommit.spec.htlcs.size)
         assertEquals(1, alice2.commitments.remoteCommit.spec.htlcs.size)
         assertEquals(1, bob2.commitments.localCommit.spec.htlcs.size)
@@ -307,10 +307,10 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val sig = actionsBob3.hasOutgoingMessage<CommitSig>()
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(sig))
-        assertIs<LNChannel<ShuttingDown>>(alice3)
+        assertIs<ShuttingDown>(alice3.state)
         val revack = actionsAlice3.hasOutgoingMessage<RevokeAndAck>()
         val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(revack))
-        assertIs<LNChannel<ShuttingDown>>(bob4)
+        assertIs<ShuttingDown>(bob4.state)
         assertEquals(2, bob4.commitments.localCommit.spec.htlcs.size)
         assertTrue(bob4.commitments.remoteCommit.spec.htlcs.isEmpty())
         assertEquals(2, alice3.commitments.remoteCommit.spec.htlcs.size)
@@ -324,8 +324,8 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = fulfillHtlc(0, r1, alice0, bob0)
         val (alice2, bob2) = fulfillHtlc(1, r2, alice1, bob1)
         val (bob3, alice3) = crossSign(bob2, alice2)
-        assertIs<LNChannel<Negotiating>>(alice3)
-        assertIs<LNChannel<Negotiating>>(bob3)
+        assertIs<Negotiating>(alice3.state)
+        assertIs<Negotiating>(bob3.state)
     }
 
     @Test
@@ -334,13 +334,13 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob1, actionsBob1) = bob0.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, r1)))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
-        assertIs<LNChannel<ShuttingDown>>(bob2)
+        assertIs<ShuttingDown>(bob2.state)
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         val (_, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(sig))
         val revack = actionsAlice2.hasOutgoingMessage<RevokeAndAck>()
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(revack.copy(perCommitmentSecret = randomKey())))
-        assertIs<LNChannel<Closing>>(bob3)
+        assertIs<Closing>(bob3.state)
         assertNotNull(bob3.state.localCommitPublished)
         actionsBob3.hasTx(bob2.commitments.localCommit.publishableTxs.commitTx.tx)
         actionsBob3.hasOutgoingMessage<Error>()
@@ -350,7 +350,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     fun `recv RevokeAndAck -- unexpectedly`() {
         val (alice0, _) = init()
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(RevokeAndAck(alice0.channelId, randomKey(), randomKey().publicKey())))
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
         assertNotNull(alice1.state.localCommitPublished)
         actions1.hasTx(alice0.commitments.localCommit.publishableTxs.commitTx.tx)
         actions1.hasOutgoingMessage<Error>()
@@ -362,7 +362,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         assertTrue(bob0.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
         assertFalse(bob0.commitments.channelFeatures.hasFeature(Feature.ChannelBackupClient)) // this isn't a permanent channel feature
         val (bob1, actions1) = bob0.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
-        assertIs<LNChannel<Normal>>(bob1)
+        assertIs<Normal>(bob1.state)
         val blob = EncryptedChannelData.from(bob1.staticParams.nodeParams.nodePrivateKey, bob1.state)
         val shutdown = actions1.findOutgoingMessage<Shutdown>()
         assertEquals(blob, shutdown.channelData)
@@ -388,7 +388,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
             val tmp = alice.copy(ctx = alice.ctx.copy(currentBlockHeight = htlcExpiry.toLong().toInt()))
             tmp.process(ChannelCommand.CheckHtlcTimeout)
         }
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
         assertNotNull(alice1.state.localCommitPublished)
         actions1.hasTx(commitTx)
         actions1.hasOutgoingMessage<Error>()
@@ -427,7 +427,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val bobCommitTx = bob.commitments.localCommit.publishableTxs.commitTx.tx
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs + 2 anchors + 2 pending htlc
         val (alice1, aliceActions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
         assertNotNull(alice1.state.nextRemoteCommitPublished)
         aliceActions1.has<ChannelAction.Storage.StoreState>()
         val rcp = alice1.state.nextRemoteCommitPublished!!
@@ -453,7 +453,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
 
         assertEquals(5, revokedTx.txOut.size) // 2 main outputs + 2 anchors + 1 pending htlc
         val (alice1, aliceActions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
-        assertIs<LNChannel<Closing>>(alice1)
+        assertIs<Closing>(alice1.state)
         assertEquals(1, alice1.state.revokedCommitPublished.size)
         aliceActions1.hasOutgoingMessage<Error>()
         aliceActions1.has<ChannelAction.Storage.StoreState>()
@@ -467,7 +467,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     fun `recv Disconnected`() {
         val (alice, _) = init()
         val (alice1, _) = alice.process(ChannelCommand.Disconnected)
-        assertIs<LNChannel<Offline>>(alice1)
+        assertIs<Offline>(alice1.state)
     }
 
     @Test
@@ -479,7 +479,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     private fun testLocalForceClose(alice: LNChannel<ChannelState>, actions: List<ChannelAction>) {
-        assertIs<LNChannel<Closing>>(alice)
+        assertIs<Closing>(alice.state)
         val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx
         val lcp = alice.state.localCommitPublished
         assertNotNull(lcp)
@@ -565,8 +565,10 @@ class ShutdownTestsCommon : LightningTestSuite() {
             val (bob1, actionsBob) = bob.process(ChannelCommand.MessageReceived(shutdown))
             val shutdown1 = actionsBob.findOutgoingMessage<Shutdown>()
             val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(shutdown1))
-            assertIs<LNChannel<ShuttingDown>>(alice2)
-            assertIs<LNChannel<ShuttingDown>>(bob1)
+            assertIs<ShuttingDown>(alice2.state)
+            assertIs<LNChannel<ShuttingDown>>(alice2) // for compiler: only tests LNChannel<Any>
+            assertIs<ShuttingDown>(bob1.state)
+            assertIs<LNChannel<ShuttingDown>>(bob1) // for compiler: only tests LNChannel<Any>
             if (alice2.state.commitments.channelFeatures.hasFeature(Feature.ChannelBackupClient)) assertFalse(shutdown.channelData.isEmpty())
             if (bob1.state.commitments.channelFeatures.hasFeature(Feature.ChannelBackupClient)) assertFalse(shutdown1.channelData.isEmpty())
             return Pair(alice2, bob1)

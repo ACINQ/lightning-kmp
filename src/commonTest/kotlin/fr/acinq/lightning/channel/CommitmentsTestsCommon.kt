@@ -428,11 +428,13 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             val (bob9, _) = bob8.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice2.id, preimageAlice2)))
             // Alice publishes her commitment.
             val (aliceClosing, _) = alice9.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
-            assertIs<LNChannel<Closing>>(aliceClosing)
+            assertIs<Closing>(aliceClosing.state)
+            assertIs<LNChannel<Closing>>(aliceClosing) // for compiler: only tests LNChannel<Any>
             val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)
             val (bobClosing, _) = bob9.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.state.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
-            assertIs<LNChannel<Closing>>(bobClosing)
+            assertIs<Closing>(bobClosing.state)
+            assertIs<LNChannel<Closing>>(bobClosing) // for compiler: only tests LNChannel<Any>
             val rcp = bobClosing.state.remoteCommitPublished
             assertNotNull(rcp)
             Triple(aliceClosing, bobClosing, listOf(htlcAlice1a, htlcAlice1b, htlcAlice2, htlcBob1a, htlcBob1b, htlcBob2))

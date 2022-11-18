@@ -40,7 +40,7 @@ class LegacyWaitForFundingLockedTestsCommon {
             OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Restore(state))
-        assertIs<LNChannel<Offline>>(state1)
+        assertIs<Offline>(state1.state)
         assertEquals(actions1.size, 1)
         val watchSpent = actions1.findWatch<WatchSpent>()
         assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
@@ -49,7 +49,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         val localInit = Init(state.commitments.localParams.features.toByteArray().byteVector())
         val remoteInit = Init(state.commitments.remoteParams.features.toByteArray().byteVector())
         val (state2, actions2) = state1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<LNChannel<Syncing>>(state2)
+        assertIs<Syncing>(state2.state)
         assertTrue(actions2.isEmpty())
         val channelReestablish = ChannelReestablish(
             state.channelId,
@@ -65,7 +65,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         actions3.hasOutgoingMessage<ChannelReady>()
         // Our peer sends us funding_locked.
         val (state4, actions4) = state3.process(ChannelCommand.MessageReceived(ChannelReady(state.channelId, randomKey().publicKey())))
-        assertIs<LNChannel<Normal>>(state4)
+        assertIs<Normal>(state4.state)
         assertEquals(actions4.size, 3)
         val watchConfirmed = actions4.hasWatch<WatchConfirmed>()
         assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEEPLYBURIED)

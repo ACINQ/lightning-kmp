@@ -269,7 +269,7 @@ class PeerTest : LightningTestSuite() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
-        assertIs<LNChannel<Normal>>(alice1)
+        assertIs<Normal>(alice1.state)
         val channelId = alice0.channelId
 
         val peer = buildPeer(this,

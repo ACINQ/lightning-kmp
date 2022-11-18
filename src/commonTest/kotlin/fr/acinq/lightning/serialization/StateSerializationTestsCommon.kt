@@ -59,8 +59,8 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         tailrec fun addHtlcs(sender: LNChannel<Normal>, receiver: LNChannel<Normal>, amount: MilliSatoshi, count: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> = if (count == 0) Pair(sender, receiver) else {
             val (p, _) = TestsHelper.addHtlc(amount, sender, receiver)
             val (alice1, bob1) = p
-            assertIs<LNChannel<Normal>>(alice1)
-            assertIs<LNChannel<Normal>>(bob1)
+            assertIs<Normal>(alice1.state)
+            assertIs<Normal>(bob1.state)
             addHtlcs(alice1, bob1, amount, count - 1)
         }
 
