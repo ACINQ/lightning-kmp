@@ -1526,9 +1526,6 @@ data class PleaseOpenChannel(
 
     val grandParents: List<OutPoint> = tlvs.get<PleaseOpenChannelTlv.GrandParents>()?.outpoints ?: listOf()
 
-    // NB: we use ceil(a/b) = (a+b-1)/b
-    fun maxFees(fundingAmount: Satoshi): MilliSatoshi? = tlvs.get<PleaseOpenChannelTlv.MaxFees>()?.basisPoints?.let { bp -> (fundingAmount.toMilliSatoshi() * bp + 10_000.msat - 1.msat) / 10_000 }
-
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.toByteArray(), out)
         LightningCodecs.writeBytes(requestId.toByteArray(), out)

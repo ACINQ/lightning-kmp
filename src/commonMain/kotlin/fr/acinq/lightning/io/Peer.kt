@@ -39,7 +39,10 @@ sealed class PeerCommand
  * @param maxFeeBasisPoints the max total acceptable fee (all included: service fee and mining fee)
  * @param maxFeeFloor as long as fee is below this amount, it's okay (whatever the percentage is)
  */
-data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeeBasisPoints: Int, val maxFeeFloor: Satoshi) : PeerCommand()
+data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState, val maxFeeBasisPoints: Int, val maxFeeFloor: Satoshi) : PeerCommand() {
+    /** maximum fee that we are willing to pay for this channel */
+    val maxFee = (wallet.confirmedBalance * maxFeeBasisPoints / 10_000).max(maxFeeFloor)
+}
 
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
@@ -675,13 +678,24 @@ class Peer(
                         val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
                             is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                 is RequestChannelOpen -> {
+                                    // Let's verify that the fee is indeed below our max (a honest LSP would not even try)
+                                    val totalFee = origin.serviceFee.truncateToSatoshi() + origin.fundingFee
+                                    if (totalFee > request.maxFee) {
+                                        logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: fee is too high (max=${request.maxFee} actual=${totalFee})" }
+                                        sendToPeer(Error(msg.temporaryChannelId, "channel opening fee too high"))
+                                        return
+                                    }
                                     // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                     val fundingAmount = request.wallet.confirmedBalance - origin.fundingFee
                                     nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, fundingFee = origin.fundingFee))
                                     Triple(request.wallet, fundingAmount, origin.serviceFee)
                                 }
 
-                                else -> Triple(WalletState.empty, 0.sat, 0.msat)
+                                else -> {
+                                    logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: cannot find channel request with requestId=${origin.requestId}" }
+                                    sendToPeer(Error(msg.temporaryChannelId, "no corresponding channel request"))
+                                    return
+                                }
                             }
 
                             else -> Triple(WalletState.empty, 0.sat, 0.msat)
