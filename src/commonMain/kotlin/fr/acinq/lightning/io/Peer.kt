@@ -236,7 +236,7 @@ class Peer(
                     val availableWallet = wallet.minus(reservedUtxos)
                     val balance = availableWallet.confirmedBalance
                     logger.info { "swap-in wallet balance: $balance, ${availableWallet.unconfirmedBalance} unconfirmed" }
-                    if (balance > 10_000.sat) {
+                    if (balance >= 10_000.sat) {
                         logger.info { "swap-in wallet: requesting channel using confirmed balance: $balance" }
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
                         reservedUtxos.union(availableWallet.confirmedUtxos)
