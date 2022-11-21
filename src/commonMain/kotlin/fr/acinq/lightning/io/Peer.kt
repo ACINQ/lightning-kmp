@@ -110,6 +110,33 @@ data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerEven
 
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerEvent()
 
+data class ReservedUtxos(
+    val reserved: Set<WalletState.Utxo>,
+    val pending: Set<WalletState.Utxo>
+) {
+    fun all() = reserved.union(pending)
+
+    fun addPending(utxos: List<WalletState.Utxo>) = copy(
+        pending = pending.plus(utxos)
+    )
+
+    fun confirm(utxos: List<WalletState.Utxo>) = copy(
+        reserved = reserved.plus(utxos),
+        pending = pending.minus(utxos)
+    )
+
+    fun intersect(utxos: List<WalletState.Utxo>) = copy(
+        reserved = reserved.intersect(utxos),
+        pending = pending.intersect(utxos)
+    )
+
+    override fun toString(): String {
+        val reservedStr = reserved.joinToString { "${it.previousTx.txid}:${it.outputIndex}" }
+        val pendingStr = pending.joinToString { "${it.previousTx.txid}:${it.outputIndex}" }
+        return "{reserved = $reservedStr, pending = $pendingStr}"
+    }
+}
+
 /**
  * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
  * the events on those channels and processes the relevant actions. The dialogue with the peer is done in coroutines.
@@ -198,6 +225,7 @@ class Peer(
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
     val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { swapInWallet.addAddress(it) }
+    private var swapInReservedUtxos = ReservedUtxos(emptySet(), emptySet())
 
     init {
         launch {
@@ -231,19 +259,69 @@ class Peer(
         launch {
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
-                .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
-                    // reservedUtxos are part of a previously issued RequestChannelOpen command
+                .collect { wallet ->
+                    val reservedUtxos = swapInReservedUtxos.all()
                     val availableWallet = wallet.minus(reservedUtxos)
                     val balance = availableWallet.confirmedBalance
                     logger.info { "swap-in wallet balance: $balance, ${availableWallet.unconfirmedBalance} unconfirmed" }
                     if (balance >= 10_000.sat) {
                         logger.info { "swap-in wallet: requesting channel using confirmed balance: $balance" }
-                        input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet, maxFeeBasisPoints = 100, maxFeeFloor = 3_000.sat)) // 100 bips = 1 %
-                        reservedUtxos.union(availableWallet.confirmedUtxos)
-                    } else {
-                        reservedUtxos
-                    }.intersect(wallet.utxos) // drop utxos no longer in wallet
+                        input.send(
+                            RequestChannelOpen(
+                                Lightning.randomBytes32(),
+                                availableWallet,
+                                maxFeeBasisPoints = 100,
+                                maxFeeFloor = 3_000.sat
+                            )
+                        ) // 100 bips = 1 %
+                        swapInReservedUtxos = swapInReservedUtxos.addPending(availableWallet.confirmedUtxos)
+                    }
+                    // drop utxos no longer in wallet
+                    swapInReservedUtxos = swapInReservedUtxos.intersect(wallet.utxos)
                 }
+        }
+        launch {
+            nodeParams.nodeEvents.collect {
+                if (it is ChannelEvents.Created) {
+                    // A channel has been created.
+                    // The corresponding in-flight channel request has been confirmed,
+                    // so the corresponding UTXOs are locked-in.
+                    if (swapInReservedUtxos.pending.isNotEmpty()) {
+                        when (it.state) {
+                            is WaitForFundingConfirmed -> it.state.fundingTx
+                            is WaitForChannelReady -> it.state.fundingTx
+                            else -> null
+                        }?.let { fundingTx ->
+                            val channelUtxos = fundingTx.tx.localInputs.map { txAddInput ->
+                                WalletState.Utxo(
+                                    previousTx = txAddInput.previousTx,
+                                    outputIndex = txAddInput.previousTxOutput.toInt(),
+                                    blockHeight = 0 // we don't store this info
+                                )
+                            }
+                            val matching = swapInReservedUtxos.pending.filter { pendingUtxo ->
+                                channelUtxos.any { channelUtxo ->
+                                    channelUtxo.previousTx == pendingUtxo.previousTx &&
+                                    channelUtxo.outputIndex == pendingUtxo.outputIndex
+                                }
+                            }
+                            swapInReservedUtxos = swapInReservedUtxos.confirm(matching)
+                        }
+                    }
+                }
+            }
+        }
+        launch {
+            connectionState.collect {
+                if (it is Connection.CLOSED) {
+                    // Disconnected from Peer.
+                    // Any in-flight channel requests have been cancelled,
+                    // so the corresponding UTXOs are no longer reserved.
+                    if (swapInReservedUtxos.pending.isNotEmpty()) {
+                        swapInReservedUtxos = swapInReservedUtxos.copy(pending = emptySet())
+                    }
+                }
+            }
         }
         launch {
             // we don't restore closed channels
