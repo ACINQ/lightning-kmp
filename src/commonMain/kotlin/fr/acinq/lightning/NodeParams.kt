@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.toMilliSatoshi
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -119,7 +120,7 @@ data class NodeParams(
     val nodePrivateKey get() = keyManager.nodeKey.privateKey
     val nodeId get() = keyManager.nodeId
 
-    internal val _nodeEvents = MutableSharedFlow<NodeEvents>()
+    internal val _nodeEvents = MutableSharedFlow<NodeEvents>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     val nodeEvents: SharedFlow<NodeEvents> get() = _nodeEvents.asSharedFlow()
 
     init {
