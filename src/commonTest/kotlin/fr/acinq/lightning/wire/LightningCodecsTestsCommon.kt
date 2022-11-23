@@ -23,10 +23,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFails
-import kotlin.test.assertNotNull
+import kotlin.test.*
 
 class LightningCodecsTestsCommon : LightningTestSuite() {
 
@@ -546,6 +543,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     @Test
     fun `nonreg backup channel data`() {
         val channelId = randomBytes32()
+        val txHash = randomBytes32()
         val signature = randomBytes64()
         val key = randomKey()
         val point = randomKey().publicKey()
@@ -553,34 +551,40 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
         // @formatter:off
         val refs = mapOf(
+            // channel_reestablish
             Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
             Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(listOf(), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 00") to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(listOf(ChannelReestablishTlv.ChannelData(EncryptedChannelData.empty)))),
             Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") + Hex.decode("fe47010000 00") to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(listOf(ChannelReestablishTlv.ChannelData(EncryptedChannelData(ByteVector.empty))), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 bbbbbbbbbbbbbb") to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point).withChannelData(ByteVector("bbbbbbbbbbbbbb")),
             Hex.decode("0088") + channelId.toByteArray() + Hex.decode("0001020304050607 0809aabbccddeeff") + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") + Hex.decode("fe47010000 07 bbbbbbbbbbbbbb") to ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(listOf(ChannelReestablishTlv.ChannelData(EncryptedChannelData(ByteVector("bbbbbbbbbbbbbb")))), listOf(GenericTlv(1, ByteVector("0102"))))),
-
+            // tx_signatures
+            Hex.decode("0047") + channelId.toByteArray() + txHash.toByteArray() + Hex.decode("0000") to TxSignatures(channelId, txHash, listOf()),
+            Hex.decode("0047") + channelId.toByteArray() + txHash.toByteArray() + Hex.decode("0000 fe47010000 00") to TxSignatures(channelId, txHash, listOf(), TlvStream(listOf(TxSignaturesTlv.ChannelData(EncryptedChannelData.empty)))),
+            Hex.decode("0047") + channelId.toByteArray() + txHash.toByteArray() + Hex.decode("0000 fe47010000 04 deadbeef") to TxSignatures(channelId, txHash, listOf(), TlvStream(listOf(TxSignaturesTlv.ChannelData(EncryptedChannelData(ByteVector("deadbeef")))))),
+            Hex.decode("0047") + channelId.toByteArray() + txHash.toByteArray() + Hex.decode("0000 2b012a fe47010000 04 deadbeef") to TxSignatures(channelId, txHash, listOf(), TlvStream(listOf(TxSignaturesTlv.ChannelData(EncryptedChannelData(ByteVector("deadbeef")))), listOf(GenericTlv(43, ByteVector("2a"))))),
+            // commit_sig
             Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000") to CommitSig(channelId, signature, listOf()),
             Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000") + Hex.decode("01 02 0102") to CommitSig(channelId, signature, listOf(), TlvStream(listOf(), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 00") to CommitSig(channelId, signature, listOf(), TlvStream(listOf(CommitSigTlv.ChannelData(EncryptedChannelData.empty)))),
             Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 01020102 fe47010000 00") to CommitSig(channelId, signature, listOf(), TlvStream(listOf(CommitSigTlv.ChannelData(EncryptedChannelData.empty)), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 fe47010000 07 cccccccccccccc") to CommitSig(channelId, signature, listOf()).withChannelData(ByteVector("cccccccccccccc")),
             Hex.decode("0084") + channelId.toByteArray() + signature.toByteArray() + Hex.decode("0000 01020102 fe47010000 07 cccccccccccccc") to CommitSig(channelId, signature, listOf(), TlvStream(listOf(CommitSigTlv.ChannelData(EncryptedChannelData(ByteVector("cccccccccccccc")))), listOf(GenericTlv(1, ByteVector("0102"))))),
-
+            // revoke_and_ack
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() to RevokeAndAck(channelId, key, point),
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") to RevokeAndAck(channelId, key, point, TlvStream(listOf(), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 00") to RevokeAndAck(channelId, key, point, TlvStream(listOf(RevokeAndAckTlv.ChannelData(EncryptedChannelData.empty)))),
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") + Hex.decode("fe47010000 00") to RevokeAndAck(channelId, key, point, TlvStream(listOf(RevokeAndAckTlv.ChannelData(EncryptedChannelData.empty)), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("fe47010000 07 cccccccccccccc") to RevokeAndAck(channelId, key, point).withChannelData(ByteVector("cccccccccccccc")),
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") + Hex.decode("fe47010000 07 cccccccccccccc") to RevokeAndAck(channelId, key, point, TlvStream(listOf(RevokeAndAckTlv.ChannelData(EncryptedChannelData(ByteVector("cccccccccccccc")))), listOf(GenericTlv(1, ByteVector("0102"))))),
-
+            // shutdown
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData to Shutdown(channelId, randomData.toByteVector()),
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("01 02 0102") to Shutdown(channelId, randomData.toByteVector(), TlvStream(listOf(), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("fe47010000 00") to Shutdown(channelId, randomData.toByteVector(), TlvStream(listOf(ShutdownTlv.ChannelData(EncryptedChannelData.empty)))),
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("01 02 0102") + Hex.decode("fe47010000 00") to Shutdown(channelId, randomData.toByteVector(), TlvStream(listOf(ShutdownTlv.ChannelData(EncryptedChannelData.empty)), listOf(GenericTlv(1, ByteVector("0102"))))),
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("fe47010000 07 cccccccccccccc") to Shutdown(channelId, randomData.toByteVector()).withChannelData(ByteVector("cccccccccccccc")),
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("01 02 0102") + Hex.decode("fe47010000 07 cccccccccccccc") to Shutdown(channelId, randomData.toByteVector(), TlvStream(listOf(ShutdownTlv.ChannelData(EncryptedChannelData(ByteVector("cccccccccccccc")))), listOf(GenericTlv(1, ByteVector("0102"))))),
-
+            // closing_signed
             Hex.decode("0027") + channelId.toByteArray() + Hex.decode("00000000075bcd15") + signature.toByteArray() to ClosingSigned(channelId, 123456789.sat, signature),
             Hex.decode("0027") + channelId.toByteArray() + Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("03 02 0102") to ClosingSigned(channelId, 123456789.sat, signature, TlvStream(listOf(), listOf(GenericTlv(3, ByteVector("0102"))))),
             Hex.decode("0027") + channelId.toByteArray() + Hex.decode("00000000075bcd15") + signature.toByteArray() + Hex.decode("fe47010000 00") to ClosingSigned(channelId, 123456789.sat, signature, TlvStream(listOf(ClosingSignedTlv.ChannelData(EncryptedChannelData.empty)))),
@@ -596,6 +600,34 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             val encoded = LightningMessage.encode(it.value)
             assertArrayEquals(it.key, encoded)
         }
+    }
+
+    @Test
+    fun `skip backup channel data when too large`() {
+        // We omit the channel backup when it risks overflowing the lightning message.
+        val belowLimit = EncryptedChannelData(ByteVector(ByteArray(59500) { 42 }))
+        val aboveLimit = EncryptedChannelData(ByteVector(ByteArray(60000) { 42 }))
+        val messages = listOf(
+            ChannelReestablish(randomBytes32(), 0, 0, randomKey(), randomKey().publicKey()),
+            TxSignatures(randomBytes32(), randomBytes32(), listOf()),
+            CommitSig(randomBytes32(), randomBytes64(), listOf()),
+            RevokeAndAck(randomBytes32(), randomKey(), randomKey().publicKey()),
+            Shutdown(randomBytes32(), ByteVector("deadbeef")),
+            ClosingSigned(randomBytes32(), 0.sat, randomBytes64()),
+        )
+        messages.forEach {
+            assertEquals(it.withChannelData(belowLimit).channelData, belowLimit)
+            assertTrue(it.withChannelData(aboveLimit).channelData.isEmpty())
+        }
+    }
+
+    @Test
+    fun `skip backup channel data when message is too large`() {
+        val channelData = EncryptedChannelData(ByteVector(ByteArray(59500) { 42 }))
+        val smallCommit = CommitSig(randomBytes32(), randomBytes64(), listOf())
+        assertEquals(smallCommit.withChannelData(channelData).channelData, channelData)
+        val largeCommit = CommitSig(randomBytes32(), randomBytes64(), List(50) { randomBytes64() })
+        assertTrue(largeCommit.withChannelData(channelData).channelData.isEmpty())
     }
 
     @Test

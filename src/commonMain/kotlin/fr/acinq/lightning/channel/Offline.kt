@@ -39,7 +39,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                             nextRemoteRevocationNumber = state.commitments.remoteCommit.index,
                             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-                        ).withChannelData(state.commitments.remoteChannelData)
+                        ).withChannelData(state.commitments.remoteChannelData, logger)
                         logger.info { "syncing ${state::class}" }
                         val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
